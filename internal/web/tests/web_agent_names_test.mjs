@@ -40,7 +40,8 @@ for(const direct of [false,true])test(`Agent names stay coherent after ${direct 
  assert.equal(api.members[0].agent_name,"新的 称呼",ui.el("agent-name-feedback").textContent);
  assert.equal(ui.el("agent-name-form").hidden,true);
  assert.equal(ui.el("agent-name-summary").textContent,"新的 称呼");
- assert.equal(ui.el("activity-title").textContent,"新的 称呼");
+ assert.equal(ui.el("activity-title").textContent,direct ? "设置" : "新的 称呼");
+ if(direct){assert.equal(ui.el("agent-context-name").hidden,false);assert.equal(ui.el("agent-context-name").textContent,"新的 称呼");}
  assert.equal(ui.document.getElementById("message-1").querySelector(".author").textContent,"新的 称呼");
  const options=ui.document.getElementById("message-2").querySelector(".message-text").markdownOptions;
  assert.equal(options.mentionLabel({kind:"agent",id:"a",membership_id:"member-a"}),"新的 称呼");

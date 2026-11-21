@@ -512,7 +512,7 @@ test("conversation details toggle collapses the whole panel and retains the choi
   const calls = api.calls.length;
   await toggle.emit("click");
   assert.equal(toggle.attributes["aria-expanded"], "false");
-  assert.equal(toggle.attributes["aria-label"], "房间详情"); assert.equal(rail.inert, true);
+  assert.equal(toggle.attributes["aria-label"], "设置"); assert.equal(rail.inert, true);
   assert.equal(rail.attributes["aria-hidden"], "true");
   assert.equal(api.calls.length, calls);
   const reload = await launch(api, ui.saved);
@@ -3865,14 +3865,15 @@ test("direct conversations prefer the exact default, keep the inspector stable, 
   assert.equal(directRows(ui)[0].children.length,1);
   assert.equal(ui.el("room-list").children[1].children.length,2);
   assert.equal(ui.el("activity-dialog").open,true);assert.equal(ui.el("close-activity").hidden,false);
-  assert.equal(ui.el("activity-title").textContent,"个人助理");
+  assert.equal(ui.el("activity-title").textContent,"设置");
+  assert.equal(ui.el("agent-context-name").textContent,"个人助理");
   assert.equal(ui.el("members").children[0].querySelector(".avatar").children[0].getAttribute("class"),"assistant-icon");
   assert.equal(ui.el("direct-status"),undefined);assert.equal(ui.el("conversation-open-details").hidden,false);
-  assert.equal(ui.el("conversation-open-details").getAttribute("aria-label"),"助理详情");assert.equal(ui.el("room-title-count").hidden,true);
+  assert.equal(ui.el("conversation-open-details").getAttribute("aria-label"),"设置");assert.equal(ui.el("room-title-count").hidden,true);
   assert.equal(ui.el("conversation-settings").parentElement,ui.el("platforms-member-view"));
   await ui.el("conversation-open-details").emit("click");
   assert.equal(ui.el("activity-dialog").open,false);assert.equal(ui.el("conversation-open-details").getAttribute("aria-expanded"),"false");
-  assert.equal(ui.el("conversation-open-details").getAttribute("aria-label"),"助理详情");
+  assert.equal(ui.el("conversation-open-details").getAttribute("aria-label"),"设置");
   await ui.el("conversation-open-details").emit("click");assert.equal(ui.el("activity-dialog").open,true);
   assert.equal(ui.el("agent-tab-platforms").getAttribute("aria-selected"),"true");
   ui.el("platforms-member-view").scrollTop=123;
@@ -3883,7 +3884,7 @@ test("direct conversations prefer the exact default, keep the inspector stable, 
   await ui.draft("DM draft");await ui.select("Team");assert.equal(ui.el("activity-dialog").open,false);
   assert.equal(ui.el("message-input").placeholder,"发送给 Team");
   assert.equal(ui.el("message-input-label").textContent,"发送给 Team");
-  assert.equal(ui.el("conversation-open-details").getAttribute("aria-label"),"房间详情");assert.equal(ui.el("room-title-count").hidden,false);
+  assert.equal(ui.el("conversation-open-details").getAttribute("aria-label"),"设置");assert.equal(ui.el("room-title-count").hidden,false);
   assert.equal(ui.el("conversation-settings").parentElement,ui.el("member-sidebar"));
   assert.equal(ui.el("member-list-view").hidden,false);await ui.draft("Room draft");
   await ui.select("个人助理");assert.equal(ui.el("message-input").value,"DM draft");

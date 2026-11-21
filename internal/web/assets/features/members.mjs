@@ -471,7 +471,7 @@ export function createMembers({ env, runtime, notificationsUI, workspaceUI, onbo
   function renderActivityNavigation() {
     const button = $("close-activity");
     const close = roomsUI.isDirect() && !activityReturn?.previous && !compactViewport(window);
-    const direction = close ? "close" : "left", label = close ? "关闭详情" : roomsUI.isDirect() && !activityReturn?.previous ? "返回对话" : "返回";
+    const direction = close ? "close" : "left", label = close ? "关闭设置" : roomsUI.isDirect() && !activityReturn?.previous ? "返回对话" : "返回";
     button.hidden = false;
     button.setAttribute("aria-label", label); button.title = label;
     button.classList.toggle("icon-button", close);
@@ -491,7 +491,10 @@ export function createMembers({ env, runtime, notificationsUI, workspaceUI, onbo
     notificationsUI.renderContextViews();
     renderActivityNavigation();
     const selected=selectedAgent();
-    $("activity-title").textContent=selected ? agentName(selected) : "Agent 详情";
+    const settings = roomsUI.isDirect() && !activityReturn?.previous;
+    $("activity-title").textContent=settings ? "设置" : selected ? agentName(selected) : "成员详情";
+    $("agent-context-name").hidden=!settings || !selected;
+    $("agent-context-name").textContent=selected && settings ? agentName(selected) : "";
     $("agent-tabs").hidden = false;
     $("agent-tab-platforms").hidden = !state.managed;
     const member = selectedAgent();

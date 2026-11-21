@@ -1,3 +1,4 @@
+import { createSettingsIcon } from "../icons.mjs";
 import { renderAvatar } from "../avatars.mjs";
 
 // A browser-local display name never changes the authenticated operator.
@@ -66,6 +67,7 @@ export function createUserMenu({ env, runtime, conversationUI, roomsUI, membersU
   }
 
   function mount() {
+    $("open-settings").insertBefore(createSettingsIcon(document), $("open-settings").firstChild);
     renderAvatar(document, $("user-avatar"), {kind:"human", id:state.operator});
     renderAvatar(document, $("mobile-profile-avatar"), {kind:"human", id:state.operator});
     render(); void loadSession();

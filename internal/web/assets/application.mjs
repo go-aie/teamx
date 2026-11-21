@@ -4,6 +4,7 @@ import { request, sameService, compactViewport } from "./client.mjs";
 import { renderMessageBody } from "./markdown.mjs";
 import { createSettings } from "./features/settings.mjs";
 import { createRooms } from "./features/rooms.mjs";
+import { createConversationTools } from "./features/conversation-tools.mjs";
 import { createFiles } from "./features/files.mjs";
 import { createLayout } from "./features/layout.mjs";
 import { createWorkspace } from "./features/workspace.mjs";
@@ -51,6 +52,7 @@ export async function createApp(overrides = {}) {
   const roomsUI = {};
   const layoutUI = {};
   const filesUI = {};
+  const conversationToolsUI = {};
   const workspaceUI = {};
   const notificationsUI = {};
   const membersUI = {};
@@ -91,10 +93,11 @@ export async function createApp(overrides = {}) {
       if (layoutUI.membersPanelOpen?.()) layers.push({ id:"members", close:layoutUI.closeMobilePanels });
     }
     if (filesUI.isOpen) layers.push({id:filesUI.navigationID, close:filesUI.back});
-    if (!$("conversation-menu").hidden) layers.push({id:"conversation-menu", close:filesUI.closeMenu});
+    if (calendarUI.visible?.()) layers.push({id:calendarUI.navigationID, close:calendarUI.back});
+    if (!$("conversation-menu").hidden) layers.push({id:"conversation-menu", close:conversationToolsUI.close});
     if ($("compose-menu").open) layers.push({id:"compose-menu", close:conversationUI.closeComposerMenu});
     if (!$("conversation-filter-menu").hidden) layers.push({ id:"conversation-filter", close:roomsUI.closeFilterMenu });
-    for (const [id, button] of [["calendar-detail","calendar-detail-close"], ["calendar-mode-sheet","calendar-mode-close"], ["activity-dialog","close-activity"], ["notification-detail","close-notification"],
+    for (const [id, button] of [["calendar-mode-sheet","calendar-mode-close"], ["activity-dialog","close-activity"], ["notification-detail","close-notification"],
       ["workspace-dialog","close-workspace"], ["create-dialog","close-create"], ["settings-dialog","close-settings"], ["access-confirm-dialog","access-confirm-cancel"]]) {
       if ($(id)?.open && !$(id).hidden) layers.push({id, close:() => id === "settings-dialog" ? settingsUI.backSettings() : $(button)?.click?.()});
       if (id === "settings-dialog" && $(id).open) {
@@ -204,7 +207,7 @@ export async function createApp(overrides = {}) {
     roomViews.scope([state.installationID, state.catalog?.service_epoch || serverIdentity?.[1], operator]);
     const entry = state.catalog?.rooms.find(room => room.room_id === info?.room_id && room.room_instance === info?.room_instance);
     const cached = info && (!state.managed || entry?.status === "ready") ? roomViews.get(info, entry?.human_read?.cleared_through || 0) : null;
-    filesUI.close?.({focus:false}); filesUI.closeMenu?.();
+    filesUI.close?.({focus:false}); conversationToolsUI.close?.();
     conversationUI.saveDraft();
     roomsUI.closeRename(false);
     $("notification-detail").close();
@@ -520,6 +523,7 @@ export async function createApp(overrides = {}) {
     forgetRoomView: room => roomViews.forget(room),
     enterRoom,
     navigationChanged: navigation.sync,
+    conversationToolsChanged: () => conversationToolsUI.render?.(),
     conversationVisibilityChanged: () => {
       conversationUI.conversationVisibilityChanged();
     },
@@ -541,7 +545,7 @@ export async function createApp(overrides = {}) {
     confirmAction
   };
 
-  install(calendarUI,createCalendar({env,runtime,roomsUI,conversationUI,settingsUI,dateTimeUI}));
+  install(calendarUI,createCalendar({env,runtime,roomsUI,conversationUI,settingsUI,dateTimeUI,layoutUI}));
   install(userMenuUI, createUserMenu({ env, runtime, conversationUI, roomsUI, membersUI }));
   install(settingsUI, createSettings({
     env, runtime, connectionsUI, conversationUI, roomsUI, workspaceUI, policyUI, notificationsUI, onboardingUI, membersUI, dateTimeUI
@@ -550,9 +554,10 @@ export async function createApp(overrides = {}) {
     env, runtime, layoutUI, workspaceUI, conversationUI, settingsUI, membersUI, userMenuUI
   }));
   install(layoutUI, createLayout({
-    env, roomsUI, runtime, notificationsUI, membersUI, settingsUI, userMenuUI, filesUI
+    env, roomsUI, runtime, notificationsUI, membersUI, settingsUI, userMenuUI, filesUI, calendarUI, conversationToolsUI
   }));
-  install(filesUI, createFiles({env, runtime, layoutUI, membersUI}));
+  install(filesUI, createFiles({env, runtime, layoutUI, membersUI, conversationToolsUI}));
+  install(conversationToolsUI, createConversationTools({env,runtime,roomsUI,layoutUI,filesUI,calendarUI}));
   install(workspaceUI, createWorkspace({
     env, runtime, notificationsUI, membersUI, roomsUI, conversationUI, settingsUI, connectionsUI
   }));
@@ -595,8 +600,8 @@ export async function createApp(overrides = {}) {
   const roomScope = () => [...globalScope(), viewVersion, state.info];
   const memberScope = () => [...roomScope(), membersUI.selectedAgent()?.agent_id, membersUI.selectedAgent()?.membership_id, membersUI.agentTab];
   const active = () => !state.suspended && !document.hidden && window.navigator?.onLine !== false;
-  const detail = tab => !filesUI.isOpen && active() && $("activity-dialog").open && membersUI.agentTab === tab && !!membersUI.selectedAgent();
-  const notificationVisible = () => !filesUI.isOpen && active() && !!state.catalog && !!workspaceUI.workspaceView &&
+  const detail = tab => !layoutUI.auxiliaryOpen && active() && $("activity-dialog").open && membersUI.agentTab === tab && !!membersUI.selectedAgent();
+  const notificationVisible = () => !layoutUI.auxiliaryOpen && active() && !!state.catalog && !!workspaceUI.workspaceView &&
     (layoutUI.membersPanelOpen() || detail("platforms") || $("notification-detail").open);
   // Both categories share one reader and one throttle. A summary remains
   // pending until a read starts; diagnostics cannot make a hidden inspector
@@ -682,7 +687,7 @@ export async function createApp(overrides = {}) {
     onError: error => readError("notifications", error),
   });
   register("tools", options => membersUI.loadCLITools(membersUI.memberToolsView, { background: true, ...options }),
-    () => !filesUI.isOpen && active() && !!membersUI.memberToolsView && membersUI.toolsCurrent(membersUI.memberToolsView) &&
+    () => !layoutUI.auxiliaryOpen && active() && !!membersUI.memberToolsView && membersUI.toolsCurrent(membersUI.memberToolsView) &&
       ($("activity-dialog").open || $("notification-detail").open), memberScope);
   register("platforms", async options => {
     platformRead.invalidate();
@@ -743,6 +748,7 @@ export async function createApp(overrides = {}) {
   layoutUI.mount();
   workspaceUI.mount();
   filesUI.mount();
+  conversationToolsUI.mount();
   notificationsUI.mount();
   membersUI.mount();
   policyUI.mount();

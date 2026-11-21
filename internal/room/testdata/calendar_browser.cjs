@@ -1,3 +1,4 @@
+const {openCalendar,verifyConversationTools}=require('./conversation_tools.cjs');
 const {chromium}=require('playwright'),assert=require('node:assert/strict'),fs=require('node:fs');
 (async()=>{
  const browser=await chromium.launch({headless:true});const context=await browser.newContext({viewport:{width:1440,height:1000}}),page=await context.newPage();
@@ -41,12 +42,12 @@ const {chromium}=require('playwright'),assert=require('node:assert/strict'),fs=r
    await page.locator('#calendar-new').evaluate(el=>Promise.all(el.getAnimations().map(animation=>animation.finished.catch(()=>{}))));
    const geometry=await page.evaluate(()=>{
      const rect=selector=>{const r=document.querySelector(selector).getBoundingClientRect();return {left:r.left,right:r.right,top:r.top,bottom:r.bottom,height:r.height};};
-     return {header:rect('#room-header'),title:rect('#calendar-heading'),back:rect('#conversation-chat'),navigation:rect('.calendar-navigation'),mode:rect('#calendar-mode'),view:rect('#calendar-view'),create:rect('#calendar-new'),more:rect('#calendar-options-toggle'),menu:rect('#calendar-options-menu'),filter:rect('.calendar-skip-toggle'),refresh:rect('#calendar-refresh')};
+     return {header:rect('.calendar-header'),title:rect('#calendar-heading'),back:rect('#calendar-close'),navigation:rect('.calendar-navigation'),mode:rect('#calendar-mode'),view:rect('#calendar-view'),create:rect('#calendar-new'),more:rect('#calendar-options-toggle'),menu:rect('#calendar-options-menu'),filter:rect('.calendar-skip-toggle'),refresh:rect('#calendar-refresh')};
    });
    const center=r=>(r.top+r.bottom)/2;
    assert.ok(Math.abs(center(geometry.create)-center(geometry.more))<2,JSON.stringify(geometry));
    assert.ok(geometry.create.top>=geometry.header.top&&geometry.create.bottom<=geometry.header.bottom);
-   assert.ok(geometry.back.right<=geometry.title.left&&geometry.title.right<=geometry.create.left);
+   assert.ok(geometry.title.right<=geometry.create.left);
    if(await page.locator('#calendar-mode').isVisible()){
      assert.ok(geometry.navigation.top>=geometry.header.bottom);
      assert.ok(geometry.mode.top>=geometry.header.bottom);
@@ -55,15 +56,16 @@ const {chromium}=require('playwright'),assert=require('node:assert/strict'),fs=r
    }else if(page.viewportSize().width>640||await page.locator('#calendar-panel').getAttribute('data-view')==='list')assert.equal(await page.locator('#calendar-navigation').isVisible(),false);
    assert.ok(geometry.view.right<=page.viewportSize().width);
    assert.ok(geometry.create.right<=geometry.more.left);
-   assert.equal(await page.locator('#room-heading').isVisible(),false);
-   assert.equal(await page.locator('#conversation-actions').isVisible(),false);
+   const covered=await page.locator('#workspace').evaluate(el=>el.classList.contains('auxiliary-cover'));
+   assert.equal(await page.locator('#room-heading').isVisible(),!covered);
+   assert.equal(await page.locator('#conversation-actions').isVisible(),!covered);
    assert.equal(await page.locator('#calendar-heading').innerText(),'日历');
-   if(page.viewportSize().width<=640){
+   if((await page.locator('#calendar-page').boundingBox()).width<=640){
      assert.equal(await page.locator('#calendar-new-label').isVisible(),false);
      assert.equal(await page.locator('#calendar-new-icon').isVisible(),true);
      const create=await page.locator('#calendar-new').evaluate(el=>{const style=getComputedStyle(el),hit=getComputedStyle(el,'::after');return {background:style.backgroundColor,radius:style.borderRadius,hitWidth:parseFloat(hit.minWidth),hitHeight:parseFloat(hit.minHeight)};});
      assert.equal(create.background,'rgba(0, 0, 0, 0)');assert.equal(create.radius,'50%');assert.ok(create.hitWidth>=44&&create.hitHeight>=44);
-     const centered=await page.locator('#calendar-heading').evaluate(el=>{const range=document.createRange();range.selectNodeContents(el);const text=range.getBoundingClientRect(),header=document.querySelector('#room-header').getBoundingClientRect();return Math.abs((text.left+text.right-header.left-header.right)/2)<2;});
+     const centered=await page.locator('#calendar-heading').evaluate(el=>{const range=document.createRange();range.selectNodeContents(el);const text=range.getBoundingClientRect(),header=document.querySelector('.calendar-header').getBoundingClientRect();return Math.abs((text.left+text.right-header.left-header.right)/2)<2;});
      assert.equal(centered,true);
    }else{
      assert.equal(await page.locator('#calendar-new-label').isVisible(),true);
@@ -80,6 +82,7 @@ const {chromium}=require('playwright'),assert=require('node:assert/strict'),fs=r
  const waitState=label=>page.waitForFunction(label=>document.querySelector('#calendar-detail-content > .calendar-status')?.textContent===label,label);
  try {
   await page.goto(process.argv[2]);await page.locator('#conversation-calendar').waitFor({state:'visible'});
+  await verifyConversationTools(page,shot);
   const checkChatHeader=async()=>{
     assert.equal(await page.locator('#room-heading').isVisible(),true);
     assert.equal(await page.locator('#calendar-heading').isVisible(),false);
@@ -90,8 +93,10 @@ const {chromium}=require('playwright'),assert=require('node:assert/strict'),fs=r
       const rect=id=>{const r=document.getElementById(id).getBoundingClientRect();return {left:r.left,right:r.right,top:r.top,bottom:r.bottom};};
       return {header:rect('room-header'),title:document.querySelector('.room-title').getBoundingClientRect().toJSON(),calendar:rect('conversation-calendar'),details:rect('room-menu-label'),timeline:rect('timeline-wrap')};
     });
-    assert.ok(bounds.title.right<=bounds.calendar.left);
-    assert.ok(bounds.calendar.right<=bounds.details.left);
+    if(page.viewportSize().width>640){
+      assert.ok(bounds.title.right<=bounds.calendar.left);
+      assert.ok(bounds.calendar.right<=bounds.details.left);
+    }else assert.equal(await page.locator('#conversation-calendar').isVisible(),false);
     assert.ok(bounds.details.right<=bounds.header.right);
     assert.ok(Math.abs(bounds.timeline.top-bounds.header.bottom)<2);
     if(page.viewportSize().width<=640)assert.ok(Math.abs((bounds.title.left+bounds.title.right-bounds.header.left-bounds.header.right)/2)<2);
@@ -106,21 +111,36 @@ const {chromium}=require('playwright'),assert=require('node:assert/strict'),fs=r
     const top=el.getBoundingClientRect().top,message=[...el.querySelectorAll('#messages > [id]')].find(e=>e.getBoundingClientRect().bottom>top);
     return {scroll:el.scrollTop,id:message.id,offset:message.getBoundingClientRect().top-top};
   });
-  await page.locator('#conversation-calendar').click();
-  await page.getByRole('button',{name:'返回聊天',exact:true}).click();
+  await openCalendar(page);
+  await page.locator('#calendar-close').click();
   const returnedPosition=await page.locator('#timeline').evaluate((el,id)=>({scroll:el.scrollTop,offset:document.getElementById(id).getBoundingClientRect().top-el.getBoundingClientRect().top}),chatPosition.id);
   assert.ok(Math.abs(returnedPosition.offset-chatPosition.offset)<3,JSON.stringify({chatPosition,returnedPosition}));
   assert.equal(await page.locator('#message-input').inputValue(),'保留聊天草稿');
   assert.equal(await page.locator('#conversation-calendar').evaluate(el=>document.activeElement===el),true);
-  await page.locator('#conversation-calendar').click();await task('一次性检查').waitFor({state:'attached'});
+  await openCalendar(page);await task('一次性检查').waitFor({state:'attached'});
   assert.equal(await page.locator('#conversation-calendar').getAttribute('aria-expanded'),'true');
-  assert.equal(await page.locator('#conversation-calendar').evaluate(el=>getComputedStyle(el).backgroundColor),'rgba(0, 0, 0, 0)');
+  assert.notEqual(await page.locator('#conversation-calendar').evaluate(el=>getComputedStyle(el).backgroundColor),'rgba(0, 0, 0, 0)');
+  assert.equal(await page.locator('#timeline-wrap').isVisible(),true);
+  assert.equal(await page.locator('#compose').isVisible(),true);
+  assert.equal(await page.locator('#conversation').evaluate(el=>el.inert),false);
+  await shot('desktop-calendar-alongside-chat');
+  await openTask('实习生面试提醒');
+  assert.equal(await page.locator('dialog:modal').count(),0);
+  await page.locator('#message-input').fill('查看任务时继续编辑');
+  await page.locator('#timeline').evaluate(el=>{el.scrollTop+=50;});
+  const liveChatPosition=await page.locator('#timeline').evaluate(el=>el.scrollTop);
+  await shot('desktop-task-alongside-chat');await close();
+  assert.equal(await page.locator('#message-input').inputValue(),'查看任务时继续编辑');
+  assert.equal(await page.locator('#timeline').evaluate(el=>el.scrollTop),liveChatPosition);
+  await page.locator('#message-input').fill('保留聊天草稿');await showView('calendar');
+  await page.locator('#calendar-expand').click();
+  assert.equal(await page.locator('#conversation').evaluate(el=>el.inert),true);
   assert.equal(await page.locator('#calendar-mode').getAttribute('data-mode'),'week');
   assert.equal(await page.locator('.calendar-grid-corner').innerText(),'GMT+8');
   assert.equal(await page.locator('.calendar-grid-corner').getAttribute('title'),'Asia/Shanghai');
   const layout=await page.evaluate(()=>{
     const rect=el=>el.getBoundingClientRect();
-    const back=rect(document.querySelector('#conversation-chat')),header=rect(document.querySelector('#room-header')),body=rect(document.querySelector('.calendar-time-body'));
+    const back=rect(document.querySelector('#calendar-close')),header=rect(document.querySelector('.calendar-header')),body=rect(document.querySelector('.calendar-time-body'));
     const headings=[...document.querySelectorAll('.calendar-day-heading')].map(el=>({weekday:rect(el.querySelector('span')).toJSON(),date:rect(el.querySelector('strong')).toJSON()}));
     const ticks=[...document.querySelectorAll('.calendar-hour > span')];
     return {back:back.toJSON(),header:header.toJSON(),headings,ticks:[1,12,23].map(hour=>({hour,center:(rect(ticks[hour]).top+rect(ticks[hour]).bottom)/2-body.top}))};
@@ -192,7 +212,7 @@ const {chromium}=require('playwright'),assert=require('node:assert/strict'),fs=r
   assert.equal(nowColors.line,'rgb(214, 62, 69)');assert.equal(nowColors.dot,nowColors.line);assert.equal(nowColors.label,nowColors.line);assert.equal(nowColors.background,nowColors.line);
 
   // Calendar shows occurrences; the task list has one row per definition.
-  const range=mode=>({click:async()=>{if(page.viewportSize().width<=640)await chooseCalendarMode(page,mode==='week'?'multi':mode);else await page.locator(`#calendar-mode [data-mode="${mode}"]`).click();}});
+  const range=mode=>({click:async()=>{if(!await page.locator('#calendar-mode').isVisible())await chooseCalendarMode(page,page.viewportSize().width<=640&&mode==='week'?'multi':mode);else await page.locator(`#calendar-mode [data-mode="${mode}"]`).click();}});
   const presentation=view=>page.locator(`#calendar-view [data-view="${view}"]`);
   const occurrenceIDs=()=>page.locator('#calendar-items .calendar-occurrence').evaluateAll(items=>items.map(item=>item.dataset.occurrenceId).sort());
   const taskIDs=()=>page.locator('.calendar-task-row').evaluateAll(items=>items.map(item=>item.dataset.taskId).sort());
@@ -217,7 +237,7 @@ const {chromium}=require('playwright'),assert=require('node:assert/strict'),fs=r
   await task('实习生面试提醒').locator('small').click();
   await page.locator('#calendar-detail-content h2').getByText('实习生面试提醒',{exact:true}).waitFor();
   await page.locator('#calendar-detail').evaluate(el=>Promise.all(el.getAnimations().map(animation=>animation.finished.catch(()=>{}))));
-  const drawer=await page.locator('#calendar-detail').boundingBox();assert.ok(Math.abs(drawer.width-480)<1);assert.ok(Math.abs(drawer.x+drawer.width-1440)<1);
+  const drawer=await page.locator('#calendar-detail').boundingBox();assert.ok(Math.abs(drawer.width-(await page.locator('#calendar-panel').boundingBox()).width)<1);assert.ok(Math.abs(drawer.x+drawer.width-1440)<1);
   await close();await task('实习生面试提醒').locator('button').press('Enter');
   await page.locator('#calendar-detail-content h2').getByText('实习生面试提醒',{exact:true}).waitFor();await close();
   await task('实习生面试提醒').locator('.calendar-task-chevron').click();await page.locator('#calendar-detail-content h2').getByText('实习生面试提醒',{exact:true}).waitFor();await close();
@@ -300,15 +320,15 @@ const {chromium}=require('playwright'),assert=require('node:assert/strict'),fs=r
   await openTask('实习生面试提醒');
   assert.equal(await page.locator('.calendar-zone-difference').count(),0);
   assert.doesNotMatch(await page.locator('#calendar-detail-content').innerText(),/Asia\/Shanghai/);
-  assert.equal(await page.locator('#calendar-detail-close').getAttribute('aria-label'),'关闭任务详情');
-  assert.equal(await page.locator('.calendar-detail-close-icon').isVisible(),true);assert.equal(await page.locator('.calendar-detail-back-icon').isVisible(),false);
+  assert.equal(await page.locator('#calendar-detail-close').getAttribute('aria-label'),'返回日历');
+  assert.equal(await page.locator('#calendar-detail').evaluate(el=>el.tagName),'SECTION');
   assert.equal(await page.locator('.calendar-execution-settings').evaluate(e=>e.open),false);
   assert.equal(await page.locator('.calendar-history-section').evaluate(e=>e.open),false);
   assert.match(await page.locator('.calendar-detail-when').innerText(),/14:30/);
   assert.equal(await page.locator('.calendar-facts').isVisible(),false);
   await shot('desktop-reminder-detail');
   const reminderBounds=await page.locator('#calendar-detail').boundingBox();await page.mouse.click(reminderBounds.x+4,reminderBounds.y+150);assert.equal(await page.locator('#calendar-detail').isVisible(),true);
-  await page.mouse.click(reminderBounds.x-10,150);await page.locator('#calendar-detail').waitFor({state:'hidden'});
+  await page.mouse.click(reminderBounds.x+5,150);assert.equal(await page.locator('#calendar-detail').isVisible(),true);await close();
   assert.equal(await reminderButton.evaluate(el=>document.activeElement===el),true);
   const reminderReturn=await page.evaluate(()=>({panel:document.querySelector('#calendar-panel').scrollTop,grid:document.querySelector('#calendar-items').scrollTop,date:document.querySelector('#calendar-date').value}));assert.deepEqual(reminderReturn,reminderPosition);
   await openTask('实习生面试提醒');await page.keyboard.press('Escape');await page.locator('#calendar-detail').waitFor({state:'hidden'});
@@ -357,13 +377,13 @@ const {chromium}=require('playwright'),assert=require('node:assert/strict'),fs=r
   await page.locator('#calendar-detail').evaluate(el=>{el.scrollTop=el.scrollHeight;});const stickyClose=await page.locator('#calendar-detail-close').boundingBox();assert.ok(stickyClose.y>=0&&stickyClose.y+stickyClose.height<=page.viewportSize().height);
   await page.locator('.calendar-history-row').first().getByRole('button',{name:'查看本次详情'}).click();
   await page.locator('.calendar-run-detail').getByText('C3_HISTORY_REPORT：本地受控执行结果',{exact:true}).waitFor();
-  const resultHeading=await page.locator('.calendar-run-detail > h3').boundingBox(),detailHeader=await page.locator('.calendar-detail-top').boundingBox();assert.ok(resultHeading.y>=detailHeader.y+detailHeader.height);
+  const resultHeading=await page.locator('.calendar-run-detail > h3').boundingBox(),detailHeader=await page.locator('.calendar-header').boundingBox();assert.ok(resultHeading.y>=detailHeader.y+detailHeader.height);
   await shot('desktop-detail');
   await page.locator('.calendar-run-detail').getByRole('button',{name:'查看私信报告'}).click();
   await page.locator('#timeline-wrap').waitFor({state:'visible'});
   assert.equal(await page.locator('#message-input').inputValue(),'保留聊天草稿');
   await page.locator('.calendar-receipt-link').click();
-  await page.locator('#calendar-detail-content h2').waitFor();await close();await page.locator('#conversation-chat').click();
+  await page.locator('#calendar-detail-content h2').waitFor();await close();await page.locator('#calendar-close').click();
   await page.locator('.calendar-message-links button',{hasText:'查看执行安排'}).click();
   await page.locator('#calendar-detail-content h2').waitFor();
   await action('暂停').click();await waitState('已暂停');
@@ -395,7 +415,7 @@ const {chromium}=require('playwright'),assert=require('node:assert/strict'),fs=r
   await showView('calendar');await changeZone('Asia/Shanghai');await refreshCalendar();
   await page.waitForFunction(()=>document.querySelector('.calendar-grid-corner')?.title==='Asia/Shanghai');
   // Another real tab observes committed changes through the existing SSE path.
-  const other=await context.newPage();await other.goto(process.argv[2]);await other.locator('#conversation-calendar').click();await other.locator('#calendar-view [data-view="list"]').click();
+  const other=await context.newPage();await other.goto(process.argv[2]);await openCalendar(other);await other.locator('#calendar-view [data-view="list"]').click();
   await other.getByRole('button',{name:'编辑后的检查',exact:true}).waitFor();
   await page.bringToFront();await openTask('编辑后的检查');
   await page.route('**/v1/calendar/update',async route=>{await other.bringToFront();await route.continue();});
@@ -436,9 +456,9 @@ const {chromium}=require('playwright'),assert=require('node:assert/strict'),fs=r
   const scroll=await page.locator('#calendar-panel').evaluate(el=>el.scrollTop);
   await openTask('编辑后的检查');
   assert.equal(await page.locator('#calendar-detail-close').getAttribute('aria-label'),'返回日历');
-  assert.equal(await page.locator('.calendar-detail-back-icon').isVisible(),true);assert.equal(await page.locator('.calendar-detail-close-icon').isVisible(),false);
+  assert.equal(await page.locator('#calendar-detail').evaluate(el=>el.tagName),'SECTION');
   await page.locator('#calendar-detail').evaluate(el=>Promise.all(el.getAnimations().map(animation=>animation.finished.catch(()=>{}))));
-  const mobileDetailHeader=await page.evaluate(()=>{const title=document.querySelector('#calendar-detail-title').getBoundingClientRect(),back=document.querySelector('#calendar-detail-close').getBoundingClientRect();return {titleCenter:(title.left+title.right)/2,backRight:back.right,titleLeft:title.left};});
+  const mobileDetailHeader=await page.evaluate(()=>{const title=document.querySelector('#calendar-heading').getBoundingClientRect(),back=document.querySelector('#calendar-detail-close').getBoundingClientRect();return {titleCenter:(title.left+title.right)/2,backRight:back.right,titleLeft:title.left};});
   assert.ok(Math.abs(mobileDetailHeader.titleCenter-195)<2&&mobileDetailHeader.backRight<=mobileDetailHeader.titleLeft);
   await shot('mobile-detail');
   await page.waitForFunction(()=>history.state?.teamxOverlay==='calendar-detail');await page.goBack();await page.locator('#calendar-detail').waitFor({state:'hidden'});
@@ -447,9 +467,9 @@ const {chromium}=require('playwright'),assert=require('node:assert/strict'),fs=r
   assert.equal(await task('编辑后的检查').locator('button').evaluate(el=>document.activeElement===el),true);
   assert.equal(await page.locator('#calendar-date').inputValue(),selectedDate);
   assert.ok(Math.abs(await page.locator('#calendar-panel').evaluate(el=>el.scrollTop)-scroll)<3);
-  await page.locator('#conversation-chat').click();assert.equal(await page.locator('#message-input').inputValue(),'保留聊天草稿');
+  await page.locator('#calendar-close').click();assert.equal(await page.locator('#message-input').inputValue(),'保留聊天草稿');
   await checkChatHeader();
-  await page.locator('#conversation-calendar').click();assert.equal(await page.locator('#calendar-date').inputValue(),selectedDate);
+  await openCalendar(page);assert.equal(await page.locator('#calendar-date').inputValue(),selectedDate);
   await showView('calendar');await page.locator('#calendar-today').click();await page.locator('.calendar-day-heading[data-today="true"]').waitFor();await shot('mobile-day');await showView('list');await shot('mobile-task-list');
   await page.locator('#calendar-new').click();
   await page.locator('#calendar-title').fill('每周工作日提醒');await page.locator('#calendar-instruction').fill('核对本地已确认范围并报告');
@@ -482,14 +502,14 @@ const {chromium}=require('playwright'),assert=require('node:assert/strict'),fs=r
   // Coverage unknown and cancelled tasks remain discoverable in management.
   await page.locator('#calendar-new').click();await page.locator('#calendar-title').fill('工作日历覆盖外');await page.locator('#calendar-instruction').fill('覆盖外不执行');await page.locator('#calendar-frequency').selectOption('daily');await page.locator('#calendar-day-filter').selectOption('business_days');await page.locator('#calendar-start-date').fill('2028-01-01');await page.locator('#calendar-local-time').fill('09:00');await page.locator('#calendar-submit').click();await task('工作日历覆盖外').waitFor();assert.match(await page.locator('#calendar-coverage').innerText(),/工作日历覆盖外/);await openTask('工作日历覆盖外');assert.match(await page.locator('#calendar-detail-content').innerText(),/工作日历尚未覆盖/);await action('取消任务').click();await waitState('已取消');await close();await page.locator('#calendar-task-filter').selectOption('cancelled');await task('工作日历覆盖外').waitFor();
   assert.equal(await page.locator('#calendar-panel').evaluate(el=>el.scrollWidth<=el.clientWidth),true);
-  const empty=await context.newPage();await empty.clock.install({time:new Date('2026-11-19T15:59:00Z')});await empty.goto(process.argv[3]);await empty.locator('#conversation-calendar').click();await empty.locator('#calendar-view [data-view="list"]').click();await empty.getByText('暂无此类任务。',{exact:true}).waitFor();
+  const empty=await context.newPage();await empty.clock.install({time:new Date('2026-11-19T15:59:00Z')});await empty.goto(process.argv[3]);await openCalendar(empty);await empty.locator('#calendar-view [data-view="list"]').click();await empty.getByText('暂无此类任务。',{exact:true}).waitFor();
   await empty.setViewportSize({width:390,height:844});await empty.evaluate(()=>new Promise(requestAnimationFrame));await empty.locator('#calendar-view [data-view="list"]').click();await empty.getByText('暂无此类任务。',{exact:true}).waitFor();
   if(artifacts)await empty.screenshot({path:`${artifacts}/mobile-empty.png`,fullPage:true,animations:"disabled"});
-  await empty.locator('#conversation-chat').click();await empty.clock.pauseAt(new Date('2026-11-19T15:59:59Z'));
+  await empty.locator('#calendar-close').click();await empty.clock.pauseAt(new Date('2026-11-19T15:59:59Z'));
   assert.equal(await empty.locator('#calendar-icon-day').textContent(),'19');
   await empty.clock.runFor(1000);assert.equal(await empty.locator('#calendar-icon-day').textContent(),'20');
   assert.match(await empty.locator('#conversation-calendar').getAttribute('aria-label'),/11月20日/);
-  await empty.locator('#conversation-calendar').click();assert.equal(await empty.locator('#calendar-date').inputValue(),'2026-11-19');
+  await openCalendar(empty);assert.equal(await empty.locator('#calendar-date').inputValue(),'2026-11-19');
   await empty.clock.resume();await empty.close();await page.bringToFront();
   // Controlled read responses exercise every execution state without starting
   // Agents. Past queued/running entries must remain as clear as planned ones.
@@ -502,7 +522,7 @@ const {chromium}=require('playwright'),assert=require('node:assert/strict'),fs=r
     data.occurrences=appearanceStatuses.map((status,index)=>({occurrence_id:`appearance-${status}`,task_id:data.tasks[0].task_id,status,due_at:new Date(Date.parse(query.from)+(day?index*2+1:Math.floor(index/2)*24+(index%2)*2+1)*3600000).toISOString()}));
     data.next_cursor='';data.complete=true;await route.fulfill({status:response.status(),json:data});
   });
-  await appearance.goto(process.argv[2]);await appearance.locator('#conversation-calendar').click();
+  await appearance.goto(process.argv[2]);await openCalendar(appearance);
   await appearance.locator('#calendar-view [data-view="calendar"]').click();
   for(const mode of ['week','day','month']){
     await appearance.locator(`#calendar-mode [data-mode="${mode}"]`).click();await appearance.waitForFunction(mode=>document.querySelector('#calendar-mode').dataset.mode===mode,mode,{timeout:5000});
@@ -519,7 +539,7 @@ const {chromium}=require('playwright'),assert=require('node:assert/strict'),fs=r
   // move away to verify labels recover without reopening the calendar.
   const timeContext=await browser.newContext({viewport:{width:1440,height:1000}}),timePage=await timeContext.newPage();
   timePage.on('pageerror',error=>errors.push(error.message));
-  await timePage.clock.install({time:new Date('2026-11-19T09:11:00Z')});await timePage.goto(process.argv[3]);await timePage.locator('#conversation-calendar').click();
+  await timePage.clock.install({time:new Date('2026-11-19T09:11:00Z')});await timePage.goto(process.argv[3]);await openCalendar(timePage);
   await timePage.locator('.calendar-now-line').waitFor();await timePage.clock.pauseAt(new Date('2026-11-19T09:11:30Z'));
   const hourVisibility=hour=>timePage.locator('.calendar-hour > span').nth(hour).evaluate(el=>getComputedStyle(el).visibility);
   assert.equal(await timePage.locator('.calendar-now-label').innerText(),'17:11');

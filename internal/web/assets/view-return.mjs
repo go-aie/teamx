@@ -1,5 +1,5 @@
 // Return state stays in memory: no form values or operations enter history.
-export function captureReturnView({ document, window }, runtime, { opener = document.activeElement, valid = () => true, scroll = [] } = {}) {
+export function captureReturnView({ document, window }, runtime, { opener = document.activeElement, valid = () => true, scroll = [], restoreScroll = true } = {}) {
   const context = () => JSON.stringify([runtime.state.installationID, runtime.state.operator,
     runtime.state.catalog?.service_epoch, runtime.state.info?.service_epoch,
     runtime.state.info?.room_id, runtime.state.info?.room_instance]);
@@ -20,11 +20,11 @@ export function captureReturnView({ document, window }, runtime, { opener = docu
       const available = element => element && element.isConnected !== false && !element.disabled &&
         !element.hidden && !element.closest?.('[hidden], [inert], [aria-hidden="true"], dialog:not([open])');
       (available(opener) ? opener : available(fallback) ? fallback : null)?.focus({ preventScroll: true });
-      for (const { element, top, left } of positions) {
+      for (const { element, top, left } of restoreScroll ? positions : []) {
         if (element.isConnected === false) continue;
         element.scrollTop = top; element.scrollLeft = left;
       }
-      window.scrollTo?.(page);
+      if (restoreScroll) window.scrollTo?.(page);
       return true;
     },
   };

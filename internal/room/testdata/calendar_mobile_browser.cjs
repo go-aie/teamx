@@ -1,3 +1,4 @@
+const {openCalendar}=require('./conversation_tools.cjs');
 const assert=require('node:assert/strict');
 
 // Uses Chromium touch input and native scrolling against the persisted Calendar
@@ -201,7 +202,7 @@ module.exports=async({browser,endpoint,artifacts,swipeCalendar,chooseDate,choose
     return destination;
   };
   try{
-    await page.goto(endpoint);await page.locator('#conversation-calendar').click();
+    await page.goto(endpoint);await openCalendar(page);
     await page.locator('.calendar-time-grid[data-mode="day"]').waitFor();
     assert.equal(await modeButton.getAttribute('data-mode'),'day');
     for(const id of ['calendar-mode','calendar-prev','calendar-next'])assert.equal(await page.locator('#'+id).isVisible(),false);
@@ -209,7 +210,7 @@ module.exports=async({browser,endpoint,artifacts,swipeCalendar,chooseDate,choose
     assert.equal(await gridButton.isVisible(),true);assert.equal(await listButton.isVisible(),true);
     await modeButton.click();await sheet.waitFor();
     await sheet.evaluate(el=>Promise.all(el.getAnimations().map(animation=>animation.finished.catch(()=>{}))));
-    assert.equal(await sheet.locator('[data-calendar-mode]').count(),3);
+    assert.equal(await sheet.locator('[data-calendar-mode]:not([hidden])').count(),3);
     assert.equal(await sheet.locator('[data-calendar-mode="day"]').getAttribute('aria-pressed'),'true');
     const sheetBounds=await sheet.boundingBox();assert.ok(Math.abs(sheetBounds.y+sheetBounds.height-844)<2&&sheetBounds.width>=380,JSON.stringify(sheetBounds));
     await shot('mobile-range-sheet');
@@ -373,7 +374,7 @@ module.exports=async({browser,endpoint,artifacts,swipeCalendar,chooseDate,choose
       }
     }
     await page.setViewportSize({width:390,height:844});
-    await page.reload();await page.locator('#conversation-calendar').click();
+    await page.reload();await openCalendar(page);
     await page.locator('.calendar-time-grid[data-mode="multi"]').waitFor();
     assert.equal(await modeButton.getAttribute('data-mode'),'multi');
     await page.locator('#calendar-view [data-view="list"]').click();await page.locator('#calendar-tasks').waitFor();
@@ -386,11 +387,12 @@ module.exports=async({browser,endpoint,artifacts,swipeCalendar,chooseDate,choose
     await listButton.click();await chooseMode('day');await page.locator('.calendar-time-grid[data-mode="day"]').waitFor();
     assert.equal(await gridButton.getAttribute('aria-pressed'),'true');
     await chooseMode('multi');await listButton.click();
-    await page.reload();await page.locator('#conversation-calendar').click();await page.locator('#calendar-tasks').waitFor();
+    await page.reload();await openCalendar(page);await page.locator('#calendar-tasks').waitFor();
     assert.equal(await page.locator('#calendar-view [data-view="list"]').getAttribute('aria-pressed'),'true');
     const desktop=await context.newPage();await desktop.setViewportSize({width:1440,height:1000});
-    await desktop.goto(endpoint);await desktop.locator('#conversation-calendar').click();
+    await desktop.goto(endpoint);await openCalendar(desktop);
     await desktop.locator('.calendar-time-grid[data-mode="week"]').waitFor();
+    await desktop.locator('#calendar-expand').click();
     assert.equal(await desktop.locator('#calendar-mode-open').isVisible(),false);
     const desktopRoot=desktop.locator('#calendar-items');
     const desktopMode=async mode=>{
@@ -429,11 +431,11 @@ module.exports=async({browser,endpoint,artifacts,swipeCalendar,chooseDate,choose
     await desktopMode('week');assert.ok(Math.abs(await desktopRoot.evaluate(el=>el.scrollTop)-420)<2);
     await desktopMode('day');assert.ok(Math.abs(await desktopRoot.evaluate(el=>el.scrollTop)-210)<2);
     await desktopMode('month');await monthFits(desktop,'desktop month after time scroll');
-    await desktop.reload();await desktop.locator('#conversation-calendar').click();await desktop.locator('.calendar-month-grid').waitFor();
+    await desktop.reload();await openCalendar(desktop);await desktop.locator('.calendar-month-grid').waitFor();
     await desktop.close();
     // Unavailable storage must still allow a fresh mobile calendar to open.
     await page.addInitScript(()=>Object.defineProperty(window,'localStorage',{get(){throw new Error('storage disabled');}}));
-    await page.reload();await page.locator('#conversation-calendar').click();await page.locator('.calendar-time-grid[data-mode="day"]').waitFor();
+    await page.reload();await openCalendar(page);await page.locator('.calendar-time-grid[data-mode="day"]').waitFor();
     assert.deepEqual(errors,[]);assert.deepEqual(writes,[]);
     return {mobile_default_day:true,separate_calendar_and_list_icons:true,calendar_range_sheet:true,range_sheet_backdrop_escape_swipe_and_browser_back:true,list_to_calendar_range_selection:true,day_month_touch_navigation:true,continuous_drag_and_release:true,day_native_scroll_shared_with_multi:true,day_fixed_time_axis_during_drag_and_settlement:true,day_fixed_zone_and_clock_labels:true,day_content_width_stable:true,today_repeated_without_data_change:true,today_from_buffered_dates:true,today_interrupts_native_scroll:true,today_without_waiting_for_read:true,short_drag_native_snap:true,cancelled_drag_native_snap:true,reduced_motion_navigation:true,slow_read_without_snap_back:true,neighbor_snapshot_restart:true,refill_retains_visible_columns:true,vertical_touch_without_date_change:true,cancelled_touch_without_date_change:true,multi_native_touch_snap:true,multi_fixed_time_axis:true,multi_buffer_refill:true,multi_cross_year:true,multi_responsive_columns:true,independent_view_preferences:true,independent_time_scroll_positions:true,desktop_arrows_preserve_time_scroll:true,month_fits_available_height:true,compact_month_counts_remain_accessible:true,optional_storage:true};
   }catch(error){await shot('mobile-gesture-failure');console.log('MOBILE_TRACE',JSON.stringify(trace));console.log('MOBILE_STATE',await root.evaluate(el=>({mode:el.dataset.mode,date:document.getElementById('calendar-date').value,left:el.scrollLeft,top:el.scrollTop,first:el.querySelector('.calendar-day-column')?.dataset.day,error:document.getElementById('calendar-error').textContent})));throw error;}

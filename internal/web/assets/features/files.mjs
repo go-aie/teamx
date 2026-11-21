@@ -12,8 +12,8 @@ const errors = {
   file_too_large: "文件超过预览上限，可在下载限制内下载查看。",
   image_limit_exceeded: "图片超过大小或像素上限，无法预览。",
   preview_type_unavailable: "此类型不支持预览，可下载后查看。",
-  reference_unavailable: "原消息已清空或未记录文件来源，请在工作区文件面板查找。",
-  identity: "会话或服务身份已变化，请重新打开工作区文件。",
+  reference_unavailable: "原消息已清空或未记录文件来源，请在文件面板查找。",
+  identity: "会话或服务身份已变化，请重新打开文件面板。",
 };
 
 const fileNames = new Intl.Collator(undefined, {numeric:true, sensitivity:"base"});
@@ -29,12 +29,12 @@ function modifiedDate(value) {
 }
 
 // One owner for directory/preview state, navigation and cancellable reads.
-export function createFiles({ env, runtime, layoutUI, membersUI }) {
+export function createFiles({ env, runtime, layoutUI, membersUI, conversationToolsUI }) {
   const { document, window, request, fetch: fetchFile, setTimeout: delay, clearTimeout: clearDelay } = env, { $, state } = runtime;
-  let opened = false, expanded = false, source = null, sources = [], limits = null;
+  let opened = false, source = null, sources = [], limits = null;
   let directory = "", listing = null, preview = null, filter = "", sourceMode = false;
   let listScroll = 0, generation = 0, controller = null, identity = null;
-  let restorePanel = null, returnView = null, hiddenViews = [], workspaceSignature = null;
+  let returnView = null, workspaceSignature = null, hiddenScroll = null;
   let loading = false, error = "", selectionRequired = false;
   let messageSeq = null, legacyMessage = false;
   let messageMembership = null;
@@ -130,7 +130,7 @@ export function createFiles({ env, runtime, layoutUI, membersUI }) {
     $("files-path-edit").hidden = !!preview;
     $("files-path-edit").disabled = !source;
     const directoryButton = $("files-directory"); directoryButton.hidden = !preview; directoryButton.disabled = loading;
-    directoryButton.textContent = source ? fullPath.split("/").at(-1) || source.label : "工作区文件";
+    directoryButton.textContent = source ? fullPath.split("/").at(-1) || source.label : "文件";
     directoryButton.title = source ? `打开所在目录：${fullPath || "根目录"}` : "选择当前工作目录来源";
     directoryButton.setAttribute("aria-label",directoryButton.title);
     const root = document.createElement("button"); root.type = "button"; root.className = "files-crumb files-crumb-root";
@@ -187,8 +187,8 @@ export function createFiles({ env, runtime, layoutUI, membersUI }) {
     if (!opened) return;
     $("files-page").classList.toggle("files-preview",!!preview);
     renderSources();
-    $("files-title").textContent = preview ? preview.name : "工作区文件";
-    $("files-title").title = preview?.path || "工作区文件";
+    $("files-title").textContent = preview ? preview.name : "文件";
+    $("files-title").title = preview?.path || "文件";
     $("files-back").hidden = !preview;
     const backLabel = history.length ? "返回上个文档" : messageSeq !== null ? "返回会话" : "返回列表";
     $("files-back").setAttribute("aria-label",backLabel); $("files-back").title = backLabel;
@@ -208,11 +208,6 @@ export function createFiles({ env, runtime, layoutUI, membersUI }) {
     if (!download.hidden) { const q = query(preview.path); q.set("download","true"); download.href = "/v1/workspace/files/content?"+q; download.download = preview.name; }
     else download.removeAttribute("href");
     $("files-source-toggle").setAttribute("aria-pressed", String(sourceMode));
-    const expandLabel = expanded ? "收起" : "展开";
-    $("files-expand-label").textContent = expandLabel;
-    $("files-expand").title = expandLabel; $("files-expand").setAttribute("aria-label",expandLabel);
-    $("files-expand-icon").setAttribute("d",expanded ? "M20 10h-6V4m0 6 6-6M4 14h6v6m0-6-6 6" : "M14 4h6v6M20 4l-6 6M10 20H4v-6M4 20l6-6");
-    $("files-expand").setAttribute("aria-expanded",String(expanded));
     $("files-refresh").disabled = !state.managed || !state.info;
     $("files-error").textContent = error; $("files-error").hidden = !error;
     const hasMetadata = preview && !["pending","failed"].includes(preview.preview_kind);
@@ -423,39 +418,50 @@ export function createFiles({ env, runtime, layoutUI, membersUI }) {
     if (!$("files-options").hidden) { closeOptions(); $("files-options-toggle").focus(); return; }
     const overflow = $("files-path").querySelectorAll("details[open]")[0];
     if (overflow) { overflow.open = false; overflow.firstChild.focus(); return; }
-    if (expanded) { expanded = false; layoutUI.renderPanels(); render(); return; }
+    if (layoutUI.auxiliaryExpanded) { layoutUI.toggleAuxiliaryExpanded(); return; }
     if (preview) return returnFromPreview();
     if (directory) void up();
     else close();
   }
-  function close({focus = true} = {}) {
+  function hide() {
     if (!opened) return;
-    cancel(); closeOptions(); directoryViews.clear(); history = []; pathEditing = false; opened = expanded = false; source = null; sources = []; limits = null; listing = preview = null;
+    hiddenScroll = {top:$("files-body").scrollTop,left:$("files-body").scrollLeft};
+    suspend(); closeOptions(); opened = false; $("files-page").hidden = true;
+  }
+  function close({focus = true} = {}) {
+    if (!opened && !identity) return;
+    cancel(); closeOptions(); directoryViews.clear(); history = []; pathEditing = false; opened = false; identity = null; hiddenScroll = null; source = null; sources = []; limits = null; listing = preview = null;
     messageSeq = null; legacyMessage = false;
     messageMembership = null;
     $("files-body").replaceChildren(); $("files-page").hidden = true;
-    for (const [element,hidden] of hiddenViews) element.hidden = hidden;
-    hiddenViews = []; restorePanel?.(); restorePanel = null;
-    layoutUI.renderPanels();
+    layoutUI.closeAuxiliary("files");
     if (focus) returnView?.restore($("room-menu-label")); returnView = null;
     if (focus) membersUI.syncDirectDetail(); runtime.navigationChanged();
   }
   function enter(opener) {
-    closeMenu(); cancel(); closeOptions(); history = []; directoryViews.clear(); pathEditing = false; focusedPath = ""; sortOrder = "name";
-    if (!opened) {
-      returnView = captureReturnView(env,runtime,{opener}); restorePanel = layoutUI.captureMemberPanel();
-      hiddenViews = ["activity-dialog","notification-detail"].map(id => [$(id),$(id).hidden]);
-      for (const [element] of hiddenViews) element.hidden = true;
-    }
-    opened = true; expanded = false; source = null; listing = preview = null; directory = filter = error = ""; selectionRequired = false;
+    conversationToolsUI.close(); cancel(); closeOptions(); history = []; directoryViews.clear(); pathEditing = false; focusedPath = ""; sortOrder = "name";
+    if (!opened) returnView = captureReturnView(env,runtime,{opener,restoreScroll:false});
+    opened = true; hiddenScroll = null; source = null; listing = preview = null; directory = filter = error = ""; selectionRequired = false;
     messageSeq = null; legacyMessage = false; sources = []; limits = null;
     messageMembership = null;
     $("files-filter").value = ""; $("files-locate-path").value = ""; identity = context(); workspaceSignature = null;
-    layoutUI.renderPanels(); render(); $("files-close").focus({preventScroll:true});
+    layoutUI.openAuxiliary("files"); render(); $("files-close").focus({preventScroll:true});
   }
-  async function open() {
+  async function open(opener = $("room-menu-label")) {
     if (opened) return;
-    enter($("room-menu-label"));
+    if (identity === context()) {
+      conversationToolsUI.close(); returnView = captureReturnView(env,runtime,{opener,restoreScroll:false}); opened = true; layoutUI.openAuxiliary("files"); render();
+      if (hiddenScroll) { $("files-body").scrollTop = hiddenScroll.top; $("files-body").scrollLeft = hiddenScroll.left; }
+      $("files-close").focus({preventScroll:true});
+      if (messageSeq === null && state.managed && state.info) await readSources({choose:!source && !selectionRequired});
+      if (!opened) return;
+      if (messageSeq !== null && preview && source && !legacyMessage) await readPreview(preview.path,{refresh:true,restore:{sourceMode,scroll:hiddenScroll?.top || 0}});
+      else if (preview?.preview_kind === "pending") await readPreview(preview.path);
+      else if (!listing && !preview && source) await readDirectory(directory);
+      else if (!sources.length && !messageSeq) await readSources();
+      return;
+    }
+    enter(opener);
     if (!state.managed || !state.info) { error = "此会话缺少可信工作目录配置，暂不支持文件浏览。"; render(); return; }
     await readSources();
   }
@@ -480,20 +486,23 @@ export function createFiles({ env, runtime, layoutUI, membersUI }) {
     if (previous && opened && read === generation && source) await readDirectory(directory,{focus:true});
   }
   function observeMessages() {
-    if (!opened || messageSeq === null || messageSeq > state.clearedThrough) return;
+    if (!identity || messageSeq === null || messageSeq > state.clearedThrough) return;
     cancel(); history = []; source = null;
     if (preview) preview = {path:preview.path,name:preview.name,preview_kind:"failed"};
     error = errors.reference_unavailable; render();
   }
-  function closeMenu() { $("conversation-menu").hidden = true; $("room-menu-label").setAttribute("aria-expanded","false"); runtime.navigationChanged(); }
-  function syncIdentity() { if (opened && identity !== context()) close({focus:false}); }
+
+  function syncIdentity() { if (identity && identity !== context()) close({focus:false}); }
   function observeWorkspace(data) {
-    syncIdentity(); if (!opened) return;
+    syncIdentity(); if (!identity) return;
     const members = messageSeq !== null ? data.members?.filter(item=>item.membership_id === messageMembership) : data.members;
     const signature = JSON.stringify([members?.map(item => [item.membership_id,item.effective_directory]),messageSeq === null ? data.operation?.status : null]);
     if (signature === workspaceSignature) return;
     const changed = workspaceSignature !== null; workspaceSignature = signature;
-    if (changed && !state.suspended) {
+    if (changed && !opened) {
+      cancel(); history = []; directoryViews.clear(); source = null; listing = preview = null; selectionRequired = true;
+      sources = []; error = errors.workspace_source_changed;
+    } else if (changed && !state.suspended) {
       if (messageSeq !== null) {
         cancel(); history = []; source = null;
         if (preview) preview = {path:preview.path,name:preview.name,preview_kind:"failed"};
@@ -502,28 +511,14 @@ export function createFiles({ env, runtime, layoutUI, membersUI }) {
     }
   }
   function mount() {
-    $("room-menu-label").addEventListener("click", () => {
-      const menu = $("conversation-menu"); menu.hidden = !menu.hidden;
-      $("room-menu-label").setAttribute("aria-expanded",String(!menu.hidden));
-      if (!menu.hidden) $("conversation-open-files").focus(); runtime.navigationChanged();
-    });
-    $("conversation-menu").addEventListener("keydown", event => {
-      const items = [$("conversation-open-files"),$("conversation-open-details")];
-      const index = items.indexOf(document.activeElement);
-      const next = {ArrowDown:(index+1)%items.length, ArrowUp:(index+items.length-1)%items.length, Home:0, End:items.length-1}[event.key];
-      if (next !== undefined) { event.preventDefault(); items[next].focus(); }
-    });
-    $("conversation-open-files").addEventListener("click",open);
-    $("conversation-open-details").addEventListener("click",closeMenu);
     document.addEventListener("pointerdown", event => {
-      if (!$("conversation-menu").hidden && !$("conversation-menu").contains(event.target) && !$("room-menu-label").contains(event.target)) closeMenu();
       if (!$("files-options").contains(event.target) && !$("files-options-toggle").contains(event.target)) closeOptions();
       for (const details of $("files-path").querySelectorAll("details[open]")) if (!details.contains(event.target)) details.open = false;
     });
     document.addEventListener("keydown", event => {
       if (event.key !== "Escape" || event.defaultPrevented || document.querySelector("dialog:modal")) return;
-      if (!$("conversation-menu").hidden) { event.preventDefault(); closeMenu(); $("room-menu-label").focus(); }
-      else if (opened) { event.preventDefault(); back(); }
+      if (!$("conversation-menu").hidden) return;
+      if (opened) { event.preventDefault(); back(); }
     });
     $("files-close").addEventListener("click",() => close()); $("files-back").addEventListener("click",returnFromPreview);
     $("files-directory").addEventListener("click",()=>navigateDirectory(preview?.path.split("/").slice(0,-1).join("/") || ""));
@@ -548,7 +543,7 @@ export function createFiles({ env, runtime, layoutUI, membersUI }) {
       if (next !== undefined && entries[next]) { event.preventDefault(); focusedPath = entries[next].dataset.path; entries[next].focus(); entries[next].scrollIntoView({block:"nearest"}); }
       else if (event.key === "ArrowRight" && entries[index]?.dataset.kind === "directory") { event.preventDefault(); focusedPath = entries[index].dataset.path; void navigateDirectory(focusedPath); }
     });
-    $("files-expand").addEventListener("click",() => { expanded = !expanded; layoutUI.renderPanels(); render(); });
+    $("files-expand").addEventListener("click",layoutUI.toggleAuxiliaryExpanded);
     $("files-refresh").addEventListener("click",() => messageSeq !== null && preview ? readPreview(preview.path,{refresh:true}) : source ? preview ? readPreview(preview.path,{refresh:true}) : readDirectory(directory) : readSources({choose:false}));
     const showSource = value => { if (preview?.preview_kind === "markdown" && sourceMode !== value) { begin(); sourceMode = value; render(); } };
     $("files-source-toggle").addEventListener("click",() => showSource(true));
@@ -579,7 +574,7 @@ export function createFiles({ env, runtime, layoutUI, membersUI }) {
       }
     });
   }
-  return {mount,open,openMessage,close,back,closeMenu,suspend,syncIdentity,observeWorkspace,observeMessages,
-    get isOpen(){return opened;},get expanded(){return expanded;},
-    get navigationID(){return `files-${history.length}-${expanded ? "expanded" : preview ? "preview" : directory ? "directory" : "root"}`;}};
+  return {mount,open,openMessage,close,hide,back,suspend,syncIdentity,observeWorkspace,observeMessages,
+    get isOpen(){return opened;},
+    get navigationID(){return `files-${history.length}-${layoutUI.auxiliaryExpanded ? "expanded" : preview ? "preview" : directory ? "directory" : "root"}`;}};
 }

@@ -1,3 +1,4 @@
+const {openCalendar}=require('./conversation_tools.cjs');
 const {chromium} = require('playwright');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
@@ -16,7 +17,7 @@ const fs = require('node:fs');
   const row = i => page.locator('.calendar-task-row').filter({has:page.getByRole('button',{name:titles[i],exact:true})});
   const selector = i => `#room-list > [data-room-key=${JSON.stringify(JSON.stringify([rooms[i].room_id,rooms[i].room_instance]))}] > button:first-child`;
   const showCalendar = async i => {
-    await page.locator('#conversation-calendar').click();
+    await openCalendar(page);
     if(await page.locator('#calendar-view [data-view="list"]').getAttribute('aria-pressed')!=='true')await page.locator('#calendar-view [data-view="list"]').click();
     await row(i).waitFor();
     assert.equal(await row(1-i).count(),0);
@@ -118,7 +119,7 @@ const fs = require('node:fs');
     assert.equal(mutations.length,writesBeforeSecondRestart);
     await shot('mobile-recovered-history'); await close();
     assert.equal(await page.locator('#calendar-panel').evaluate(el=>el.scrollWidth<=el.clientWidth),true);
-    await page.locator('#conversation-chat').click();
+    await page.locator('#calendar-close').click();
     assert.equal(await page.locator('#message-input').inputValue(),'乙私信独立草稿');
     assert.equal(await page.locator('#messages').getByText(report.report,{exact:true}).count(),1);
     assert.equal(mutations.length,4);

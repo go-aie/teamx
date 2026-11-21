@@ -1,12 +1,7 @@
-/* File content owns the right rail. The settings rail keeps its own width. */
+/* Directory and preview content inside the shared auxiliary rail. */
 .workspace-file-link { display:inline; padding:0; border:0; border-radius:0; background:transparent; color:var(--accent); font:inherit; text-align:inherit; text-decoration:underline; text-underline-offset:3px; cursor:pointer; }
-.conversation-menu { position:absolute; right:12px; top:56px; z-index:30; min-width:180px; padding:6px; border:1px solid var(--line); border-radius:var(--radius-control); background:var(--surface); box-shadow:0 8px 28px #0002; }
-.conversation-menu button { display:block; width:100%; padding:12px 14px; text-align:left; background:transparent; color:var(--text); border-radius:var(--radius-control); }
-.conversation-menu button:hover { background:var(--surface-hover); }
 .files-page { display:flex; flex-direction:column; width:100%; height:100%; min-height:0; min-width:0; background:var(--surface); }
-.files-page[hidden],.conversation-menu[hidden] { display:none; }
-.files-open .member-rail > :not(.files-page):not(.member-resizer) { display:none !important; }
-.files-open .member-rail { min-width:0; overflow:hidden; }
+.files-page[hidden] { display:none; }
 /* The location and directory tools stay fixed while the file content scrolls. */
 .files-page { container-type:inline-size; }
 .files-header { display:flex; align-items:center; flex:none; gap:4px; height:var(--workspace-header-height); min-height:var(--workspace-header-height); padding:8px 12px; border-bottom:1px solid var(--divider); }
@@ -77,14 +72,9 @@ button.files-crumb:hover { color:var(--accent); background:var(--surface-hover);
  .files-list-heading { grid-template-columns:minmax(0,1fr) 128px 64px; gap:10px; }
  .file-entry-modified { display:block; }
 }
-.files-cover .member-rail { position:absolute !important; z-index:20; inset:0 0 0 auto; width:calc(100% - var(--rooms-width,0px)); max-width:none; height:100%; border-left:1px solid var(--line); }
-.files-cover .member-resizer { display:none; }
-.files-cover #conversation { visibility:hidden; }
-.files-expanded .member-rail { width:calc(100% - var(--rooms-width,0px)); }
 /* Match the shared phone controls, including coarse-pointer landscape. */
 @media(max-width:640px), (max-height:500px) and (pointer:coarse) {
  .files-page { -webkit-text-size-adjust:100%; text-size-adjust:100%; }
- .files-cover .member-rail { position:fixed !important; inset:var(--app-top,0px) 0 auto; width:100%; height:var(--app-height,100dvh); padding-top:env(safe-area-inset-top); padding-bottom:env(safe-area-inset-bottom); }
  .files-header { padding:0 12px; gap:4px; }
  .files-header h2 { font-size:17px; line-height:22px; }
  #files-expand { display:none; }

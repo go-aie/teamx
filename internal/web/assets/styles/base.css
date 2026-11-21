@@ -226,7 +226,7 @@ h1 {
 #room-title-count { flex:none; font-weight:inherit; }
 .room-title { flex:1; min-width:0; }
 #room-menu-label svg { width:20px; height:20px; fill:currentColor; stroke:none; }
-.conversation-details-toggle[aria-expanded="true"] { color:var(--accent); background:var(--soft); }
+.conversation-menu-toggle[aria-expanded="true"] { color:var(--accent); background:var(--soft); }
 .room-name-row { display:flex; align-items:center; gap:12px; min-height:60px; }
 .room-name-row > span { flex:none; font-size:var(--font-small); }
 .room-name-row button { flex:1; justify-content:flex-end; min-width:0; padding-inline:0; }

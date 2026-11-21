@@ -55,6 +55,7 @@
 .activity-header > .agent-detail-close { order:1; }
 .agent-heading { flex:1; min-width:0; }
 .agent-heading h2 { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.agent-context-name { flex:none; margin:0; padding:12px var(--panel-space); font-size:var(--font-body); font-weight:var(--weight-medium); line-height:1.5; overflow-wrap:anywhere; }
 .agent-settings-heading { display:flex; flex:none; flex-wrap:wrap; align-items:center; gap:0 8px; padding:0 var(--panel-space); border-bottom:1px solid var(--line); }
 #agent-quick-actions { flex:none; margin:0 0 0 auto; padding-block:4px; }
 .agent-controls-toggle { flex:1 1 180px; justify-content:space-between; gap:12px; min-width:0; min-height:52px; padding:10px 0; margin:0; }

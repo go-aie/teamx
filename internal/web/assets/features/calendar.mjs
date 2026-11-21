@@ -1,18 +1,18 @@
 import { randomUUID } from "../random-id.mjs";
 import { compactViewport } from "../client.mjs";
-import { captureReturnView } from "../view-return.mjs";
 import { calendarRange, calendarOffsetLabels, localDay, shiftDay, shiftMonth, weekDates, monthDates, minuteOfDay, pointGroups } from "./calendar-dates.mjs";
 
 // Reads use the Actor's committed projection. Opening or previewing never starts
 // an Agent; mutations preserve the original operation and resource version.
-export function createCalendar({ env, runtime, roomsUI, conversationUI, settingsUI, dateTimeUI }) {
+export function createCalendar({ env, runtime, roomsUI, conversationUI, settingsUI, dateTimeUI, layoutUI }) {
   const { document, window, setTimeout, clearTimeout, requestAnimationFrame } = env, { $, state, rpc, currentView, notice } = runtime;
   let visible=false, value=null, pending=null, retryRequest=null, readID=0, detailID=0;
   let compact=window.innerWidth<=640, date="", mode=compact?"day":"week", view="calendar";
   let preferenceLayout="", storage;
   try { storage=env.localStorage; } catch { /* Preferences also work in memory. */ }
   const preferences=new Map();
-  const multiDays=()=>window.innerWidth>=480?4:3;
+  const panelWidth=()=>$("calendar-page").clientWidth||window.innerWidth;
+  const multiDays=()=>panelWidth()>=480?4:3;
   const timeDays=()=>mode==="day"?1:multiDays();
   const nativeTime=()=>compact&&(mode==="day"||mode==="multi");
   const rangeAt=(displayZone=zone(),padding=0)=>calendarRange(date,mode==="day"&&compact?"multi":mode,displayZone,{days:timeDays(),padding});
@@ -24,7 +24,7 @@ export function createCalendar({ env, runtime, roomsUI, conversationUI, settings
   let lastOpener=null, detailReturn=null, renderedRange="", formFrequency=null;
   let selectedRun=null, runReadID=0;
   let detailOccurrence=null, nowTimer=null, workspaceScroll=0, workspaceGridScroll=0;
-  let chatPosition=null;
+  let panelScroll=0, panelGridScroll=0;
   const hourHeight=56;
   const messageLinks=new Map();
   const labels={needs_info:"待完善",active:"已安排",paused:"已暂停",cancelled:"已取消",completed:"已结束",planned:"计划",queued:"等待 Agent",running:"执行中",publishing:"报告发送中",succeeded:"已完成",blocked:"受阻",failed:"失败",unknown:"结果未核实",skipped:"已错过"};
@@ -82,20 +82,22 @@ export function createCalendar({ env, runtime, roomsUI, conversationUI, settings
   function showError(message,retry=false){notice("calendar-error",message);notice("calendar-detail-error",message);$("calendar-retry").hidden=!retry;}
   function updateCalendarIcon(){
     const day=today(),label=`日历 · 今天 ${dayLabel(day)}`;
-    $("calendar-icon-day").textContent=String(Number(day.slice(8)));
+    for(const id of ["calendar-icon-day","calendar-menu-icon-day"])$(id).textContent=String(Number(day.slice(8)));
     $("conversation-calendar").setAttribute("aria-label",label);$("conversation-calendar").title=label;
   }
   function syncCreateButton(){
-    const icon=compactViewport(window),create=$("calendar-new");
+    const icon=panelWidth()<=640||compactViewport(window),create=$("calendar-new");
     create.classList.toggle("add-button",icon);create.classList.toggle("primary",!icon);create.classList.toggle("button-compact",!icon);
     $("calendar-new-label").hidden=icon;
     if(icon)$("calendar-new-icon").removeAttribute("hidden");else $("calendar-new-icon").setAttribute("hidden","");
   }
   function syncDetailNavigation(){
-    const label=compactViewport(window)?"返回日历":"关闭任务详情";
-    $("calendar-detail-close").setAttribute("aria-label",label);$("calendar-detail-close").title=label;
+    $("calendar-detail-close").hidden=!selected;
+    $("calendar-heading").textContent=selected?"任务详情":"日历";
+    $("calendar-header-actions").hidden=!!selected;
+    $("calendar-panel").classList.toggle("calendar-detail-open",!!selected);
   }
-  function sync(){ $("conversation-calendar").hidden=!available();updateCalendarIcon();syncCreateButton();if(!available())setVisible(false);else scheduleClock(); }
+  function sync(){ runtime.conversationToolsChanged?.();updateCalendarIcon();syncCreateButton();if(!available())setVisible(false);else scheduleClock(); }
   function setOptionsOpen(open,focus=false){
     $("calendar-options-menu").hidden=!open;$("calendar-options-toggle").setAttribute("aria-expanded",String(open));
     if(!open)$("calendar-options-menu").querySelector("details").open=false;
@@ -106,22 +108,24 @@ export function createCalendar({ env, runtime, roomsUI, conversationUI, settings
     $("calendar-panel").dataset.view=view;
     $("calendar-navigation").hidden=!calendar;$("calendar-mode").hidden=!calendar;
     $("calendar-items").hidden=!calendar;$("calendar-tasks").hidden=calendar;$("calendar-list-controls").hidden=calendar;
-    $("calendar-show-skipped").closest("label").hidden=!calendar;
+    $("calendar-skip-control").hidden=!calendar;
     $("calendar-view").dataset.view=view;
     const modeLabel={day:"日",week:"周",multi:"多日",month:"月"}[mode];
     $("calendar-mode-label").textContent=modeLabel;$("calendar-mode-open").dataset.mode=mode;
     $("calendar-mode-open").setAttribute("aria-label",`选择日历视图，当前${modeLabel}`);
     for(const b of $("calendar-view").querySelectorAll("[data-view]"))b.setAttribute("aria-pressed",String(b.dataset.view===view));
-    for(const b of $("calendar-mode-sheet").querySelectorAll("[data-calendar-mode]"))b.setAttribute("aria-pressed",String(b.dataset.calendarMode===mode));
+    for(const b of $("calendar-mode-sheet").querySelectorAll("[data-calendar-mode]")){
+      b.setAttribute("aria-pressed",String(b.dataset.calendarMode===mode));
+      b.hidden=b.dataset.calendarMode===(compact?"week":"multi");
+    }
   }
   function closeModeSheet(focus=true){
     $("calendar-mode-sheet").close();$("calendar-mode-sheet").style.removeProperty("transform");
     $("calendar-mode-open").setAttribute("aria-expanded","false");
-    if(focus)(compact?$("calendar-mode-open"):$("calendar-view").querySelector('[data-view="calendar"]')).focus({preventScroll:true});
+    if(focus)(panelWidth()<=640?$("calendar-mode-open"):$("calendar-view").querySelector('[data-view="calendar"]')).focus({preventScroll:true});
     runtime.navigationChanged();
   }
   function openModeSheet(){
-    if(!compact)return;
     setOptionsOpen(false);dateTimeUI.close();syncView();
     $("calendar-mode-sheet").showModal();$("calendar-mode-open").setAttribute("aria-expanded","true");
     $("calendar-mode-sheet").querySelector(`[data-calendar-mode="${mode}"]`)?.focus({preventScroll:true});
@@ -136,23 +140,34 @@ export function createCalendar({ env, runtime, roomsUI, conversationUI, settings
     $("calendar-panel").scrollTop=view==="calendar"?calendarScroll:listScroll;
     if(read)void refresh().catch(()=>{});
   }
-  function setVisible(next) {
-    const was=visible;if(!next)rememberTimePosition();visible=next&&available();
-    if(visible&&!was)chatPosition=conversationUI.capturePosition();
-    $("calendar-panel").hidden=!visible;$("timeline-wrap").hidden=visible;$("compose").hidden=visible;
-    $("conversation-chat").hidden=!visible;$("conversation").classList.toggle("calendar-open",visible);
-    $("room-heading").hidden=visible;$("calendar-heading").hidden=!visible;
-    $("conversation-actions").hidden=visible;$("calendar-header-actions").hidden=!visible;
-    if(!visible){cancelSwipe();setOptionsOpen(false);if($("calendar-mode-sheet").open)closeModeSheet(false);}
+  function setVisible(next,{panel=true,focus=false}={}) {
+    next=next&&available();const was=visible;
+    if(!next&&was){
+      closeDetail(false);
+      rememberTimePosition();panelScroll=$("calendar-panel").scrollTop;panelGridScroll=$("calendar-items").scrollTop;
+      readID++;detailID++;runReadID++;cancelSwipe();setOptionsOpen(false);dateTimeUI.close();
+      if($("calendar-mode-sheet").open)closeModeSheet(false);
+    }
+    visible=next;
+    $("calendar-page").hidden=!visible;$("calendar-panel").hidden=!visible;
     $("conversation-calendar").setAttribute("aria-expanded",String(visible));
-    if(visible){restorePreference();conversationUI.saveDraft();if(!date)date=today();syncView();if(value)render();runtime.wake("calendar");void runtime.observe("calendar");}
-    else {if(was){closeDetail(false);if(chatPosition)conversationUI.restorePosition(chatPosition);chatPosition=null;}conversationUI.scheduleMessageViewing();}
+    if(visible){
+      layoutUI.openAuxiliary("calendar");syncCreateButton();restorePreference();
+      if(!date)date=today();syncView();if(value)render();
+      $("calendar-panel").scrollTop=panelScroll;$("calendar-items").scrollTop=panelGridScroll;
+      runtime.wake("calendar");void runtime.observe("calendar");
+    } else {
+      if(panel)layoutUI.closeAuxiliary("calendar");
+      conversationUI.scheduleMessageViewing();
+      if(focus)($("conversation-calendar").hidden?$("room-menu-label"):$("conversation-calendar")).focus({preventScroll:true});
+    }
+    runtime.navigationChanged();
     scheduleClock();
   }
   function reset(){
     cancelSwipe();navigationPending=false;
     clearTimeout(timeTimer);timeScrolling=false;renderPending=false;timeTouch=false;swipe=null;timeStart="";
-    chatPosition=null;
+    panelScroll=panelGridScroll=0;
     workspaceScroll=0;workspaceGridScroll=0;calendarScroll=0;calendarGridScroll=0;listScroll=0;renderedRange="";messageLinks.clear();readID++;detailID++;pending=null;retryRequest=null;value=null;date="";selected=null;detail=null;editing=null;history=[];initialScroll=true;
     dateTimeUI.close();closeDetail(false);resetForm();sync();setVisible(false);$("calendar-items").replaceChildren();$("calendar-task-items").replaceChildren();$("calendar-task-count").textContent="0";showError("");timeScrolls.clear();restoreScroll=null;
   }
@@ -281,7 +296,7 @@ export function createCalendar({ env, runtime, roomsUI, conversationUI, settings
     for(const task of tasks){
       const row=node("div",undefined,"calendar-task-row");row.dataset.taskId=task.task_id;
       const link=taskButton(task,""),arrow=node("span","›","calendar-task-chevron");
-      link.setAttribute("aria-label",task.definition.title);link.setAttribute("aria-haspopup","dialog");link.setAttribute("aria-controls","calendar-detail");arrow.setAttribute("aria-hidden","true");
+      link.setAttribute("aria-label",task.definition.title);link.setAttribute("aria-controls","calendar-detail");arrow.setAttribute("aria-hidden","true");
       const stateLabel=node("span",task.blocked_reason?reason(task.blocked_reason):labels[task.state],"calendar-status");stateLabel.id=`calendar-task-status-${task.task_id}`;
       link.append(node("span",task.definition.title,"calendar-task-title"),stateLabel,arrow);
       const rule=task.definition.schedule;
@@ -588,19 +603,23 @@ export function createCalendar({ env, runtime, roomsUI, conversationUI, settings
   }
   function closeDetail(focus=true){
     const taskID=selected,occurrenceID=lastOpener?.dataset?.occurrenceId,back=detailReturn;detailReturn=null;
-    detailID++;runReadID++;$("calendar-detail").close();$("calendar-detail").hidden=true;selected=null;detail=null;detailOccurrence=null;selectedRun=null;history=[];
+    detailID++;runReadID++;$("calendar-detail").hidden=true;selected=null;detail=null;detailOccurrence=null;selectedRun=null;history=[];
+    syncDetailNavigation();
+    if(back){$("calendar-panel").scrollTop=back.top;$("calendar-items").scrollTop=back.grid;}
     if(focus){
       const candidate=(occurrenceID&&$("calendar-items").querySelector(`[data-occurrence-id="${occurrenceID}"]`))||$("calendar-task-items").querySelector(`button[data-task-id="${taskID}"]`);
       const fallback=candidate?.getClientRects?.().length?candidate:$("calendar-view").querySelector(`[data-view="${view}"]`);
-      if(!back?.restore(fallback))fallback.focus({preventScroll:true});
+      fallback.focus({preventScroll:true});
     }
+    runtime.navigationChanged();
   }
   async function openDetail(taskID,runID="",occurrence=null){
     showError("");detailOccurrence=occurrence;selectedRun=null;runReadID++;lastOpener=document.activeElement;selected=taskID;
-    detailReturn=captureReturnView(env,runtime,{valid:()=>visible,scroll:["calendar-panel","calendar-items"]});
-    $("calendar-detail").hidden=false;if(!$("calendar-detail").open)$("calendar-detail").showModal();$("calendar-detail-content").replaceChildren(node("p","正在读取任务…"));
+    detailReturn={top:$("calendar-panel").scrollTop,grid:$("calendar-items").scrollTop};
+    $("calendar-detail").hidden=false;syncDetailNavigation();$("calendar-detail-content").replaceChildren(node("p","正在读取任务…"));
     $("calendar-detail").scrollTop=0;
     $("calendar-detail-close").focus();
+    runtime.navigationChanged();
     await loadDetail(taskID,true,runID,occurrence);
   }
   async function loadDetail(taskID,reportError=true,runID="",occurrence=null){
@@ -795,7 +814,8 @@ export function createCalendar({ env, runtime, roomsUI, conversationUI, settings
     sheetHeader.addEventListener("touchend",()=>{const dy=sheetTouch?.dy||0;sheetTouch=null;sheet.style.removeProperty("transform");if(dy>60)closeModeSheet();},{passive:true});
     sheetHeader.addEventListener("touchcancel",()=>{sheetTouch=null;sheet.style.removeProperty("transform");},{passive:true});
     syncCreateButton();
-    syncDetailNavigation();runtime.dismissOnBackdrop($("calendar-detail"),()=>closeDetail());
+    syncDetailNavigation();
+    if(env.ResizeObserver)new env.ResizeObserver(()=>syncCreateButton()).observe($("calendar-page"));
     settingsUI.bindSystemTime($("calendar-panel"),()=>{
       if(value&&settingsUI.systemTime.zone)value.time_zone=settingsUI.systemTime.zone;
       updateCalendarIcon();
@@ -819,8 +839,12 @@ export function createCalendar({ env, runtime, roomsUI, conversationUI, settings
     for(const id of ["calendar-day-filter","calendar-once-filter","calendar-time-zone","calendar-misfire"])$(id).addEventListener("change",syncForm);
     $("calendar-time-zone").addEventListener("input",syncForm);
     $("calendar-save-draft").addEventListener("click",event=>{if($("calendar-title").reportValidity()&&$("calendar-instruction").reportValidity())void saveForm(event,true);});syncForm();
-    $("conversation-chat").addEventListener("click",()=>{setVisible(false);$("conversation-calendar").focus({preventScroll:true});});
-    $("conversation-calendar").addEventListener("click",()=>{setVisible(!visible);if(visible)$("conversation-chat").focus({preventScroll:true});});
+    $("calendar-close").addEventListener("click",()=>setVisible(false,{focus:true}));
+    $("calendar-expand").addEventListener("click",layoutUI.toggleAuxiliaryExpanded);
+    $("calendar-page").addEventListener("keydown",event=>{
+      if(event.key!=="Escape"||event.defaultPrevented||$("calendar-mode-sheet").open||document.querySelector("dialog:modal"))return;
+      event.preventDefault();back();
+    });
     $("calendar-options-toggle").addEventListener("click",()=>setOptionsOpen($("calendar-options-menu").hidden));
     $("calendar-refresh").addEventListener("click",()=>{setOptionsOpen(false,true);void refresh().catch(()=>{});});
     $("calendar-retry").addEventListener("click",()=>void refresh().catch(()=>{}));
@@ -833,14 +857,16 @@ export function createCalendar({ env, runtime, roomsUI, conversationUI, settings
       dateTimeUI.register($(id), {kind, trigger:$(id+"-toggle"), zone:()=>$("calendar-time-zone").value||zone(), label, showZone:()=>kind==="time"&&hasDifferentZone($("calendar-time-zone").value)});
     }
     document.addEventListener("click",event=>{if(!event.target.closest?.("#calendar-options"))setOptionsOpen(false);});
-    $("calendar-options").addEventListener("keydown",event=>{if(event.key==="Escape")setOptionsOpen(false,true);});
+    $("calendar-options").addEventListener("keydown",event=>{
+      if(event.key!=="Escape"||$("calendar-options-menu").hidden)return;
+      event.preventDefault();event.stopPropagation();setOptionsOpen(false,true);
+    });
     $("calendar-mode").addEventListener("click",event=>{const next=event.target.closest("[data-mode]")?.dataset.mode;if(next)navigate(date,next);});
     $("calendar-view").addEventListener("click",event=>{const next=event.target.closest("[data-view]")?.dataset.view;if(next)switchView(next);});
     $("calendar-show-skipped").addEventListener("change",render);$("calendar-task-filter").addEventListener("change",render);
     $("calendar-detail-close").addEventListener("click",()=>closeDetail());
     $("calendar-new").addEventListener("click",()=>{if(!editing&&!$("calendar-start-date").value)$("calendar-start-date").value=view==="calendar"?date||today():today();syncForm();showForm();});
     $("calendar-form-cancel").addEventListener("click",resetForm);
-    $("calendar-detail").addEventListener("cancel",event=>{event.preventDefault();closeDetail();});
     window.addEventListener("resize",()=>{
       syncCreateButton();syncDetailNavigation();const next=window.innerWidth<=640;
       if(!next&&sheet.open)closeModeSheet(false);
@@ -849,5 +875,14 @@ export function createCalendar({ env, runtime, roomsUI, conversationUI, settings
       else if(visible&&nativeTime())render();
     });
   }
-  return {mount,refresh,sync,reset,renderLinks,openTask:taskID=>{setVisible(true);return openDetail(taskID);},visible:()=>visible};
+  function back(){
+    if(selected)closeDetail();
+    else if($("calendar-create").open)resetForm();
+    else if(layoutUI.auxiliaryExpanded)layoutUI.toggleAuxiliaryExpanded();
+    else setVisible(false,{focus:true});
+  }
+  return {mount,refresh,sync,reset,renderLinks,back,hide:()=>setVisible(false,{panel:false}),
+    open:()=>{setVisible(true);$("calendar-close").focus({preventScroll:true});},backToChat:()=>setVisible(false,{focus:true}),
+    openTask:taskID=>{setVisible(true);return openDetail(taskID);},visible:()=>visible,
+    get navigationID(){return selected?"calendar-detail":$("calendar-create").open?"calendar-form":layoutUI.auxiliaryExpanded?"calendar-expanded":"calendar";}};
 }

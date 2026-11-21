@@ -1,20 +1,55 @@
 import { compactViewport } from "../client.mjs";
 // Room/member sidebars, responsive visibility and width persistence.
-export function createLayout({ env, roomsUI, runtime, notificationsUI, membersUI, settingsUI, userMenuUI, filesUI }) {
+export function createLayout({ env, roomsUI, runtime, notificationsUI, membersUI, settingsUI, userMenuUI, filesUI, calendarUI, conversationToolsUI }) {
   const { document, window } = env;
   const { state, $, storage } = runtime;
 
   let directMobileDetails = false, directMobileRooms = false;
   let mobileTab = "messages";
   const mobileScroll = { messages:0, profile:0 };
+  let auxiliary = null, auxiliaryExpanded = false, hiddenViews = [];
 
   function roomsPanelOpen() { return compactViewport(window) ? directMobileRooms || !!(state.managed && state.catalog && !roomsUI.selectedEntry()) : panels.rooms; }
 
-  function membersPanelOpen() { return !filesUI.isOpen && (compactViewport(window) ? directMobileDetails : panels.members); }
+  function membersPanelOpen() { return !auxiliary && (compactViewport(window) ? directMobileDetails : panels.members); }
+
+  // Content features retain their own view state; layout owns the shared rail.
+  function hideAuxiliary() {
+    if (auxiliary === "files") filesUI.hide();
+    if (auxiliary === "calendar") calendarUI.hide();
+  }
+
+  function openAuxiliary(kind) {
+    if (auxiliary === kind) return;
+    if (!auxiliary) {
+      hiddenViews = ["activity-dialog", "notification-detail"].map(id => [$(id), $(id).hidden]);
+      for (const [element] of hiddenViews) element.hidden = true;
+    } else hideAuxiliary();
+    auxiliary = kind; auxiliaryExpanded = false;
+    conversationToolsUI.close(); renderPanels();
+  }
+
+  function closeAuxiliary(kind) {
+    if (auxiliary !== kind) return;
+    auxiliary = null; auxiliaryExpanded = false;
+    for (const [element, hidden] of hiddenViews) element.hidden = hidden;
+    hiddenViews = []; renderPanels();
+  }
+
+  function showMemberContent() {
+    const kind = auxiliary;
+    if (!kind) return;
+    hideAuxiliary(); closeAuxiliary(kind);
+  }
+
+  function toggleAuxiliaryExpanded() {
+    if (!auxiliary) return;
+    auxiliaryExpanded = !auxiliaryExpanded; renderPanels();
+  }
 
   const panelsKey = "teamx.room-panels";
 
-  const panels = { rooms: true, members: true, roomWidth: null, memberWidth: null, fileWidth: null };
+  const panels = { rooms: true, members: true, roomWidth: null, memberWidth: null, fileWidth: null, calendarWidth: null };
 
   let sidebarResize = null;
 
@@ -36,7 +71,7 @@ export function createLayout({ env, roomsUI, runtime, notificationsUI, membersUI
   }
 
   function sidebarWidthLimits(side) {
-    if (side === "members" && filesUI.isOpen) {
+    if (side === "members" && auxiliary) {
       const available = $("workspace").clientWidth - (state.managed ? $("room-rail").getBoundingClientRect().width : 0);
       return { min: 400, max: Math.max(400, available - 480) };
     }
@@ -48,10 +83,11 @@ export function createLayout({ env, roomsUI, runtime, notificationsUI, membersUI
 
   function applySidebarWidths(priority = "rooms") {
     if (compactViewport(window)) return;
-    if (filesUI.isOpen) {
+    if (auxiliary) {
       const limits = sidebarWidthLimits("members"), handle = $("member-resizer");
       const available = $("workspace").clientWidth - (state.managed ? $("room-rail").getBoundingClientRect().width : 0);
-      const width = Math.max(limits.min, Math.min(limits.max, panels.fileWidth ?? Math.max(600, available * .5)));
+      const key = auxiliary === "files" ? "fileWidth" : "calendarWidth";
+      const width = Math.max(limits.min, Math.min(limits.max, panels[key] ?? Math.max(600, available * .5)));
       $("workspace").style.setProperty("--members-open-width", `${width}px`);
       handle.setAttribute("aria-valuemin",String(limits.min)); handle.setAttribute("aria-valuemax",String(limits.max)); handle.setAttribute("aria-valuenow",String(Math.round(width)));
       return;
@@ -84,20 +120,28 @@ export function createLayout({ env, roomsUI, runtime, notificationsUI, membersUI
 
   function setSidebarWidth(side, width) {
     const limits = sidebarWidthLimits(side);
-    panels[side === "members" && filesUI.isOpen ? "fileWidth" : sidebarConfig[side].key] = Math.round(Math.max(limits.min, Math.min(limits.max, width)));
+    panels[side === "members" && auxiliary ? auxiliary === "files" ? "fileWidth" : "calendarWidth" : sidebarConfig[side].key] = Math.round(Math.max(limits.min, Math.min(limits.max, width)));
     applySidebarWidths(side);
   }
 
   function renderPanels() {
     const workspace = document.querySelector(".workspace");
     const mobile = compactViewport(window);
-    const filesOpen = !!filesUI.isOpen;
-    const membersOpen = membersPanelOpen() || filesOpen, roomsOpen = roomsPanelOpen();
+    const membersOpen = membersPanelOpen() || !!auxiliary, roomsOpen = roomsPanelOpen();
     const available = $("workspace").clientWidth - (state.managed ? (roomsOpen ? $("room-rail").getBoundingClientRect().width : 52) : 0);
-    const filesCover = filesOpen && (mobile || filesUI.expanded || available < 1080);
-    workspace.classList.toggle("files-open", filesOpen);
-    workspace.classList.toggle("files-cover", filesCover);
-    workspace.classList.toggle("files-expanded", filesOpen && filesUI.expanded);
+    const auxiliaryCover = !!auxiliary && (mobile || auxiliaryExpanded || available < 1080);
+    workspace.classList.toggle("files-open", auxiliary === "files");
+    workspace.classList.toggle("calendar-open", auxiliary === "calendar");
+    workspace.classList.toggle("auxiliary-open", !!auxiliary);
+    workspace.classList.toggle("auxiliary-cover", auxiliaryCover);
+    workspace.classList.toggle("auxiliary-expanded", !!auxiliary && auxiliaryExpanded);
+    for (const kind of ["files", "calendar"]) {
+      const expand = $(`${kind}-expand`), label = auxiliaryExpanded ? "还原" : "展开";
+      expand.title = label; expand.setAttribute("aria-label", label);
+      expand.setAttribute("aria-expanded", String(auxiliaryExpanded));
+      if (kind === "files") $("files-expand-label").textContent = label;
+      $(`${kind}-expand-icon`).setAttribute("d", auxiliaryExpanded ? "M20 10h-6V4m0 6 6-6M4 14h6v6m0-6-6 6" : "M14 4h6v6M20 4l-6 6M10 20H4v-6M4 20l6-6");
+    }
     const mobileHome = mobile && state.managed && roomsOpen && !membersOpen;
     const profileOpen = mobileHome && mobileTab === "profile";
     workspace.classList.toggle("mobile-profile-open", profileOpen);
@@ -145,7 +189,7 @@ export function createLayout({ env, roomsUI, runtime, notificationsUI, membersUI
     $("member-rail").setAttribute("aria-hidden", String(!membersOpen));
     if (!membersOpen && $("activity-dialog").open) $("activity-dialog").close();
     if (!membersOpen && $("notification-detail").open) $("notification-detail").close();
-    if (filesCover) $("conversation").inert = true;
+    if (auxiliaryCover) $("conversation").inert = true;
     else if (compactViewport(window)) {
       $("conversation").inert = roomsOpen || membersOpen;
     } else $("conversation").inert = false;
@@ -153,24 +197,21 @@ export function createLayout({ env, roomsUI, runtime, notificationsUI, membersUI
     applySidebarWidths();
     runtime.navigationChanged();
     runtime.conversationVisibilityChanged?.();
-    for (const [side, name] of [["rooms", "会话侧栏"], ["members", roomsUI.isDirect() ? "助理详情" : "房间详情"]]) {
-      const button = $(side === "members" ? "conversation-open-details" : "toggle-rooms");
-      const open = side === "members" ? membersPanelOpen() : roomsOpen;
-      const label = side === "members" ? name : `${open ? "收起" : "展开"}${name}`;
-      button.setAttribute("aria-expanded", String(open));
-      button.setAttribute("aria-label", label);
-      button.setAttribute("title", label);
-    }
+    const toggle = $("toggle-rooms"), label = `${roomsOpen ? "收起" : "展开"}会话侧栏`;
+    toggle.setAttribute("aria-expanded", String(roomsOpen));
+    toggle.setAttribute("aria-label", label); toggle.title = label;
+    runtime.conversationToolsChanged?.();
   }
 
   function resetDirectNavigation() {
-    filesUI.close({focus:false}); filesUI.closeMenu();
+    showMemberContent();
+    filesUI.close({focus:false}); conversationToolsUI.close();
     directMobileDetails = false; directMobileRooms = false;
     mobileTab = "messages";
   }
 
   function expandMembers() {
-    filesUI.close({focus:false});
+    showMemberContent();
     panels.members = true;
     if (compactViewport(window)) { directMobileDetails = true; directMobileRooms = false; }
   }
@@ -232,42 +273,35 @@ export function createLayout({ env, roomsUI, runtime, notificationsUI, membersUI
     $("workspace").style.setProperty("--app-top", `${viewport?.scale === 1 ? Math.round(viewport.offsetTop) : 0}px`);
   }
 
+  function toggleDetails() {
+    const fromAuxiliary = !!auxiliary;
+    showMemberContent();
+    if (compactViewport(window)) {
+      directMobileDetails = fromAuxiliary || !directMobileDetails;
+      if (directMobileDetails) directMobileRooms = false;
+    } else panels.members = fromAuxiliary || !panels.members;
+    savePanels(); renderPanels(); membersUI.syncDirectDetail();
+    if (membersPanelOpen()) $(roomsUI.isDirect() ? "close-activity" : "member-list-title").focus();
+    else ($("conversation-details").hidden ? $("room-menu-label") : $("conversation-details")).focus();
+  }
+
   function mount() {
     try {
       const saved = JSON.parse(storage?.getItem(panelsKey));
       for (const side of ["rooms", "members"]) if (typeof saved?.[side] === "boolean") panels[side] = saved[side];
-      for (const key of ["roomWidth", "memberWidth", "fileWidth"]) if (Number.isFinite(saved?.[key]) && saved[key] > 0) panels[key] = saved[key];
+      for (const key of ["roomWidth", "memberWidth", "fileWidth", "calendarWidth"]) if (Number.isFinite(saved?.[key]) && saved[key] > 0) panels[key] = saved[key];
     } catch { /* Sidebars remain usable when tab storage is unavailable. */ }
 
-    for (const side of ["rooms", "members"]) {
-      const toggle = () => {
-        if (side === "members") {
-          const fromFiles = filesUI.isOpen;
-          filesUI.close({focus:false});
-          if (fromFiles) { if (compactViewport(window)) directMobileDetails = false; else panels.members = false; }
-        }
-        if (side === "members" && compactViewport(window)) directMobileDetails = !directMobileDetails;
-        else if (side === "rooms" && compactViewport(window)) directMobileRooms = !directMobileRooms;
-        else panels[side] = !panels[side];
-        if (compactViewport(window)) {
-          if (side === "rooms" && directMobileRooms) directMobileDetails = false;
-          if (side === "members" && directMobileDetails) directMobileRooms = false;
-        }
-        savePanels();
-        renderPanels();
-        membersUI.syncDirectDetail();
-      };
-      $(side === "members" ? "conversation-open-details" : "toggle-rooms").addEventListener("click", () => {
-        toggle();
-        if (side !== "members") return;
-        if (!membersPanelOpen()) $("room-menu-label").focus();
-        else $(roomsUI.isDirect() ? "close-activity" : "member-list-title").focus();
-      });
-    }
+    $("toggle-rooms").addEventListener("click", () => {
+      if (compactViewport(window)) directMobileRooms = !directMobileRooms;
+      else panels.rooms = !panels.rooms;
+      if (compactViewport(window) && directMobileRooms) directMobileDetails = false;
+      savePanels(); renderPanels(); membersUI.syncDirectDetail();
+    });
 
     for (const [side, config] of Object.entries(sidebarConfig)) {
       const handle = $(config.handle), direction = side === "rooms" ? 1 : -1;
-      const enabled = () => (panels[side] || side === "members" && filesUI.isOpen) && !$("workspace").classList.contains("files-cover") && (side !== "rooms" || state.managed) && !compactViewport(window);
+      const enabled = () => (panels[side] || side === "members" && auxiliary) && !$("workspace").classList.contains("auxiliary-cover") && (side !== "rooms" || state.managed) && !compactViewport(window);
       handle.addEventListener("pointerdown", event => {
         if (event.button !== 0 || event.isPrimary === false || !enabled() || sidebarResize) return;
         event.preventDefault();
@@ -324,7 +358,13 @@ export function createLayout({ env, roomsUI, runtime, notificationsUI, membersUI
 
   return {
     mount,
-    showMemberContent: () => filesUI.close({focus:false}),
+    showMemberContent,
+    toggleDetails,
+    openAuxiliary,
+    closeAuxiliary,
+    toggleAuxiliaryExpanded,
+    get auxiliaryOpen() { return !!auxiliary; },
+    get auxiliaryExpanded() { return auxiliaryExpanded; },
     roomsPanelOpen,
     showMobileRooms,
     get mobileProfileOpen() { return compactViewport(window) && state.managed && roomsPanelOpen() && mobileTab === "profile"; },

@@ -773,7 +773,6 @@ export function createConversation({ env, runtime, roomsUI, membersUI, settingsU
     $("rename-room").title = `修改${type}名称`;
     $("rename-form").setAttribute("aria-label", `修改${type}名称`);
     $("rename-room-name").setAttribute("aria-label", `${type}名称`);
-    $("room-menu-label").setAttribute("aria-label", direct ? "助理详情" : "房间详情");
     $("room-detail-name").textContent = name;
     $("room-title-count").textContent = `(${membersUI.participantCount()})`;
     $("room-title-count").hidden = direct || !state.info;

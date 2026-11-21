@@ -1,0 +1,17 @@
+.conversation-shortcut svg { width:20px; height:20px; }
+.conversation-shortcut[aria-expanded="true"] { color:var(--accent); background:var(--soft); }
+.conversation-menu { position:absolute; right:12px; top:calc(var(--workspace-header-height) - 4px); z-index:30; width:248px; max-width:calc(100vw - 24px); padding:6px; border:1px solid var(--line); border-radius:var(--radius-control); background:var(--surface); box-shadow:var(--shadow-menu); }
+.conversation-menu[hidden],.conversation-menu [hidden],.room-actions > [hidden] { display:none!important; }
+.conversation-menu-row { display:flex; align-items:center; gap:4px; }
+.conversation-menu-action { display:flex; align-items:center; gap:12px; flex:1; min-width:0; min-height:44px; padding:10px 12px; border-radius:var(--radius-control); background:transparent; color:var(--text); font:inherit; text-align:left; }
+.conversation-menu-action svg { flex:none; width:20px; height:20px; fill:none; stroke:currentColor; stroke-width:1.6; stroke-linecap:round; stroke-linejoin:round; color:var(--muted); }
+.conversation-menu-action:hover:not(:disabled),.conversation-pin:hover { background:var(--surface-hover); }
+.conversation-menu-action[aria-expanded="true"] svg { color:var(--accent); }
+.conversation-pin { margin-right:4px; }
+.conversation-pin[aria-checked="true"] { color:var(--accent); }
+.conversation-pin[aria-checked="true"] .pin-head { fill:currentColor; }
+
+@media(max-width:640px), (max-height:500px) and (pointer:coarse) {
+ .room-actions > .conversation-shortcut,.conversation-pin { display:none!important; }
+ .conversation-menu { width:208px; }
+}

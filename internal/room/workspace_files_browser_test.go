@@ -29,6 +29,7 @@ func TestWorkspaceFilesBrowser(t *testing.T) {
 			var room roomSummary
 			if tc.direct {
 				m = directTestManager(t, t.TempDir(), testTeamDefinition(t).Runtime)
+				m.config.unifiedInputs = true
 				m.factory = controlledActivationFactory(nil, nil)
 				external = t.TempDir()
 				real, err := filepath.EvalSymlinks(external)

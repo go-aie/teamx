@@ -1,0 +1,26 @@
+/* Files and calendar share placement, expansion and header controls. */
+.auxiliary-page { display:flex; flex-direction:column; width:100%; height:100%; min-height:0; min-width:0; background:var(--surface); }
+.auxiliary-page[hidden],.auxiliary-page [hidden] { display:none!important; }
+.auxiliary-open .member-rail { min-width:0; overflow:hidden; }
+.auxiliary-open .member-rail > :not(.auxiliary-page):not(.member-resizer) { display:none!important; }
+.auxiliary-header { position:relative; display:flex; align-items:center; flex:none; gap:4px; height:var(--workspace-header-height); min-height:var(--workspace-header-height); padding:8px 12px; border-bottom:1px solid var(--divider); }
+.auxiliary-header h2 { flex:1; min-width:0; margin:0 4px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:16px; line-height:22px; }
+.auxiliary-header .icon-button { flex:none; }
+.calendar-page { container:calendar-page / inline-size; }
+.calendar-header-actions { gap:4px; }
+.calendar-header .calendar-options { position:relative; }
+.auxiliary-cover .member-rail { position:absolute!important; z-index:20; inset:0 0 0 auto; width:calc(100% - var(--rooms-width,0px)); max-width:none; height:100%; border-left:1px solid var(--line); }
+.auxiliary-cover .member-resizer { display:none; }
+.auxiliary-cover #conversation { visibility:hidden; }
+
+@media(max-width:640px), (max-height:500px) and (pointer:coarse) {
+ .auxiliary-cover .member-rail { position:fixed!important; inset:var(--app-top,0px) 0 auto; width:100%; height:var(--app-height,100dvh); padding-top:env(safe-area-inset-top); padding-bottom:env(safe-area-inset-bottom); }
+ .auxiliary-header { padding:0 12px; }
+ .auxiliary-header h2 { font-size:17px; }
+ .calendar-header h2 { position:absolute; left:50%; transform:translateX(-50%); flex:none; max-width:calc(100% - 232px); margin:0; }
+ .calendar-header:has(#calendar-detail-close:not([hidden])) h2 { max-width:calc(100% - 112px); }
+ .calendar-header-actions { margin-left:auto; }
+ #calendar-close { margin-left:auto; }
+ .calendar-header-actions:not([hidden]) ~ #calendar-close { margin-left:0; }
+ #calendar-expand { display:none; }
+}

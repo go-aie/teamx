@@ -57,12 +57,7 @@
   }
   .workspace .member-rail .sidebar { flex:1; min-height:0; overflow:auto; }
   .room-header { display:grid; grid-template-columns:var(--room-header-actions-width,44px) minmax(0,1fr) var(--room-header-actions-width,44px); padding:0 8px; gap:4px; }
-  .room-header:has(#conversation-calendar:not([hidden])) { --room-header-actions-width:88px; }
-  .room-header:has(#calendar-header-actions:not([hidden])) { --room-header-actions-width:88px; }
   .mobile-conversation-back { grid-column:1; grid-row:1; justify-self:start; margin-inline-start:4px; }
-  .calendar-open .mobile-conversation-back { display:none; }
-  .room-header .calendar-back { grid-column:1; grid-row:1; justify-self:start; width:36px; min-width:36px; padding:0; margin-inline-start:4px; }
-  .calendar-header-actions { grid-column:3; grid-row:1; justify-self:end; }
   .room-title { grid-column:2; grid-row:1; min-width:0; overflow:hidden; }
   .room-header h1 { justify-content:center; margin:0; font-size:17px; gap:0; }
   .room-actions { grid-column:3; grid-row:1; margin:0; justify-self:center; gap:8px; }
