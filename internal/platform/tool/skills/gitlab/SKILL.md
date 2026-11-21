@@ -20,8 +20,10 @@ are exclusive and preserve the same validation. Prefer files or quoted heredocs
 for multiline bodies. Placeholder projects, IIDs, user IDs and SHAs require verified
 values from this instance.
 
-For a direct MR comment/reply request with a full URL, start at **Managed MR
-comments and discussion replies** below. Its resolve verifies the account,
+For managed MR comments/replies, including a direct request with a full URL,
+read `"$TEAMX_CLI" tools skill gitlab --topic managed-send` directly when workflow
+guidance is needed; no index or complete-guide read is required first. The full
+workflow also remains in **Managed MR comments and discussion replies** below. Its resolve verifies the account,
 project and exact MR/thread; no preliminary native `mr view`, note listing or
 ID lookup is needed. The context-reading steps below apply when the task itself
 requires investigating remote content.

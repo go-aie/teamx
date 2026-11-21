@@ -4,6 +4,10 @@
 
 | 记录 | 范围 |
 | --- | --- |
+| [飞书嵌套动作别名评估](agent-lark-action-alias.zh.md) | S1c-C2：共享合同／回执对照、最终输出 Call 所有权差异与保留结论；不删除别名、不改生命周期 |
+| [飞书保存目标读取入口收敛](agent-lark-read-entry.zh.md) | S1c-C1：根 lark read 别名移除，准确 ENTRY 的正文／上下文分页、账号恢复及隔离；原 Runtime/Host、HTTP 与结清保留 |
+| [GitLab 发送 Skill 按任务加载](agent-gitlab-send-skill-topic.zh.md) | S1b-B2：准确 ENTRY 的 managed-send topic、文本／图文与准确讨论、跨轮目标复用和 unknown 恢复；默认完整指南兼容及分层验证 |
+| [平台设置 Skill 按任务加载](agent-platform-skill-topics.zh.md) | S1b-B1：通知总开关、选择卡片两个自足 topic；公共路由、异步恢复、完整指南兼容及分层验证 |
 | [Agent 后端身份与通信说明](agent-backend-guidance.zh.md) | S1a-A3：公共身份边界、DSH 内部通信与 review 归属；真实模型对照、子 Agent 指令接收证明及 Session 生效边界 |
 | [Agent 正常业务指导校正](agent-business-guidance.zh.md) | S1a-A2：流式输入/来源恢复、事项自动关联与结算、准确工具入口和托管发送指导；隔离模型对照及 Session 生效边界 |
 | [GitLab 隔离托管图文动作](gitlab-image-send-s1.zh.md) | 阶段 1：项目原图上传、单次评论／准确讨论回复、回读与最小 Agent 合同；后续真实 Agent 与恢复见阶段 2 |

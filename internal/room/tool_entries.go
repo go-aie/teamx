@@ -120,13 +120,20 @@ func (m *roomManager) toolAvailability(file registry.Snapshot, p registry.Record
 }
 
 func entrySkill(d tool.Definition, entry string) ([]byte, error) {
-	data, err := tool.ReadSkill(d)
+	return entrySkillTopic(d, entry, "")
+}
+
+func entrySkillTopic(d tool.Definition, entry, topic string) ([]byte, error) {
+	data, err := tool.ReadToolSkill(d, topic)
 	if err != nil {
 		return nil, err
 	}
 	text := strings.ReplaceAll(string(data), "tools run "+d.Name, "tools run "+entry)
 	text = strings.ReplaceAll(text, "tools skill "+d.Name, "tools skill "+entry)
 	text = strings.ReplaceAll(text, "--tool "+d.Name, "--tool "+entry)
+	if topic == "managed-send" {
+		text = strings.ReplaceAll(text, "ENTRY", entry)
+	}
 	return []byte(text), nil
 }
 

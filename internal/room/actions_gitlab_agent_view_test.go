@@ -9,7 +9,7 @@ import (
 )
 
 func TestGitlabToolEntryManagedWorkflow(t *testing.T) {
-	entry := toolSelection{Definition: tool.Definition{Name: "gitlab-exact-account", Provider: "gitlab", Skill: "gitlab/SKILL.md"}, Status: "ready", Instance: "https://gitlab.invalid", Username: "user101"}
+	entry := toolSelection{Definition: tool.Definition{Name: "gitlab-exact-account", Provider: "gitlab", Skill: "skills/gitlab/SKILL.md"}, Status: "ready", Instance: "https://gitlab.invalid", Username: "user101"}
 	raw, err := json.Marshal(projectToolSelections([]toolSelection{entry}))
 	if err != nil {
 		t.Fatal(err)
@@ -19,7 +19,7 @@ func TestGitlabToolEntryManagedWorkflow(t *testing.T) {
 		t.Fatal(err)
 	}
 	row := rows[0]
-	if row["skill"] != `"$TEAMX_CLI" tools skill gitlab-exact-account` || row["status"] != "ready" || !strings.Contains(row["workflow"].(string), "actions resolve/execute --tool gitlab-exact-account") || entry.Skill != "gitlab/SKILL.md" {
+	if row["skill"] != `"$TEAMX_CLI" tools skill gitlab-exact-account` || row["status"] != "ready" || !strings.Contains(row["workflow"].(string), "actions resolve/execute --tool gitlab-exact-account") || !strings.Contains(row["workflow"].(string), "tools skill gitlab-exact-account --topic managed-send") || entry.Skill != "skills/gitlab/SKILL.md" {
 		t.Fatal(row)
 	}
 }

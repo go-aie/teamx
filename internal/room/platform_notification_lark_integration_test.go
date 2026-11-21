@@ -204,7 +204,7 @@ func TestLarkNotificationsInboxReferencesAndRoomQuestion(t *testing.T) {
 		t.Fatal(e)
 	}
 	var content larkTargetPage
-	if e = cli([]string{"lark", "read", "--object", object, "--target", object}, &content); e == nil {
+	if e = cli([]string{"tools", "run", h.c.ToolEntryID, "read", "--object", object, "--target", object}, &content); e == nil {
 		t.Fatal("notification identity granted remote read access")
 	}
 	if err := os.Rename(bin+".disabled", bin); err != nil {
@@ -216,7 +216,7 @@ func TestLarkNotificationsInboxReferencesAndRoomQuestion(t *testing.T) {
 			t.Fatal("read-only binding gained write capabilities")
 		}
 	}
-	if e = cli([]string{"lark", "read", "--object", object, "--target", object}, &content); e != nil || content.Status != platform.ResolutionResolved || len(content.Contents) != 1 || !strings.Contains(content.Contents[0].Body, "脱敏测试消息") || !strings.Contains(content.Contents[0].Body, "发送者：测试发送者（open_id: ou_sender") {
+	if e = cli([]string{"tools", "run", h.c.ToolEntryID, "read", "--object", object, "--target", object}, &content); e != nil || content.Status != platform.ResolutionResolved || len(content.Contents) != 1 || !strings.Contains(content.Contents[0].Body, "脱敏测试消息") || !strings.Contains(content.Contents[0].Body, "发送者：测试发送者（open_id: ou_sender") {
 		t.Fatal(content, e)
 	}
 	if len(h.state().Inbox) != 0 {

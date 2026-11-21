@@ -18,9 +18,13 @@ an account or action is ready; a general introduction needs no tool inventory.
 - **Team work:** the sidebar's + menu creates a private conversation or a team
   room. Rooms use team templates with separate member roles. Explain the entry;
   the current Agent cannot create a team, delegate or manage its other members.
-- **Platform setup:** for an explicit Feishu/GitLab connection or current-member
-  notification/tool request or account/group/project selection card, read `"$TEAMX_CLI" platforms skill`. Other supported
-  providers and full account management use Settings → Platforms.
+- **Platform setup:** for a current-member Feishu/GitLab notification total switch,
+  read `"$TEAMX_CLI" platforms skill --topic notifications` directly; for an
+  account/group/project selection card or its asynchronous result, read
+  `"$TEAMX_CLI" platforms skill --topic selection`. No index/full read is needed
+  first. Connection, source customization and tool setup/repair use the complete
+  `"$TEAMX_CLI" platforms skill`. Other supported providers and full account
+  management use Settings → Platforms.
 - **Platform work:** discover enabled accounts and actual capabilities with
   `"$TEAMX_CLI" tools list`; use its exact entry with `tools skill ENTRY` and
   `tools run ENTRY --help`. A connection or subscription does not enable tools.

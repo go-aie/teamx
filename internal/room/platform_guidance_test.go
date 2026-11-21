@@ -42,6 +42,10 @@ func TestSharedGuidanceInEffectiveSessionInstructions(t *testing.T) {
 			}
 			for _, contract := range []string{
 				`"$TEAMX_CLI" platforms skill`,
+				`"$TEAMX_CLI" platforms skill --topic notifications`,
+				`"$TEAMX_CLI" platforms skill --topic selection`,
+				"platforms/selection/ID",
+				"platforms/connect/ID",
 				"selection start directly",
 				"end the turn without waiting for clicks",
 				"source customization uses observed versions",
@@ -53,6 +57,7 @@ func TestSharedGuidanceInEffectiveSessionInstructions(t *testing.T) {
 				"only when the entry declares a Skill",
 				"Bound local tools may have no platform account",
 				"actions resolve/execute --tool ENTRY",
+				`"$TEAMX_CLI" tools skill ENTRY --topic managed-send`,
 				"Unknown does not prove success",
 				"You may use runtime-provided internal collaboration within your role and authority",
 				"Their work cannot stand for another Room member's review, agreement or authorization",
@@ -83,6 +88,21 @@ func TestSharedGuidanceInEffectiveSessionInstructions(t *testing.T) {
 			if unified && (!strings.Contains(delivered, "matters source --source SOURCE_REF") || !strings.Contains(delivered, "--cursor") || strings.Contains(delivered, "Inbox entries have type")) {
 				t.Fatal("stream source recovery guidance missing or legacy batch guidance leaked")
 			}
+		}
+	}
+}
+
+func TestPlatformSkillTopicHelpNeedsNoService(t *testing.T) {
+	var out, errs bytes.Buffer
+	if err := runPlatformConnectWithClient(t.Context(), []string{"skill", "--help"}, &out, &errs, func(string) string {
+		t.Fatal("skill help read bound context")
+		return ""
+	}, nil); err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"--topic notifications", "--topic selection", "Omit --topic", "No prior connection or tool binding"} {
+		if !strings.Contains(out.String(), want) {
+			t.Fatal("skill help missing task entry", want, out.String())
 		}
 	}
 }
@@ -122,5 +142,23 @@ func TestPlatformMemberHelpFocusesOnRequestedCommand(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestToolSkillTopicHelpNeedsNoService(t *testing.T) {
+	for _, args := range [][]string{{"skill", "--help"}, {"skill", "gitlab-exact-account", "--help"}} {
+		var out, errs bytes.Buffer
+		if err := runToolsWithClient(t.Context(), args, nil, &out, &errs, func(string) string { t.Fatal("help read bound context"); return "" }, nil); err != nil {
+			t.Fatal(err)
+		}
+		out.Reset()
+		if err := runCLIWithCatalog(t.Context(), append([]string{"tools"}, args...), nil, &out, &errs, func(string) string { t.Fatal("top-level help read credentials or binding"); return "" }, nil); err != nil {
+			t.Fatal(err)
+		}
+		for _, want := range []string{"--topic managed-send", "Omit --topic", "exact tool binding", "Unknown or unsupported"} {
+			if !strings.Contains(out.String(), want) {
+				t.Fatal("help missing resource contract", want, out.String())
+			}
+		}
 	}
 }

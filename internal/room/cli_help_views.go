@@ -26,11 +26,10 @@ Member business commands:
 `
 	}
 	names, tools := []string{}, []string{}
-	lark, connections := false, false
+	connections := false
 	if catalog != nil {
 		for _, d := range catalog.Definitions() {
 			names = append(names, d.Type.Provider)
-			lark = lark || d.Type.Provider == "lark"
 			connections = connections || d.Connection != nil
 		}
 		// Declaration text only: never locate executables or inspect credentials.
@@ -42,9 +41,6 @@ Member business commands:
 		if connections {
 			text += "  platforms skill/list/connect/selection/chats/projects/member  Account and current-member setup (--help)\n"
 		}
-	}
-	if lark {
-		text += "  lark read                     Read a verified Lark target (--help)\n"
 	}
 	if agent {
 		text += "Use teamx COMMAND SUBCOMMAND --help for parameters and recovery.\nHelp lists entry points; current bindings and service checks determine access.\n"
@@ -80,6 +76,9 @@ func localCLIHelp(args []string, env func(string) string, catalog *platforms.Cat
 	path := args[:len(args)-1]
 	if len(path) == 0 {
 		return "", false
+	}
+	if path[0] == "tools" && len(path) >= 2 && path[1] == "skill" && (len(path) == 2 || len(path) == 3) {
+		return toolSkillHelp, true
 	}
 	op := ""
 	if len(path) == 2 {

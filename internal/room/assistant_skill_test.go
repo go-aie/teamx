@@ -3,6 +3,8 @@ package room
 import (
 	"bytes"
 	"context"
+	"net/http"
+	"strings"
 	"testing"
 
 	"github.com/go-aie/teamx/internal/platform/tool"
@@ -46,6 +48,55 @@ func TestDefaultAssistantSkillWithoutPlatformBinding(t *testing.T) {
 	var out bytes.Buffer
 	if err := runPlatformConnectWithClient(context.Background(), []string{"skill"}, &out, &out, env, client); err != nil || !bytes.Equal(out.Bytes(), want) {
 		t.Fatal("embedded Skill unavailable to unbound assistant", err)
+	}
+	completeSize := len(want)
+	for _, topic := range []string{"notifications", "selection"} {
+		t.Run(topic, func(t *testing.T) {
+			want, err := tool.ReadPlatformSkill(topic)
+			if err != nil {
+				t.Fatal(err)
+			}
+			out.Reset()
+			if err := runPlatformConnectWithClient(t.Context(), []string{"skill", "--topic", topic}, &out, &out, env, client); err != nil || !bytes.Equal(out.Bytes(), want) {
+				t.Fatal("topic unavailable through member CLI before binding", err, out.String())
+			}
+			if len(want) >= completeSize {
+				t.Fatal("task read returned complete guidance")
+			}
+		})
+	}
+	for _, topic := range []string{"unknown", "../SKILL", "Notifications"} {
+		out.Reset()
+		if err := runPlatformConnectWithClient(t.Context(), []string{"skill", "--topic", topic}, &out, &out, env, client); err == nil || !strings.Contains(err.Error(), "topic") || !strings.Contains(err.Error(), "selection") {
+			t.Fatal("unknown topic did not return actionable server error", topic, err)
+		}
+		bad := platformConnectRequest{ServiceInfo: req.ServiceInfo, Caller: req.Caller, Topic: topic}
+		if w := managerHTTP(m, "/v1/platforms/skill", bad); w.Code != http.StatusBadRequest {
+			t.Fatal("unknown HTTP topic was not rejected", topic, w.Code, w.Body.String())
+		}
+	}
+	// topic is a resource selector, never a silently ignored operation argument.
+	for _, action := range []string{"list", "connect/status"} {
+		bad := platformConnectRequest{ServiceInfo: req.ServiceInfo, Caller: req.Caller, Topic: "notifications"}
+		if w := managerHTTP(m, "/v1/platforms/"+action, bad); w.Code != http.StatusBadRequest {
+			t.Fatal("topic accepted by another operation", action, w.Code)
+		}
+		out.Reset()
+		args := append(strings.Split(action, "/"), "--topic", "notifications")
+		if err := runPlatformConnectWithClient(t.Context(), args, &out, &out, env, client); err == nil {
+			t.Fatal("CLI accepted topic for another operation", action)
+		}
+	}
+	for _, topic := range []string{"", "notifications", "selection"} {
+		bad := platformConnectRequest{ServiceInfo: req.ServiceInfo, Caller: humanCaller, Topic: topic}
+		if w := managerHTTP(m, "/v1/platforms/skill", bad); w.Code != http.StatusForbidden {
+			t.Fatal("resource access bypassed bound-member identity", topic, w.Code)
+		}
+		bad.Caller = req.Caller
+		bad.Caller.MembershipID = strings.Repeat("f", 32)
+		if w := managerHTTP(m, "/v1/platforms/skill", bad); w.Code != http.StatusForbidden {
+			t.Fatal("stale membership read guidance", topic, w.Code)
+		}
 	}
 	if w := managerHTTP(m, "/v1/platforms/list", platformConnectRequest{ServiceInfo: svc.info, Caller: req.Caller}); w.Code != 200 || !bytes.Contains(w.Body.Bytes(), []byte(`[]`)) {
 		t.Fatal(w.Code, w.Body.String())

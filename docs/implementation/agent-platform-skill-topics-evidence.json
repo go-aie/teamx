@@ -1,0 +1,683 @@
+{
+  "scope": "S1b-B1",
+  "date": "2026-11-21",
+  "private_artifact_root": "/tmp/teamx-platform-topics-ceLRIT",
+  "remote_business_writes": 0,
+  "collectors_started": false,
+  "daily_service_changed": false,
+  "production_session_rotated": false,
+  "resources": {
+    "complete": {
+      "bytes": 33282,
+      "sha256": "93a56e4b8d59bc6da4e9ac502ea0aefc0527942f3e66d566de26bd336c087811"
+    },
+    "notifications": {
+      "bytes": 4466,
+      "sha256": "750fd5b3fdfd8fc686dfa0db3a73998ceb651aef4a8b52b1c4eb724018d66b97",
+      "reduction_vs_complete_percent": 86.6
+    },
+    "selection": {
+      "bytes": 7719,
+      "sha256": "77cac59657732c4a916040c466629100d77ba006979ffc27a81cb2627a7908f8",
+      "reduction_vs_complete_percent": 76.8
+    }
+  },
+  "source_snapshots": {
+    "internal/platform/tool/skills.go": {
+      "before_sha256": "c4fe1dcb76566466ab640524d2db69d447668cb66ce79f4b2257a4e234aa91dc",
+      "after_sha256": "90f59f91078b2b35e9cf816dbe44ddbf2ed8bc713a1f5062b288df48996b7cd0",
+      "before_bytes": 372,
+      "after_bytes": 1250
+    },
+    "internal/platform/tool/skills/platforms/SKILL.md": {
+      "before_sha256": "47050b1e8ccec82e3049f76ad49e55e39670031230cef475fe040caa6fc8ea00",
+      "after_sha256": "93a56e4b8d59bc6da4e9ac502ea0aefc0527942f3e66d566de26bd336c087811",
+      "before_bytes": 33061,
+      "after_bytes": 33282
+    },
+    "internal/platform/tool/skills/usage/SKILL.md": {
+      "before_sha256": "10389ecfc10c4971319a85b26671ee57608ecf53808d820320dc9b9220081c75",
+      "after_sha256": "f78044f1d06d1b97e34a113dade63df519c07ac178309479779241131b782441",
+      "before_bytes": 8144,
+      "after_bytes": 8386
+    },
+    "internal/room/platform_cli_help.go": {
+      "before_sha256": "ddb85e56bbe1f2abd6f7db0327b2191f45dec9dcd73ea53cdbdfb079def8b9af",
+      "after_sha256": "9e266a8dc8840cb63451379475e4e0f1bdc03dc7c81a928e1b37e6e2a1a3504c",
+      "before_bytes": 15402,
+      "after_bytes": 15990
+    },
+    "internal/room/platform_connect.go": {
+      "before_sha256": "717335a52969a0530b27e77e39f014afdbd4d8f0d4f7bd53b63999e2e74abfb8",
+      "after_sha256": "45b4fe9df3a8725caafc3788eb0d5227718992cbe42b6a6cfa7cb89414114ea9",
+      "before_bytes": 19177,
+      "after_bytes": 19477
+    },
+    "internal/room/platform_connect_cli.go": {
+      "before_sha256": "16ee3974711064de02c1aa435114a2315d73eebc7e6956941551bfb331276227",
+      "after_sha256": "f944e46eb148e14420b4ba5cdabb1d840152cfc39c4825a9285449263b605a9d",
+      "before_bytes": 7959,
+      "after_bytes": 8089
+    },
+    "internal/room/platform_connect_store.go": {
+      "before_sha256": "ca2abcc1f5afb286eb1812ff698832e0e9ddf61026e588823a3521fbde1b15e4",
+      "after_sha256": "9c1d3eb6b2ea1055c73201dacc69923567662b06b275f277d80c0ed3afc22503",
+      "before_bytes": 10491,
+      "after_bytes": 10553
+    },
+    "internal/room/platform_member_cli.go": {
+      "before_sha256": "833db95bf60b35219c9c9d420f17058e415fdf3a83fc50b8dadf92a8da6d6636",
+      "after_sha256": "51d623c2ee519bde4cfa619b9001ae7ca18a8825a79d2fafdf095ba3e748dd06",
+      "before_bytes": 14900,
+      "after_bytes": 15060
+    },
+    "internal/room/prompts/agent-guide.md": {
+      "before_sha256": "2a7d0719b02ed9976ea950a5f8435e0f65cb3a5ed3f06437935671bf55180d05",
+      "after_sha256": "ac51ce6eea903e065c3e70414eab9a610230a15df3b484fcdb0d8b1de52e85db",
+      "before_bytes": 14911,
+      "after_bytes": 15176
+    }
+  },
+  "checks": {
+    "focused_core": "passed: unbound CLI/HTTP, offline help, factory guidance and identity checks",
+    "integration_race": {
+      "top_level_passed": 76,
+      "passed_including_subtests": 172,
+      "failed": [],
+      "skipped": [],
+      "package_passed": true,
+      "top_level_tests": [
+        "TestDefaultAssistantSkillWithoutPlatformBinding",
+        "TestPlatformConnectNativeSetupAndCLIProcessLifetime",
+        "TestPlatformConnectNativePartialExpiryAndCancellation",
+        "TestPlatformConnectInteractionProjectionAndBoundaries",
+        "TestPlatformConnectInteractionVersionedCancellationAndDuplicateReceipt",
+        "TestPlatformConnectInteractionReplacementCannotInheritLiveAuthorization",
+        "TestPlatformConnectSavedReceiptIdempotenceAndReadOnlyStatus",
+        "TestPlatformConnectCancelledLateSuccessPreservesPartialEffects",
+        "TestPlatformConnectExpiryFailureAndUnknownRecovery",
+        "TestPlatformConnectSkillIdentityAndHumanBoundary",
+        "TestPlatformConnectWaitTimeoutAndInterruptionDoNotCancel",
+        "TestPlatformConnectRestartReconcilesSavedConnectionWithoutWritingAgain",
+        "TestPlatformConnectReuseRequiresExactVerifiedVersion",
+        "TestPlatformConnectSaveUnknownNeverReplaysConnection",
+        "TestPlatformConnectMembershipRemovedBeforeAuthorizationCompletes",
+        "TestPlatformMemberCurrentRequestFields",
+        "TestSharedGuidanceInEffectiveSessionInstructions",
+        "TestPlatformSkillTopicHelpNeedsNoService",
+        "TestPlatformMemberHelpFocusesOnRequestedCommand",
+        "TestPlatformMemberCurrentCLIRejectsMixedModes",
+        "TestPlatformMemberToggleIdentityScope",
+        "TestPlatformMemberRejectsChangesDuringGroupVerification",
+        "TestPlatformMemberNotificationUnknownReceiptAndRestart",
+        "TestPlatformMemberLarkRangeAndConditionChanges",
+        "TestPlatformMemberLarkConflictingIntent",
+        "TestPlatformMemberLarkInputAndEmptyListPersistence",
+        "TestPlatformMemberLarkCLIRejectsAmbiguousAndUnsupportedFields",
+        "TestPlatformMemberLarkAbsentDisableDoesNotCreateSubscription",
+        "TestPlatformMemberChatTypeBoundary",
+        "TestPlatformMemberNotificationToggleDefaultsAndPreservedReceipts",
+        "TestPlatformMemberNotificationToggleRestoresSavedSources",
+        "TestPlatformMemberPrivateRejectsUnverifiableTargets",
+        "TestPlatformMemberPrivateRejectsChangesDuringVerification",
+        "TestPlatformMemberNotificationPatchPreservesRangeAndStart",
+        "TestPlatformMemberToolReceiptsIdentityAndIndependentVersions",
+        "TestPlatformMemberUnknownSubmissionNeverReplays",
+        "TestPlatformMemberRejectsFabricatedAuthorityAndUnsupportedInput",
+        "TestPlatformSelectionConversationAndMemberConfiguration",
+        "TestDefaultAssistantPlatformOnboarding",
+        "TestPlatformSelectionRejectsDraftChangedDuringGroupVerification",
+        "TestPlatformSelectionDraftConflictAndImmutableReceipt",
+        "TestPlatformSelectionIdentityExpiryCancellationAndRecovery",
+        "TestPlatformSelectionExpirationAndNotificationDeduplication",
+        "TestPlatformSelectionSourceLookupAndMalformedRequests",
+        "TestPlatformSelectionVerifiedAccountVersionAndMemberReplacement",
+        "TestPlatformSelectionAutomaticallyContinuesThroughInbox",
+        "TestDefaultAssistantSelectionAutomaticContinuation",
+        "TestPlatformSelectionResultDeliverySurvivesUnknownHandoff",
+        "TestPlatformSelectionMultipleVerifiedAccountsKeepExactTarget",
+        "TestPlatformMemberIntentNormalizationRetainsObservation",
+        "TestUsageSkillStandaloneCLIWithoutPlatformBinding",
+        "TestUsageSkillIdentityAndFixedResourceBoundary",
+        "TestPlatformMemberCurrentHTTPRejectsExpandedShapes",
+        "TestPlatformMemberLarkReplacementRejectsPrivateTarget",
+        "TestPlatformMemberSubscriptionPatchVersionsAndHumanEvidence",
+        "TestPlatformConnectNotificationSubscriptionHandoffAndLateCompletion",
+        "TestPlatformMemberPrivateUnknownReceiptSurvivesRestart",
+        "TestPlatformMemberLarkReplacementUnknownReceiptSurvivesRestart",
+        "TestPlatformMemberCurrentStorageFailuresAndRestart",
+        "TestPlatformMemberCurrentReadAndHistoricalReceipt",
+        "TestPlatformMemberCLISelectedGroupAndSeparateTool",
+        "TestPlatformMemberCurrentAdoptsSavedScopeBeforeAdmission",
+        "TestPlatformConnectNotificationCannotBypassAdmissionOrMemberRemoval",
+        "TestPlatformConnectNotificationContinuesAcrossSessionRotation",
+        "TestPlatformMemberCurrentConcurrentReservationAndFrozenAdmission",
+        "TestPlatformMemberCurrentCLIUsesOneBusinessRequest",
+        "TestPlatformConnectNotificationAutomaticallyContinuesWithoutChatAndDoesNotRetryFailure",
+        "TestPlatformConnectNotificationCrashRecoveryUsesOriginalDelivery",
+        "TestPlatformConnectNotificationCapacityRetainsPendingAndRetriesAfterReclamation",
+        "TestPlatformConnectNotificationStartPolicyIsIndependentOfBusinessInput",
+        "TestPlatformConnectNotificationTerminalFailuresAndRestartResult",
+        "TestPlatformConnectNotificationReusedConnectionPublishesSavedResult",
+        "TestPlatformConnectNotificationUnsubscribeAcknowledgmentAndIdentity",
+        "TestPlatformMemberLarkCLIConfiguresRangesAndConditions",
+        "TestPlatformMemberCurrentSourceFences",
+        "TestPlatformMemberPrivateCLIQueriesAndReplacesVerifiedPersonnel"
+      ]
+    },
+    "real_lark": {
+      "top_level_passed": 1,
+      "passed_including_subtests": 2,
+      "failed": [],
+      "skipped": [],
+      "package_passed": true,
+      "top_level_tests": [
+        "TestPlatformNotificationSelectionRealDSH"
+      ]
+    },
+    "real_gitlab_retry": {
+      "top_level_passed": 1,
+      "passed_including_subtests": 2,
+      "failed": [],
+      "skipped": [],
+      "package_passed": true,
+      "top_level_tests": [
+        "TestPlatformNotificationSelectionRealDSH"
+      ]
+    },
+    "diff_check": "passed"
+  },
+  "samples": {
+    "before_lark": {
+      "status": "failed",
+      "model": "deepseek-v4.1-flash-1017",
+      "role": "shipped default assistant",
+      "acp_turns": 8,
+      "controlled_rotation": true,
+      "cases": [
+        {
+          "scenario": "开启飞书通知",
+          "tool_calls": 5,
+          "continuation_tool_calls": null,
+          "requests": [
+            {
+              "path": "/v1/platforms/skill",
+              "topic": "complete"
+            },
+            {
+              "path": "/v1/platforms/list"
+            },
+            {
+              "path": "/v1/platforms/member/notifications"
+            }
+          ]
+        },
+        {
+          "scenario": "飞书选择群的卡片",
+          "tool_calls": 3,
+          "continuation_tool_calls": 4,
+          "requests": [
+            {
+              "path": "/v1/platforms/selection/start"
+            }
+          ],
+          "selection_result": {
+            "status": "completed",
+            "result_version": 1,
+            "handled_version": 1
+          },
+          "browser": {
+            "status": "passed",
+            "search": true,
+            "pagination": true,
+            "mobile": true,
+            "reload": true
+          }
+        },
+        {
+          "scenario": "只接收这个群",
+          "tool_calls": 4,
+          "continuation_tool_calls": null,
+          "requests": [
+            {
+              "path": "/v1/platforms/member/get"
+            },
+            {
+              "path": "/v1/platforms/member/notifications"
+            }
+          ]
+        },
+        {
+          "scenario": "关闭飞书通知",
+          "tool_calls": 7,
+          "continuation_tool_calls": null,
+          "requests": [
+            {
+              "path": "/v1/platforms/skill",
+              "topic": "complete"
+            },
+            {
+              "path": "/v1/platforms/list"
+            },
+            {
+              "path": "/v1/platforms/member/notifications"
+            }
+          ]
+        },
+        {
+          "scenario": "开启飞书通知",
+          "tool_calls": 3,
+          "continuation_tool_calls": null,
+          "requests": [
+            {
+              "path": "/v1/platforms/member/notifications"
+            }
+          ]
+        },
+        {
+          "scenario": "飞书选择群的卡片",
+          "tool_calls": 4,
+          "continuation_tool_calls": null,
+          "requests": [
+            {
+              "path": "/v1/platforms/selection/start"
+            }
+          ],
+          "browser": {
+            "status": "passed",
+            "search": true,
+            "pagination": true,
+            "mobile": true,
+            "reload": true
+          }
+        }
+      ],
+      "incomplete_reason": "model service HTTP 429; failed run retained, not counted as complete acceptance"
+    },
+    "before_gitlab": {
+      "status": "failed",
+      "model": "deepseek-v4.1-flash-1017",
+      "role": "shipped default assistant",
+      "acp_turns": 1,
+      "controlled_rotation": false,
+      "cases": [],
+      "incomplete_reason": "model service HTTP 429; failed run retained, not counted as complete acceptance"
+    },
+    "after_lark": {
+      "status": "passed",
+      "model": "deepseek-v4.1-flash-1017",
+      "role": "shipped default assistant",
+      "acp_turns": 8,
+      "controlled_rotation": true,
+      "cases": [
+        {
+          "scenario": "开启飞书通知",
+          "tool_calls": 5,
+          "continuation_tool_calls": null,
+          "requests": [
+            {
+              "path": "/v1/platforms/skill",
+              "topic": "notifications"
+            },
+            {
+              "path": "/v1/platforms/list"
+            },
+            {
+              "path": "/v1/platforms/member/notifications"
+            }
+          ]
+        },
+        {
+          "scenario": "飞书选择群的卡片",
+          "tool_calls": 5,
+          "continuation_tool_calls": 4,
+          "requests": [
+            {
+              "path": "/v1/platforms/skill",
+              "topic": "selection"
+            },
+            {
+              "path": "/v1/platforms/selection/status"
+            },
+            {
+              "path": "/v1/platforms/selection/start"
+            }
+          ],
+          "continuation_requests": [
+            {
+              "path": "/v1/platforms/selection/status"
+            },
+            {
+              "path": "/v1/platforms/selection/acknowledge"
+            }
+          ],
+          "selection_result": {
+            "status": "completed",
+            "result_version": 1,
+            "handled_version": 1
+          },
+          "browser": {
+            "status": "passed",
+            "search": true,
+            "pagination": true,
+            "mobile": true,
+            "reload": true
+          }
+        },
+        {
+          "scenario": "只接收这个群",
+          "tool_calls": 7,
+          "continuation_tool_calls": null,
+          "requests": [
+            {
+              "path": "/v1/platforms/skill",
+              "topic": "complete"
+            },
+            {
+              "path": "/v1/platforms/member/get"
+            },
+            {
+              "path": "/v1/platforms/member/notifications"
+            },
+            {
+              "path": "/v1/platforms/member/get"
+            }
+          ]
+        },
+        {
+          "scenario": "关闭飞书通知",
+          "tool_calls": 5,
+          "continuation_tool_calls": null,
+          "requests": [
+            {
+              "path": "/v1/platforms/skill",
+              "topic": "notifications"
+            },
+            {
+              "path": "/v1/platforms/list"
+            },
+            {
+              "path": "/v1/platforms/member/notifications"
+            }
+          ]
+        },
+        {
+          "scenario": "开启飞书通知",
+          "tool_calls": 3,
+          "continuation_tool_calls": null,
+          "requests": [
+            {
+              "path": "/v1/platforms/member/notifications"
+            }
+          ]
+        },
+        {
+          "scenario": "飞书选择群的卡片",
+          "tool_calls": 5,
+          "continuation_tool_calls": 4,
+          "requests": [
+            {
+              "path": "/v1/platforms/skill",
+              "topic": "selection"
+            },
+            {
+              "path": "/v1/platforms/selection/status"
+            },
+            {
+              "path": "/v1/platforms/selection/start"
+            }
+          ],
+          "continuation_requests": [
+            {
+              "path": "/v1/platforms/selection/status"
+            },
+            {
+              "path": "/v1/platforms/selection/acknowledge"
+            },
+            {
+              "path": "/v1/platforms/member/status"
+            }
+          ],
+          "selection_result": {
+            "status": "completed",
+            "result_version": 1,
+            "handled_version": 1
+          },
+          "browser": {
+            "status": "passed",
+            "search": true,
+            "pagination": true,
+            "mobile": true,
+            "reload": true
+          }
+        }
+      ]
+    },
+    "after_gitlab_initial": {
+      "status": "failed",
+      "model": "deepseek-v4.1-flash-1017",
+      "role": "shipped default assistant",
+      "acp_turns": 6,
+      "controlled_rotation": true,
+      "cases": [
+        {
+          "scenario": "开启GitLab通知",
+          "tool_calls": 5,
+          "continuation_tool_calls": null,
+          "requests": [
+            {
+              "path": "/v1/platforms/skill",
+              "topic": "notifications"
+            },
+            {
+              "path": "/v1/platforms/list"
+            },
+            {
+              "path": "/v1/platforms/member/notifications"
+            }
+          ]
+        },
+        {
+          "scenario": "GitLab 项目选择卡片",
+          "tool_calls": 5,
+          "continuation_tool_calls": 4,
+          "requests": [
+            {
+              "path": "/v1/platforms/skill",
+              "topic": "selection"
+            },
+            {
+              "path": "/v1/platforms/selection/status"
+            },
+            {
+              "path": "/v1/platforms/selection/start"
+            }
+          ],
+          "continuation_requests": [
+            {
+              "path": "/v1/platforms/selection/status"
+            },
+            {
+              "path": "/v1/platforms/selection/acknowledge"
+            }
+          ],
+          "selection_result": {
+            "status": "completed",
+            "result_version": 1,
+            "handled_version": 1
+          },
+          "browser": {
+            "status": "passed",
+            "search": true,
+            "pagination": true,
+            "mobile": true,
+            "reload": true
+          }
+        },
+        {
+          "scenario": "关闭GitLab通知",
+          "tool_calls": 5,
+          "continuation_tool_calls": null,
+          "requests": [
+            {
+              "path": "/v1/platforms/skill",
+              "topic": "notifications"
+            },
+            {
+              "path": "/v1/platforms/list"
+            },
+            {
+              "path": "/v1/platforms/member/notifications"
+            }
+          ]
+        },
+        {
+          "scenario": "开启GitLab通知",
+          "tool_calls": 3,
+          "continuation_tool_calls": null,
+          "requests": [
+            {
+              "path": "/v1/platforms/member/notifications"
+            }
+          ]
+        }
+      ],
+      "incomplete_reason": "model service HTTP 429; failed run retained, not counted as complete acceptance"
+    },
+    "after_gitlab_retry": {
+      "status": "passed",
+      "model": "deepseek-v4.1-flash-1017",
+      "role": "shipped default assistant",
+      "acp_turns": 7,
+      "controlled_rotation": true,
+      "cases": [
+        {
+          "scenario": "开启GitLab通知",
+          "tool_calls": 5,
+          "continuation_tool_calls": null,
+          "requests": [
+            {
+              "path": "/v1/platforms/skill",
+              "topic": "notifications"
+            },
+            {
+              "path": "/v1/platforms/list"
+            },
+            {
+              "path": "/v1/platforms/member/notifications"
+            }
+          ]
+        },
+        {
+          "scenario": "GitLab 项目选择卡片",
+          "tool_calls": 5,
+          "continuation_tool_calls": 4,
+          "requests": [
+            {
+              "path": "/v1/platforms/skill",
+              "topic": "selection"
+            },
+            {
+              "path": "/v1/platforms/selection/status"
+            },
+            {
+              "path": "/v1/platforms/selection/start"
+            }
+          ],
+          "continuation_requests": [
+            {
+              "path": "/v1/platforms/selection/status"
+            },
+            {
+              "path": "/v1/platforms/selection/acknowledge"
+            }
+          ],
+          "selection_result": {
+            "status": "completed",
+            "result_version": 1,
+            "handled_version": 1
+          },
+          "browser": {
+            "status": "passed",
+            "search": true,
+            "pagination": true,
+            "mobile": true,
+            "reload": true
+          }
+        },
+        {
+          "scenario": "关闭GitLab通知",
+          "tool_calls": 5,
+          "continuation_tool_calls": null,
+          "requests": [
+            {
+              "path": "/v1/platforms/skill",
+              "topic": "notifications"
+            },
+            {
+              "path": "/v1/platforms/list"
+            },
+            {
+              "path": "/v1/platforms/member/notifications"
+            }
+          ]
+        },
+        {
+          "scenario": "开启GitLab通知",
+          "tool_calls": 3,
+          "continuation_tool_calls": null,
+          "requests": [
+            {
+              "path": "/v1/platforms/member/notifications"
+            }
+          ]
+        },
+        {
+          "scenario": "GitLab 项目选择卡片",
+          "tool_calls": 5,
+          "continuation_tool_calls": 4,
+          "requests": [
+            {
+              "path": "/v1/platforms/skill",
+              "topic": "selection"
+            },
+            {
+              "path": "/v1/platforms/selection/status"
+            },
+            {
+              "path": "/v1/platforms/selection/start"
+            }
+          ],
+          "continuation_requests": [
+            {
+              "path": "/v1/platforms/selection/status"
+            },
+            {
+              "path": "/v1/platforms/selection/acknowledge"
+            }
+          ],
+          "selection_result": {
+            "status": "completed",
+            "result_version": 1,
+            "handled_version": 1
+          },
+          "browser": {
+            "status": "passed",
+            "search": true,
+            "pagination": true,
+            "mobile": true,
+            "reload": true
+          }
+        }
+      ]
+    }
+  },
+  "limitations": [
+    "Provider metadata simulated; no real platform configuration or business writes.",
+    "Not a statistical comparison. No model token usage collected. Resource bytes do not establish total token/cost/tool-call savings.",
+    "Baseline Lark reused the complete guide across tasks and sometimes omitted source recovery; task call counts are reported separately.",
+    "HTTP 429 failures are preserved and never counted as complete passes.",
+    "Related integration/race slice passed; no full repository green claim.",
+    "No daily service adoption or existing Session replacement."
+  ]
+}

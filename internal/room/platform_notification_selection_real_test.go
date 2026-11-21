@@ -142,6 +142,19 @@ func settingsTurnEvidence(a *policyRealAudit) map[string]any {
 	return map[string]any{"tool_calls": len(ids), "tools": turn.Result.Tools, "error": turn.Error}
 }
 
+func settingsCheckSkillTopic(t *testing.T, trace []settingsRequestTrace, topic string) {
+	t.Helper()
+	for _, r := range trace {
+		if r.Path != "/v1/platforms/skill" {
+			continue
+		}
+		var req platformConnectRequest
+		if err := json.Unmarshal(r.Body, &req); err != nil || req.Topic != topic {
+			t.Errorf("known task should read topic %q directly, got %q: %v", topic, req.Topic, err)
+		}
+	}
+}
+
 // Independent model runs create cards themselves; Chromium submits those exact
 // cards and the same member reads/acknowledges the Room result. Providers are
 // simulated, collectors stay stopped, and no installed subscriptions are touched.
@@ -326,6 +339,7 @@ func settingsSelectionRealRun(t *testing.T, root, provider string, run int) {
 		before := view()
 		readsBefore := len(providerTrace())
 		source, start, trace := post(text)
+		settingsCheckSkillTopic(t, trace, "notifications")
 		after := view()
 		var writes []platformMemberRequest
 		for _, r := range trace {
@@ -360,6 +374,7 @@ func settingsSelectionRealRun(t *testing.T, root, provider string, run int) {
 		readsBefore := len(providerTrace())
 		cardText := map[string]string{"lark": "飞书选择群的卡片", "gitlab": "GitLab 项目选择卡片"}[provider]
 		source, start, trace := post(cardText)
+		settingsCheckSkillTopic(t, trace, "selection")
 		var selection platformSelectionView
 		for _, req := range trace {
 			if req.Path == "/v1/platforms/chats" || req.Path == "/v1/platforms/projects" {
@@ -396,6 +411,7 @@ func settingsSelectionRealRun(t *testing.T, root, provider string, run int) {
 		}
 		cases = append(cases, map[string]any{"text": cardText, "source_seq": source.Seq, "elapsed_seconds": time.Since(start).Seconds(), "receipt": selection, "card_created_seconds": selection.CreatedAt.Sub(start).Seconds(), "requests": trace, "model": settingsTurnEvidence(audit)})
 		browserStart := time.Now()
+		continuationStart := len(requests.snapshot())
 		browserOut := filepath.Join(out, fmt.Sprintf("card-%d", source.Seq))
 		if err := os.Mkdir(browserOut, 0700); err != nil {
 			t.Fatal(err)
@@ -419,6 +435,9 @@ func settingsSelectionRealRun(t *testing.T, root, provider string, run int) {
 		cases[len(cases)-1]["component_observed_seconds"] = float64(browserEvidence.VisibleAtMS-start.UnixMilli()) / 1000
 		turn++
 		wait(turn)
+		continuationTrace := requests.snapshot()[continuationStart:]
+		settingsCheckSkillTopic(t, continuationTrace, "selection")
+		cases[len(cases)-1]["continuation_requests"] = continuationTrace
 		m.mu.Lock()
 		selected, readErr := m.readPlatformSelectionLocked(selection.ID)
 		if readErr == nil {

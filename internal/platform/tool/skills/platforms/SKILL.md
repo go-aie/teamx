@@ -3,8 +3,12 @@
 Use `"$TEAMX_CLI" platforms skill` for a real human conversation request to connect
 Feishu/GitLab, configure your own notifications/tools, or show an account, group
 or project selection card. It works before any
-connection or tool binding. Read the common entry, then only the requested workflow: total switch, selection
-card, or provider connection/customization. Use current `platforms --help` and subcommand help for field contracts.
+connection or tool binding. Known total-switch tasks can read
+`platforms skill --topic notifications` directly; selection cards and their
+asynchronous results can read `platforms skill --topic selection` directly. Each
+topic includes its own boundaries and recovery; no index/full read is needed
+first. This complete guide retains connection, customization and tool repair.
+Use current `platforms --help` and subcommand help for field contracts.
 Every `teamx` example stands for `"$TEAMX_CLI"`; replace uppercase placeholders with
 verified values. Connect/selection commands already return JSON; omit `--json`.
 Other providers and unsupported settings use Settings → Platforms. For interface

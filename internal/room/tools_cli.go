@@ -11,6 +11,8 @@ import (
 	"strings"
 )
 
+const toolSkillHelp = "Usage: teamx tools skill ENTRY [--topic managed-send]\nGitLab managed-send: complete text/image MR-comment and exact-discussion send workflow, target reuse and unknown recovery. Choose it directly; no index or complete-Skill read is needed first. Omit --topic for the complete declared Skill, including development/review/merge. Unknown or unsupported topics are rejected. Current member identity and exact tool binding are required; reading needs no usable credentials or Workspace and grants no write authority."
+
 // ExitError preserves the subprocess exit status through the production CLI.
 type ExitError struct{ Code int }
 
@@ -33,8 +35,27 @@ func runToolsCLI(ctx context.Context, args []string, stdin io.Reader, stdout, st
 
 func runToolsWithClient(ctx context.Context, args []string, stdin io.Reader, stdout, stderr io.Writer, env func(string) string, httpClient *http.Client) error {
 	if len(args) == 0 || args[0] == "--help" || args[0] == "-h" {
-		_, err := fmt.Fprintln(stdout, "Usage: teamx tools list | teamx tools run <tool> [args...] | teamx tools skill <tool>\nReuse a known exact entry; list discovers bound tools and their availability/capabilities. Local tools may have no platform account, Skill or Workspace requirement. Use tools run ENTRY --help when usage is missing; read tools skill ENTRY only when a Skill is declared and its workflow is needed. Never switch accounts after a failure or bypass the member binding.")
+		_, err := fmt.Fprintln(stdout, "Usage: teamx tools list | teamx tools run <tool> [args...] | teamx tools skill <tool> [--topic managed-send]\nReuse a known exact entry; list discovers bound tools and their availability/capabilities. For GitLab managed MR comments/replies, read tools skill ENTRY --topic managed-send directly when guidance is needed. Omit --topic for the complete declared Skill, including development/review/merge. Local tools may have no platform account, Skill or Workspace requirement. Use tools run ENTRY --help when usage is missing. Never switch accounts after a failure or bypass the member binding.")
 		return err
+	}
+	var skillTopic string
+	if args[0] == "skill" {
+		if len(args) == 2 && (args[1] == "--help" || args[1] == "-h") || len(args) == 3 && (args[2] == "--help" || args[2] == "-h") {
+			_, err := fmt.Fprintln(stdout, toolSkillHelp)
+			return err
+		}
+		if len(args) >= 2 {
+			f := flag.NewFlagSet("tools skill", flag.ContinueOnError)
+			f.SetOutput(stderr)
+			f.StringVar(&skillTopic, "topic", "", "GitLab managed-send; omit for the complete Skill")
+			if err := f.Parse(args[2:]); err != nil {
+				return err
+			}
+			if f.NArg() != 0 {
+				return invalidField("arguments", "unexpected positional arguments; use tools skill ENTRY --help")
+			}
+			args = args[:2]
+		}
 	}
 	if args[0] == "list" {
 		f := flag.NewFlagSet("tools list", flag.ContinueOnError)
@@ -49,7 +70,7 @@ func runToolsWithClient(ctx context.Context, args []string, stdin io.Reader, std
 		args = []string{"list"}
 	}
 	if args[0] != "list" && args[0] != "run" && args[0] != "skill" || args[0] == "list" && len(args) != 1 || args[0] == "run" && len(args) < 2 || args[0] == "skill" && len(args) != 2 {
-		return fmt.Errorf("usage: teamx tools list | teamx tools run <tool> [args...] | teamx tools skill <tool>")
+		return fmt.Errorf("usage: teamx tools list | teamx tools run <tool> [args...] | teamx tools skill <tool> [--topic managed-send]")
 	}
 	endpoint := strings.TrimRight(env("TEAMX_ENDPOINT"), "/")
 	if endpoint == "" {
@@ -72,6 +93,7 @@ func runToolsWithClient(ctx context.Context, args []string, stdin io.Reader, std
 		return writeJSON(stdout, result)
 	}
 	req.Tool, req.Args = args[1], args[2:]
+	req.Topic = skillTopic
 	// Read request files in the Agent CLI process, never in the server's file
 	// namespace. The bounded dispatcher receives exactly the same JSON contract.
 	if args[0] == "run" && len(req.Args) >= 2 && req.Args[0] == "actions" && (req.Args[1] == "resolve" || req.Args[1] == "execute") {

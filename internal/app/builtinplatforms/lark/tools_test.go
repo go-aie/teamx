@@ -54,7 +54,7 @@ func TestToolInvocationHelpAndOwnerCalls(t *testing.T) {
 	}
 	h := &invocationHost{}
 	ref := "ref_" + strings.Repeat("a", 64)
-	call, err := platformtools.Prepare(context.Background(), "platform-entry", []string{"read", "--object", ref, "--target", ref, "--scope", "context", "--cursor", "continuation"}, BindTool, h)
+	call, err := platformtools.Prepare(context.Background(), "platform-entry", []string{"read", "--object", ref, "--target", ref, "--scope", "context", "--cursor", "continuation", "--json"}, BindTool, h)
 	if err != nil {
 		t.Fatal(err)
 	}

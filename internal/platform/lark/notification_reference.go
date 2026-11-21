@@ -40,7 +40,7 @@ func ResolveNotification(s platform.SourceRef, checkedAt time.Time) platform.Tar
 		target.Object.ID = ref.RootID
 	}
 	r.Status, r.ReasonCode = platform.ResolutionResolved, "notification_snapshot"
-	r.Reason = "基于已保存的飞书通知建立关联；未查询当前远端状态。需要最新内容或前后文时再使用 lark read"
+	r.Reason = "基于已保存的飞书通知建立关联；未查询当前远端状态。需要最新内容或前后文时，使用原账号的准确入口 tools run ENTRY read"
 	r.Target, r.Account = &target, account
 	r.ObjectVerified, r.MessageVerified, r.DiscussionVerified, r.Complete = true, true, ref.DiscussionID.Valid(), true
 	if !ref.RootID.Valid() && ref.ParentID.Valid() {

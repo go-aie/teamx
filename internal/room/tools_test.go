@@ -36,6 +36,19 @@ func cliToolFixtureWithInputLog(t *testing.T, body string, unified bool) (*roomM
 	m.toolCatalog = []tool.Definition{{Name: "gitlab", Provider: "gitlab", Version: "fixture", Executable: bin, Environment: map[string]string{"GITLAB_TOKEN": "token", "GITLAB_HOST": "instance"}}, {Name: "local", Executable: bin, Version: "fixture"}}
 	return m, room, svc, c, members
 }
+
+// toolRoomFixture opens private production components without installing a provider.
+func toolRoomFixture(t *testing.T, memberCount int) (*roomManager, roomSummary, *service, []MemberState) {
+	t.Helper()
+	m := testManager(t, t.TempDir(), managerTestProfiles(t))
+	// Keep native account queues/cancellation, without remote pacing in fixtures.
+	m.larkClients = lark.NewClientFactory(0, 0, 0)
+	room := managerCreateWithMembers(t, m, "tools", memberCount)
+	_, snapshot := readManagedRoom(t, m, room)
+	svc := eventLiveService(t, &eventHarness{m: m, room: room})
+	return m, room, svc, snapshot.Members
+}
+
 func bindCLITool(t *testing.T, m *roomManager, owner RoomIdentity, member MemberState, c managedPlatform, name string, revision uint64) toolBindingsFile {
 	t.Helper()
 	b := tool.Binding{AgentID: member.AgentID, MembershipID: member.MembershipID, Tool: name}

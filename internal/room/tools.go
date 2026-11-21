@@ -48,6 +48,7 @@ type toolsRequest struct {
 	ServiceInfo
 	Caller     Caller   `json:"caller"`
 	Tool       string   `json:"tool,omitempty"`
+	Topic      string   `json:"topic,omitempty"`
 	Args       []string `json:"args,omitempty"`
 	platformID string   // server-owned routing evidence; never accepted over HTTP
 }

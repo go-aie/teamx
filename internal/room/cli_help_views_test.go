@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	gitlabplatform "github.com/go-aie/teamx/internal/app/builtinplatforms/gitlab"
+	larkplatform "github.com/go-aie/teamx/internal/app/builtinplatforms/lark"
 	"github.com/go-aie/teamx/internal/app/platforms"
 	"github.com/go-aie/teamx/internal/inputstream"
 	"github.com/go-aie/teamx/internal/platform/tool"
@@ -33,7 +34,11 @@ func TestRootHelpAudienceAndSelection(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for name, selected := range map[string]*platforms.Catalog{"empty": empty, "local": local, "gitlab": gitlab} {
+	lark, err := platforms.NewCatalog(larkplatform.Definition)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for name, selected := range map[string]*platforms.Catalog{"empty": empty, "local": local, "gitlab": gitlab, "lark": lark} {
 		t.Run(name, func(t *testing.T) {
 			for _, member := range []bool{false, true} {
 				values := map[string]string{"TEAMX_ENDPOINT": "http://127.0.0.1:1"}
@@ -72,6 +77,27 @@ func TestRootHelpAudienceAndSelection(t *testing.T) {
 				t.Fatal("partial member binding became management help", out.String())
 			}
 		})
+	}
+}
+
+func TestRetiredLarkCLIRejectsWithoutServiceAccess(t *testing.T) {
+	var calls atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls.Add(1)
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	defer server.Close()
+	values := helpMemberEnv()
+	values["TEAMX_ENDPOINT"] = server.URL
+	for _, args := range [][]string{{"lark"}, {"lark", "--help"}, {"lark", "read", "--help"}, {"lark", "read", "--object", "ref_old", "--target", "ref_old"}} {
+		var out, stderr bytes.Buffer
+		err := runCLIWithCatalog(t.Context(), args, nil, &out, &stderr, func(k string) string { return values[k] }, nil)
+		if err == nil || !strings.Contains(err.Error(), `unknown command "lark"`) || out.Len() != 0 || stderr.Len() != 0 {
+			t.Fatal("retired alias remained executable", args, err, out.String(), stderr.String())
+		}
+	}
+	if calls.Load() != 0 {
+		t.Fatal("retired alias contacted service", calls.Load())
 	}
 }
 

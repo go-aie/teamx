@@ -1,6 +1,6 @@
 # Agent 工具、Skill 与提示词全景梳理及简化建议
 
-日期：2026-11-21。状态：**S0、S1a-A1、S1a-A2、S1a-A3 已实施；其余单元仍为评估方案**。范围与验证见 [S0 实施记录](implementation/agent-context-cli.zh.md)、[A1 帮助视图记录](implementation/agent-help-views.zh.md)、[A2 业务指导记录](implementation/agent-business-guidance.zh.md)和 [A3 后端身份与通信记录](implementation/agent-backend-guidance.zh.md)。
+日期：2026-11-21。状态：**S0、S1a-A1、S1a-A2、S1a-A3、S1b-B1、S1b-B2、S1c-C1 已实施；S1c-C2 已评估，保留别名；其余单元仍为评估方案**。范围与验证见 [S0 实施记录](implementation/agent-context-cli.zh.md)、[A1 帮助视图记录](implementation/agent-help-views.zh.md)、[A2 业务指导记录](implementation/agent-business-guidance.zh.md)、[A3 后端身份与通信记录](implementation/agent-backend-guidance.zh.md)、[B1 平台设置 topic 记录](implementation/agent-platform-skill-topics.zh.md)、[B2 GitLab 发送 topic 记录](implementation/agent-gitlab-send-skill-topic.zh.md)、[C1 飞书读取入口记录](implementation/agent-lark-read-entry.zh.md)和 [C2 飞书动作别名评估](implementation/agent-lark-action-alias.zh.md)。
 
 基线：2026-11-21 再次复核的当前工作区，最终 HEAD 为 `9a7ed3d`，已包含 P4a DSH 工厂/宿主合同；另有测试/文档等未提交调整。初版基线为 `9025d94`。初始分析未修改工具合同、提示词、配置或运行中的 Session；后续 S0 补齐 CLI 参数及对应帮助，A1 调整帮助视图和离线帮助路径，A2 校正业务指导、准确 ENTRY 示例及测试观察器；A3 修正内部协作身份边界并注入短 DSH 指南。实施其他单元前仍应核对工作区及所选组合，不能仅凭 HEAD 还原本次采样。
 
@@ -127,7 +127,7 @@ HTTP Inbox 模式发现上述四项。CLI Inbox 模式只保留两个 History MC
 | 本成员平台设置 | `platforms member get/notifications/tool/status` | 纯通知总开关有短路径；复杂编辑使用观察版本；只改当前成员的授权范围 |
 | 工具发现/执行/指导 | `tools list/run/skill` | 使用准确入口；平台工具固定账号，无账号本地工具不要求平台连接；仅已声明 Skill 的入口提供 Skill。服务端执行，Agent shell 的临时 PATH/cd 不会变成服务端配置 |
 | OAuth Workspace 网络 Git | `workspace-git fetch/push/ls-remote` | 服务限定成员目录、仓库和凭据；本地 Git 操作仍用普通 Git |
-| 飞书当前内容/上下文 | `lark read`，以及 `tools run ENTRY read` | 两个可见读取入口；后者明确选择账号，前者仍进入成员绑定校验 |
+| 飞书当前内容/上下文 | `tools run ENTRY read` | 准确选择原账号并核验保存目标；C1 已移除根 `lark read` 别名 |
 | 私聊定时任务 | `calendar list/get/update/claim/finish` | list/get 只读；真实人类创建/变更，领取冻结 run 后办理，finish 是唯一报告发布路径 |
 | TeamX 产品解释 | `skill usage` | 固定只读指导，无连接/绑定前置，不授予管理权限 |
 
@@ -347,7 +347,7 @@ GitLab Skill 的评审段落又说“无 Inbox matter 的直接 Room 任务可�
 | scion | 暂保留现状 | 特有命令陷阱有实际价值，收益低于前两者 |
 | usage | 简短能力/入口、设置与执行恢复；细节按需 | 一般能力介绍不先查询每个平台工具 |
 
-例如拟议 `platforms skill --topic notifications`、`tools skill ENTRY --topic send`。topic 为固定枚举，未知项明确错误；首轮保持不带 topic 的完整返回行为，已知任务直接取短 topic。默认短入口如另有收益再单独评估，不能先破坏现有调用者。这些是建议合同，当前 CLI 尚不支持，实施前不能把示例交给生产 Agent。
+B1 已支持 `platforms skill --topic notifications` 和 `platforms skill --topic selection`，分别用于纯通知总开关、选择卡片及其异步结果恢复；不带 topic 仍返回完整指南，未知项明确拒绝。公共指南、usage 和帮助已直接路由到相应 topic，无须先读目录或全文。表内其他平台设置拆分及 `tools skill ENTRY --topic send` 仍为建议合同，实施前不能把它们交给生产 Agent。默认短入口如另有收益再单独评估，不能先破坏现有调用者。
 
 每个 topic 必须自足：包含当前步骤、必要参数来源、不可替代的授权/恢复约束和完成回执；不能把共同约束全部藏在需要额外猜测的第三份材料。
 
@@ -363,11 +363,11 @@ GitLab Skill 的评审段落又说“无 Inbox matter 的直接 Room 任务可�
 
 ### 6.7 中等收益：统一“同一能力的推荐入口”
 
-当前飞书发送示例使用 `tools run ENTRY actions ...`，GitLab 使用根 `actions ... --tool ENTRY`；飞书读还有根 `lark read`。平台选择、来源恢复、动作执行的语义有必要区别，但同一动作不宜长期维护多套正常示例。
+初始基线的飞书发送示例使用 `tools run ENTRY actions ...`，GitLab 使用根 `actions ... --tool ENTRY`，飞书读还有根 `lark read`。A2 已统一托管发送推荐路径，C1 已移除根读取别名。平台选择、来源恢复、动作执行的语义有必要区别，但同一动作不宜长期维护多套正常示例。
 
 建议先统一新指南采用根 `actions resolve/execute --tool ENTRY` 的跨平台形式，并对飞书 self/group/reply 分别验证现有根入口覆盖；不能只做字符串替换就删除旧入口。平台原生 reads 继续使用 `tools run ENTRY`，来源固定平台的引用可沿用现有安全恢复路径。飞书入口内 help/read/actions 的命令解析现在归 [lark/tools.go](../internal/app/builtinplatforms/lark/tools.go)，平台读取与返回分页包装在 [lark/read.go](../internal/app/builtinplatforms/lark/read.go)；Room 保留宿主、目标加载/账号复核与传输适配。删除嵌套 actions 不应把剩余 help/read 的运行实现搬回 Room。
 
-`lark read` 的旧入口先停止在普通帮助中推荐，确认准确账号选择及历史调用方后再考虑删除。若根 actions 尚有行为缺口，先保留平台入口并明确差异，避免制造一个实际上不等价的统一表象。
+C1 已对照根入口与准确 ENTRY 的正文、上下文分页、错误、原账号恢复及调用方后删除根 `lark read`，保留原目标 HTTP 读取和 Runtime/Host；证据见[实施记录](implementation/agent-lark-read-entry.zh.md)。C2 对照确认最终输出阻塞期间，根 actions 已释放平台 Call，而嵌套 actions 保留外层 Call 至 exit 帧结束；不满足“末帧后关闭不退化”，因此保留嵌套入口，见[评估记录](implementation/agent-lark-action-alias.zh.md)。普通推荐路径仍为根 actions，不为清理别名扩展改造生命周期。
 
 ### 6.8 中等收益：输出与动态指导仍有重复
 
@@ -511,10 +511,10 @@ software-development 角色已区分简单任务、复杂设计和评审职责�
 | S1a-A1 帮助视图，已完成 | 绑定上下文选择人类/Agent 根帮助，沿现有启动层传入所选目录；补齐 Inbox CLI help；connect/selection/Calendar 帮助按子命令收窄，维护命令含 extensions check 留在维护视图 | 人工、完整成员绑定、不完整绑定行为明确；help 无网络或凭据读取；默认/显式空/含本地工具组合不被误写为固定三平台；只有可靠已知 transport 才裁剪，否则以 Session 指导为准；高级/恢复帮助仍可达。见[实施记录](implementation/agent-help-views.zh.md) | 改权限、业务执行、固定指南、删除命令、新增 topic、动态权限探测或为 help 新查服务配置 |
 | S1a-A2 正常业务指导校正，已完成 | 公共/助理指南、平台 Skill、动态 workflow 校正旧输入、source_ref/cursor、GitLab 路径和重复前置；工具账号/Skill 按实际声明适用；直接去重并沿正常工厂链验证最终指南。见[实施记录](implementation/agent-business-guidance.zh.md) | 覆盖来源恢复、通知开关、选择卡片、GitLab 评论及 Session 恢复；复用已有引用/合同，无重复关联或手动履行；本地工具不读不存在的 Skill、不要求无关平台/Workspace；保留撤销、unknown 及新增 Markdown/准确 URL 规则 | DSH 委派指导变化、全量角色改写、硬性字数目标、topic、别名删除、业务合同或公共扩展 API 变化 |
 | S1a-A3 后端身份与通信说明，已完成 | 公共指南移除笼统委派禁令、明确成员归属；嵌入并注入短 DSH 指南；解释内部 Agent ID、send_message、Room send 及内部 review。见[实施记录](implementation/agent-backend-guidance.zh.md) | 实际 Session 看到正确指导且原生工具仍可用；内部调查回传后由所属成员交付；内部 review 不冒充 Room reviewer；已有原业务角色和输出路径不变 | 强制所有子 Agent 继承完整指南、关闭原生能力、修改输入桥/生命周期、其他后端实现 |
-| S1b-B1 平台设置 Skill 按任务加载 | 在 `platforms skill` 中交付纯通知开关、选择卡片两个自足 topic；同时更新实际调用路由、公共触发说明及异步结果恢复示例 | 每条路径一次直接读取取得必要流程，含本路径的授权、恢复及 result-version 协调；不先读目录或全文才能选 topic；无绑定可读、未知 topic 明确拒绝；默认/完整指南及连接/复杂设置仍可达 | GitLab 业务 Skill、拆所有平台章节、后端能力、配置执行语义变化 |
-| S1b-B2 GitLab 发送 Skill 按任务加载 | 在 `tools skill ENTRY` 中交付内置 GitLab managed send topic，包含文本/图片、MR/准确讨论、目标复用和 unknown；同步 tools-list workflow 及实际指导路由 | 准确 ENTRY、绑定校验、动态 schema 不变；复用已存在的 URL/目标短路径，不先读全开发评审手册；默认完整指南、开发/评审/合并仍可达；其他入口及无 Skill 工具的原有行为不受影响 | B1、拆所有短 Skill、公共自定义 Skill/topic 框架、改变发送/授权/重试规则、删除原生代理 |
-| S1c-C1 根飞书读取别名清理，可选 | 比较根 `lark read` 与准确 ENTRY 读取；保留 `app/builtinplatforms/lark` 的解析/读取和原 Room 宿主，符合条件才删除根别名并同步调用方 | 既有目标、账号恢复/不匹配、内容/上下文分页和错误均可由保留入口办理；调用方无遗漏。收益不足则保留旧实现并记录结论 | 重做推荐路径、删除远端读取、强制原生 lark-cli 替代、将平台解析搬回 Room |
-| S1c-C2 飞书嵌套 actions 别名清理，可选 | 比较根 actions --tool 与嵌套 actions 的准入、请求、回执和错误；符合条件才从实际平台解析/帮助及调用方移除别名 | self/group/reply、图文、unknown、同 ID/账号恢复等价；原 Calls、取消、末帧后关闭、图片 lease/最终派发检查不退化；调用方无遗漏。收益不足则保留并记录结论 | C1、重设 action API、删除仍供 help/read 使用的 Runtime/Host、扩大原生 API 限制、新建账本 |
+| S1b-B1 平台设置 Skill 按任务加载，已完成 | `platforms skill --topic notifications\|selection` 交付纯通知开关、选择卡片两个自足 topic；更新公共/usage 路由、帮助及异步结果恢复示例 | 每条路径一次直接读取取得必要流程，含本路径的授权、恢复及 result-version 协调；不先读目录或全文才能选 topic；无绑定可读、未知 topic 明确拒绝；默认/完整指南及连接/复杂设置仍可达。分层验证与模型限流证据见[实施记录](implementation/agent-platform-skill-topics.zh.md) | GitLab 业务 Skill、拆所有平台章节、后端能力、配置执行语义变化 |
+| S1b-B2 GitLab 发送 Skill 按任务加载，已实施 | 在 `tools skill ENTRY` 中交付内置 GitLab managed send topic，包含文本/图片、MR/准确讨论、目标复用和 unknown；同步 tools-list workflow 及实际指导路由。见[实施与验证记录](implementation/agent-gitlab-send-skill-topic.zh.md) | 准确 ENTRY、绑定校验、动态 schema 不变；复用已存在的 URL/目标短路径，不先读全开发评审手册；默认完整指南、开发/评审/合并仍可达；其他入口及无 Skill 工具的原有行为不受影响 | B1、拆所有短 Skill、公共自定义 Skill/topic 框架、改变发送/授权/重试规则、删除原生代理 |
+| S1c-C1 根飞书读取别名清理，已实施 | 对照后删除根 `lark read`、分发和帮助；同步调用方及恢复提示，保留 `app/builtinplatforms/lark` 解析/读取、原 Room 宿主和 HTTP 读取。见[实施记录](implementation/agent-lark-read-entry.zh.md) | 准确 ENTRY 可办理既有目标、凭据恢复/账号不匹配、内容/上下文分页和错误；删除前 CLI 对照、删除后 HTTP/ENTRY、隔离及结清验证通过 | 重做推荐路径、删除远端读取、强制原生 lark-cli 替代、将平台解析搬回 Room |
+| S1c-C2 飞书嵌套 actions 别名清理，已评估并保留 | 对照根 actions --tool 与嵌套动作的共享合同、回执、错误及调用方；新增最终输出阻塞/原 ID 回执测试。见[评估记录](implementation/agent-lark-action-alias.zh.md) | 两入口末帧期间的 Call 所有权不等价，删除条件未满足；按保留分支完成本次评估，不删除解析、帮助或调用方。以后删除仍须证明 self/group/reply、图文、unknown、账号恢复、取消、末帧后关闭及图片 lease/最终派发检查不退化 | C1、重设 action API、删除仍供 help/read 使用的 Runtime/Host、扩大原生 API 限制、新建账本 |
 
 S0 两项改动共用“新输入引用可从业务 CLI 完整办理”这一合同及参数白名单，范围小，保留一个单元即可。A1/A2/A3 的风险、验证与生效方式不同，应分别交付；B1/B2 分属不同读取入口，也分别交付。C1/C2 只处理是否值得移除具体别名，不把 A2 已完成的推荐路径统一重新列为其交付成果。
 
@@ -536,9 +536,9 @@ S2 当前验证对象仍是 DSH。P4a 已提供公开工厂/宿主合同，但�
 
 **首批推荐 S0 + A1 + A2，均可分别交付；A3 可按需要独立追加。** S0 的参数修复与 A1 的帮助视图可以各自启动，不设置虚假的先后依赖。A2 涉及的新 source_ref/cursor 示例需在 S0 相应入口可用后采用；其他业务指导校正不受 S0 阻塞。A3 的内部协作验证不作为帮助视图或普通发送指导的前置。
 
-**第二批推荐 B1/B2，各自完成即可交付。** 对应业务推荐路径稳定后再换为按 topic 读取；B1 与 B2 不相互依赖，也不依赖 A3。共用的嵌入/解析辅助改动随首个实际工作流一并交付，不单独建设“通用 topic 平台”。短的 lark/scion 先保留，不以拆完所有 Skill 为完成条件。
+**第二批 B1/B2 已分别实施。** 平台设置使用 notifications/selection，GitLab 托管发送使用 managed-send；默认完整指南继续可达。B1 与 B2 不相互依赖，也不依赖 A3。B1 的有限嵌入/读取辅助改动随实际工作流交付，没有建立“通用 topic 平台”。短的 lark/scion 先保留，不以拆完所有 Skill 为完成条件。
 
-**C1/C2 是非必做的清理项。** A2 统一推荐路径后即可评估具体别名，不必等 topic 功能或另一项清理结束；保留旧实现也不否定 A2/B1/B2 已取得的收益。每次发布都只引用已存在的命令/topic；新合同尚不可用时继续使用完整资源，不能提前切换指导。
+**C1 已完成；C2 已评估，因输出生命周期不等价而保留。** A2 统一推荐路径后即可评估具体别名，不必等 topic 功能或另一项清理结束；保留旧实现也不否定 A2/B1/B2 已取得的收益。每次发布都只引用已存在的命令/topic；新合同尚不可用时继续使用完整资源，不能提前切换指导。
 
 S2 专项不构成 S3、小型帮助或投影改进的统一前置。A3 自身的内部调查/review 最小验证不能延期到 S2 后又提前宣布 A3 行为已成立；若该验证暴露实际桥接/身份问题，明确记录阻塞边界，不用纯文案掩盖，也不扩大到默认禁用全部内部协作。其他改动触及并发/生命周期时，相应 S2 场景是其必要门槛，不要求每个小单元先完成整套后端评估。
 
@@ -564,7 +564,7 @@ S2 专项不构成 S3、小型帮助或投影改进的统一前置。A3 自身�
 | Agent 工厂与 Session 宿主 | `agent` 定义窄合同，`builtin/agents/dsh` 实现工厂，`room/agent_assembly.go` 唯一选择；`dsh_host.go` 保留每轮准备/确认与原资源 owner。A2 只改所需指导，不把业务规则搬入通用 Session 或重写生命周期 |
 | 通知与 Input/History | 所选 Source 的 Bind/Input/Project 与原通知、Inbox/Store owner；保留缺 codec/版本错误和原数据，不恢复旧全局默认投影 |
 
-架构记录已完成的 P1a/P1b/P2n/P2t/P4a 是本方案复用的基础；S0、A1、A2、A3 已完成，其余单元仍分别待实施。若实施时这些边界继续迁移，更新定位即可；不为保持旧文件名而把代码移回原包，也不把一个文案工作单元扩成架构重构。
+架构记录已完成的 P1a/P1b/P2n/P2t/P4a 是本方案复用的基础；S0、A1、A2、A3、B1、B2、C1 已完成，C2 已按保留分支完成评估，其余单元仍分别待实施。若实施时这些边界继续迁移，更新定位即可；不为保持旧文件名而把代码移回原包，也不把一个文案工作单元扩成架构重构。
 
 ### Session 生效与回退
 
@@ -665,8 +665,8 @@ S2 专项不构成 S3、小型帮助或投影改进的统一前置。A3 自身�
 | 旧 `inbox read --peek` 批次合同 | 不属于统一输入的正常路径 | 旧实现/fixture 是否删除另查兼容依赖；先修正普通帮助，不能宣称从生产工具中又删掉了一项已不暴露的能力 |
 | `tools list` 与 `platforms list` | 不是重复目录 | 前者发现已绑定工具，含不需要账号的本地工具；后者发现接入账号/应用。配置前没有工具绑定也要能找到已有账号 |
 | `tools run ENTRY` | 必要 | 平台能力和自定义本地工具共用受控入口；不能删后要求 Agent 绕过绑定直接运行二进制，也不要求本地工具先建立平台账号 |
-| `lark read` 与 `tools run ENTRY read` | 明确重复候选 | 都进入已保存目标的飞书当前内容/上下文读取；推荐保留准确 ENTRY 入口，核对旧调用及同账号限制后移除根别名 |
-| 根 `actions resolve/execute --tool ENTRY` 与飞书入口内 `actions resolve/execute` | 明确重复候选 | 两者使用相同请求 DTO 和核心 resolver/executor；验证错误/流式回执与账号准入等价后，普通示例统一根入口，再删除嵌套别名 |
+| `lark read` 与 `tools run ENTRY read` | C1 已收敛 | 对照通过后移除根别名；准确 ENTRY 继续进入原保存目标读取，保留原账号及分页边界 |
+| 根 `actions resolve/execute --tool ENTRY` 与飞书入口内 `actions resolve/execute` | C2 已评估，保留 | 共用请求 DTO、resolver/executor 和持久回执，但最终输出期间的 Call 所有权不等价；普通示例继续使用根入口，暂不删除嵌套别名 |
 | 原生 GitLab 评论与 managed MR 评论/回复 | 已覆盖动作的正常路径重复 | 对已覆盖目标统一推荐 managed；原生 CLI 其他功能保留。若要强制禁止原生对应 verb/API，要另查未覆盖操作，不能只删除指导就称已拦截 |
 | `actions resolve` | 必要，但不是每次执行的前置 | 发现/消歧准确目标及合同；已有有效 target/contract 可直接 execute |
 | `actions execute/read/list` | 各有职责 | 提交、已知 ID 查询、丢失上下文后的目录恢复；新动作不预查尚不存在的 ID，已知 ID 不先 list |
@@ -692,7 +692,7 @@ S2 专项不构成 S3、小型帮助或投影改进的统一前置。A3 自身�
 | `skill usage/platforms skill/tools skill` | 不同资源范围，低优先语法统一 | 无绑定的产品解释/接入与有绑定的内置业务指导不同；本地工具未必有 Skill；优先按任务缩小已有长资源，统一拼写收益有限 |
 | `service/init/doctor/access/serve/member`、离线 upgrade、`extensions check`、`workspace-git askpass` | 不应进入普通成员业务目录 | 保留维护或内部执行能力；Agent 根帮助呈现业务目录，纯组合检查不作为任务前置，服务端授权仍独立执行 |
 
-重复候选的代码依据：[lark_cli.go](../internal/room/lark_cli.go)、[飞书运行解析](../internal/app/builtinplatforms/lark/tools.go)、[Room 宿主/传输适配](../internal/room/tools_builtin.go)、[platform_lark.go](../internal/room/platform_lark.go)、[platform_lark_target.go](../internal/room/platform_lark_target.go)、[actions_service.go](../internal/room/actions_service.go)、[action_execute_service.go](../internal/room/action_execute_service.go)、[followups_actions_service.go](../internal/room/followups_actions_service.go)。嵌套 actions 仍解码同一请求并调用原业务宿主，迁包没有产生第二套动作合同，也未自动完成别名清理。
+重复候选的代码依据：[飞书运行解析](../internal/app/builtinplatforms/lark/tools.go)、[Room 宿主/传输适配](../internal/room/tools_builtin.go)、[platform_lark.go](../internal/room/platform_lark.go)、[platform_lark_target.go](../internal/room/platform_lark_target.go)、[actions_service.go](../internal/room/actions_service.go)、[action_execute_service.go](../internal/room/action_execute_service.go)、[followups_actions_service.go](../internal/room/followups_actions_service.go)。原 `lark_cli.go` 已在 C1 删除。嵌套 actions 仍解码同一请求并调用原业务宿主，迁包没有产生第二套动作合同，也未自动完成别名清理；C2 对照记录了暂时保留的生命周期差异。
 
 ### 12.3 `matters` 最值得精简的是重复步骤
 
@@ -739,7 +739,7 @@ S2 专项不构成 S3、小型帮助或投影改进的统一前置。A3 自身�
 
 1. **S0、S1a-A1/A2，首批**：参数可达性、帮助视图、正常业务指导分别交付；S1a-A3 的 DSH 身份说明可独立追加，不作为其他三项的前置。
 2. **S1b-B1/B2，第二批优先**：平台设置与 GitLab 发送两条完整 topic 链路分别交付，不要求先做通用加载框架或等所有 Skill 完成。
-3. **S1c-C1/C2，条件项**：准确 ENTRY 读取和根 actions 推荐路径稳定后，逐项评估是否值得删除对应旧别名；不重复计算 A2 已完成的路径统一收益。
+3. **S1c-C1 已实施；C2 已评估并保留**：根读取别名已删除，嵌套 actions 因末帧期间的 Call 所有权差异保留；仅在原生命周期边界补齐并验证后重新评估删除，不重复计算 A2 已完成的路径统一收益。
 4. **S2 专项与 S3/S4 后续路线**：验证有界场景并如实报告；组合操作、DTO 和 MCP 候选须先界定具体合同与验收，再形成新实施单元，不作为所有前述优化的统一前置。
 
 验收既要看正常任务是否更短，也要证明恢复入口仍然可达。保留 source/detail、unknown 回执和显式版本不是失败的精简；让普通路径不再承担它们的机械管理才是主要收益。

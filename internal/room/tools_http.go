@@ -99,6 +99,10 @@ func (m *roomManager) serveTools(w http.ResponseWriter, r *http.Request) {
 			writeAPIError(w, ErrRequest)
 			return
 		}
+		if r.URL.Path != "/v1/tools/skill" && req.Topic != "" {
+			writeAPIError(w, invalidField("topic", "only tools skill accepts a topic"))
+			return
+		}
 		if err := m.checkToolMemberLocked(r.Context(), req); err != nil {
 			writeAPIError(w, err)
 			return
@@ -115,10 +119,14 @@ func (m *roomManager) serveTools(w http.ResponseWriter, r *http.Request) {
 			}
 			_, d, err := m.resolveToolBindingLocked(f, req)
 			if err == nil {
-				data, err := entrySkill(d, req.Tool)
+				data, err := entrySkillTopic(d, req.Tool, req.Topic)
 				if err == nil {
 					w.Header().Set("Content-Type", "text/markdown; charset=utf-8")
 					_, _ = w.Write(data)
+					return
+				}
+				if req.Topic != "" {
+					writeAPIError(w, invalidField("topic", err.Error()))
 					return
 				}
 			}
@@ -317,6 +325,10 @@ func (m *roomManager) serveToolRun(w http.ResponseWriter, r *http.Request) {
 	var req toolsRequest
 	if err = strictToolJSON(line, &req); err != nil {
 		writeAPIError(w, ErrRequest)
+		return
+	}
+	if req.Topic != "" {
+		writeAPIError(w, invalidField("topic", "only tools skill accepts a topic"))
 		return
 	}
 	controller := http.NewResponseController(w)

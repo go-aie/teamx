@@ -66,6 +66,13 @@ func newLarkHarnessWithInputLog(t *testing.T, unified bool) *larkHarness {
 	return newLarkHarnessForRoom(t, m, r, svc, members)
 }
 
+// newLarkHarnessWithMembers installs only Lark and the members participating in the test.
+func newLarkHarnessWithMembers(t *testing.T, count int) *larkHarness {
+	t.Helper()
+	m, room, svc, members := toolRoomFixture(t, count)
+	return newLarkHarnessForRoom(t, m, room, svc, members)
+}
+
 func newLarkHarnessForRoom(t *testing.T, m *roomManager, r roomSummary, svc *service, members []MemberState) *larkHarness {
 	t.Helper()
 	m.toolCatalog = append(m.toolCatalog, tool.Definition{Name: "lark", Provider: "lark", InternalOnly: true})

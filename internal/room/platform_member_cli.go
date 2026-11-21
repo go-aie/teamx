@@ -23,7 +23,8 @@ const platformMemberHelp = `Usage:
 Pure switches need no preliminary get/status, versions or client operation ID.
 First enable uses manual setup defaults; existing settings restore saved sources.
 For source/range/filter edits, see notifications --help. Selection cards use
-platforms selection --help. Read platforms skill for the workflow and recovery.
+platforms skill --topic selection. For pure switch workflow/recovery read
+platforms skill --topic notifications directly; complex edits use platforms skill.
 `
 
 func platformMemberActionHelp(action string) string {
@@ -50,7 +51,8 @@ empty lists close that branch. Personnel IDs must be verified p2p chat_ids.
 GitLab personal todos cover accessible projects without project selection or a
 Workspace; project activity needs a verified native ID/path. Pending/errors use
 existing settings retry-apply recovery. Tools and external writes are separate.
-For a card use platforms selection; for detailed semantics read platforms skill.
+For pure switch recovery read platforms skill --topic notifications; for a card
+read platforms skill --topic selection. Complex edits use complete platforms skill.
 
 Flags:
 `

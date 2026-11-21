@@ -22,6 +22,14 @@ func selfSendHarnessWithInputLog(t *testing.T, unified bool) *larkHarness {
 	return configureSelfSendFixture(t, newLarkHarnessWithInputLog(t, unified))
 }
 
+func selfSendHarnessWithMembers(t *testing.T, count int) *larkHarness {
+	t.Helper()
+	if runtime.GOOS != "darwin" {
+		t.Skip("fixed-account user dispatch requires macOS")
+	}
+	return configureSelfSendFixture(t, newLarkHarnessWithMembers(t, count))
+}
+
 func configureSelfSendFixture(t *testing.T, h *larkHarness) *larkHarness {
 	t.Helper()
 	script := strings.Replace(larkFixtureScript(), "path=a[2]", `if a==['config','show']:

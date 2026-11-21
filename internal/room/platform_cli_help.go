@@ -1,7 +1,7 @@
 package room
 
 const platformConnectHelp = `Usage: teamx platforms COMMAND [--help]
-  skill                       Read account setup and recovery guidance
+  skill [--topic notifications|selection]  Read the requested setup workflow (omit topic for complete guidance)
   list                        Find existing connections and application compatibility
   connect                     Connect or repair an account (connect --help)
   selection                   Show an account/group/project selection card (--help)
@@ -85,7 +85,7 @@ var platformConnectCommandHelps = map[string]referenceCommandHelp{
 		"teamx platforms list", "An account's existence does not establish tool binding or external-write authority. Available providers follow the selected composition; reuse an existing suitable connection. For a requested card use platforms selection start --help.",
 	},
 	"skill": {
-		"platforms skill", "Read embedded account setup and recovery guidance.", "Optional --json; current bound member identity is required.", "The platform setup Skill as Markdown.", "teamx platforms skill", "No prior connection or tool binding is required. Reading changes no settings and grants no authority.",
+		"platforms skill [--topic notifications|selection]", "Read embedded account setup guidance for the current task.", "--topic notifications: pure notification total switch; --topic selection: account/group/project cards and asynchronous result recovery. Omit --topic for complete connection, complex settings and tool recovery guidance. Optional --json; current bound member identity is required.", "One self-contained workflow as Markdown, or the complete Skill when topic is omitted.", "teamx platforms skill --topic notifications\nteamx platforms skill --topic selection\nteamx platforms skill", "Choose the known task directly; no index or complete-Skill read is needed first. Unknown topics are rejected. No prior connection or tool binding is required. Reading changes no settings and grants no authority.",
 	},
 }
 
@@ -96,7 +96,7 @@ var platformSelectionCommandHelps = map[string]referenceCommandHelp{
 		"--kind: form kind; --operation-id: stable ID; --source-seq: real human request. Group/project forms require exact --platform-id/--platform-version; --query is initial search; --name is the initial connection name. --provider defaults to lark. GitLab account choice requires --provider gitlab --origin URL; projects require --provider gitlab.",
 		"Selection ID/status/version, draft, card and continuation. Output is already JSON; omit --json.",
 		"teamx platforms selection start --kind groups --platform-id ID --platform-version V --operation-id OP --source-seq SEQ --notify inbox",
-		platformOperationIdentity + "Read platforms skill for the requested workflow. Let the component search/paginate; do not enumerate candidates first or replace the card with text. Only the original human submits. A submitted selection is not a connection or notification change; verify latest intent and use existing connect/member commands afterward. Same ID/input recover the receipt; unknown requires status, never a replacement. After confirming receipt/subscription, end the turn without polling for clicks. Forms expire after 24h.",
+		platformOperationIdentity + "Read platforms skill --topic selection directly for the card workflow and result recovery. Let the component search/paginate; do not enumerate candidates first or replace the card with text. Only the original human submits. A submitted selection is not a connection or notification change; verify latest intent and use existing connect/member commands afterward. Same ID/input recover the receipt; unknown requires status, never a replacement. After confirming receipt/subscription, end the turn without polling for clicks. Forms expire after 24h.",
 	},
 	"status": {
 		"platforms selection status (--operation-id ID | --source-seq SEQ)", "Read an original selection and its exact submitted result.",

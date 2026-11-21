@@ -29,6 +29,7 @@ type platformConnectInput struct {
 type platformConnectRequest struct {
 	ServiceInfo
 	Caller        Caller                `json:"caller"`
+	Topic         string                `json:"topic,omitempty"`
 	OperationID   string                `json:"operation_id,omitempty"`
 	SourceSeq     uint64                `json:"source_seq,omitempty"`
 	Input         *platformConnectInput `json:"input,omitempty"`

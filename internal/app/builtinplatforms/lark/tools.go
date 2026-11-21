@@ -31,7 +31,7 @@ func (toolRuntime) Help(args []string) bool {
 	return len(args) == 0 || len(args) == 1 && (args[0] == "help" || args[0] == "--help" || args[0] == "-h") || action || len(args) == 2 && args[0] == "read" && (args[1] == "--help" || args[1] == "-h")
 }
 func toolHelp(entry string) string {
-	return fmt.Sprintf("Usage:\n  teamx tools run %s read --object REF --target REF [--scope content|context] [--cursor CURSOR]\n  teamx actions resolve --tool %s --request JSON\n  teamx actions execute --tool %s --request JSON\nUse root actions resolve/execute --help for parameters and examples. Reuse a verified target and valid contract; resolve only when missing, ambiguous or invalidated. Query receipts with teamx actions read --id ID (read-only, including during Session recovery). Nested actions resolve/execute remain available. Arbitrary CLI commands and authentication are unavailable.\n", entry, entry, entry)
+	return fmt.Sprintf("Usage:\n  teamx tools run %s read --object REF --target REF [--scope content|context] [--cursor CURSOR] [--json]\n  teamx actions resolve --tool %s --request JSON\n  teamx actions execute --tool %s --request JSON\nRead a saved target on this exact bound account; content is the default scope. Context is bounded to +/-5 minutes and 25 messages per page. Continue with --cursor NEXT and the same entry, object, target and scope when next is present; incomplete without next indicates a limit or failure, not another page. Attachments are not read.\nUse root actions resolve/execute --help for parameters and examples. Reuse a verified target and valid contract; resolve only when missing, ambiguous or invalidated. Query receipts with teamx actions read --id ID (read-only, including during Session recovery). Nested actions resolve/execute remain available. Arbitrary CLI commands and authentication are unavailable.\n", entry, entry, entry)
 }
 func invalid(field, message string) error {
 	return &platformtools.Diagnostic{Field: field, Message: message}
@@ -64,6 +64,7 @@ func (r toolRuntime) Run(ctx context.Context, entry string, args []string) ([]by
 		f.StringVar(&q.TargetRef, "target", "", "target_ref")
 		f.StringVar(&q.Scope, "scope", "content", "content or context")
 		f.StringVar(&q.Cursor, "cursor", "", "continuation")
+		_ = f.Bool("json", true, "JSON output")
 		if f.Parse(args[1:]) != nil || f.NArg() != 0 || !validRef(q.ObjectRef) || !validRef(q.TargetRef) || q.Scope != "content" && q.Scope != "context" {
 			return nil, invalid("", "invalid request")
 		}

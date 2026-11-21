@@ -52,6 +52,9 @@ func runPlatformConnectWithClient(ctx context.Context, args []string, stdout, st
 		_ = writeOutput(stdout, []byte(help))
 	}
 	req := platformConnectRequest{}
+	if action == "skill" {
+		f.StringVar(&req.Topic, "topic", "", "notifications or selection; omit for complete setup guidance")
+	}
 	input := platformConnectInput{}
 	notify := ""
 	timeout := 20 * time.Second

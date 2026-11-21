@@ -55,7 +55,7 @@ func TestLarkSelfConversationSharedAccountSourceAndInboxRecovery(t *testing.T) {
 	}
 	script := strings.Replace(larkFixtureScript(), "'tenant_key':'external_tenant'}\nelse:", "'tenant_key':'account_tenant'}\nelse:", 1)
 	script = strings.Replace(script, ",{'member_id':'ou_sender','member_id_type':'open_id','tenant_key':'external_tenant'}", "", 1)
-	// A self conversation never needs automatic body reads. Explicit lark read
+	// A self conversation never needs automatic body reads. Explicit target reads
 	// still uses the separate Messages API; this guard covers only this test run.
 	script = strings.Replace(script, " messages=json.load(open(base+'/messages.json'))", " raise Exception('self body scan')\n messages=json.load(open(base+'/messages.json'))", 1)
 	if err := os.WriteFile(filepath.Join(h.dir, "lark-cli"), []byte(script), 0700); err != nil {

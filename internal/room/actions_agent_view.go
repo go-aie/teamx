@@ -48,13 +48,19 @@ func projectToolSelections(selections []toolSelection) []any {
 	result := make([]any, 0, len(selections))
 	for _, s := range selections {
 		if s.Provider == "gitlab" {
+			guidance := ""
+			if s.Skill == "skills/gitlab/SKILL.md" {
+				guidance = "For text/image sending guidance, read tools skill " + s.Name + " --topic managed-send directly; no complete-Skill read first. Omit --topic for development/review/merge guidance. "
+			} else if s.Skill != "" {
+				guidance = "Read the declared Skill when workflow guidance is missing. "
+			}
 			if s.Skill != "" {
 				s.Skill = `"$TEAMX_CLI" tools skill ` + s.Name
 			}
 			result = append(result, struct {
 				toolSelection
 				Workflow string `json:"workflow"`
-			}{s, "Managed MR comments/replies: actions resolve/execute --tool " + s.Name + " --request JSON. Reuse a verified target and valid contract; a full MR/thread URL needs no native ID lookup or Workspace. Read the declared Skill when workflow guidance is missing. Execute once, report the receipt; unknown: actions read --id ORIGINAL_ID, never resend. Native CLI: tools run " + s.Name + " ... ."})
+			}{s, "Managed MR comments/replies: actions resolve/execute --tool " + s.Name + " --request JSON. Reuse a verified target and valid contract; a full MR/thread URL needs no native ID lookup or Workspace. " + guidance + "Execute once, report the receipt; unknown: actions read --id ORIGINAL_ID, never resend. Native CLI: tools run " + s.Name + " ... ."})
 			continue
 		}
 		if s.Provider != "lark" {

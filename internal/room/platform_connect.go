@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"io/fs"
 	"net/http"
 	"os"
 	"strings"
@@ -381,7 +382,7 @@ func (m *roomManager) servePlatformConnect(w http.ResponseWriter, r *http.Reques
 		writeAPIError(w, err)
 		return
 	}
-	if req.Notify != nil && (action != "start" && action != "authorize" && action != "notify" || *req.Notify != "inbox" && *req.Notify != "none") || req.ResultVersion != 0 && action != "acknowledge" {
+	if req.Notify != nil && (action != "start" && action != "authorize" && action != "notify" || *req.Notify != "inbox" && *req.Notify != "none") || req.ResultVersion != 0 && action != "acknowledge" || req.Topic != "" && action != "skill" {
 		writeAPIError(w, ErrRequest)
 		return
 	}
@@ -391,8 +392,11 @@ func (m *roomManager) servePlatformConnect(w http.ResponseWriter, r *http.Reques
 			return
 		}
 		if action == "skill" {
-			data, err := tool.ReadSkill(tool.Definition{Skill: "skills/platforms/SKILL.md"})
+			data, err := tool.ReadPlatformSkill(req.Topic)
 			if err != nil {
+				if errors.Is(err, fs.ErrNotExist) {
+					err = &requestDiagnostic{cause: ErrRequest, Field: "topic", Message: "Unknown platform skill topic.", Hint: "Use --topic notifications or --topic selection; omit --topic for complete connection, customization and recovery guidance."}
+				}
 				writeAPIError(w, err)
 				return
 			}

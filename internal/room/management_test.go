@@ -84,8 +84,25 @@ func managerHTTP(m *roomManager, path string, body any) *httptest.ResponseRecord
 
 func managerCreate(t *testing.T, m *roomManager, id string) roomSummary {
 	t.Helper()
+	return managerCreateTeam(t, m, id, "takeout-dinner")
+}
+
+func managerCreateWithMembers(t *testing.T, m *roomManager, id string, count int) roomSummary {
+	t.Helper()
+	team := m.teams["takeout-dinner"]
+	if count < 1 || count > len(team.Members) {
+		t.Fatalf("invalid fixture member count: %d", count)
+	}
+	team.ID = "fixture-" + id
+	team.Members = append([]teamMember(nil), team.Members[:count]...)
+	m.teams[team.ID] = team
+	return managerCreateTeam(t, m, id, team.ID)
+}
+
+func managerCreateTeam(t *testing.T, m *roomManager, id, teamID string) roomSummary {
+	t.Helper()
 	r := managerHTTP(m, "/v1/rooms/create", roomCreateRequest{ServiceEpoch: m.epoch, Caller: humanCaller,
-		roomSelection: roomSelection{CreateID: id, TeamID: "takeout-dinner"}})
+		roomSelection: roomSelection{CreateID: id, TeamID: teamID}})
 	var summary roomSummary
 	if r.Code != 200 || json.Unmarshal(r.Body.Bytes(), &summary) != nil {
 		t.Fatal(r.Code, r.Body.String())

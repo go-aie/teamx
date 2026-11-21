@@ -115,7 +115,7 @@ func (s *State) acceptMessage(m Message, p ChatProgress) {
 		for !utf8.ValidString(text) {
 			text = text[:len(text)-1]
 		}
-		text += "\n[正文已截断；原始结构保留在来源，可通过 lark read 重读；附件未读取]"
+		text += "\n[正文已截断；原始结构保留在来源，可通过原账号的准确入口 tools run ENTRY read 重读；附件未读取]"
 	}
 	item := notification.Item{Key: key, DeliveryID: route.DeliveryID(notification.DeliveryID(s.Metadata().Key, key)), CreatedAt: time.UnixMilli(ms).UTC(), Order: m.ID + ":" + key, Text: text, Route: route, Source: sourceRef(*s, m, key, p.Chat)}
 	item = notification.WithContent(item, messageContent(m, p.Chat, s.Binding.Account, wasAccepted))

@@ -26,7 +26,9 @@ For fresh content or context on the same account:
 "$TEAMX_CLI" tools run lark read --object OBJECT_REF --target TARGET_REF --scope context
 ```
 
-Follow returned cursors while incomplete. Check later replies before reminding or
+When next is present, continue with `--cursor NEXT` and the same entry, object,
+target and scope. Incomplete without next indicates a limit or failure; do not
+loop on the same request. Check later replies before reminding or
 replying. A captured message is not fresh access evidence; an unread attachment
 has not been understood. Publish questions/reminders locally with `send`; use an
 existing matter's notify workflow when it needs a human decision. A subsequent
