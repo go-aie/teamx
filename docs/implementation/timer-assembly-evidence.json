@@ -2394,5 +2394,371 @@
       }
     ],
     "note": "Go JSON event-span observation, not CPU or I/O profiling. Current full run did not demonstrate whole-suite speedup."
+  },
+  "reassessment": {
+    "status": "read-only analysis completed; H1-H5 proposed, no test implementation or new test execution",
+    "inputs": [
+      "/tmp/teamx-lark-matrix/full-integration.jsonl",
+      "/tmp/teamx-timer-assembly/full.0.jsonl"
+    ],
+    "third_batch": {
+      "room_seconds": 764.639,
+      "serial_count": 972,
+      "parallel_count": 445,
+      "serial_elapsed_sum": 466.23,
+      "first_run_to_first_top_cont": 526.503176,
+      "parallel_phase_span": 236.614364
+    },
+    "fourth_batch": {
+      "room_seconds": 940.585,
+      "serial_count": 972,
+      "parallel_count": 445,
+      "serial_elapsed_sum": 648.44,
+      "first_run_to_first_top_cont": 707.523086,
+      "parallel_phase_span": 231.320311
+    },
+    "same_name_serial_excluding_changed_files": {
+      "count": 649,
+      "sum_before": 446.65,
+      "sum_after": 622.97,
+      "median_ratio": 1.380510440835267,
+      "slower_count": 516,
+      "selection": "Common serial top-level tests, excluding inbox_recovery_test.go, calendar_recurrence_test.go and platform_connect_notifications_test.go; previous Elapsed >= 0.1 seconds. No CPU or I/O root cause claimed."
+    },
+    "layers": {
+      "default_including_os_tags_serial": {
+        "count": 867,
+        "elapsed_sum": 448.72
+      },
+      "integration_added_serial": {
+        "count": 105,
+        "elapsed_sum": 199.72
+      },
+      "real_e2e_executed": false
+    },
+    "serial_duration_buckets": [
+      {
+        "min_seconds": 0.1,
+        "max_seconds": 1,
+        "count": 551,
+        "elapsed_sum": 220.68
+      },
+      {
+        "min_seconds": 1,
+        "max_seconds": 5,
+        "count": 151,
+        "elapsed_sum": 307.36
+      }
+    ],
+    "ten_largest_serial_top_level_elapsed_sum": 91.67,
+    "slot_observation": {
+      "slot_records": 550,
+      "held_sum": 1135.190129092,
+      "parallel_phase_seconds": 231.32031083106995,
+      "parallel_phase_held_sum": 920.4068284034729
+    },
+    "slot_utilization": 0.9947319639774665,
+    "slot_files": [
+      {
+        "file": "platform_lark_self_send_recovery_integration_test.go",
+        "count": 9,
+        "held": 140.563668125,
+        "wait": 16.758184502,
+        "parallel_phase_held": 83.45485067367554
+      },
+      {
+        "file": "followups_actions_managed_integration_test.go",
+        "count": 57,
+        "held": 100.86009412599998,
+        "wait": 133.755070002,
+        "parallel_phase_held": 19.482063055038452
+      },
+      {
+        "file": "platform_references_managed_integration_test.go",
+        "count": 30,
+        "held": 42.245482168999985,
+        "wait": 57.252995541000004,
+        "parallel_phase_held": 1.9137916564941406
+      },
+      {
+        "file": "platform_notification_lark_integration_test.go",
+        "count": 9,
+        "held": 41.297549584,
+        "wait": 27.836992873,
+        "parallel_phase_held": 41.29754948616028
+      },
+      {
+        "file": "tools_target_concurrency_test.go",
+        "count": 11,
+        "held": 40.051360919,
+        "wait": 28.820594040000003,
+        "parallel_phase_held": 40.051360845565796
+      },
+      {
+        "file": "followups_actions_test.go",
+        "count": 12,
+        "held": 36.710612168,
+        "wait": 27.570462834,
+        "parallel_phase_held": 36.710612058639526
+      },
+      {
+        "file": "tools_lark_configuration_test.go",
+        "count": 8,
+        "held": 33.084635042,
+        "wait": 33.441774041,
+        "parallel_phase_held": 33.08463501930237
+      },
+      {
+        "file": "platform_member_private_integration_test.go",
+        "count": 12,
+        "held": 30.616090086000003,
+        "wait": 15.437420164999999,
+        "parallel_phase_held": 9.80208969116211
+      },
+      {
+        "file": "platform_lark_actions_integration_test.go",
+        "count": 5,
+        "held": 29.478982667000004,
+        "wait": 14.210315376,
+        "parallel_phase_held": 29.47898268699646
+      },
+      {
+        "file": "platform_lark_recovery_integration_test.go",
+        "count": 4,
+        "held": 27.958153499999998,
+        "wait": 14.018712417,
+        "parallel_phase_held": 27.95815372467041
+      },
+      {
+        "file": "platform_connect_notifications_test.go",
+        "count": 13,
+        "held": 20.937514623,
+        "wait": 44.284099503,
+        "parallel_phase_held": 20.937514543533325
+      },
+      {
+        "file": "platform_member_current_test.go",
+        "count": 7,
+        "held": 20.765996125999997,
+        "wait": 33.789215207999995,
+        "parallel_phase_held": 20.76599621772766
+      },
+      {
+        "file": "tool_entries_integration_test.go",
+        "count": 4,
+        "held": 18.366625542999998,
+        "wait": 9.930173667,
+        "parallel_phase_held": 18.36662530899048
+      },
+      {
+        "file": "activation_integration_test.go",
+        "count": 4,
+        "held": 18.004970541,
+        "wait": 16.088649793,
+        "parallel_phase_held": 18.00497055053711
+      },
+      {
+        "file": "platform_notification_todos_integration_test.go",
+        "count": 20,
+        "held": 17.743667539,
+        "wait": 61.721518879,
+        "parallel_phase_held": 17.743667125701904
+      },
+      {
+        "file": "platform_notification_lark_search_test.go",
+        "count": 4,
+        "held": 16.350191792,
+        "wait": 18.522446208999998,
+        "parallel_phase_held": 16.350191831588745
+      },
+      {
+        "file": "platform_scion_auth_integration_test.go",
+        "count": 6,
+        "held": 15.287430540999999,
+        "wait": 11.044502918000001,
+        "parallel_phase_held": 15.28743028640747
+      },
+      {
+        "file": "dsh_materials_integration_test.go",
+        "count": 7,
+        "held": 15.163672251,
+        "wait": 29.00333025,
+        "parallel_phase_held": 15.16367244720459
+      },
+      {
+        "file": "platform_scion_integration_test.go",
+        "count": 1,
+        "held": 14.748562291,
+        "wait": 2.068278334,
+        "parallel_phase_held": 14.748562335968018
+      },
+      {
+        "file": "runtime_recovery_integration_test.go",
+        "count": 6,
+        "held": 14.007973458,
+        "wait": 18.90379196,
+        "parallel_phase_held": 14.007973432540894
+      }
+    ],
+    "serial_file_observations": [
+      {
+        "file": "input_upgrade_test.go",
+        "count": 12,
+        "seconds": 34.2
+      },
+      {
+        "file": "workspace_directories_integration_test.go",
+        "count": 12,
+        "seconds": 18.319999999999997
+      },
+      {
+        "file": "workspace_management_integration_test.go",
+        "count": 4,
+        "seconds": 18.08
+      },
+      {
+        "file": "platform_connect_model_test.go",
+        "count": 1,
+        "seconds": 17.06
+      },
+      {
+        "file": "platform_selection_integration_test.go",
+        "count": 3,
+        "seconds": 15.870000000000001
+      },
+      {
+        "file": "inbox_task_events_test.go",
+        "count": 12,
+        "seconds": 13.19
+      },
+      {
+        "file": "platform_connect_gitlab_test.go",
+        "count": 10,
+        "seconds": 12.310000000000002
+      },
+      {
+        "file": "lark_search_upgrade_test.go",
+        "count": 2,
+        "seconds": 10.99
+      },
+      {
+        "file": "platform_gitlab_business_oauth_test.go",
+        "count": 2,
+        "seconds": 10.39
+      },
+      {
+        "file": "shared_inbox_integration_test.go",
+        "count": 7,
+        "seconds": 9.94
+      },
+      {
+        "file": "mcp_inbox_test.go",
+        "count": 13,
+        "seconds": 9.879999999999999
+      },
+      {
+        "file": "inbox_recovery_test.go",
+        "count": 7,
+        "seconds": 9.56
+      },
+      {
+        "file": "workspace_integration_test.go",
+        "count": 7,
+        "seconds": 9.49
+      },
+      {
+        "file": "automatic_recovery_test.go",
+        "count": 10,
+        "seconds": 9.43
+      },
+      {
+        "file": "input_stream_reader_test.go",
+        "count": 10,
+        "seconds": 9.19
+      },
+      {
+        "file": "input_stream_tools_test.go",
+        "count": 9,
+        "seconds": 9.14
+      },
+      {
+        "file": "room_attachment_materials_test.go",
+        "count": 7,
+        "seconds": 9.02
+      },
+      {
+        "file": "platform_member_test.go",
+        "count": 4,
+        "seconds": 8.65
+      },
+      {
+        "file": "ui_update_sources_test.go",
+        "count": 10,
+        "seconds": 8.64
+      },
+      {
+        "file": "platform_selection_gitlab_test.go",
+        "count": 7,
+        "seconds": 8.41
+      },
+      {
+        "file": "platform_connect_gitlab_setup_test.go",
+        "count": 3,
+        "seconds": 8.36
+      },
+      {
+        "file": "workspace_connections_integration_test.go",
+        "count": 1,
+        "seconds": 8.26
+      },
+      {
+        "file": "platform_member_gitlab_test.go",
+        "count": 9,
+        "seconds": 7.77
+      },
+      {
+        "file": "tools_target_cli_integration_test.go",
+        "count": 2,
+        "seconds": 7.34
+      }
+    ],
+    "heavy_core_fixture_static_candidates": {
+      "count": 445,
+      "elapsed_sum": 293.44,
+      "note": "Body-name static filter, not proof every fixture can be removed. Transitive environment and shared-state audit still required."
+    },
+    "verified_extra_setup_chain": [
+      "newLarkHarnessWithInputLog",
+      "cliToolFixtureWithInputLog",
+      "testManager + managerCreate (three-member takeout-dinner team)",
+      "verifyTodoAccount (GitLab) + fake-tool",
+      "newLarkHarnessForRoom (Lark verification)"
+    ],
+    "matrix_observations": [
+      {
+        "test": "TestReferenceActionInternalRevocationSettles",
+        "combinations": 54,
+        "top_level_elapsed": 0,
+        "run_to_pass_seconds": 20.778325
+      },
+      {
+        "test": "TestReferenceInternalRevocationSettlesHTTPAndRejectsLateResults",
+        "combinations": 27,
+        "top_level_elapsed": 0,
+        "run_to_pass_seconds": 10.285931
+      },
+      {
+        "test": "TestLarkSelfSendRevocationRaces",
+        "combinations": 5,
+        "top_level_elapsed": 0,
+        "run_to_pass_seconds": 16.067295
+      }
+    ],
+    "limits": [
+      "Top-level Elapsed omits waiting for parallel subtests; use event spans and held records.",
+      "Parallel held sums are overlapping resource seconds, not suite wall seconds.",
+      "The two full runs were not a controlled CPU/I/O experiment; widespread slowdown does not establish a production regression.",
+      "Historical e2e retirement is maintenance work and cannot count as removal of time not spent by integration."
+    ]
   }
 }

@@ -11,8 +11,6 @@ import (
 	"strings"
 	"testing"
 	"time"
-
-	"github.com/go-aie/teamx/internal/platform/registry"
 )
 
 func TestPlatformMemberNotificationPatchPreservesRangeAndStart(t *testing.T) {
@@ -52,28 +50,7 @@ func TestPlatformMemberNotificationPatchPreservesRangeAndStart(t *testing.T) {
 
 func memberToolFixture(t *testing.T) (*roomManager, *service, MemberState, platformMemberRequest) {
 	t.Helper()
-	h := larkToolConfigurationHarness(t)
-	// Keep the original single-connection fixture contract for account pickers.
-	h.m.mu.Lock()
-	file, err := h.m.platforms.Load()
-	if err == nil {
-		for _, c := range file.Platforms {
-			if c.ID != h.c.ID {
-				plan, e := h.m.platforms.Plan(registry.Request{ID: c.ID, Version: c.Version}, true)
-				if e == nil {
-					_, e = h.m.platforms.Commit(plan)
-				}
-				if e != nil {
-					err = e
-					break
-				}
-			}
-		}
-	}
-	h.m.mu.Unlock()
-	if err != nil {
-		t.Fatal(err)
-	}
+	h := larkToolConfigurationHarnessWithMembers(t, 1)
 	req := larkMemberToolRequest(t, h, 0)
 	return h.m, h.svc, h.members[0], req
 }

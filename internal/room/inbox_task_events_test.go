@@ -358,7 +358,7 @@ func TestInboxTaskEventCapacityAndMemberReplacement(t *testing.T) {
 }
 
 func TestInboxPayloadLegacyAndInvalidTypes(t *testing.T) {
-	for _, mode := range []string{"legacy", "unknown", "mixed", "missing_event", "platform_with_event", "bad_event_kind", "missing_operation"} {
+	for _, mode := range []string{"legacy", "unknown"} {
 		t.Run(mode, func(t *testing.T) {
 			h := newInboxHarness(t, InboxLimits{})
 			request := h.receive("legacy")
@@ -369,27 +369,11 @@ func TestInboxPayloadLegacyAndInvalidTypes(t *testing.T) {
 			if err := readSnapshot(path, &entry, maxPrivateFileBytes); err != nil {
 				t.Fatal(err)
 			}
-			event := taskEventFixture(mode)
 			switch mode {
 			case "legacy":
 				entry.Type = ""
 			case "unknown":
 				entry.Type = "future"
-			case "mixed":
-				entry.Type, entry.TaskEvent = InboxTaskEventType, &event
-			case "missing_event":
-				entry.Type = InboxTaskEventType
-				entry.Item = notification.Item{}
-			case "platform_with_event":
-				entry.TaskEvent = &event
-			case "bad_event_kind":
-				entry.Type, entry.TaskEvent = InboxTaskEventType, &event
-				entry.Item = notification.Item{}
-				event.EventType = "unrecognized"
-			case "missing_operation":
-				entry.Type, entry.TaskEvent = InboxTaskEventType, &event
-				entry.Item = notification.Item{}
-				event.OperationID = ""
 			}
 			if err := h.store.save(path, entry, maxPrivateFileBytes); err != nil {
 				t.Fatal(err)

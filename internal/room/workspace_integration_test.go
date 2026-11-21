@@ -112,7 +112,12 @@ func TestWorkspaceIndependentClonesPreserveOldFilesAndRevisit(t *testing.T) {
 func TestWorkspaceRejectsUnsafeOrIncompleteTargets(t *testing.T) {
 	for _, kind := range []string{"foreign-origin", "foreign-push", "non-repository", "partial-git", "pending-clone", "missing-on-visit", "symlink", "overlap"} {
 		t.Run(kind, func(t *testing.T) {
-			f := newWorkspaceFixture(t)
+			var f *workspaceFixture
+			if kind == "foreign-origin" || kind == "foreign-push" {
+				f = newWorkspaceFixture(t)
+			} else {
+				f = newWorkspacePreflightFixture(t)
+			}
 			initial := true
 			switch kind {
 			case "foreign-origin":

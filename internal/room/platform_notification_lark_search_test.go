@@ -35,6 +35,13 @@ func newLarkSearchHarness(t *testing.T) *larkHarness {
 	return h
 }
 
+func newLarkSearchHarnessWithMembers(t *testing.T, count int) *larkHarness {
+	t.Helper()
+	h := newLarkHarnessWithMembers(t, count)
+	composeLarkSearch(h)
+	return h
+}
+
 func searchConfigHTTP(t *testing.T, h *larkHarness, current *lark.State, cfg lark.Config) lark.State {
 	t.Helper()
 	req := map[string]any{"service_epoch": h.m.epoch, "room_id": h.room.RoomID, "room_instance": h.room.RoomInstance, "caller": humanCaller, "provider": "lark", "channel": "messages", "subscription_id": "", "subscription_version": 0, "config": cfg}
@@ -79,7 +86,7 @@ func finishLarkSearch(t *testing.T, h *larkHarness, end int64) lark.State {
 
 func TestLarkSearchHTTPDeliveryAndAgentRead(t *testing.T) {
 	parallelFixtureTest(t)
-	h := newLarkSearchHarness(t)
+	h := newLarkSearchHarnessWithMembers(t, 1)
 	member := h.members[0]
 	id := notificationMemberIdentity(h.room.RoomIdentity, member)
 	// Ordinary text, explicit @me, @all and own messages in an unselected group.
@@ -180,7 +187,7 @@ func TestLarkSearchHTTPDeliveryAndAgentRead(t *testing.T) {
 
 func TestLarkSearchHTTPPreservesSelectedFiveGroups(t *testing.T) {
 	parallelFixtureTest(t)
-	h := newLarkSearchHarness(t)
+	h := newLarkSearchHarnessWithMembers(t, 1)
 	var base []lark.Message
 	raw, _ := os.ReadFile(filepath.Join(h.dir, "messages.json"))
 	_ = json.Unmarshal(raw, &base)
@@ -219,7 +226,7 @@ func TestLarkSearchHTTPPreservesSelectedFiveGroups(t *testing.T) {
 func TestLarkSearchDefaultsOnboardingAndLegacyBoundary(t *testing.T) {
 	parallelFixtureTest(t)
 	for _, search := range []bool{false, true} {
-		h := newLarkHarness(t)
+		h := newLarkHarnessWithMembers(t, 1)
 		if search {
 			composeLarkSearch(h)
 		} else {
@@ -269,7 +276,7 @@ func TestLarkSearchDefaultsOnboardingAndLegacyBoundary(t *testing.T) {
 
 func TestLarkSearchDiagnosticsRedactPageAndResumeCredentials(t *testing.T) {
 	parallelFixtureTest(t)
-	h := newLarkSearchHarness(t)
+	h := newLarkSearchHarnessWithMembers(t, 1)
 	cfg := h.m.defaultLarkConfig(h.c.ID)
 	cfg.Target = inboxTarget(notificationMemberIdentity(h.room.RoomIdentity, h.members[0]))
 	s := searchConfigHTTP(t, h, nil, cfg)

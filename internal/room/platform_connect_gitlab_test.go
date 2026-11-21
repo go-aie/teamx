@@ -16,6 +16,7 @@ import (
 
 	"github.com/go-aie/teamx/internal/platform"
 	"github.com/go-aie/teamx/internal/platform/gitlab"
+	"github.com/go-aie/teamx/internal/platform/registry"
 )
 
 func gitlabConnectFixture(t *testing.T) (*gitlabLoginHarness, *service, MemberState, platformConnectRequest) {
@@ -23,21 +24,22 @@ func gitlabConnectFixture(t *testing.T) (*gitlabLoginHarness, *service, MemberSt
 }
 func gitlabConnectFixtureFor(t *testing.T, fixture platformConnectionFixture) (*gitlabLoginHarness, *service, MemberState, platformConnectRequest) {
 	t.Helper()
-	g := newGitlabLoginHarness(t)
-	old := g.h.m
+	// Setup/import has its own tests. Install only the application required by
+	// the connection callback in this manager, with no throwaway account/store.
 	m, svc, member, req := fixture(t)
-	m.config.endpoint = old.config.endpoint
-	file, err := old.platforms.Load()
+	m.config.endpoint = "http://127.0.0.1:8088"
+	app := registry.OAuthApplication{ID: strings.Repeat("b", 32), Origin: "https://gitlab.example.com", OwnerID: 101, ClientID: "private-client-id", ClientSecret: "private-client-secret", RedirectURI: m.config.endpoint + gitlabCallbackPath, Scopes: []string{"api"}}
+	file, err := m.platforms.Load()
 	if err != nil {
 		t.Fatal(err)
 	}
-	file.Platforms = nil
-	if err = m.store.save(m.platformsPathForTest(), file, 2<<20); err != nil {
+	file.OAuthApplications = []registry.OAuthApplication{app}
+	if err := m.store.save(m.platformsPathForTest(), file, 2<<20); err != nil {
 		t.Fatal(err)
 	}
-	m.platformHTTP = old.platformHTTP
-	g.h.m = m
-	req.Input = &platformConnectInput{Provider: "gitlab", Name: "Work GitLab", Origin: g.h.server.URL, ApplicationID: g.req.ApplicationID, AccountUsername: "tester"}
+	g := &gitlabLoginHarness{h: &gitlabSetupHarness{m: m}, req: gitlabAuthRequest{ApplicationID: app.ID}}
+	configureGitlabLoginTransport(t, g)
+	req.Input = &platformConnectInput{Provider: "gitlab", Name: "Work GitLab", Origin: app.Origin, ApplicationID: app.ID, AccountUsername: "tester"}
 	return g, svc, member, req
 }
 func gitlabConnectControl(m *roomManager, action string, req platformConnectRequest, version uint64, cookie *http.Cookie) *httptest.ResponseRecorder {

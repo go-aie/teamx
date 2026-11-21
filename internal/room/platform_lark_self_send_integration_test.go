@@ -18,7 +18,7 @@ import (
 
 func TestLarkSelfSendManagedCapability(t *testing.T) {
 	parallelFixtureTest(t)
-	h := selfSendHarness(t)
+	h := selfSendHarnessWithMembers(t, 1)
 	id := MemberIdentity{RoomIdentity: h.room.RoomIdentity, AgentID: h.members[0].AgentID, MembershipID: h.members[0].MembershipID}
 	post, err := h.svc.room.Call[PostReceipt](context.Background(), PostMessage{RoomIdentity: id.RoomIdentity, Caller: humanCaller, ClientMessageID: "task", Text: "把指定内容发到我的飞书"})
 	if err != nil {

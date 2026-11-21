@@ -141,167 +141,182 @@ func TestReferenceInternalRequiresSelectedMemberPlatform(t *testing.T) {
 }
 
 func TestReferenceInternalRevocationSettlesHTTPAndRejectsLateResults(t *testing.T) {
-	for _, stage := range []string{"before-send", "body", "returned"} {
-		for _, action := range []string{"rotate-credential", "reauthorize", "disable", "switch-binding", "remove-member", "session-rotate", "close-room", "delete-room", "shutdown"} {
-			t.Run(stage+"/"+action, func(t *testing.T) {
-				parallelFixtureTest(t)
-				m, room, svc, c, members := cliToolFixture(t, "exit 99\n")
-				bindCLITool(t, m, room.RoomIdentity, members[0], c, "gitlab", 0)
-				id, req, _ := managedReferenceInput(t, m, room, svc, members[0])
-				if action == "session-rotate" {
-					target, err := svc.rt.Spawn(&MemberAgent{Options: adapterOptions(svc.store, id), Store: svc.store, Room: svc.room, Backend: dshBackend{store: svc.store}})
-					if err != nil {
-						t.Fatal(err)
-					}
-					svc.setTarget(id.MembershipID, target)
-					svc.dshProfiles = map[string]dshProfile{members[0].Runner.Profile: {}}
+	// Exercise each real entry after resolution, where the final commit gate
+	// must reject a successful late result. Disable also covers HTTP dispatch
+	// and response-body ownership; those stages share the entry predicates.
+	cases := []struct{ stage, action string }{
+		{"before-send", "disable"},
+		{"body", "disable"},
+		{"returned", "rotate-credential"},
+		{"returned", "reauthorize"},
+		{"returned", "disable"},
+		{"returned", "switch-binding"},
+		{"returned", "remove-member"},
+		{"returned", "session-rotate"},
+		{"returned", "close-room"},
+		{"returned", "delete-room"},
+		{"returned", "shutdown"},
+	}
+	for _, tc := range cases {
+		stage, action := tc.stage, tc.action
+		t.Run(stage+"/"+action, func(t *testing.T) {
+			parallelFixtureTest(t)
+			m, room, svc, c, members := cliToolFixture(t, "exit 99\n")
+			bindCLITool(t, m, room.RoomIdentity, members[0], c, "gitlab", 0)
+			id, req, _ := managedReferenceInput(t, m, room, svc, members[0])
+			if action == "session-rotate" {
+				target, err := svc.rt.Spawn(&MemberAgent{Options: adapterOptions(svc.store, id), Store: svc.store, Room: svc.room, Backend: dshBackend{store: svc.store}})
+				if err != nil {
+					t.Fatal(err)
 				}
-				nextPlatform := c
-				if action == "switch-binding" {
+				svc.setTarget(id.MembershipID, target)
+				svc.dshProfiles = map[string]dshProfile{members[0].Runner.Profile: {}}
+			}
+			nextPlatform := c
+			if action == "switch-binding" {
 
-					q := platformTestRequest(m)
-					q.ID = strings.Repeat("b", 32)
-					q.Name = "Second account"
-					nextPlatform = verifyTodoAccount(t, m, platformTestSave(t, m, q), 202)
+				q := platformTestRequest(m)
+				q.ID = strings.Repeat("b", 32)
+				q.Name = "Second account"
+				nextPlatform = verifyTodoAccount(t, m, platformTestSave(t, m, q), 202)
+			}
+			entered, canceled, release := make(chan struct{}), make(chan struct{}), make(chan struct{})
+			var releaseOnce sync.Once
+			finish := func() { releaseOnce.Do(func() { close(release) }) }
+			defer finish()
+			base := managedReferenceHTTP(t, m, managedReferencePayload)
+			m.platformHTTP = workspaceHTTPFunc(func(r *http.Request) (*http.Response, error) {
+				if stage == "before-send" && strings.HasSuffix(r.URL.Path, "/user") {
+					close(entered)
+					<-r.Context().Done()
+					close(canceled)
+					<-release
 				}
-				entered, canceled, release := make(chan struct{}), make(chan struct{}), make(chan struct{})
-				var releaseOnce sync.Once
-				finish := func() { releaseOnce.Do(func() { close(release) }) }
-				defer finish()
-				base := managedReferenceHTTP(t, m, managedReferencePayload)
-				m.platformHTTP = workspaceHTTPFunc(func(r *http.Request) (*http.Response, error) {
-					if stage == "before-send" && strings.HasSuffix(r.URL.Path, "/user") {
-						close(entered)
-						<-r.Context().Done()
-						close(canceled)
-						<-release
-					}
-					response, err := base.RoundTrip(r)
-					if err == nil && stage == "body" && strings.HasSuffix(r.URL.Path, "/discussions") {
-						response.Body = &referenceBlockedBody{ReadCloser: response.Body, ctx: r.Context(), entered: entered, canceled: canceled, release: release}
-					}
-					return response, err
-				})
-				if stage == "returned" {
-					original := m.referenceResolvers["gitlab"]
-					m.referenceResolvers["gitlab"] = func(ctx context.Context, id MemberIdentity, s platform.SourceRef) (platform.TargetResolution, platform.AccessContext, error) {
-						r, a, e := original(ctx, id, s)
-						scope := ctx.Value(referenceResolutionScopeKey{}).(*referenceResolutionScope)
-						close(entered)
-						<-scope.ctx.Done()
-						close(canceled)
-						<-release
-						return r, a, e
-					}
+				response, err := base.RoundTrip(r)
+				if err == nil && stage == "body" && strings.HasSuffix(r.URL.Path, "/discussions") {
+					response.Body = &referenceBlockedBody{ReadCloser: response.Body, ctx: r.Context(), entered: entered, canceled: canceled, release: release}
 				}
-				resolveDone := make(chan error, 1)
-				go func() {
-					page, err := m.readReferenceInbox(context.Background(), req)
-					if len(page.Followups) != 0 {
-						err = errors.New("canceled old response created object")
-					}
-					resolveDone <- err
-				}()
-				awaitEventSignal(t, entered, "request did not reach selected stage")
-				actionDone := make(chan error, 1)
-				go func() {
-					var err error
-					switch action {
-					case "rotate-credential":
-						q := platformTestRequest(m)
-						q.Version = c.Version
-
-						q.ReferencedRooms = []RoomIdentity{room.RoomIdentity}
-						_, err = testReauthorizePlatform(m, q)
-					case "reauthorize":
-						_, err = testReauthorizePlatform(m, managedPlatformRequest{ID: c.ID, Version: c.Version, ReferencedRooms: []RoomIdentity{room.RoomIdentity}})
-					case "disable", "switch-binding":
-						change := toolBindingChange{ServiceEpoch: m.epoch, RoomIdentity: room.RoomIdentity, Caller: humanCaller, ExpectedBindingRevision: new(uint64(1)), Binding: tool.Binding{AgentID: id.AgentID, MembershipID: id.MembershipID, Tool: "gitlab", PlatformID: c.ID}}
-						if action == "switch-binding" {
-							revoked := managerHTTP(m, "/v1/tools/bind", change)
-							if revoked.Code != 200 {
-								err = errors.New(revoked.Body.String())
-								break
-							}
-							change.ExpectedBindingRevision = new(uint64(0))
-							change.Enabled = true
-							change.Binding.PlatformID = nextPlatform.ID
-							change.PlatformVersion = nextPlatform.Version
-						}
-						response := managerHTTP(m, "/v1/tools/bind", change)
-						if response.Code != 200 {
-							err = errors.New(response.Body.String())
-						}
-					case "remove-member":
-						_, err = svc.remove(apiRequest{AgentID: id.AgentID, MembershipID: id.MembershipID})
-
-					case "session-rotate":
-						_, err = svc.rotateSession(context.Background(), apiRequest{AgentID: id.AgentID, MembershipID: id.MembershipID, Cancel: true})
-					case "close-room":
-						err = m.shutdownRuntime(context.Background(), room.RoomIdentity, svc, nil)
-					case "delete-room":
-						m.mu.Lock()
-						_, err = m.startDeletion(room.RoomIdentity)
-						done := m.runtimes[room.RoomIdentity].operationDone
-						m.mu.Unlock()
-						if err == nil {
-							select {
-							case <-done:
-							case <-time.After(5 * time.Second):
-								err = errors.New("deletion did not settle")
-							}
-						}
-					case "shutdown":
-						err = m.close()
-					}
-					actionDone <- err
-				}()
-				awaitEventSignal(t, canceled, "revocation did not cancel request context")
-				m.mu.Lock()
-				pending := m.platformCalls.Len()
-				m.mu.Unlock()
-				if pending == 0 {
-					t.Fatal("body/result processing released call early", pending)
-				}
-				select {
-				case err := <-actionDone:
-					t.Fatal("revocation returned before request settled", err)
-				default:
-				}
-				finish()
-				select {
-				case err := <-resolveDone:
-					if err == nil && stage == "returned" {
-						t.Fatal("late successful response accepted")
-					}
-				case <-time.After(5 * time.Second):
-					t.Fatal("resolution leaked")
-				}
-				select {
-				case err := <-actionDone:
-					if err != nil {
-						t.Fatal(err)
-					}
-				case <-time.After(5 * time.Second):
-					t.Fatal("revocation leaked")
-				}
-				m.mu.Lock()
-				pending = m.platformCalls.Len()
-				m.mu.Unlock()
-				if pending != 0 {
-					t.Fatal("call leaked", pending)
-				}
-				if action != "delete-room" && action != "shutdown" {
-					entries, err := os.ReadDir(filepath.Join(svc.store.followupRoot(id), "objects"))
-					if err != nil && !os.IsNotExist(err) {
-						t.Fatal(err)
-					}
-					if len(entries) != 0 {
-						t.Fatal("revoked identity persisted")
-					}
-				}
+				return response, err
 			})
-		}
+			if stage == "returned" {
+				original := m.referenceResolvers["gitlab"]
+				m.referenceResolvers["gitlab"] = func(ctx context.Context, id MemberIdentity, s platform.SourceRef) (platform.TargetResolution, platform.AccessContext, error) {
+					r, a, e := original(ctx, id, s)
+					scope := ctx.Value(referenceResolutionScopeKey{}).(*referenceResolutionScope)
+					close(entered)
+					<-scope.ctx.Done()
+					close(canceled)
+					<-release
+					return r, a, e
+				}
+			}
+			resolveDone := make(chan error, 1)
+			go func() {
+				page, err := m.readReferenceInbox(context.Background(), req)
+				if len(page.Followups) != 0 {
+					err = errors.New("canceled old response created object")
+				}
+				resolveDone <- err
+			}()
+			awaitEventSignal(t, entered, "request did not reach selected stage")
+			actionDone := make(chan error, 1)
+			go func() {
+				var err error
+				switch action {
+				case "rotate-credential":
+					q := platformTestRequest(m)
+					q.Version = c.Version
+
+					q.ReferencedRooms = []RoomIdentity{room.RoomIdentity}
+					_, err = testReauthorizePlatform(m, q)
+				case "reauthorize":
+					_, err = testReauthorizePlatform(m, managedPlatformRequest{ID: c.ID, Version: c.Version, ReferencedRooms: []RoomIdentity{room.RoomIdentity}})
+				case "disable", "switch-binding":
+					change := toolBindingChange{ServiceEpoch: m.epoch, RoomIdentity: room.RoomIdentity, Caller: humanCaller, ExpectedBindingRevision: new(uint64(1)), Binding: tool.Binding{AgentID: id.AgentID, MembershipID: id.MembershipID, Tool: "gitlab", PlatformID: c.ID}}
+					if action == "switch-binding" {
+						revoked := managerHTTP(m, "/v1/tools/bind", change)
+						if revoked.Code != 200 {
+							err = errors.New(revoked.Body.String())
+							break
+						}
+						change.ExpectedBindingRevision = new(uint64(0))
+						change.Enabled = true
+						change.Binding.PlatformID = nextPlatform.ID
+						change.PlatformVersion = nextPlatform.Version
+					}
+					response := managerHTTP(m, "/v1/tools/bind", change)
+					if response.Code != 200 {
+						err = errors.New(response.Body.String())
+					}
+				case "remove-member":
+					_, err = svc.remove(apiRequest{AgentID: id.AgentID, MembershipID: id.MembershipID})
+
+				case "session-rotate":
+					_, err = svc.rotateSession(context.Background(), apiRequest{AgentID: id.AgentID, MembershipID: id.MembershipID, Cancel: true})
+				case "close-room":
+					err = m.shutdownRuntime(context.Background(), room.RoomIdentity, svc, nil)
+				case "delete-room":
+					m.mu.Lock()
+					_, err = m.startDeletion(room.RoomIdentity)
+					done := m.runtimes[room.RoomIdentity].operationDone
+					m.mu.Unlock()
+					if err == nil {
+						select {
+						case <-done:
+						case <-time.After(5 * time.Second):
+							err = errors.New("deletion did not settle")
+						}
+					}
+				case "shutdown":
+					err = m.close()
+				}
+				actionDone <- err
+			}()
+			awaitEventSignal(t, canceled, "revocation did not cancel request context")
+			m.mu.Lock()
+			pending := m.platformCalls.Len()
+			m.mu.Unlock()
+			if pending == 0 {
+				t.Fatal("body/result processing released call early", pending)
+			}
+			select {
+			case err := <-actionDone:
+				t.Fatal("revocation returned before request settled", err)
+			default:
+			}
+			finish()
+			select {
+			case err := <-resolveDone:
+				if err == nil && stage == "returned" {
+					t.Fatal("late successful response accepted")
+				}
+			case <-time.After(5 * time.Second):
+				t.Fatal("resolution leaked")
+			}
+			select {
+			case err := <-actionDone:
+				if err != nil {
+					t.Fatal(err)
+				}
+			case <-time.After(5 * time.Second):
+				t.Fatal("revocation leaked")
+			}
+			m.mu.Lock()
+			pending = m.platformCalls.Len()
+			m.mu.Unlock()
+			if pending != 0 {
+				t.Fatal("call leaked", pending)
+			}
+			if action != "delete-room" && action != "shutdown" {
+				entries, err := os.ReadDir(filepath.Join(svc.store.followupRoot(id), "objects"))
+				if err != nil && !os.IsNotExist(err) {
+					t.Fatal(err)
+				}
+				if len(entries) != 0 {
+					t.Fatal("revoked identity persisted")
+				}
+			}
+		})
 	}
 }
 

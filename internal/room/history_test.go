@@ -435,11 +435,9 @@ func TestHistoryExpiryClearRestartAndStableStreamReference(t *testing.T) {
 
 func TestHistoryArgumentsLifecycleAndSharedExecutionBudget(t *testing.T) {
 	h, s := unifiedReaderFixture(t, 3)
-	invalid := []string{`{}`, `{"stream_ref":""}`, `{"stream_ref":"x","limit":0}`, `{"stream_ref":"x","limit":10001}`, `{"cursor":""}`, `{"cursor":"x","limit":1}`, `{"cursor":"x","stream_ref":"y"}`, `{"stream_ref":"x","query":"q"}`, `{"stream_ref":"x","consume":false}`, `{"stream_ref":null}`, `{"stream_ref":"x","stream_ref":"y"}`}
-	for _, args := range invalid {
-		if _, err := s.historyCall(h.ctx, "invalid", "history_read", []byte(args)); err == nil {
-			t.Fatal(args)
-		}
+	// The decoder owns the shape matrix; retain one dispatch rejection here.
+	if _, err := s.historyCall(h.ctx, "invalid", "history_read", []byte(`{"stream_ref":"x","consume":false}`)); err == nil {
+		t.Fatal("history dispatch bypassed argument validation")
 	}
 	page, _ := historyRead(t, s, "first", roomStreamRef(s.storage.id), 1)
 	args, _ := json.Marshal(map[string]string{"cursor": page.Next})

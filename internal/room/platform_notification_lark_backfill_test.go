@@ -13,7 +13,7 @@ import (
 
 func TestLarkCustomBackfillHTTPReadsHistoryIntoMemberInbox(t *testing.T) {
 	parallelFixtureTest(t)
-	h := newLarkHarness(t)
+	h := newLarkHarnessWithMembers(t, 1)
 	// This acceptance explicitly requests processing 14-day history.
 	h.m.config.inboxExpiry = notification.ExpiryPolicy{AfterDays: 3, SkipExpired: false}
 	h.svc.inboxExpiry = h.m.config.inboxExpiry

@@ -38,17 +38,24 @@ type workspaceFixture struct {
 
 func newWorkspaceFixture(t *testing.T) *workspaceFixture {
 	t.Helper()
-	home := t.TempDir()
-	t.Setenv("HOME", home)
-	t.Setenv("XDG_CONFIG_HOME", home)
-
-	f := &workspaceFixture{dir: t.TempDir(), source: t.TempDir()}
+	f := newWorkspacePreflightFixture(t)
 	workspaceGit(t, f.source, "init", "--initial-branch=main")
 	workspaceGit(t, f.source, "config", "user.name", "Source")
 	workspaceGit(t, f.source, "config", "user.email", "source@example.test")
-	os.WriteFile(filepath.Join(f.source, "README"), []byte("initial\n"), 0600)
+	if err := os.WriteFile(filepath.Join(f.source, "README"), []byte("initial\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
 	workspaceGit(t, f.source, "add", "README")
 	workspaceGit(t, f.source, "commit", "-m", "initial")
+	return f
+}
+
+func newWorkspacePreflightFixture(t *testing.T) *workspaceFixture {
+	t.Helper()
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("XDG_CONFIG_HOME", home)
+	f := &workspaceFixture{dir: t.TempDir(), source: t.TempDir()}
 	f.config = managedRoomConfig{WorkspaceVersion: 1, Workspace: &workspaceConfig{Root: "workspaces/repos/stable", Repository: &workspaceRepository{URL: "https://gitlab.invalid/group/project.git", Branch: "main"}}, RoomIdentity: RoomIdentity{RoomID: "room", RoomInstance: "generation"}}
 	for _, id := range []string{"member-one", "member-two"} {
 		f.config.Members = append(f.config.Members, managedMember{MemberState: MemberState{MembershipID: id}, Workspace: workspaceMemberPath(*f.config.Workspace, id)})

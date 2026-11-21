@@ -2,8 +2,12 @@ package room
 
 import (
 	"encoding/json"
+	"errors"
 	"strings"
 	"testing"
+	"time"
+
+	"github.com/go-aie/teamx/internal/platform/registry"
 )
 
 func TestPlatformMemberCurrentRequestFields(t *testing.T) {
@@ -74,5 +78,39 @@ func TestPlatformMemberSwitchIdentityPreservesNotificationReceipts(t *testing.T)
 	}
 	if platformMemberSwitchID(req, "tool") == legacyID {
 		t.Fatal("tool and notification receipts share an identity")
+	}
+}
+
+func TestConnectApplicationImportAuthority(t *testing.T) {
+	const origin = "https://gitlab.example.com"
+	id := strings.Repeat("b", 32)
+	op := platformConnectOperation{Source: RoomMessage{Author: humanCaller.Author}, Input: platformConnectInput{Provider: "gitlab", Origin: origin}}
+	req := platformConnectInteractionRequest{ClientImportID: id}
+	for _, mode := range []string{"valid", "foreign_owner", "other_origin", "replacement", "wrong_id", "changed_fingerprint"} {
+		t.Run(mode, func(t *testing.T) {
+			candidate := registry.OAuthClientImport{ID: id, ActorID: humanCaller.ID, Origin: origin, ClientID: "client", ClientSecret: "secret", RedirectURI: "http://127.0.0.1:8088" + gitlabCallbackPath, Scopes: []string{"api"}, State: "owner_verification_required", CreatedAt: time.Now().UTC()}
+			bound := op
+			switch mode {
+			case "foreign_owner":
+				candidate.ActorID = "other"
+			case "other_origin":
+				candidate.Origin = "https://other.invalid"
+			case "replacement":
+				candidate.ReplacesApplicationID = strings.Repeat("d", 32)
+			case "wrong_id":
+				candidate.ID = strings.Repeat("d", 32)
+			case "changed_fingerprint":
+				bound.BoundApplicationID, bound.ApplicationImport = id, true
+				bound.ApplicationFingerprint = connectApplicationFingerprint(registry.OAuthApplication{ID: id, Origin: origin, ClientID: candidate.ClientID, ClientSecret: "old", RedirectURI: candidate.RedirectURI, Scopes: candidate.Scopes}, true)
+			}
+			app, imported, err := connectApplication(registry.Snapshot{OAuthClientImports: []registry.OAuthClientImport{candidate}}, bound, req)
+			if mode == "valid" {
+				if err != nil || imported != id || app.ID != id || app.Origin != origin || app.ClientID != candidate.ClientID || app.ClientSecret != candidate.ClientSecret {
+					t.Fatal(app.ID, imported, err)
+				}
+			} else if !errors.Is(err, ErrConflict) {
+				t.Fatal("unrelated or changed import admitted", mode, err)
+			}
+		})
 	}
 }

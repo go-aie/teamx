@@ -16,18 +16,47 @@ import (
 	"github.com/go-aie/teamx/internal/platform"
 )
 
-func upgradeFixtureCopy(t *testing.T) (string, MemberIdentity) {
+type inputUpgradeSeed struct {
+	dir string
+	id  MemberIdentity
+}
+
+func newInputUpgradeSeed(t *testing.T) inputUpgradeSeed {
 	t.Helper()
-	h := newInboxHarness(t, InboxLimits{})
-	roomCall[PostReceipt](t, h.roomHarness, PostMessage{RoomIdentity: h.id.RoomIdentity, Caller: humanCaller, ClientMessageID: "request", Text: "original request"})
+	r := newRoomHarness(t, historyRoom(1, "original request"), nil)
+	id := r.memberID("A", "generation-A")
+	addr, err := SpawnAgentInbox(r.rt, r.store, id, InboxLimits{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	h := &inboxHarness{roomHarness: r, id: id, addr: addr}
 	receiveTestTaskEvent(t, h, taskEventFixture("saved-task"))
 	item := storedGitLab(h.id, "one", "events", "7", "42", "original notification")
 	inboxCall[InboxReceipt](t, h, ReceiveInbox{MemberIdentity: h.id, Item: item})
-	dir := t.TempDir()
-	if err := os.CopyFS(dir, os.DirFS(h.store.dir)); err != nil {
+	// Publish the legacy material once, then close every writer before copying.
+	// Each interruption still runs against its own Store, journal and backup.
+	if err := h.rt.Close(h.ctx); err != nil {
 		t.Fatal(err)
 	}
-	return dir, h.id
+	h.rt = nil
+	if err := h.store.Close(); err != nil {
+		t.Fatal(err)
+	}
+	return inputUpgradeSeed{h.store.dir, h.id}
+}
+
+func (seed inputUpgradeSeed) copy(t *testing.T) (string, MemberIdentity) {
+	t.Helper()
+	dir := t.TempDir()
+	if err := os.CopyFS(dir, os.DirFS(seed.dir)); err != nil {
+		t.Fatal(err)
+	}
+	return dir, seed.id
+}
+
+func upgradeFixtureCopy(t *testing.T) (string, MemberIdentity) {
+	t.Helper()
+	return newInputUpgradeSeed(t).copy(t)
 }
 
 func readUpgradeProgress(t *testing.T, dir string) inputUpgradeProgress {
@@ -54,9 +83,10 @@ func stopInputUpgradeAt(t *testing.T, dir, room, phase string) {
 }
 
 func TestInputUpgradeResumesEveryPublicationBoundary(t *testing.T) {
+	seed := newInputUpgradeSeed(t)
 	for _, phase := range []string{"backup-file", "backup-ready", "converted", "prepared", "header", "replace-file", "remove-file", "room-published", "completed"} {
 		t.Run(phase, func(t *testing.T) {
-			dir, id := upgradeFixtureCopy(t)
+			dir, id := seed.copy(t)
 			stopInputUpgradeAt(t, dir, id.RoomID, phase)
 			before := readUpgradeProgress(t, dir)
 			if phase == "header" || phase == "replace-file" || phase == "remove-file" {
@@ -152,6 +182,7 @@ func TestInputUpgradeRefreshesLegacySourceBeforeFence(t *testing.T) {
 }
 
 func TestInputUpgradeFailsClosedOnInvalidAuthority(t *testing.T) {
+	seed := newInputUpgradeSeed(t)
 	for _, tc := range []struct {
 		name, phase string
 		path        func(string, MemberIdentity, inputUpgradeProgress) string
@@ -173,7 +204,7 @@ func TestInputUpgradeFailsClosedOnInvalidAuthority(t *testing.T) {
 		}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			dir, id := upgradeFixtureCopy(t)
+			dir, id := seed.copy(t)
 			var progress inputUpgradeProgress
 			if tc.phase != "" {
 				stopInputUpgradeAt(t, dir, id.RoomID, tc.phase)

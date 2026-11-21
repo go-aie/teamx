@@ -21,7 +21,16 @@ import (
 
 func platformMemberHarness(t *testing.T) (*larkHarness, platformMemberRequest) {
 	t.Helper()
-	h := newLarkSearchHarness(t)
+	return configurePlatformMemberFixture(t, newLarkSearchHarness(t))
+}
+
+func platformMemberHarnessWithMembers(t *testing.T, count int) (*larkHarness, platformMemberRequest) {
+	t.Helper()
+	return configurePlatformMemberFixture(t, newLarkSearchHarnessWithMembers(t, count))
+}
+
+func configurePlatformMemberFixture(t *testing.T, h *larkHarness) (*larkHarness, platformMemberRequest) {
+	t.Helper()
 	bin := filepath.Join(h.dir, "lark-cli")
 	script, _ := os.ReadFile(bin)
 	text := strings.Replace(string(script), "'chat_mode':'p2p','name':'脱敏会话'", "'chat_mode':('p2p' if path.endswith('oc_private') else 'group'),'name':'产品讨论群'", 1)
@@ -57,7 +66,7 @@ func platformMemberHarness(t *testing.T) (*larkHarness, platformMemberRequest) {
 
 func TestPlatformMemberCLISelectedGroupAndSeparateTool(t *testing.T) {
 	parallelFixtureTest(t)
-	h, req := platformMemberHarness(t)
+	h, req := platformMemberHarnessWithMembers(t, 2)
 	// An existing sibling binding must survive all current-member changes.
 	bindCLITool(t, h.m, h.room.RoomIdentity, h.members[1], h.c, "lark", 0)
 	server := httptest.NewServer(h.m)
@@ -161,7 +170,7 @@ func TestPlatformMemberCLISelectedGroupAndSeparateTool(t *testing.T) {
 
 func TestPlatformMemberSubscriptionPatchVersionsAndHumanEvidence(t *testing.T) {
 	parallelFixtureTest(t)
-	h, req := platformMemberHarness(t)
+	h, req := platformMemberHarnessWithMembers(t, 2)
 	cfg := h.m.defaultLarkConfig(h.c.ID)
 	cfg.Target = inboxTarget(req.member())
 	cfg.Groups.Scope, cfg.Groups.ChatIDs, cfg.Groups.MessageMode = "specified", []string{"oc_old"}, "mentions"
@@ -215,7 +224,7 @@ func TestPlatformMemberRejectsChangesDuringGroupVerification(t *testing.T) {
 	for _, change := range []string{"account", "member", "subscription"} {
 		t.Run(change, func(t *testing.T) {
 			parallelFixtureTest(t)
-			h, req := platformMemberHarness(t)
+			h, req := platformMemberHarnessWithMembers(t, 1)
 			bin := filepath.Join(h.dir, "lark-cli")
 			script, _ := os.ReadFile(bin)
 			block := "if path.endswith('/oc_group_two'):\n import time\n open(base+'/selected-read','w').write('ready')\n while not os.path.exists(base+'/release-read'):time.sleep(0.01)\n"
@@ -281,7 +290,7 @@ func TestPlatformMemberNotificationUnknownReceiptAndRestart(t *testing.T) {
 	for _, afterReplace := range []bool{false, true} {
 		t.Run(strconv.FormatBool(afterReplace), func(t *testing.T) {
 			parallelFixtureTest(t)
-			h, req := platformMemberHarness(t)
+			h, req := platformMemberHarnessWithMembers(t, 1)
 			real := h.m.store.ops
 			h.m.mu.Lock()
 			h.m.store.ops.rename = func(from, to string) error {

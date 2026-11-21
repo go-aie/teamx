@@ -161,15 +161,13 @@ func TestRoomAttachmentMaterialsMCPReadHistoryAndReplay(t *testing.T) {
 }
 
 func TestRoomAttachmentMaterialsMissingAndBudgets(t *testing.T) {
-	for _, mode := range []string{"text-only", "missing", "corrupt", "count", "bytes", "pixels"} {
+	for _, mode := range []string{"missing", "corrupt", "pixels"} {
 		t.Run(mode, func(t *testing.T) {
 			h, s := roomAttachmentReaderFixture(t)
 			one, two := uploadTestAttachment(t, h.store, 1), uploadTestAttachment(t, h.store, 2)
 			postAttachmentMessage(t, h, "retained message", one, two)
 			reason, expectedImages := "", 0
 			switch mode {
-			case "text-only":
-				s.images, reason = false, "text-only"
 			case "missing":
 				err := os.Remove(filepath.Join(h.store.attachmentPath(one.Attachment.ID), "data"))
 				if err != nil {
@@ -182,12 +180,6 @@ func TestRoomAttachmentMaterialsMissingAndBudgets(t *testing.T) {
 					t.Fatal(err)
 				}
 				reason, expectedImages = "unavailable", 1
-			case "count":
-				s.service.imageMaterials.MaxImages = 1
-				reason, expectedImages = "image count budget", 1
-			case "bytes":
-				s.service.imageMaterials.TotalBytes = one.Attachment.Size
-				reason, expectedImages = "image byte budget", 1
 			case "pixels":
 				s.service.imageMaterials.MaxPixels = 1
 				reason = "image byte/pixel"
@@ -490,10 +482,10 @@ func TestRoomAttachmentMaterialsReadProtectionAndRetention(t *testing.T) {
 				if err := s.receiveCall(h.ctx, "protected"); err != nil {
 					t.Fatal(err)
 				}
-					roomError[ClearReceipt](t, h, ClearMessages{RoomIdentity: h.id, Caller: humanCaller, ThroughSeq: 1}, ErrBusy)
-					if err := s.coordinate(h.ctx, func(r inputstream.ExecutionStorage) error { return r.Seal(s.execution) }); err != nil {
-						t.Fatal(err)
-					}
+				roomError[ClearReceipt](t, h, ClearMessages{RoomIdentity: h.id, Caller: humanCaller, ThroughSeq: 1}, ErrBusy)
+				if err := s.coordinate(h.ctx, func(r inputstream.ExecutionStorage) error { return r.Seal(s.execution) }); err != nil {
+					t.Fatal(err)
+				}
 			}
 			roomCall[ClearReceipt](t, h, ClearMessages{RoomIdentity: h.id, Caller: humanCaller, ThroughSeq: 1})
 			if _, err := os.Stat(h.store.attachmentPath(one.Attachment.ID)); !errors.Is(err, os.ErrNotExist) {

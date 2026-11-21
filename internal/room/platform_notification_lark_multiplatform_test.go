@@ -52,7 +52,7 @@ func secondLarkPlatform(t *testing.T, h *larkHarness) managedPlatform {
 }
 func TestLarkMultiplePlatformsCollectPauseAndRecoverIndependently(t *testing.T) {
 	parallelFixtureTest(t)
-	h := newLarkHarness(t)
+	h := newLarkHarnessWithMembers(t, 1)
 	h.start()
 	a := h.state()
 	c := secondLarkPlatform(t, h)
@@ -135,7 +135,7 @@ func TestLarkMultiplePlatformsCollectPauseAndRecoverIndependently(t *testing.T) 
 
 func TestLarkPlatformBRemainsConfigurableWhileAQuerySettles(t *testing.T) {
 	parallelFixtureTest(t)
-	h := newLarkHarness(t)
+	h := newLarkHarnessWithMembers(t, 1)
 	h.start()
 	a := h.state()
 	c := secondLarkPlatform(t, h)
@@ -226,7 +226,7 @@ func (r *blockingLarkReader) SearchMessages(ctx context.Context, a platform.Acco
 // exposing credential/profile selection or private message content.
 func TestLarkPublicViewsContainAccuratePlatformContext(t *testing.T) {
 	parallelFixtureTest(t)
-	h := newLarkHarness(t)
+	h := newLarkHarnessWithMembers(t, 1)
 	h.start()
 	s := h.state()
 	v, err := h.m.larkNotificationViewLocked(h.room.RoomIdentity, &s)

@@ -22,7 +22,7 @@ func TestLarkSelfSendIndependentProcessRecovery(t *testing.T) {
 	parallelFixtureTest(t)
 	for _, mode := range []string{"settled", "before_dispatch", "after_dispatch"} {
 		t.Run(mode, func(t *testing.T) {
-			h := selfSendHarness(t)
+			h := selfSendHarnessWithMembers(t, 1)
 			id, _ := enableSelfSend(t, h, h.members[0], 0)
 			server := httptest.NewServer(h.m)
 			q := selfSendRequest(t, contractCLI(t, server.URL, h.svc, id, h.c.ToolEntryID), "stable-process-intent")
@@ -119,7 +119,7 @@ func TestLarkSelfSendLedgerFailures(t *testing.T) {
 	parallelFixtureTest(t)
 	for _, mode := range []string{"intent", "attempt", "result", "result_commit_unknown"} {
 		t.Run(mode, func(t *testing.T) {
-			h := selfSendHarness(t)
+			h := selfSendHarnessWithMembers(t, 1)
 			id, _ := enableSelfSend(t, h, h.members[0], 0)
 			server := httptest.NewServer(h.m)
 			defer server.Close()
@@ -175,7 +175,7 @@ func TestLarkSelfSendLedgerFailures(t *testing.T) {
 
 func TestLarkSelfSendBindingViewExpires(t *testing.T) {
 	parallelFixtureTest(t)
-	h := selfSendHarness(t)
+	h := selfSendHarnessWithMembers(t, 1)
 	id, saved := enableSelfSend(t, h, h.members[0], 0)
 	server := httptest.NewServer(h.m)
 	defer server.Close()
@@ -259,7 +259,7 @@ func TestLarkSelfSendBindingViewExpires(t *testing.T) {
 
 func TestLarkSelfSendConcurrentRoomsAndMembers(t *testing.T) {
 	parallelFixtureTest(t)
-	h := selfSendHarness(t)
+	h := selfSendHarnessWithMembers(t, 2)
 	path := filepath.Join(h.dir, "lark-cli")
 	script, err := os.ReadFile(path)
 	if err != nil {
@@ -273,7 +273,7 @@ func TestLarkSelfSendConcurrentRoomsAndMembers(t *testing.T) {
 	id1, _ := enableSelfSend(t, h, h.members[0], 0)
 	// Each new member binding starts at revision zero, independently of the file revision.
 	id2, _ := enableSelfSend(t, h, h.members[1], 0)
-	r2 := managerCreate(t, h.m, "self-send-concurrent-room")
+	r2 := managerCreateWithMembers(t, h.m, "self-send-concurrent-room", 1)
 	_, state := readManagedRoom(t, h.m, r2)
 	svc2 := eventLiveService(t, &eventHarness{m: h.m, room: r2})
 	h.m.bindPlatformReferences(svc2)
@@ -328,7 +328,7 @@ func TestLarkSelfSendRevocationRaces(t *testing.T) {
 	for _, mode := range []string{"disable", "unbind", "rotate", "account", "remove"} {
 		t.Run(mode, func(t *testing.T) {
 			parallelFixtureTest(t)
-			h := selfSendHarness(t)
+			h := selfSendHarnessWithMembers(t, 1)
 			id, bindings := enableSelfSend(t, h, h.members[0], 0)
 			if mode == "disable" {
 				h.start()

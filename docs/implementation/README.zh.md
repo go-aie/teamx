@@ -35,6 +35,9 @@
 | [Room 授权与工具测试收缩](authorization-tool-matrix.zh.md) | §9.2 第二批：动作规则及工具矩阵承接、模型夹具收缩；切片约缩短 13.2%，完整集成 12 分 49 秒通过、八分钟预算未达 |
 | [Lark 原生协议测试矩阵下沉](lark-protocol-matrix.zh.md) | §9.2 第三批：候选校验及错误矩阵下沉、四槽诊断；Lark 切片约缩短 19.6%，完整集成通过，八分钟预算未达 |
 | [定时等待与日历发布夹具收缩](timer-assembly.zh.md) | §9.2 第四批：受控负向窗口、Inbox 最小规则状态及真实发布组件；切片中位数约缩短 24.2%，完整集成通过，八分钟预算未达 |
+| [Lark provider 与成员最小夹具](provider-fixtures.zh.md) | H1 首组：去无关 GitLab 装配、单／双成员按需创建；整族对照未证明提速，后续 provider 族暂不扩散 |
+| [核心测试规则与夹具收缩](core-test-fixtures.zh.md) | H2：Input／History、Workspace、平台配置及输入升级的规则承接、薄接线与不可变种子；完整四族对照和定向验证 |
+| [动作与引用撤权矩阵收缩](platform-revocation-matrix.zh.md) | H3.1：保留真实撤权入口及三个阶段，补齐 owner 隔离和正式 OAuth callback；整族 42.4 → 22.1 秒，单并发与定向 race 通过，既有 vet 阻挡保留 |
 | [后端生命周期依赖收敛](architecture/backend-lifecycle.zh.md) | R5b.1：原包接通执行、结清、轮换、恢复、检查点与模型应用合同；真实 DSH 手动／自动轮换与正常恢复已验，成员状态机迁移及 Codex 接入另行实施 |
 | [平台在途调用登记与结清](architecture/platform-calls.zh.md) | R6a.1：全部调用族共用登记、取消、完成回执与等待；准入、绑定变更及配置仍在原 manager 门槛内 |
 | [平台静态能力装配](architecture/platform-assembly.zh.md) | R3b：平台类型、工具、通知来源、输入 codec 和引用能力使用同一已校验描述；registry 注入快照，运行权限与生命周期留在外层 |

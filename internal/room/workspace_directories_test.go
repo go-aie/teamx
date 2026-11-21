@@ -22,6 +22,17 @@ func directoryTestManager(t *testing.T) (*roomManager, string) {
 	return m, root
 }
 
+// Path policy only needs the configured roots and protected directories.
+// It still uses the real filesystem, including permission and symlink checks.
+func directoryPolicyFixture(t *testing.T) (*roomManager, string) {
+	t.Helper()
+	root, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	return &roomManager{store: &Store{dir: t.TempDir()}, workspaceRoots: &[]string{root}}, root
+}
+
 func TestWorkspaceMemberDirectoryNormalizationAndOwnership(t *testing.T) {
 	if !equalWorkspaceRoomConfig(managedRoomConfig{Workspace: &workspaceConfig{Root: "workspaces"}}, managedRoomConfig{Workspace: &workspaceConfig{Root: "workspaces", MemberDirectories: map[string]string{}}}) {
 		t.Fatal("empty directory map differs from absent map in snapshot comparison")
@@ -84,7 +95,7 @@ func TestWorkspaceRootsConfigurationDistinguishesDefaultAndDisabled(t *testing.T
 }
 
 func TestWorkspaceDirectoryPolicyCanonicalizationAndRevalidation(t *testing.T) {
-	m, root := directoryTestManager(t)
+	m, root := directoryPolicyFixture(t)
 	dir := filepath.Join(root, "中文 project")
 	if err := os.Mkdir(dir, 0700); err != nil {
 		t.Fatal(err)
@@ -142,12 +153,8 @@ func TestWorkspaceDirectoryPolicyCanonicalizationAndRevalidation(t *testing.T) {
 }
 
 func TestWorkspaceDirectorySnapshotDoesNotRequireLivePath(t *testing.T) {
-	m := activationTestManager(t)
-	room := managerCreate(t, m, "snapshot")
-	c, _ := readManagedRoom(t, m, room)
-	w, _ := normalizeWorkspace(*c.Workspace, false)
-	w.MemberDirectories = map[string]string{c.Members[0].MembershipID: "/unavailable/mount/project"}
-	c.Workspace = &w
+	w := workspaceConfig{Root: "workspaces", MemberDirectories: map[string]string{"generation-A": "/unavailable/mount/project"}}
+	c := managedRoomConfig{Workspace: &w, WorkspaceVersion: 1, Members: []managedMember{{MemberState: historyRoom(0, "").Members[0], Workspace: "workspaces/generation-A"}}}
 	if err := validateWorkspaceSnapshot(c); err != nil {
 		t.Fatal("unavailable path blocked repair", err)
 	}
@@ -159,7 +166,7 @@ func TestWorkspaceDirectorySnapshotDoesNotRequireLivePath(t *testing.T) {
 	if err := json.Unmarshal(encoded, &decoded); err != nil || !reflect.DeepEqual(c, decoded) {
 		t.Fatal(err)
 	}
-	team := m.teams[c.TeamID]
+	team := testTeamDefinition(t)
 	team.Workspace = &w
 	if err := validateTeam(&team, nil); err == nil {
 		t.Fatal("template propagated machine path")
@@ -170,7 +177,7 @@ func TestWorkspaceDirectoryRequiresReadAndSearchPermission(t *testing.T) {
 	if os.Geteuid() == 0 {
 		t.Skip("root bypasses directory permissions")
 	}
-	m, root := directoryTestManager(t)
+	m, root := directoryPolicyFixture(t)
 	dir := filepath.Join(root, "denied")
 	if err := os.Mkdir(dir, 0700); err != nil {
 		t.Fatal(err)

@@ -31,17 +31,6 @@ func larkToolConfigurationHarness(t *testing.T) *larkHarness {
 	return configureLarkToolFixture(t, newLarkHarness(t))
 }
 
-// Entrypoint checks need only a Lark account, not a second provider or executable.
-func larkOnlyToolConfigurationHarness(t *testing.T) *larkHarness {
-	t.Helper()
-	m := testManager(t, t.TempDir(), managerTestProfiles(t))
-	m.larkClients = lark.NewClientFactory(0, 0, 0)
-	room := managerCreate(t, m, "lark-tools")
-	_, snapshot := readManagedRoom(t, m, room)
-	svc := eventLiveService(t, &eventHarness{m: m, room: room})
-	return configureLarkToolFixture(t, newLarkHarnessForRoom(t, m, room, svc, snapshot.Members))
-}
-
 func larkToolConfigurationHarnessWithMembers(t *testing.T, count int) *larkHarness {
 	t.Helper()
 	return configureLarkToolFixture(t, newLarkHarnessWithMembers(t, count))
@@ -111,7 +100,7 @@ func TestLarkToolConfigurationEntrypointsAgreeAndSelfProofIsRequired(t *testing.
 	parallelFixtureTest(t)
 	for _, entry := range []string{"http", "member", "onboarding"} {
 		t.Run(entry, func(t *testing.T) {
-			h := larkOnlyToolConfigurationHarness(t)
+			h := larkToolConfigurationHarnessWithMembers(t, 1)
 			var result *larkMemberCapabilityResult
 			switch entry {
 			case "http":
@@ -181,7 +170,7 @@ func TestLarkToolConfigurationEntrypointsAgreeAndSelfProofIsRequired(t *testing.
 }
 func TestLarkToolConfigurationExplicitActionsAndPreservedIntent(t *testing.T) {
 	parallelFixtureTest(t)
-	h := larkToolConfigurationHarness(t)
+	h := larkToolConfigurationHarnessWithMembers(t, 1)
 	// A historical read-only binding remains unchanged by status/list reads.
 	change := larkConfigurationChange(h)
 	h.m.mu.Lock()
@@ -215,7 +204,7 @@ func TestLarkToolConfigurationExplicitActionsAndPreservedIntent(t *testing.T) {
 }
 func TestLarkToolConfigurationUserAndApplicationScopeAdmission(t *testing.T) {
 	parallelFixtureTest(t)
-	h := larkToolConfigurationHarness(t)
+	h := larkToolConfigurationHarnessWithMembers(t, 1)
 	writeJSONFixture(t, filepath.Join(h.dir, "missing-scopes.json"), []string{"im:message:readonly"})
 	req := larkMemberToolRequest(t, h, 0)
 	op, err := h.m.configurePlatformMember(t.Context(), "tool", req)
@@ -248,7 +237,7 @@ func TestLarkToolConfigurationRechecksAfterRemotePreparation(t *testing.T) {
 	parallelFixtureTest(t)
 	for _, mutation := range []string{"disable", "credential", "generation", "member", "cancel"} {
 		t.Run(mutation, func(t *testing.T) {
-			h := larkToolConfigurationHarness(t)
+			h := larkToolConfigurationHarnessWithMembers(t, 1)
 			change := larkConfigurationChange(h)
 			// The callback itself acquires manager.mu: remote work must be outside it.
 			h.m.bindingEvidencePreparers["lark"] = func(ctx context.Context, _ *toolBindingChange) error {
@@ -312,7 +301,7 @@ func TestLarkToolConfigurationNativeSelfEvidenceRefreshAndForgery(t *testing.T) 
 	if runtime.GOOS != "darwin" {
 		t.Skip("fixed-account self evidence requires macOS")
 	}
-	h := larkToolConfigurationHarness(t)
+	h := larkToolConfigurationHarnessWithMembers(t, 1)
 	bin := filepath.Join(h.dir, "lark-cli")
 	raw, err := os.ReadFile(bin)
 	if err != nil {
@@ -383,7 +372,7 @@ func TestLarkToolConfigurationNativeSelfEvidenceRefreshAndForgery(t *testing.T) 
 
 func TestLarkToolConfigurationOnboardingPreservesChoicesAndUnknownSubmission(t *testing.T) {
 	parallelFixtureTest(t)
-	h := larkToolConfigurationHarness(t)
+	h := larkToolConfigurationHarnessWithMembers(t, 1)
 	change := larkConfigurationChange(h)
 	h.m.mu.Lock()
 	_, _, err := h.m.changeToolBindingLocked(t.Context(), change)
@@ -458,7 +447,7 @@ func TestLarkToolConfigurationRejectsActionsOutsideExplicitEnable(t *testing.T) 
 
 func TestLarkToolConfigurationCLIAddsOnlyRequestedActions(t *testing.T) {
 	parallelFixtureTest(t)
-	h := larkToolConfigurationHarness(t)
+	h := larkToolConfigurationHarnessWithMembers(t, 1)
 	req := larkMemberToolRequest(t, h, 0)
 	client, endpoint := toolPipeServer(t, h.m)
 	args := []string{"member", "tool", "--platform-id", h.c.ID, "--platform-version", strconv.FormatUint(h.c.Version, 10), "--binding-revision", "0", "--operation-id", req.OperationID, "--source-seq", strconv.FormatUint(req.SourceSeq, 10), "--enabled", "true", "--action", "message.reply", "--action", "message.send", "--action", "message.reply"}
@@ -477,7 +466,7 @@ func TestLarkToolConfigurationCLIAddsOnlyRequestedActions(t *testing.T) {
 
 func TestLarkToolConfigurationCanonicalizesExistingGrants(t *testing.T) {
 	parallelFixtureTest(t)
-	h := larkToolConfigurationHarness(t)
+	h := larkToolConfigurationHarnessWithMembers(t, 1)
 	change := larkConfigurationChange(h)
 	caps, _ := h.m.referenceCapabilities("lark")
 	grants := defaultLarkActionGrants(caps)

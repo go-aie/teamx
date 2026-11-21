@@ -21,7 +21,7 @@ import (
 
 func TestPlatformMemberLarkCLIConfiguresRangesAndConditions(t *testing.T) {
 	parallelFixtureTest(t)
-	h, req := platformMemberHarness(t)
+	h, req := platformMemberHarnessWithMembers(t, 2)
 	bindCLITool(t, h.m, req.RoomIdentity, h.members[1], h.c, "lark", 0)
 	bindings, err := os.ReadFile(h.m.toolBindingsPath(req.RoomIdentity))
 	if err != nil {
@@ -134,7 +134,7 @@ func TestPlatformMemberLarkCLIConfiguresRangesAndConditions(t *testing.T) {
 
 func TestPlatformMemberLarkReplacementUnknownReceiptSurvivesRestart(t *testing.T) {
 	parallelFixtureTest(t)
-	h, req := platformMemberHarness(t)
+	h, req := platformMemberHarnessWithMembers(t, 1)
 	req.Input.AddChatIDs = nil
 	req.Input.Groups = &platformMemberGroupPatch{ChatIDs: memberPatchIDs("oc_group_two"), AtMe: memberPatchBool(true), AtAll: memberPatchBool(false)}
 	// Keep reception off so reopening does not need a running provider process.
@@ -184,7 +184,7 @@ func TestPlatformMemberLarkReplacementUnknownReceiptSurvivesRestart(t *testing.T
 
 func TestPlatformMemberLarkReplacementRejectsPrivateTarget(t *testing.T) {
 	parallelFixtureTest(t)
-	h, req := platformMemberHarness(t)
+	h, req := platformMemberHarnessWithMembers(t, 1)
 	req.Input.AddChatIDs = nil
 	req.Input.Groups = &platformMemberGroupPatch{ChatIDs: memberPatchIDs("oc_private"), Enabled: memberPatchBool(true)}
 	if r := managerHTTP(h.m, "/v1/platforms/member/notifications", req); r.Code != 400 {

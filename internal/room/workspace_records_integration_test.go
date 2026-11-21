@@ -95,20 +95,6 @@ func TestWorkspaceOperationIdentityProgressAndValidation(t *testing.T) {
 	if err := m.saveWorkspaceOperation(regressed); !errors.Is(err, ErrConflict) {
 		t.Fatal("progress moved backwards", err)
 	}
-	for _, mutate := range []func(*workspaceOperation){
-		func(op *workspaceOperation) { op.ErrorCode = "a-raw-PAT-must-never-be-a-diagnostic" },
-		func(op *workspaceOperation) { op.TargetVersion++ },
-		func(op *workspaceOperation) { op.Phase = "unknown" },
-		func(op *workspaceOperation) { op.Members[0].Workspace = "../outside" },
-		func(op *workspaceOperation) { op.ConfigCommitted = true },
-		func(op *workspaceOperation) { op.SessionsUpdated = []string{op.Members[0].MembershipID} },
-	} {
-		bad := cloneWorkspaceOperation(op)
-		mutate(&bad)
-		if err := bad.validate(); err == nil {
-			t.Fatal("accepted invalid progress record")
-		}
-	}
 	op.Status, op.ErrorCode, op.Phase, op.ConfigCommitted = "completed", "", "completed", true
 	for _, member := range op.Members {
 		op.SessionsUpdated = append(op.SessionsUpdated, member.MembershipID)

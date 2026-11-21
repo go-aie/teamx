@@ -202,7 +202,7 @@ func TestGitLabConnectFirstApplicationReturnAndContinuation(t *testing.T) {
 }
 
 func TestGitLabConnectApplicationSetupBoundaries(t *testing.T) {
-	for _, scenario := range []string{"callback", "foreign_owner", "other_origin", "replacement", "cancelled", "wrong_human", "agent"} {
+	for _, scenario := range []string{"callback", "cancelled", "wrong_human", "agent"} {
 		t.Run(scenario, func(t *testing.T) {
 			g, _, _, req := gitlabConnectSetupFixture(t)
 			m := g.h.m
@@ -212,12 +212,6 @@ func TestGitLabConnectApplicationSetupBoundaries(t *testing.T) {
 			switch scenario {
 			case "callback":
 				file.OAuthClientImports[0].RedirectURI = "http://localhost:9999" + gitlabCallbackPath
-			case "foreign_owner":
-				file.OAuthClientImports[0].ActorID = "other"
-			case "other_origin":
-				file.OAuthClientImports[0].Origin = "https://other.invalid"
-			case "replacement":
-				file.OAuthClientImports[0].ReplacesApplicationID = strings.Repeat("d", 32)
 			case "cancelled":
 				connectHTTP(t, m, "cancel", connectObservation(req))
 			}

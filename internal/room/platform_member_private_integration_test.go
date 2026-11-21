@@ -73,7 +73,7 @@ if path=='/open-apis/im/v1/chat_p2p/batch_query':
 
 func TestPlatformMemberPrivateCLIQueriesAndReplacesVerifiedPersonnel(t *testing.T) {
 	parallelFixtureTest(t)
-	h, req := platformMemberHarness(t)
+	h, req := platformMemberHarnessWithMembers(t, 2)
 	installMemberPrivateFixture(t, h)
 	server := httptest.NewServer(h.m)
 	defer server.Close()
@@ -186,7 +186,7 @@ func TestPlatformMemberPrivateRejectsUnverifiableTargets(t *testing.T) {
 	} {
 		t.Run(tc.id+tc.mode, func(t *testing.T) {
 			parallelFixtureTest(t)
-			h, req := platformMemberHarness(t)
+			h, req := platformMemberHarnessWithMembers(t, 1)
 			installMemberPrivateFixture(t, h)
 			if err := os.WriteFile(filepath.Join(h.dir, "private-mode"), []byte(tc.mode), 0600); err != nil {
 				t.Fatal(err)
@@ -213,7 +213,7 @@ func TestPlatformMemberPrivateRejectsChangesDuringVerification(t *testing.T) {
 	for _, change := range []string{"account", "member", "subscription"} {
 		t.Run(change, func(t *testing.T) {
 			parallelFixtureTest(t)
-			h, req := platformMemberHarness(t)
+			h, req := platformMemberHarnessWithMembers(t, 1)
 			installMemberPrivateFixture(t, h)
 			req.Input.AddChatIDs = nil
 			req.Input.Private = &platformMemberPrivatePatch{Scope: "specified", ChatIDs: memberPatchIDs("oc_private_one")}
@@ -275,7 +275,7 @@ func TestPlatformMemberPrivateRejectsChangesDuringVerification(t *testing.T) {
 
 func TestPlatformMemberPrivateUnknownReceiptSurvivesRestart(t *testing.T) {
 	parallelFixtureTest(t)
-	h, req := platformMemberHarness(t)
+	h, req := platformMemberHarnessWithMembers(t, 1)
 	installMemberPrivateFixture(t, h)
 	req.Input.AddChatIDs = nil
 	req.Input.Private = &platformMemberPrivatePatch{Scope: "specified", ChatIDs: memberPatchIDs("oc_private_one")}

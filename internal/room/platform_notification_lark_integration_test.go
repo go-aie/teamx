@@ -21,7 +21,7 @@ import (
 
 func TestLarkVerificationResumesCredentialPausedSubscription(t *testing.T) {
 	parallelFixtureTest(t)
-	h := newLarkHarness(t)
+	h := newLarkHarnessWithMembers(t, 1)
 	h.start()
 	before := h.state()
 	h.m.mu.Lock()
@@ -81,7 +81,7 @@ func TestLarkVerificationPreservesOtherPauses(t *testing.T) {
 	parallelFixtureTest(t)
 	for _, mode := range []string{"disabled", "retired", "capacity", "binding_changed", "different_account", "different_generation", "failed_verification"} {
 		t.Run(mode, func(t *testing.T) {
-			h := newLarkHarness(t)
+			h := newLarkHarnessWithMembers(t, 1)
 			h.start()
 			s := h.state()
 			s.RuntimeState.InvalidateCredential(true)
@@ -125,7 +125,7 @@ func TestLarkVerificationPreservesOtherPauses(t *testing.T) {
 
 func TestLarkVerificationRestartsPausedWorker(t *testing.T) {
 	parallelFixtureTest(t)
-	h := newLarkHarness(t)
+	h := newLarkHarnessWithMembers(t, 1)
 	h.start()
 	s := h.state()
 	h.m.mu.Lock()
@@ -162,7 +162,7 @@ func TestLarkVerificationRestartsPausedWorker(t *testing.T) {
 
 func TestLarkNotificationsInboxReferencesAndRoomQuestion(t *testing.T) {
 	parallelFixtureTest(t)
-	h := newLarkHarness(t)
+	h := newLarkHarnessWithMembers(t, 2)
 	h.start()
 	if len(h.state().Inbox) != 1 {
 		t.Fatal("missing source candidate")
@@ -248,7 +248,7 @@ func TestLarkNotificationsInboxReferencesAndRoomQuestion(t *testing.T) {
 
 func TestLarkNotificationsRestartImmutableTargetAndDeliveryCapacity(t *testing.T) {
 	parallelFixtureTest(t)
-	h := newLarkHarness(t)
+	h := newLarkHarnessWithMembers(t, 2)
 	h.messages(2)
 	h.start()
 	old := h.state()
@@ -317,7 +317,7 @@ func TestLarkNotificationsRestartImmutableTargetAndDeliveryCapacity(t *testing.T
 
 func TestLarkNotificationsAckCrashReusesDeliveryID(t *testing.T) {
 	parallelFixtureTest(t)
-	h := newLarkHarness(t)
+	h := newLarkHarnessWithMembers(t, 1)
 	h.start()
 	old := h.state()
 	member := h.members[0]
@@ -348,7 +348,7 @@ func TestLarkNotificationsAckCrashReusesDeliveryID(t *testing.T) {
 
 func TestLarkAdditionalPlatformRetainsOldSource(t *testing.T) {
 	parallelFixtureTest(t)
-	h := newLarkHarness(t)
+	h := newLarkHarnessWithMembers(t, 1)
 	h.start()
 	old := h.state()
 	c := platformTestSave(t, h.m, managedPlatformRequest{ServiceEpoch: h.m.epoch, Caller: humanCaller, ID: strings.Repeat("d", 32), Name: "另一个显式连接", Provider: "lark", URL: h.c.URL, CLIProfile: h.c.CLIProfile})
@@ -386,7 +386,7 @@ func TestLarkAdditionalPlatformRetainsOldSource(t *testing.T) {
 
 func TestLarkBackgroundPollingDeliversWithoutEnablingMember(t *testing.T) {
 	parallelFixtureTest(t)
-	h := newLarkHarness(t)
+	h := newLarkHarnessWithMembers(t, 1)
 	h.messages(2)
 	h.start()
 	if e := h.m.notifications.Start(); e != nil {
@@ -420,7 +420,7 @@ func TestLarkBackgroundPollingDeliversWithoutEnablingMember(t *testing.T) {
 
 func TestLarkAllPrivateSearchPersistsAndProjectsSafeDiagnostics(t *testing.T) {
 	parallelFixtureTest(t)
-	h := newLarkHarness(t)
+	h := newLarkHarnessWithMembers(t, 1)
 	// Directory discovery is irrelevant to search, including an unreadable page.
 	if err := os.WriteFile(filepath.Join(h.dir, "directory.json"), []byte(`{"invalid":"directory fixture must not be used"}`), 0600); err != nil {
 		t.Fatal(err)

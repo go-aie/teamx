@@ -201,26 +201,19 @@ func mustJSON(t *testing.T, v any) []byte {
 }
 
 func TestHistoryMCPMissingImagesKeepText(t *testing.T) {
-	for _, kind := range []string{"text-only", "unavailable", "format", "budget"} {
+	for _, kind := range []string{"text-only", "unavailable"} {
 		t.Run(kind, func(t *testing.T) {
 			_, s := unifiedReaderFixture(t, 0)
 			s.images = kind != "text-only"
 
 			ref := receiveHistoryItem(t, s, historyImageItem(s, "gitlab", "saved fact ![x](/uploads/524bb5cf042cd0bb3ef9a7a117a744b7/image.png)"))
 			s.service.materialAttachments = &materialAttachments{download: func(context.Context, attachmentRequest, *attachmentReader, attachment.ImageLimits) ([]byte, string, *attachmentAccess, error) {
-				e := attachment.ErrUnavailable
-				if kind == "format" {
-					e = attachment.ErrFormat
-				}
-				if kind == "budget" {
-					e = attachment.ErrLimit
-				}
-				return nil, "", nil, e
+				return nil, "", nil, attachment.ErrUnavailable
 			}}
 			a, token, _ := historyAccess(t, s)
 			result, body := historyMCPCall(t, a, token, "missing", "history_read", map[string]any{"stream_ref": ref})
 			raw := string(mustJSON(t, body))
-			expected := map[string]string{"text-only": "text-only", "unavailable": "attachment unavailable", "format": "invalid image format", "budget": "image byte/pixel"}[kind]
+			expected := map[string]string{"text-only": "text-only", "unavailable": "attachment unavailable"}[kind]
 			if !strings.Contains(raw, expected) {
 				t.Fatal("wrong missing reason", raw)
 			}
