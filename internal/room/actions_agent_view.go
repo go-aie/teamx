@@ -54,14 +54,14 @@ func projectToolSelections(selections []toolSelection) []any {
 			result = append(result, struct {
 				toolSelection
 				Workflow string `json:"workflow"`
-			}{s, "Read the exact entry Skill before the first managed GitLab action in each Session. Native CLI: tools run " + s.Name + " ... . Managed MR comments/replies: actions resolve/execute --tool " + s.Name + " --request JSON; root help: actions execute --help. For a direct comment/reply with a full URL, resolve {locator:{url:URL},turn_number:CURRENT_TURN}, then execute the returned target_ref; resolve verifies identity without preliminary native CLI reads or ID lookup. Reuse a valid target and current contract; input_schema declares image availability. For a new task, execute once without a receipt precheck; image-only input omits body entirely. Report the receipt; unknown requires actions read --id ORIGINAL_ID, never CLI resend."})
+			}{s, "Managed MR comments/replies: actions resolve/execute --tool " + s.Name + " --request JSON. Reuse a verified target and valid contract; a full MR/thread URL needs no native ID lookup or Workspace. Read the declared Skill when workflow guidance is missing. Execute once, report the receipt; unknown: actions read --id ORIGINAL_ID, never resend. Native CLI: tools run " + s.Name + " ... ."})
 			continue
 		}
 		if s.Provider != "lark" {
 			result = append(result, s)
 			continue
 		}
-		v := agentLarkToolEntry{Name: s.Name, Provider: s.Provider, ToolType: s.ToolType, PlatformID: s.PlatformID, PlatformName: s.PlatformName, Instance: s.Instance, Username: s.Username, Status: s.Status, Capabilities: s.Capabilities, UnavailableReason: s.UnavailableReason, ActionDisabledReason: s.ActionDisabledReason, Skill: `"$TEAMX_CLI" tools skill ` + s.Name, Workflow: "Read the Skill before the first action in each Session. Resolve selects a target; actions read queries an existing action ID. Use TeamX commands and receipts only."}
+		v := agentLarkToolEntry{Name: s.Name, Provider: s.Provider, ToolType: s.ToolType, PlatformID: s.PlatformID, PlatformName: s.PlatformName, Instance: s.Instance, Username: s.Username, Status: s.Status, Capabilities: s.Capabilities, UnavailableReason: s.UnavailableReason, ActionDisabledReason: s.ActionDisabledReason, Skill: `"$TEAMX_CLI" tools skill ` + s.Name, Workflow: "Managed sends/replies: actions resolve/execute --tool " + s.Name + " --request JSON. Reuse a verified target and valid contract; read the Skill when workflow guidance is missing. Current content/context: tools run " + s.Name + " read. Unknown: actions read --id ORIGINAL_ID, never resend."}
 		if a := s.Availability; a != nil {
 			v.Account = a.Account
 			v.Availability = &agentLarkToolAvailability{a.CheckedAt, a.AccountFixed, a.ToolEnabled, a.ImageActions, a.Capabilities}
@@ -264,7 +264,7 @@ func projectGitlabActionTarget(v actionTargetView) any {
 		if !isGitlabComment(a.Operation) || a.BindingEvidence != "" {
 			return v
 		}
-		authority := "Before the first GitLab execute in a Session, read the exact entry Skill from tools list. Text: existing rule, instruction or human_reply authority plus current policy_token. A new turn does not expire this target or schema: reuse them with current turn_number/policy_token, without another resolve. Ask first for an unspecified different discussion; do not guess a locator or fall back to object.comment."
+		authority := "Text: existing rule, instruction or human_reply authority plus current policy_token. Reuse this verified target and valid schema with current turn_number/policy_token; resolve only if missing, ambiguous or invalidated. Ask first for an unspecified different discussion; do not guess a locator or fall back to object.comment."
 		if strings.Contains(string(a.InputSchema), `"images"`) {
 			authority += " With images: only human_reply {room_seq,reason} from the direct Room instruction and current policy_token; one attempt, no unknown retry."
 		}

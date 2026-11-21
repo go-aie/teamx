@@ -1,0 +1,584 @@
+{
+  "scope": "S1a-A2",
+  "date": "2026-11-21",
+  "model": "deepseek-v4.1-flash-1017",
+  "remote_business_writes": 0,
+  "daily_service_changed": false,
+  "private_artifact_root": "/var/folders/kd/j6whw59n4qv4_7_0q7lzbz8h0000gn/T/teamx-context-guidance-var70i8v",
+  "snapshots": {
+    "internal/room/prompts/agent-guide.md": {
+      "before_sha256": "15162679f4b5db47e4a2579b0e7caafe3362141a350e00dfa1b37bfe86ae6aef",
+      "after_sha256": "637250d0f6c152682c0b8114c41265a8d3222bd6b3234d0b5cb4d9907f4ce5ea",
+      "before_bytes": 13731,
+      "after_bytes": 14553
+    },
+    "internal/room/prompts/assistant.md": {
+      "before_sha256": "73b130cb40827cb8e7bc8d505451942543c2f6a0f54ae132c0cf2a94902f040a",
+      "after_sha256": "fa441ed126efedf20def8037d055c2bd8ec830e872b2451486fc7a23ea76ad64",
+      "before_bytes": 4375,
+      "after_bytes": 3259
+    },
+    "internal/room/input_stream_guide.go": {
+      "before_sha256": "06e353277aa72208a28da7eab550c5870474dbdef1d692473f60d083132e647d",
+      "after_sha256": "e07311e054af14490cc49b3b050bf5dff0965fa380dc059d95adf60295f5710c",
+      "before_bytes": 3427,
+      "after_bytes": 3989
+    },
+    "internal/room/actions_agent_view.go": {
+      "before_sha256": "2b7d7b0ed7bdde9c060df169eb0621b48191c273e70aeb621f26f2491e5e1e2c",
+      "after_sha256": "f9d73c7eaa44887baba4284e1782979e0284e90ce24f271f04565b329d3a7766",
+      "before_bytes": 15471,
+      "after_bytes": 15170
+    },
+    "internal/room/tool_entries.go": {
+      "before_sha256": "d316800d1a20d7d403bddf5fdae8d1949f856d96f001d3e69b54ebdde6f323c3",
+      "after_sha256": "60a76c5831968095f675122d8b0e0170b229910a1baf33034a123a788daa6d1f",
+      "before_bytes": 7296,
+      "after_bytes": 7364
+    },
+    "internal/room/cli_help.go": {
+      "before_sha256": "9ac28a1511e2cc32e70f15cd98d9769d250bb9f15fb8c22485d7858382bf74f5",
+      "after_sha256": "19a334eeaa9e89e5f805fdd431bdce72e852d073d8b1273d1f74a61b9c60b95a",
+      "before_bytes": 29483,
+      "after_bytes": 29631
+    },
+    "internal/room/tools_cli.go": {
+      "before_sha256": "e11b565db7aabb540ef96631b714923b0e8d3e9b84d370395e83852948a6ff59",
+      "after_sha256": "662c5eedb3bb0cd6c76335182d8b473def87d2eefca59c28ae44d6c83ad047a1",
+      "before_bytes": 7085,
+      "after_bytes": 7168
+    },
+    "internal/app/builtinplatforms/lark/tools.go": {
+      "before_sha256": "8d623a628628c95871b041bb91075bfd1b892c7cd65996b8f120df806806db6e",
+      "after_sha256": "33029e6036f9674bc25cdeb621b813a07da0abd275deab26594fdbf74d0476c5",
+      "before_bytes": 3666,
+      "after_bytes": 3791
+    },
+    "internal/platform/tool/skills/gitlab/SKILL.md": {
+      "before_sha256": "0486c4c2864166529079744e28747b3c907e2438fdb6ee17ebae307bba74ba16",
+      "after_sha256": "8f33e96cdf68a984ceaf6ad7985a6a1928e9c4a53d8b3a967c442101d2ae2c96",
+      "before_bytes": 14197,
+      "after_bytes": 15086
+    },
+    "internal/platform/tool/skills/lark/SKILL.md": {
+      "before_sha256": "e124b03f85de07135aea062d5aef6829731eb3b6b10e2e0510d0726e4506b496",
+      "after_sha256": "f5328ec800e771dd360c117ad854e79f03723ef1915328faa25a646ad2a690a7",
+      "before_bytes": 5322,
+      "after_bytes": 6092
+    },
+    "internal/platform/tool/skills/platforms/SKILL.md": {
+      "before_sha256": "00e48a7d8f9a5f60105a88bb8bf520c471e7c2fab90f3eb9078810144a1e8044",
+      "after_sha256": "47050b1e8ccec82e3049f76ad49e55e39670031230cef475fe040caa6fc8ea00",
+      "before_bytes": 32716,
+      "after_bytes": 33061
+    },
+    "internal/platform/tool/skills/scion/SKILL.md": {
+      "before_sha256": "6080e51bbe570b6114d5aace2dcbc8ba3f5e8d84e3f29f9599f45d688a238f23",
+      "after_sha256": "2fe45703d771df435589dabad08fc222f3c393d65e2e8d801d0b27e3d5d43e9f",
+      "before_bytes": 5660,
+      "after_bytes": 5678
+    }
+  },
+  "checks": [
+    {
+      "slice": "regression",
+      "top_level_tests": [
+        "TestActionLedgerReadableDuringSessionRecovery",
+        "TestActionsResolveExistingGitLabFollowup",
+        "TestActionsStandaloneCLIAndAssociatedContract",
+        "TestBindingCASAndAccountlessTool",
+        "TestDSHGuideUsesSuppliedAuthority",
+        "TestDSHRecoverySupplyOnOpenResumeRotationAndFailedFirstTurn",
+        "TestDefaultAssistantSkillWithoutPlatformBinding",
+        "TestEntrySkillUsesExactAccountForRootActions",
+        "TestGitlabToolEntryManagedWorkflow",
+        "TestHistoryGuidanceAndBackendModes",
+        "TestLarkActionAgentContract",
+        "TestLarkReplyCommonCLIThreeAuthorities",
+        "TestLarkReplyUnknownMixedTargetsAndRestart",
+        "TestLarkSelfSendManagedCapability",
+        "TestMattersCLIInputSourcesAndDiscussion",
+        "TestMattersCLILegacySourceContracts",
+        "TestPlatformConnectSkillIdentityAndHumanBoundary",
+        "TestPlatformEntryUsesSelectedRuntimeAndHelpPreservesLazyAccess",
+        "TestReferenceActionIntentPersistenceAndProcessing",
+        "TestReferenceActionInternalRevocationSettles",
+        "TestReferenceActionThreeAuthorities",
+        "TestReferenceActionUnknownRetryAndRecovery",
+        "TestReferenceConversationAmbiguousAnswersAndAccurateScope",
+        "TestReferenceConversationAnswerSaveUnknownAndCapacity",
+        "TestReferenceConversationByteCapacityPreservesAnswers",
+        "TestReferenceConversationDeferredInstructionsAndNewQuestions",
+        "TestReferenceConversationDirectInstructionRevocationAndPendingQuestions",
+        "TestReferenceConversationImmediateAnswerAndRecovery",
+        "TestReferenceConversationPolicyConcurrentCASAndExpiry",
+        "TestReferenceConversationPolicyExplicitAmendRevokeAndTokens",
+        "TestReferenceConversationPolicyInferredSuggestionConfirmation",
+        "TestReferenceConversationPolicyProvenanceFencesAndFailures",
+        "TestReferenceConversationPolicyStaleSuggestionAndContextConfirmation",
+        "TestReferenceConversationQuestionCommitGapAndSaveFailures",
+        "TestSharedGuidanceInEffectiveSessionInstructions",
+        "TestUnifiedDSHDirectoryCannotBypassDurableDiscoveryBudget",
+        "TestUnifiedDSHDirectoryRecoverySupplyAndContract",
+        "TestUnifiedDSHPreservesReceiptFailureDiagnostic"
+      ],
+      "top_level_passed": 38,
+      "passed_including_subtests": 123,
+      "failed": 0,
+      "skipped": 0,
+      "package_passed": true
+    },
+    {
+      "slice": "final-regression",
+      "top_level_tests": [
+        "TestDSHAdapterIsolationMetadataAndPrivateOutput",
+        "TestEntrySkillUsesExactAccountForRootActions",
+        "TestInputToolsMinimalContract",
+        "TestPlatformMemberHelpFocusesOnRequestedCommand",
+        "TestRootHelpAudienceAndSelection",
+        "TestRootHelpDoesNotInferInputTransport",
+        "TestScopedHelpDoesNotAccessServiceOrCredentials",
+        "TestSharedGuidanceInEffectiveSessionInstructions"
+      ],
+      "top_level_passed": 8,
+      "passed_including_subtests": 75,
+      "failed": 0,
+      "skipped": 0,
+      "package_passed": true
+    },
+    {
+      "slice": "audit-regression",
+      "top_level_tests": [
+        "TestPolicyRealAuditObservesFactorySession",
+        "TestPolicyRealAuditObservesPromptBlocks",
+        "TestSharedGuidanceInEffectiveSessionInstructions"
+      ],
+      "top_level_passed": 3,
+      "passed_including_subtests": 3,
+      "failed": 0,
+      "skipped": 0,
+      "package_passed": true
+    },
+    {
+      "slice": "last-regression",
+      "top_level_tests": [
+        "TestActionsStandaloneCLIAndAssociatedContract",
+        "TestDSHAdapterIsolationMetadataAndPrivateOutput",
+        "TestDSHGuideUsesSuppliedAuthority",
+        "TestEntrySkillUsesExactAccountForRootActions",
+        "TestGitlabToolEntryManagedWorkflow",
+        "TestInputToolsMinimalContract",
+        "TestLarkActionAgentContract",
+        "TestPolicyRealAuditObservesFactorySession",
+        "TestPolicyRealAuditObservesPromptBlocks",
+        "TestSharedGuidanceInEffectiveSessionInstructions"
+      ],
+      "top_level_passed": 10,
+      "passed_including_subtests": 10,
+      "failed": 0,
+      "skipped": 0,
+      "package_passed": true
+    },
+    {
+      "slice": "final-smoke",
+      "top_level_tests": [
+        "TestDSHAdapterIsolationMetadataAndPrivateOutput",
+        "TestEntrySkillUsesExactAccountForRootActions",
+        "TestInputToolsMinimalContract",
+        "TestPolicyRealAuditObservesFactorySession",
+        "TestPolicyRealAuditObservesPromptBlocks",
+        "TestScionMemberToolsIdentityAndHelp",
+        "TestSharedGuidanceInEffectiveSessionInstructions"
+      ],
+      "top_level_passed": 7,
+      "passed_including_subtests": 7,
+      "failed": 0,
+      "skipped": 0,
+      "package_passed": true
+    }
+  ],
+  "settings": {
+    "test": "TestPlatformNotificationSelectionRealDSH/lark/run1",
+    "provider": "local CLI fixture; real Chromium",
+    "before": {
+      "status": "failed",
+      "completed_scenarios": [
+        "开启飞书通知",
+        "飞书选择群的卡片"
+      ],
+      "failure": "exclusive selected-group request preserved private reception",
+      "acp_trace_available": false
+    },
+    "after": {
+      "status": "passed",
+      "controlled_rotation": true,
+      "acp_turns": 8,
+      "cases": [
+        {
+          "scenario": "开启飞书通知",
+          "tool_calls": 4,
+          "continuation_tool_calls": null,
+          "requests": [
+            "/v1/platforms/skill",
+            "/v1/platforms/list",
+            "/v1/platforms/member/notifications"
+          ]
+        },
+        {
+          "scenario": "飞书选择群的卡片",
+          "tool_calls": 2,
+          "continuation_tool_calls": 3,
+          "requests": [
+            "/v1/platforms/selection/start"
+          ]
+        },
+        {
+          "scenario": "只接收这个群",
+          "tool_calls": 4,
+          "continuation_tool_calls": null,
+          "requests": [
+            "/v1/platforms/member/get",
+            "/v1/platforms/member/notifications"
+          ]
+        },
+        {
+          "scenario": "关闭飞书通知",
+          "tool_calls": 4,
+          "continuation_tool_calls": null,
+          "requests": [
+            "/v1/platforms/list",
+            "/v1/platforms/member/notifications"
+          ]
+        },
+        {
+          "scenario": "开启飞书通知",
+          "tool_calls": 2,
+          "continuation_tool_calls": null,
+          "requests": [
+            "/v1/platforms/member/notifications"
+          ]
+        },
+        {
+          "scenario": "飞书选择群的卡片",
+          "tool_calls": 5,
+          "continuation_tool_calls": 3,
+          "requests": [
+            "/v1/platforms/skill",
+            "/v1/platforms/selection/start"
+          ]
+        }
+      ]
+    },
+    "note": "Settings route is final; later saved-target clarification changes managed writes only."
+  },
+  "gitlab_url": {
+    "test": "TestGitlabActionURLRealAgent/default-assistant",
+    "provider": "local HTTPS fixture",
+    "samples": {
+      "before": {
+        "status": "passed",
+        "acp_turns": 2,
+        "note_posts": 2,
+        "costs": [
+          {
+            "scenario": "url-comment",
+            "tool_calls": 6,
+            "cli_calls": 6,
+            "business_calls": 2,
+            "discovery_calls": 2,
+            "help_queries": 1,
+            "receipt_reads": 0,
+            "format_errors": 0,
+            "history_reads": 0,
+            "local_reports": 1
+          },
+          {
+            "scenario": "url-reply",
+            "tool_calls": 4,
+            "cli_calls": 3,
+            "business_calls": 2,
+            "discovery_calls": 0,
+            "help_queries": 0,
+            "receipt_reads": 0,
+            "format_errors": 0,
+            "history_reads": 0,
+            "local_reports": 1
+          }
+        ]
+      },
+      "after": {
+        "status": "passed",
+        "acp_turns": 2,
+        "note_posts": 2,
+        "costs": [
+          {
+            "scenario": "url-comment",
+            "tool_calls": 6,
+            "cli_calls": 6,
+            "business_calls": 2,
+            "discovery_calls": 1,
+            "help_queries": 1,
+            "receipt_reads": 1,
+            "format_errors": 0,
+            "history_reads": 0,
+            "local_reports": 1
+          },
+          {
+            "scenario": "url-reply",
+            "tool_calls": 4,
+            "cli_calls": 3,
+            "business_calls": 2,
+            "discovery_calls": 0,
+            "help_queries": 0,
+            "receipt_reads": 0,
+            "format_errors": 0,
+            "history_reads": 0,
+            "local_reports": 1
+          }
+        ]
+      }
+    },
+    "note": "After sample precedes the saved-target-only clarification; no total call reduction is claimed."
+  },
+  "gitlab_recovery": {
+    "test": "TestGitlabImagesRealAgent/default-assistant",
+    "status": "passed",
+    "sample_status": "passed",
+    "acp_turns": 16,
+    "note_posts": 9,
+    "costs": [
+      {
+        "scenario": "comment-single",
+        "tool_calls": 5,
+        "cli_calls": 6,
+        "business_calls": 2,
+        "discovery_calls": 1,
+        "help_queries": 2,
+        "receipt_reads": 0,
+        "format_errors": 0,
+        "history_reads": 0,
+        "local_reports": 1
+      },
+      {
+        "scenario": "thread-caption",
+        "tool_calls": 4,
+        "cli_calls": 3,
+        "business_calls": 2,
+        "discovery_calls": 0,
+        "help_queries": 0,
+        "receipt_reads": 0,
+        "format_errors": 0,
+        "history_reads": 0,
+        "local_reports": 1
+      },
+      {
+        "scenario": "comment-multiple",
+        "tool_calls": 4,
+        "cli_calls": 2,
+        "business_calls": 1,
+        "discovery_calls": 0,
+        "help_queries": 0,
+        "receipt_reads": 0,
+        "format_errors": 0,
+        "history_reads": 1,
+        "local_reports": 1
+      },
+      {
+        "scenario": "thread-second",
+        "tool_calls": 3,
+        "cli_calls": 2,
+        "business_calls": 1,
+        "discovery_calls": 0,
+        "help_queries": 0,
+        "receipt_reads": 0,
+        "format_errors": 0,
+        "history_reads": 0,
+        "local_reports": 1
+      },
+      {
+        "scenario": "comment-caption",
+        "tool_calls": 3,
+        "cli_calls": 2,
+        "business_calls": 1,
+        "discovery_calls": 0,
+        "help_queries": 0,
+        "receipt_reads": 0,
+        "format_errors": 0,
+        "history_reads": 0,
+        "local_reports": 1
+      },
+      {
+        "scenario": "thread-multiple",
+        "tool_calls": 3,
+        "cli_calls": 2,
+        "business_calls": 1,
+        "discovery_calls": 0,
+        "help_queries": 0,
+        "receipt_reads": 0,
+        "format_errors": 0,
+        "history_reads": 0,
+        "local_reports": 1
+      },
+      {
+        "scenario": "comment-text",
+        "tool_calls": 3,
+        "cli_calls": 2,
+        "business_calls": 1,
+        "discovery_calls": 0,
+        "help_queries": 0,
+        "receipt_reads": 0,
+        "format_errors": 0,
+        "history_reads": 0,
+        "local_reports": 1
+      },
+      {
+        "scenario": "thread-text",
+        "tool_calls": 3,
+        "cli_calls": 2,
+        "business_calls": 1,
+        "discovery_calls": 0,
+        "help_queries": 0,
+        "receipt_reads": 0,
+        "format_errors": 0,
+        "history_reads": 0,
+        "local_reports": 1
+      },
+      {
+        "scenario": "ambiguous-source",
+        "tool_calls": 2,
+        "cli_calls": 1,
+        "business_calls": 0,
+        "discovery_calls": 0,
+        "help_queries": 0,
+        "receipt_reads": 0,
+        "format_errors": 0,
+        "history_reads": 0,
+        "local_reports": 1
+      },
+      {
+        "scenario": "ambiguous-target",
+        "tool_calls": 2,
+        "cli_calls": 1,
+        "business_calls": 0,
+        "discovery_calls": 0,
+        "help_queries": 0,
+        "receipt_reads": 0,
+        "format_errors": 0,
+        "history_reads": 0,
+        "local_reports": 1
+      },
+      {
+        "scenario": "unsupported-authority",
+        "tool_calls": 2,
+        "cli_calls": 1,
+        "business_calls": 0,
+        "discovery_calls": 0,
+        "help_queries": 0,
+        "receipt_reads": 0,
+        "format_errors": 0,
+        "history_reads": 0,
+        "local_reports": 1
+      },
+      {
+        "scenario": "restart-receipts",
+        "tool_calls": 3,
+        "cli_calls": 3,
+        "business_calls": 0,
+        "discovery_calls": 0,
+        "help_queries": 0,
+        "receipt_reads": 2,
+        "format_errors": 0,
+        "history_reads": 0,
+        "local_reports": 1
+      },
+      {
+        "scenario": "upload-failure",
+        "tool_calls": 4,
+        "cli_calls": 3,
+        "business_calls": 1,
+        "discovery_calls": 0,
+        "help_queries": 0,
+        "receipt_reads": 1,
+        "format_errors": 0,
+        "history_reads": 0,
+        "local_reports": 1
+      },
+      {
+        "scenario": "cancel-upload",
+        "tool_calls": 3,
+        "cli_calls": 2,
+        "business_calls": 1,
+        "discovery_calls": 0,
+        "help_queries": 0,
+        "receipt_reads": 0,
+        "format_errors": 0,
+        "history_reads": 0,
+        "local_reports": 1
+      },
+      {
+        "scenario": "unknown",
+        "tool_calls": 4,
+        "cli_calls": 3,
+        "business_calls": 1,
+        "discovery_calls": 0,
+        "help_queries": 0,
+        "receipt_reads": 1,
+        "format_errors": 0,
+        "history_reads": 0,
+        "local_reports": 1
+      },
+      {
+        "scenario": "recover-unknown",
+        "tool_calls": 3,
+        "cli_calls": 2,
+        "business_calls": 0,
+        "discovery_calls": 0,
+        "help_queries": 0,
+        "receipt_reads": 1,
+        "format_errors": 0,
+        "history_reads": 0,
+        "local_reports": 1
+      }
+    ]
+  },
+  "failed_probes": [
+    {
+      "probe": "final-gitlab-recovery-fixed",
+      "reason": "All 16 turns completed without repeat writes, but the final explicit receipt inquiry used cached evidence rather than a fresh read. Public guidance now requires an actual read for explicit receipt inquiries."
+    },
+    {
+      "probe": "final-gitlab-recovery",
+      "reason": "One execute used provider alias; rejected before dispatch, followed by exact-entry execute. Extra business call failed the path budget. Fixed guidance now permits omitting --tool when saved target restores its account."
+    },
+    {
+      "probe": "parallel model trace resampling",
+      "reason": "HTTP 429 rate limiting; no real platform writes. Serial settings and URL samples passed afterward."
+    }
+  ],
+  "baseline_failures": [
+    "TestStaticAssemblySourcesAndCapabilitiesAgree: source declaration and lifecycle binding differ {gitlab events}",
+    "TestInboxAndActionCoreHasNoNativeProviderRules: actions_target.go lark rule; agent_contract.go native lark import"
+  ],
+  "limitations": [
+    "Not a statistical model/cost comparison; actual model token usage was not collected.",
+    "Full core Room suite has the two confirmed pre-existing architecture failures. A2-specific initial guidance assertions were fixed and rechecked.",
+    "No real platform writes or production Session adoption.",
+    "No claim of an overall prompt-size reduction; required source/recovery guidance was added."
+  ],
+  "runtime": {
+    "artifact": {
+      "source": "https://github.com/deepseek-ai/deepseek-harness@5badb15009ae1756c3afe0ae0cef1faafc290ccc",
+      "version": "0.2.1-alpha.1"
+    },
+    "agent_info": {
+      "name": "deepseek-harness-acp",
+      "version": "0.0.1"
+    },
+    "binary_sha256": "aa7c3390685f1388f3b898b7d7f84edf95fcee4aa062725aa56dee348afbe6be",
+    "verified_script_package": {
+      "name": "@deepseek-ai/dsh",
+      "version": "0.2.1-alpha.1"
+    },
+    "limitation": "Configured local checkout differs from the analysis static packaged 0.2.2-rc.1 baseline; no claim of model acceptance on that bundle."
+  }
+}

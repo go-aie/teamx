@@ -1,8 +1,8 @@
 # Scion native repositories and Review
 
-Read this Skill for native Scion work. First use `"$TEAMX_CLI" tools list`, then
-`tools run scion --help` and `tools skill scion` with its exact enabled entry; the
-service substitutes that entry here. Commands run in the current member's effective
+For native Scion work, reuse the known exact enabled entry; use `"$TEAMX_CLI" tools list`
+only when it is missing. Consult `tools run scion --help` for unfamiliar commands;
+the service substitutes the exact entry here. Commands run in the current member's effective
 Workspace on the server. A shell's temporary cd/env is not forwarded; use native
 -C for subdirectories. Missing programs, login or mismatched identity need operator
 recovery, not credential searches, direct scn execution or another account.

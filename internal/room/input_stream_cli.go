@@ -27,9 +27,13 @@ func writeInputJSON(out io.Writer, flush func() error, v any) error {
 	}
 	return flush()
 }
-func runInputCLI(ctx context.Context, args []string, call func(context.Context, string, []byte) error) error {
-	if len(args) < 2 || args[0] != "inbox" {
+func runInputCLI(ctx context.Context, args []string, out io.Writer, call func(context.Context, string, []byte) error) error {
+	if len(args) == 0 || args[0] != "inbox" {
 		return ErrRequest
+	}
+	if len(args) == 1 || args[1] == "--help" || args[1] == "-h" {
+		help, _ := inputCLIHelpText("")
+		return writeOutput(out, []byte(help))
 	}
 	name := args[1]
 	if name != "list" && name != "read" {
@@ -37,6 +41,10 @@ func runInputCLI(ctx context.Context, args []string, call func(context.Context, 
 	}
 	flags := flag.NewFlagSet("inbox "+name, flag.ContinueOnError)
 	flags.SetOutput(io.Discard)
+	flags.Usage = func() {
+		help, _ := inputCLIHelpText(name)
+		_ = writeOutput(out, []byte(help))
+	}
 	limit := flags.Int("limit", 0, "maximum entries or streams")
 	var stream, cursor *string
 	if name == "read" {
@@ -46,6 +54,9 @@ func runInputCLI(ctx context.Context, args []string, call func(context.Context, 
 	}
 	_ = flags.Bool("json", false, "JSON output")
 	if err := flags.Parse(args[2:]); err != nil {
+		if err == flag.ErrHelp {
+			return nil
+		}
 		return err
 	}
 	if flags.NArg() != 0 {

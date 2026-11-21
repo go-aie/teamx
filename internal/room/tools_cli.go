@@ -33,7 +33,7 @@ func runToolsCLI(ctx context.Context, args []string, stdin io.Reader, stdout, st
 
 func runToolsWithClient(ctx context.Context, args []string, stdin io.Reader, stdout, stderr io.Writer, env func(string) string, httpClient *http.Client) error {
 	if len(args) == 0 || args[0] == "--help" || args[0] == "-h" {
-		_, err := fmt.Fprintln(stdout, "Usage: teamx tools list | teamx tools run <tool> [args...] | teamx tools skill <tool>\nThe list contains enabled, currently available platform entries and their accounts/capabilities. Use the exact entry, including for a single platform; never switch accounts after a failure. Run <tool> --help to discover its commands. Read a skill only when its workflow is needed.")
+		_, err := fmt.Fprintln(stdout, "Usage: teamx tools list | teamx tools run <tool> [args...] | teamx tools skill <tool>\nReuse a known exact entry; list discovers bound tools and their availability/capabilities. Local tools may have no platform account, Skill or Workspace requirement. Use tools run ENTRY --help when usage is missing; read tools skill ENTRY only when a Skill is declared and its workflow is needed. Never switch accounts after a failure or bypass the member binding.")
 		return err
 	}
 	if args[0] == "list" {

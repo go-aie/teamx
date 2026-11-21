@@ -134,6 +134,9 @@ func (c *cliClient) identity(ctx context.Context, roomID string, env func(string
 }
 
 func runCLIWithCatalog(ctx context.Context, args []string, stdin io.Reader, stdout, stderr io.Writer, env func(string) string, catalog *platforms.Catalog) error {
+	if help, ok := localCLIHelp(args, env, catalog); ok {
+		return writeOutput(stdout, []byte(help))
+	}
 	var err error
 	args, env, err = cliTokenFile(args, env)
 	if err != nil {
@@ -146,10 +149,10 @@ func runCLIWithCatalog(ctx context.Context, args []string, stdin io.Reader, stdo
 	}
 
 	if len(args) == 0 {
-		return writeOutput(stdout, []byte(rootCLIHelp))
+		return writeOutput(stdout, []byte(rootHelpText(env, catalog)))
 	}
 	if args[0] == "--help" || args[0] == "-h" {
-		return writeOutput(stdout, []byte(rootCLIHelp))
+		return writeOutput(stdout, []byte(rootHelpText(env, catalog)))
 	}
 	command, args := args[0], args[1:]
 	if command == "calendar" {

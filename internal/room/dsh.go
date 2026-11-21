@@ -229,6 +229,7 @@ func (b dshBackend) componentOptions(opts SessionOptions, ref sessionReference) 
 	}
 	instructions := strings.Join([]string{
 		strings.TrimSpace(guide),
+		strings.TrimSpace(dshBackendGuide),
 		fmt.Sprintf("## Session identity\n\nYou are member %q in Room %q (instance %q, membership %q).\nCurrent conversation: %s.\nThe human operator is %q; their mention syntax is %q.",
 			opts.AgentID, opts.RoomID, opts.RoomInstance, opts.MembershipID, conversation, operator, "@"+operator),
 		"## Member role\n\n" + strings.TrimSpace(p.Instructions),
@@ -294,6 +295,9 @@ func (b dshBackend) settledCancellation(err error) bool {
 //
 //go:embed prompts/agent-guide.md
 var dshAgentGuide string
+
+//go:embed prompts/dsh-guide.md
+var dshBackendGuide string
 
 func dshNotification(input UnreadChanged) string {
 	// Identity and policy metadata are supplied in the policy JSON; read ranges

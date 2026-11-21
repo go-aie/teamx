@@ -13,7 +13,7 @@ const rootCLIHelp = `Usage: teamx COMMAND [--help]
   serve                         Start the authenticated service
   extensions check              Check selected declarations without starting services
   skill usage                   Read TeamX interface and execution guidance
-  platforms skill/list/connect/selection/chats/projects/member  Connect/configure Feishu/GitLab for current member
+  platforms skill/list/connect/selection/chats/projects/member  Selected account integrations and current-member setup
   platforms upgrade           Upgrade platform model and references offline (--rooms-dir ROOT)
   member add/list/remove/run/pause/session rotate/status
   calendar list/get/update/claim/finish  Direct-conversation scheduled tasks (--help)
@@ -22,7 +22,6 @@ const rootCLIHelp = `Usage: teamx COMMAND [--help]
   matters list/read/sources/source/resolve/ensure/update/notify/reply/instruct/instruction-status
   actions resolve/execute/read/list Managed platform actions
   policy read/update/publish     Member long-term rules
-  lark read                     Read verified Lark message/context (no replies)
   tools list/run/skill           Enabled platform and standalone tools
 Human CLI: --token-file FILE or TEAMX_ADMIN_TOKEN_FILE; token values are never command-line arguments.
 Use teamx COMMAND SUBCOMMAND --help for parameters and constraints.
@@ -70,36 +69,36 @@ var referenceCommandHelps = map[string]referenceCommandHelp{
 	"matters/read": {
 		"matters read --object REF --unit UNIT --turn TURN [--detail]", "Restore exact followup records and target.",
 		"--object: object_ref; --unit: unit_ref; --turn: current_turn; --detail: include action authority/inspection/spec/rule/basis snapshots.",
-		"Bound identity, unit with unit_version, complete questions/answers/instructions and EVERY action (ID, target, account, body, time, result), verified target/aliases/URL and registered_actions. details identifies omitted snapshots; use the same read with --detail. source_page has source locators and next_after/complete; continue via matters sources, then matters source for full native mappings. Internal access/credential evidence is omitted.",
+		"Bound identity, unit with unit_version, complete questions/answers/instructions and EVERY action (ID, target, account, body, time, result), verified target/aliases/URL and registered_actions. details identifies omitted snapshots; use the same read with --detail. sources has source locators and next_cursor/complete; continue via matters sources --object REF --cursor CURSOR, then matters source for full native mappings. Historical source_page uses next_after/complete and matters sources --after SEQ. Internal access/credential evidence is omitted.",
 		"teamx matters read --object ref_... --unit unit_... --turn 1",
 		"Read automatically associates explicit human reply_to and may update local answers/revision. Use returned unit_version. registered_actions describes target kind, supported object types, input schema and retry policy; current binding/permissions are checked on execute. Unknown actions require remote verification, never a new-ID retry.",
 	},
 	"matters/sources": {
-		"matters sources [--object REF] [--after SEQ] [--limit 25]", "List immutable event and resolution evidence.",
-		"--object: object_ref filter; --after: source continuation sequence (default 0); --limit: 1-25 (default 25).",
-		"Source summaries and continuation/completeness markers.",
-		"teamx matters sources --after 0 --limit 25",
-		"Continue through all pages. Partial/failed lookups never prove absence; use matters source for original evidence and resolve for an explicit retry.",
+		"matters sources [--object REF] [--cursor CURSOR] [--limit 25]", "List immutable event and resolution evidence.",
+		"--object: object_ref filter; --cursor: returned next_cursor with the same object filter; --limit: 1-25 (default 25). Historical records only: --after SEQ (default 0) follows next_after instead of cursor.",
+		"Source summaries with next_cursor and complete. Historical records return next_after and complete.",
+		"teamx matters sources --limit 25\nContinue: teamx matters sources --cursor RETURNED_CURSOR --limit 25",
+		"Continue through all pages using the returned continuation and the same object filter. Unified input does not accept nonzero --after. Partial/failed lookups never prove absence; use matters source for original evidence and resolve for an explicit retry.",
 	},
 	"matters/source": {
-		"matters source --seq SEQ --source SRC", "Read one original event and its resolution evidence.",
-		"--seq: Inbox sequence; --source: matching read-only source_ref.",
+		"matters source --source SRC", "Read one original event and its resolution evidence.",
+		"--source: returned read-only source_ref. Historical records only: also supply the matching --seq SEQ.",
 		"Original entry, immutable source, resolution status/reason and verified references.",
-		"teamx matters source --seq 1 --source src_...",
+		"teamx matters source --source src_...",
 		"Unresolved/partial evidence is retained and does not prove absence. Native object, discussion and message identities are distinct. Reading does not retry resolution.",
 	},
 	"matters/resolve": {
-		"matters resolve --seq SEQ --source SRC --turn TURN", "Explicitly retry resolution of one retained source.",
-		"--seq: Inbox sequence; --source: matching source_ref; --turn: current_turn.",
+		"matters resolve --source SRC --turn TURN", "Explicitly retry resolution of one retained source.",
+		"--source: returned source_ref; --turn: current_turn. Historical records only: also supply the matching --seq SEQ.",
 		"Source resolution status/reason and verified object/target references.",
-		"teamx matters resolve --seq 1 --source src_... --turn 1",
-		"Only the specified source is retried. Lark rebuilds captured native identity from the saved notification without remote reads or a member binding; use lark read for current content/context. Failed/partial lookups retain evidence and never prove absence. Do not fabricate Inbox sequences or native identities.",
+		"teamx matters resolve --source src_... --turn 1",
+		"Only the specified source is retried. Lark rebuilds captured native identity from the saved notification without remote reads or a member binding; use tools run ENTRY read for current content/context on the exact bound account. Failed/partial lookups retain evidence and never prove absence. Do not fabricate Inbox sequences or native identities.",
 	},
 	"matters/ensure": {
-		"matters ensure --seq SEQ --target REF --turn TURN", "Open a discussion followup on demand.",
-		"--seq: Inbox sequence; --target: verified native discussion target_ref from that source; --turn: current_turn.",
+		"matters ensure --source SRC --target REF --turn TURN", "Open a discussion followup on demand.",
+		"--source: returned source_ref; --target: verified native discussion target_ref from that source; --turn: current_turn. Historical records only: use --seq SEQ instead of --source.",
 		"unit_ref, object_ref, unit_version, status and requires_read; restore the business view with matters read.",
-		"teamx matters ensure --seq 1 --target ref_... --turn 1",
+		"teamx matters ensure --source src_... --target ref_... --turn 1",
 		"Use only when independent discussion handling is needed. No caller-defined unit IDs. Discussion identity must be verified; never fall back to an ordinary object comment.",
 	},
 	"matters/update": {
@@ -138,7 +137,7 @@ var referenceCommandHelps = map[string]referenceCommandHelp{
 		"Revocation requires the real human correction. This records business evidence, not an action execution receipt. Re-read on version conflict; never silently substitute current versions.",
 	},
 	"actions/resolve": {
-		"actions resolve --request JSON [--tool ENTRY]", "Verify a target on the exact tools-list account; Lark tools run ENTRY actions resolve and GitLab root actions resolve --tool ENTRY select their managed entry.",
+		"actions resolve --request JSON [--tool ENTRY]", "Verify a target and action contract. Use root actions resolve/execute --tool ENTRY across platforms for an explicitly selected exact entry; saved target/context can restore its account without --tool. Reuse a verified target and valid contract without resolving again.",
 		"--request: {locator,turn_number}; GitLab: {url:FULL_HTTPS_MR_URL} (optional #note_ID or #discussion_FULL_ID) or {target_ref:REF}. Lark: {self:true}, {query:{object_type:chat,text:NAME}}, returned candidates[i].locator unchanged, or {target_ref:REF}. Root requests without --tool also accept provider; account_owner_seq is optional human account-ownership evidence.",
 		"resolution: account, target/label or candidates[].{label,locator}, status, complete, candidates_incomplete and reason. target_ref plus actions: input_schema, required request fields, authority contract, executable and repair reason/next_action.",
 		`teamx actions resolve --tool ENTRY --request '{"locator":{"url":"https://gitlab.example/group/project/-/merge_requests/42#note_99"},"turn_number":1}'`,

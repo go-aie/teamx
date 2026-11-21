@@ -12,149 +12,6 @@ import (
 	"time"
 )
 
-const platformConnectHelp = `Usage:
-  teamx platforms skill
-  teamx platforms list
-  teamx platforms selection --help
-  teamx platforms connect start --provider lark|gitlab --name NAME [--origin URL --application-id ID --account-username USER] --operation-id ID --source-seq SEQ [--platform-id ID --platform-version VERSION] [--notify inbox|none]
-  teamx platforms connect authorize --platform-id ID --platform-version V --operation-id ID --source-seq SEQ [--notify inbox|none]
-  teamx platforms connect status --operation-id ID | --source-seq SEQ [--intent authorize --platform-id ID]
-  teamx platforms connect wait --operation-id ID [--timeout 20s]
-  teamx platforms connect cancel --operation-id ID
-  teamx platforms connect notify --operation-id ID --mode inbox|none
-  teamx platforms connect acknowledge --operation-id ID --result-version V
-  teamx platforms chats --platform-id ID --platform-version V [--type group|p2p] [--query NAME --page-token TOKEN]
-  teamx platforms projects --platform-id ID --platform-version V [--query NAME --page-token PAGE]
-  teamx platforms member get --platform-id ID [--platform-version V]
-  teamx platforms member notifications --platform-id ID --source-seq SEQ --enabled true|false
-  teamx platforms member notifications --platform-id ID --platform-version V --notification-version N --operation-id ID --source-seq SEQ [--add-chat-id CHAT_ID] [--enabled true|false] [--group-message-mode all|mentions]
-  teamx platforms member notifications --platform-id ID --platform-version V --notification-version N --operation-id ID --source-seq SEQ [--remove-chat-id CHAT_ID] [--group-enabled true|false --group-scope all|specified --group-chat-id CHAT_ID] [--group-at-me true|false --group-at-all true|false] [--private-enabled true|false --private-scope all|specified --private-chat-id CHAT_ID]
-  teamx platforms member notifications --platform-id ID --platform-version V --notification-version N --operation-id ID --source-seq SEQ --todos-enabled true|false
-  teamx platforms member notifications --platform-id ID --platform-version V --notification-version N --operation-id ID --source-seq SEQ [--events-enabled true|false --project-id N --project-path PATH] [--event-type TYPE] [--todo-reason REASON --todo-type TYPE]
-  teamx platforms member tool --platform-id ID --platform-version V --operation-id ID --source-seq SEQ --enabled true|false [--action OP ...] [--binding-revision N]
-  teamx platforms member status --operation-id ID | --source-seq SEQ
-  teamx platforms upgrade --rooms-dir ROOT
-
-Connection commands require current bound Agent identity, independent of platform
-tool bindings. ID is a stable 32-character hexadecimal operation ID. Same ID and
-fixed input reuse the receipt; changed input conflicts. Status by original human
-source-seq recovers a lost ID. Output is JSON; authorization URLs are live only.
-wait polls status with a bounded total timeout (maximum 2m) and per-request timeout;
-pending and CLI interruption do not cancel server work. Explicit cancel stops
-remaining work, preserves applied effects and cannot undo a saved connection.
-Stages: application, authorization, connection, complete. Status: running, waiting,
-cancelling, completed, cancelled, expired, failed, unknown. Only completed means connected.
-Result versions are stable completion references; version tracks receipt changes.
-GitLab requires a canonical --origin. Use an explicit compatible --application-id
-for new login or --platform-id/--platform-version for reuse. Omit --application-id
-to wait for the original human to configure/select an application in full settings.
-The setup projection includes the official management URL, actual callback, required
-scopes and compatibility reasons; the same operation resumes after human submission. list includes public
-GitLab application compatibility and existing account names; no credentials.
-The browser authorization component establishes its own session; Agent commands
-never receive cookies, state or PKCE material. Missing/incompatible applications
-use the operation's Configure application button to open secure Settings → Platforms.
-Closing settings does not cancel conversation work. selection supports GitLab account/project forms; chats is Feishu-only.
-Feishu login requests the complete current permission set supported by its app.
-authorize repairs an exact existing Feishu account/application/profile and keeps
-connection identity, tool entries, member grants and notification progress. It
-shares status/wait/cancel/notify/acknowledge. Source lookup defaults to connect;
-use --intent authorize --platform-id ID for authorization recovery. One source
-can connect and authorize; the same intent/target cannot start twice under new IDs.
-A connect command alone does not enable group reception, tools or member actions.
-notify changes only result delivery policy. Subscribing after completion delivers
-the same stable result event; none cannot retract an already queued event. Inbox
-delivery, consumption, result acknowledgment and business completion are separate.
-continuation reports mode, handoff state, handled_version and any scheduling block.
-After checking latest intent and step receipts, acknowledge the exact result version
-before one completion report. A late event whose version is already handled only
-needs normal Inbox consumption; never repeat configuration or completion feedback.
-Paused/blocked members wait under ordinary scheduling. Notification errors do not
-invalidate a saved connection; users can continue by speaking and querying status.
-
-Member configuration requires a verified connection and current member identity;
-it needs no prior tool binding. chats defaults to groups (including topic groups);
---type p2p lists/searches verified personnel conversations, excluding bots and self.
-Results carry exact chat_ids, connection version and continuation; same names are
-not selections. Follow returned directory tokens even on empty filtered pages.
-Personnel name search cannot paginate: refine the query on refine_query warnings.
-Keep search_warnings; permission_denied or conversation_unverified and partial/empty
-pages do not prove absence. No message is sent to create a conversation.
-get reads current notification configuration, baseline, tool revision and availability.
-GitLab get includes gitlab_notifications with desired config, per-source pending/errors
-and application state. Both providers support a pure notification --enabled toggle:
-first enable uses the same defaults as manual setup; an existing configuration
-changes only its total switch, preserving sources, scope, filters and start.
-Closing an absent configuration preserves version 0 and creates no subscription.
-Enabling an existing configuration with no reception source conflicts; choose a
-valid source explicitly. Already applied unchanged settings return preserved.
-GitLab source customization changes explicit --todos-enabled,
---events-enabled, project ID/path and filters; omitted fields are preserved;
-personal to-dos cover all projects accessible to that account, without a Workspace
-or project selection. New customization enables only explicitly requested sources.
-Existing source settings, filters and reception
-start remain intact. Enabling todos conflicts if it would also enable dormant project
-activity; explicitly choose both sources to resolve that conflict. Private and group
-flags apply only to Feishu notifications. Tool enable/disable supports both providers.
-Feishu notifications adds or replaces exact groups, rechecking their metadata and
-account. --remove-chat-id repeats followed IDs and needs no remote read; removing
-the last specified group closes group reception, and no remaining source closes
-the total switch. Closing an absent subscription preserves version 0 without
-creating one. --group-chat-id repeats a complete replacement list; a single empty
-value clears it. Do not mix replacement with add/remove, or empty with nonempty IDs.
-Switching all groups to specified requires explicit --group-scope specified and a
-complete --group-chat-id list. All groups has no exclusion list. --group-enabled
-and --private-enabled independently enable/disable reception branches, preserving
-their ranges; enabling resumes total reception unless --enabled false is explicit.
-A pure total toggle can resume both saved branches. Source customization requires
-explicit choices for both when it would also activate another dormant source.
-An explicit --enabled false overrides source enables for either provider.
-Range/condition edits alone do not enable reception.
---private-scope all is explicit all-person reception; enabling an existing specified
-private range retains it. --private-scope specified with repeated --private-chat-id
-replaces the complete personnel list, verifying native chat_id and same-account
-relationship before saving; open_id, groups, bots and self chats are rejected.
-Switching all to specified needs a complete list. A single empty private-chat-id
-clears it; do not mix empty/nonempty values. Clearing the last specified private
-chat closes that branch and total reception if no branch remains enabled. Explicit
-enable with an empty specified list conflicts. Range edits alone do not enable it.
---group-at-me/--group-at-all set independent mention conditions;
-use mentions mode and true/false for only @me. Both false conflicts in mentions mode;
-all-message mode retains those values without filtering. Existing settings and
-reception baseline are preserved; new explicitly enabled subscriptions start at
-save time. Legacy add alone enables only selected groups on new subscriptions.
-No notification editing card or mixed conversation/browser draft is introduced.
-Tool changes are separate and
-do not grant external-write authority. Explicit Feishu enable adds the fixed current
-reply, group-send and self-delivery grants; repeated enable repairs missing intent
-and evidence, and is preserved only when unchanged. --action OP adds only selected
-Feishu actions (message.reply, message.send, message.send_self); it requires enabled
-true and never removes other grants. Partial capability readiness is reported in
-the receipt. user_authorization_required / not_applied means no binding was saved;
-complete authorization on the same account before retrying. unknown submissions
-must be inspected with their original operation ID and never replayed.
-projects searches the exact GitLab account with numeric --page-token pagination;
-permission errors do not establish absence. Project activity supports one project
-per member/account: supply its native --project-id and exact --project-path.
-Metadata is rechecked before submission; ID/path conflicts never select a substitute.
---event-type repeats activity filters (empty clears); --todo-reason/--todo-type
-repeat personal filters (empty selects none). Omitted filter dimensions are preserved.
-Personal todos retain all-accessible-project semantics; no Workspace is changed.
-Collect all requested notification fields into one operation for the same source-seq
-and account. Separate later requests use their own source; do not invent a new source
-or operation ID to bypass unknown work. Pure notification switches use only platform-id,
-source-seq and explicit enabled: the server freezes current state, derives the stable
-operation ID and recovers the original receipt without a preliminary get/status.
-Do not supply versions or operation-id in this short form. get may omit platform-version
-to read current state; explicit 0 is invalid. Any supplied version/operation-id selects
-complete mode and requires all three. Source/range/filter edits require complete mode
-with explicit --notification-version N (0 means absent). Never refresh a stale observation automatically. A saved desired version with pending/errors must be inspected through member get and repaired through the existing settings retry-apply entry, not by resubmitting the member intent. status
-is pure read; source-seq returns all member configuration steps for that request.
-Completed receipts describe historical results; use get to verify current settings.
-Unknown submissions never replay, even with the same ID: inspect status/get and
-resolve through platform settings. Never change IDs to retry an unknown operation.
-`
-
 func runPlatformsCLIWithCatalog(ctx context.Context, args []string, stdout, stderr io.Writer, env func(string) string, catalog *platforms.Catalog) error {
 	if len(args) > 0 && args[0] == "upgrade" {
 		return runPlatformsUpgradeWithCatalog(args, stdout, stderr, catalog)
@@ -179,7 +36,7 @@ func runPlatformConnectWithClient(ctx context.Context, args []string, stdout, st
 	args = args[1:]
 	if action == "connect" {
 		if len(args) == 0 || args[0] == "--help" || args[0] == "-h" {
-			return writeOutput(stdout, []byte(platformConnectHelp))
+			return writeOutput(stdout, []byte(platformConnectDirectory))
 		}
 		action, args = args[0], args[1:]
 		if action != "start" && action != "authorize" && action != "status" && action != "wait" && action != "cancel" && action != "notify" && action != "acknowledge" {
@@ -190,7 +47,10 @@ func runPlatformConnectWithClient(ctx context.Context, args []string, stdout, st
 	}
 	f := flag.NewFlagSet("platforms "+action, flag.ContinueOnError)
 	f.SetOutput(stderr)
-	f.Usage = func() { _ = writeOutput(stdout, []byte(platformConnectHelp)) }
+	f.Usage = func() {
+		help, _ := platformConnectHelpText(action)
+		_ = writeOutput(stdout, []byte(help))
+	}
 	req := platformConnectRequest{}
 	input := platformConnectInput{}
 	notify := ""
@@ -235,6 +95,9 @@ func runPlatformConnectWithClient(ctx context.Context, args []string, stdout, st
 	}
 	_ = f.Bool("json", true, "JSON output")
 	if err := f.Parse(args); err != nil {
+		if err == flag.ErrHelp {
+			return nil
+		}
 		return err
 	}
 	if f.NArg() != 0 || timeout < 0 || timeout > 2*time.Minute {

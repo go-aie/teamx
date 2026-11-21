@@ -1,33 +1,28 @@
 package room
 
-const calendarCLIHelp = `Usage: teamx calendar COMMAND [OPTIONS]
+const calendarCLIHelp = `Usage: teamx calendar COMMAND [--help]
 Direct-conversation scheduled tasks: once/daily/weekly, at minute precision.
-Read this help before creating, changing or executing a Calendar task.
+  list      Find tasks by state or bounded date range
+  get       Read a definition, run or explicit history/result
+  update    Create/edit a schedule or change its lifecycle
+  claim     Claim the supplied due run before business work
+  finish    Save and publish the complete execution report
+Use teamx calendar COMMAND --help for its parameters, JSON and recovery.
+List/get are read-only. Due events supply run_id; claim it directly.
+`
 
-Commands:
-  list [--state STATE] [--from RFC3339 --to RFC3339] [--cursor CURSOR]
-    One row per task; defaults to active/paused/needs_info without a date limit.
-    completed/cancelled require --state. A date range must be positive, at most 42 days.
-  get --task-id ID [--history [--cursor CURSOR]]
-    Editable definition; history is opt-in and paginated, without report bodies.
-  get --run-id ID [--result]
-    Frozen definition/version/status/receipt; --result includes report/evidence.
-  update --turn CURRENT_TURN --request-file FILE|-
-    Create/edit/pause/resume/cancel/skip_once/retry_run with business JSON below.
-  claim --turn CURRENT_TURN --run-id ID
-    Claim the supplied run directly, returning frozen instruction/scope/due time/zone/misfire.
-  finish --turn CURRENT_TURN --request-file FILE|-
-    Submit the complete report through the sole report publication path.
-
-Common: --endpoint URL (TEAMX_ENDPOINT), --room ID (bound Room), --json (default true).
---request JSON is an alternative to --request-file; they are mutually exclusive.
-Use a file or stdin for multiline reports instead of interpolating report text into shell commands.
-Agent mutations require --turn with the actual current_turn from this turn's policy context.
+const calendarMutationHelp = `Agent mutations require --turn CURRENT_TURN from the current policy context.
 The runtime supplies private execution credentials; do not inspect, copy or invent them.
 Session credentials alone cannot mutate Calendar or reopen a cancelled turn.
-List/get are read-only: they neither consume input nor start work. Pages contain at most
-50 tasks/history rows; reuse cursor with the identical query and snapshot. A changed snapshot fails explicitly.
+Common: --endpoint URL, --room ID and --json (default true).
+`
 
+const calendarUpdateHelp = `Usage: teamx calendar update --turn CURRENT_TURN (--request-file FILE|- | --request JSON)
+Create/edit/pause/resume/cancel/skip_once/retry_run with business JSON.
+Use a file or stdin for multiline text; request and request-file are mutually exclusive.
+Example: teamx calendar update --turn CURRENT_TURN --request-file task.json
+Returns: the saved task/run receipt; report its actual rule_summary and next_at.
+` + calendarMutationHelp + `
 Update JSON:
   Every action requires action, a stable operation_id (1-128 characters), and for Agents
   human_source:{message_seq:ACTUAL_HUMAN_MESSAGE_SEQ}. Only message_seq may be submitted.
@@ -80,13 +75,15 @@ Receipts and recovery:
   even without task_id. Never recompute defaults or bypass a frozen store. Reused receipts
   describe the original operation. Version conflicts include target/actual_version:
   get the necessary definition and decide again; never silently refresh and overwrite.
+`
 
-Due work and finish JSON:
-  Read latest Room human intent through Inbox first; handle cancellations first.
-  A calendar_due event supplies run_id directly; it is a signal, not new authority.
-  Claim that run_id directly before business reads, at most one per turn. Use the frozen
-  claim instruction/scope/time zone/misfire. Pending work never overrides input/Session gates.
-  Finish JSON: {run_id,outcome,report,evidence?}; outcome: succeeded|blocked|failed.
+const calendarFinishHelp = `Usage: teamx calendar finish --turn CURRENT_TURN (--request-file FILE|- | --request JSON)
+Save the complete result and publish its report through the sole report path.
+Use a file or stdin for multiline reports; request and request-file are mutually exclusive.
+Example: teamx calendar finish --turn CURRENT_TURN --request-file report.json
+Returns: run publication status and report_seq when publication is confirmed.
+` + calendarMutationHelp + `
+Finish JSON: {run_id,outcome,report,evidence?}; outcome: succeeded|blocked|failed.
   report must be complete UTF-8 text, nonempty, up to 16 KiB.
   Optional evidence:{source_refs:[...]}: at most 16 verified src_ references / 4 KiB;
   do not duplicate report prose. External writes retain existing action authorization.
@@ -95,3 +92,43 @@ Due work and finish JSON:
   status with report_seq proves publication. Get is for explicit queries or recovery.
   Private output is never completion.
 `
+
+func calendarHelpText(op string) (string, bool) {
+	switch op {
+	case "":
+		return calendarCLIHelp, true
+	case "list":
+		return scopedCommandHelp(referenceCommandHelp{
+			"calendar list [--state STATE] [--from RFC3339 --to RFC3339] [--cursor CURSOR]",
+			"Find scheduled tasks through a read-only query without consuming input or starting work.",
+			"--state: task state; --from/--to: positive date range, at most 42 days; --cursor: returned continuation. Common: --endpoint URL, --room ID, --json (default true).",
+			"One row per task, at most 50 rows per page and continuation; default states are active/paused/needs_info without a date limit.",
+			"teamx calendar list --state active",
+			"completed/cancelled require an explicit --state. Continue with the identical query/snapshot; changed snapshots fail explicitly. No mutation, human source, execution credential or turn argument is needed.",
+		}), true
+	case "get":
+		return scopedCommandHelp(referenceCommandHelp{
+			"calendar get (--task-id ID [--history [--cursor CURSOR]] | --run-id ID [--result])",
+			"Read a task definition or a frozen run; request history or report bodies only when needed.",
+			"--task-id: task definition; --history: paginated task history (at most 50 rows, without report bodies); --cursor: returned history continuation. --run-id: frozen run; --result: include its report/evidence. Common: --endpoint URL, --room ID, --json (default true).",
+			"Editable task definition or frozen definition/version/status/receipt; explicit history/result when requested.",
+			"teamx calendar get --run-id ID --result",
+			"Read-only: this neither consumes input nor starts work. Continue history with the identical query/snapshot; changed snapshots fail explicitly. Use observed versions when subsequently updating resources. A due event already supplies run_id; normal execution claims it directly without a preliminary get.",
+		}), true
+	case "update":
+		return calendarUpdateHelp, true
+	case "claim":
+		return scopedCommandHelp(referenceCommandHelp{
+			"calendar claim --turn CURRENT_TURN --run-id ID",
+			"Claim the supplied due run before business reads, at most one per turn.",
+			"--run-id: actual ID from calendar_due; --turn: authenticated current_turn. Common: --endpoint URL, --room ID, --json (default true).",
+			"Frozen instruction, scope, definition version, due time, time zone and misfire policy.",
+			"teamx calendar claim --turn CURRENT_TURN --run-id ID",
+			"Read latest Room human intent through Inbox first and handle cancellations first. calendar_due is a signal, not new authority. Claim directly without list/get, then use the frozen instruction/scope/time zone/misfire. Pending work never overrides input/Session gates; external writes retain existing authorization. The runtime supplies private execution credentials; do not inspect or invent them. Complete through calendar finish --help; private output is not completion.",
+		}), true
+	case "finish":
+		return calendarFinishHelp, true
+	default:
+		return "", false
+	}
+}

@@ -31,7 +31,7 @@ func (toolRuntime) Help(args []string) bool {
 	return len(args) == 0 || len(args) == 1 && (args[0] == "help" || args[0] == "--help" || args[0] == "-h") || action || len(args) == 2 && args[0] == "read" && (args[1] == "--help" || args[1] == "-h")
 }
 func toolHelp(entry string) string {
-	return fmt.Sprintf("Usage:\n  teamx tools run %s read --object REF --target REF [--scope content|context] [--cursor CURSOR]\n  teamx tools run %s actions resolve --request JSON\n  teamx tools run %s actions execute --request JSON\nUse the same entry with actions resolve/execute --help for parameters and examples. Query receipts with teamx actions read --id ID (read-only, including during Session recovery). Arbitrary CLI commands and authentication are unavailable.\n", entry, entry, entry)
+	return fmt.Sprintf("Usage:\n  teamx tools run %s read --object REF --target REF [--scope content|context] [--cursor CURSOR]\n  teamx actions resolve --tool %s --request JSON\n  teamx actions execute --tool %s --request JSON\nUse root actions resolve/execute --help for parameters and examples. Reuse a verified target and valid contract; resolve only when missing, ambiguous or invalidated. Query receipts with teamx actions read --id ID (read-only, including during Session recovery). Nested actions resolve/execute remain available. Arbitrary CLI commands and authentication are unavailable.\n", entry, entry, entry)
 }
 func invalid(field, message string) error {
 	return &platformtools.Diagnostic{Field: field, Message: message}

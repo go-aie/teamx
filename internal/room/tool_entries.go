@@ -126,6 +126,7 @@ func entrySkill(d tool.Definition, entry string) ([]byte, error) {
 	}
 	text := strings.ReplaceAll(string(data), "tools run "+d.Name, "tools run "+entry)
 	text = strings.ReplaceAll(text, "tools skill "+d.Name, "tools skill "+entry)
+	text = strings.ReplaceAll(text, "--tool "+d.Name, "--tool "+entry)
 	return []byte(text), nil
 }
 

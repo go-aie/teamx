@@ -44,10 +44,10 @@ Confirm applied changes with your member name, exact platform and changed settin
    original message's fixed component; authorization links and QR codes stay in
    that component, not chat history or private files. Full settings shares its
    receipt; closing settings does not cancel the conversation operation.
-5. Confirm the receipt and result subscription, then end the turn. A requested
-   selection card ends here: do not wait or poll for clicks. For short connection
-   interactions, try `connect wait --operation-id ID --timeout 20s` at most once
-   per turn. Pending or CLI interruption does not cancel work.
+5. Confirm the receipt and result subscription, then end the turn; do not wait
+   or poll for clicks/authorization. Use `connect wait` at most once per turn only
+   when the human explicitly asks to wait briefly or for bounded recovery/diagnosis.
+   Pending or CLI interruption does not cancel work.
    Do not loop to keep a turn alive. The human may speak again to continue.
 6. Wait, user continuation and Inbox events use the same original receipt. Read
    latest status, newer user intent and existing member steps; apply only missing
@@ -111,6 +111,10 @@ settings recovery; do not automatically retry or create a new source.
 
 For source customization, follow the provider section. New customization enables
 only explicitly requested sources; omitted sources in saved settings are preserved.
+An exclusive request such as “只接收这个群” after a verified group choice means
+receive only that selected group: use specified group scope and disable private
+reception. In contrast, “群只接收这个群，其他设置保留” changes only group scope.
+Use the original selected native ID, not a new search or another selection card.
 An explicit total false overrides source enables in the same operation. A source
 enable that would also awaken another saved dormant source still needs explicit
 choices for both; the pure total switch intentionally restores all saved sources.

@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"reflect"
@@ -124,7 +125,13 @@ func TestInputToolsMinimalContract(t *testing.T) {
 		}
 	}
 	guide := unifiedAgentGuide()
-	for _, word := range []string{"read_id", "turn_number", "inbox_stats", "inbox_preview", "scope_ref", "filter", "blocked_streams"} {
+	// Input takes only stream_ref/limit; business actions still require the
+	// current turn_number. Check that field in the intake guidance only.
+	intake, _, found := strings.Cut(guide, "\n\nAfter Session rotation")
+	if !found || strings.Contains(intake, "turn_number") {
+		t.Fatal("input guidance requires a business turn parameter")
+	}
+	for _, word := range []string{"read_id", "inbox_stats", "inbox_preview", "scope_ref", "filter", "blocked_streams"} {
 		if strings.Contains(guide, word) {
 			t.Fatal("guide leak", word)
 		}
@@ -340,7 +347,7 @@ func TestInputMCPWaitsForFrameworkReceipt(t *testing.T) {
 }
 func TestInputCLIRejectsOldFlags(t *testing.T) {
 	for _, args := range [][]string{{"inbox", "stats"}, {"inbox", "preview"}, {"inbox", "read", "--stream", "x", "--turn", "1"}, {"inbox", "read", "--stream", "x", "--read-id", "id"}, {"inbox", "list", "--query", "x"}, {"inbox", "list", "--cursor", "x", "--limit", "1"}} {
-		if err := runInputCLI(context.Background(), args, func(context.Context, string, []byte) error { t.Fatal("accepted", args); return nil }); err == nil {
+		if err := runInputCLI(context.Background(), args, io.Discard, func(context.Context, string, []byte) error { t.Fatal("accepted", args); return nil }); err == nil {
 			t.Fatal(args)
 		}
 	}

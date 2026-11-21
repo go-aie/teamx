@@ -22,38 +22,35 @@ type inputCLIEnvelope struct {
 }
 
 func runInputHTTPCLI(ctx context.Context, args []string, out io.Writer, env func(string) string) error {
-	client := cliClient{endpoint: strings.TrimRight(env("TEAMX_ENDPOINT"), "/"), http: &http.Client{Timeout: time.Minute}}
-	id, err := client.identity(ctx, env("TEAMX_ROOM_ID"), env)
-	if err != nil {
-		return err
-	}
-	var binding struct {
-		Token string `json:"token"`
-		Call  string `json:"call"`
-	}
-	if json.Unmarshal([]byte(env("DSH_TEAMX_INPUT_BINDING")), &binding) != nil || binding.Token == "" || binding.Call == "" {
-		return ErrIdentity
-	}
-	suffix, err := randomAccessToken()
-	if err != nil {
-		return err
-	}
-	flush := func() error {
-		if f, ok := out.(interface{ Flush() error }); ok {
-			return f.Flush()
+	return runInputCLI(ctx, append([]string{"inbox"}, args...), out, func(ctx context.Context, name string, data []byte) error {
+		client := cliClient{endpoint: strings.TrimRight(env("TEAMX_ENDPOINT"), "/"), http: &http.Client{Timeout: time.Minute}}
+		id, err := client.identity(ctx, env("TEAMX_ROOM_ID"), env)
+		if err != nil {
+			return err
 		}
-		return nil
-	}
-	return runInputCLI(ctx, append([]string{"inbox"}, args...), func(ctx context.Context, name string, data []byte) error {
+		var binding struct {
+			Token string `json:"token"`
+			Call  string `json:"call"`
+		}
+		if json.Unmarshal([]byte(env("DSH_TEAMX_INPUT_BINDING")), &binding) != nil || binding.Token == "" || binding.Call == "" {
+			return ErrIdentity
+		}
+		suffix, err := randomAccessToken()
+		if err != nil {
+			return err
+		}
+		flush := func() error {
+			if f, ok := out.(interface{ Flush() error }); ok {
+				return f.Flush()
+			}
+			return nil
+		}
 		req := inputCLIEnvelope{ServiceInfo: id.ServiceInfo, Caller: id.Caller, Tool: name, Arguments: data, Execution: binding.Token, Call: binding.Call + "/" + suffix}
 		var result json.RawMessage
 		if err := client.request(ctx, "/v1/inputs", &req, &result); err != nil {
 			return err
 		}
-		if err := writeInputJSON(out, flush, result); err != nil {
-			return err
-		}
-		return nil
+		return writeInputJSON(out, flush, result)
 	})
 }
 func (s *service) serveInputCLI(w http.ResponseWriter, r *http.Request) {

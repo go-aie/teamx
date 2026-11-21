@@ -4,6 +4,8 @@
 
 | 记录 | 范围 |
 | --- | --- |
+| [Agent 后端身份与通信说明](agent-backend-guidance.zh.md) | S1a-A3：公共身份边界、DSH 内部通信与 review 归属；真实模型对照、子 Agent 指令接收证明及 Session 生效边界 |
+| [Agent 正常业务指导校正](agent-business-guidance.zh.md) | S1a-A2：流式输入/来源恢复、事项自动关联与结算、准确工具入口和托管发送指导；隔离模型对照及 Session 生效边界 |
 | [GitLab 隔离托管图文动作](gitlab-image-send-s1.zh.md) | 阶段 1：项目原图上传、单次评论／准确讨论回复、回读与最小 Agent 合同；后续真实 Agent 与恢复见阶段 2 |
 | [GitLab 图文 Agent 使用与恢复](gitlab-image-send-s2.zh.md) | 阶段 2：指引／字段反馈、普通 Room／默认助理各 16 场景真实 DSH、独立进程恢复／并发与定向 race；正式图文保持关闭，真实 GitLab 验收见阶段 3 |
 | [GitLab 图文真实验收与开放](gitlab-image-send-s3.zh.md) | 阶段 3：真实 Agent 发布、原图下载比对、独立进程回执重查、真实通知回流和浏览器验证；正式注册开放，日常服务／Session 未切换 |

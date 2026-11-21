@@ -60,8 +60,12 @@ Flags:
 		return "Usage: teamx platforms member tool --platform-id ID --platform-version V --operation-id ID --source-seq SEQ --enabled true|false [--binding-revision N] [--action OP ...]\n\nUse observed account/binding state and a stable operation ID. Tool grants do not authorize external writes. Unknown submissions require original-receipt inspection, never replay. Read platforms skill for capability and authorization recovery.\n\nFlags:\n"
 	case "status":
 		return "Usage: teamx platforms member status --operation-id ID | --source-seq SEQ\n\nRead original member configuration receipts; this command never reapplies them.\n\nFlags:\n"
+	case "chats":
+		return "Usage: teamx platforms chats --platform-id ID --platform-version V [--type group|p2p] [--query NAME --page-token TOKEN]\nSearch the exact verified Feishu account without creating conversations. Default: groups, including topic groups; p2p excludes bots and self.\nReturns JSON with exact chat IDs, connection version, continuation and search_warnings. Follow tokens even on empty filtered pages; personnel name searches may require refining the query instead. Permission errors and partial pages do not prove absence; same names are not selections.\nExample: teamx platforms chats --platform-id ID --platform-version V --type group --query NAME\nFlags:\n"
+	case "projects":
+		return "Usage: teamx platforms projects --platform-id ID --platform-version V [--query NAME --page-token PAGE]\nSearch the exact verified GitLab account; reuse the returned numeric page token.\nReturns JSON with native project IDs, exact paths and continuation. Permission errors and partial pages do not prove absence. Project activity uses one verified project per member/account; personal todos need no project or Workspace selection.\nExample: teamx platforms projects --platform-id ID --platform-version V --query NAME\nFlags:\n"
 	default:
-		return platformConnectHelp // chats/projects retain their existing contracts.
+		return platformMemberHelp
 	}
 }
 

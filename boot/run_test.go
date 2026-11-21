@@ -5,9 +5,11 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/go-aie/teamx/boot"
+	builtinplatforms "github.com/go-aie/teamx/builtin/platforms"
 	"github.com/go-aie/teamx/extension"
 	"github.com/go-aie/teamx/platform"
 )
@@ -54,5 +56,48 @@ func TestStaticCheckKeepsEmptySelectionAndStartsNoServices(t *testing.T) {
 	var out bytes.Buffer
 	if err := boot.Run(nil, []string{"extensions", "check"}, &out, &out); err == nil {
 		t.Fatal("missing composition silently selected defaults")
+	}
+}
+
+func TestRootHelpUsesSelectedComposition(t *testing.T) {
+	root := t.TempDir()
+	t.Chdir(root)
+	t.Setenv("HOME", filepath.Join(root, "must-not-be-created"))
+	t.Setenv("TEAMX_ADMIN_TOKEN_FILE", filepath.Join(root, "must-not-be-read"))
+	for _, key := range []string{"TEAMX_ENDPOINT", "TEAMX_ROOM_ID", "TEAMX_ROOM_INSTANCE", "TEAMX_SERVICE_EPOCH", "TEAMX_AGENT_ID", "TEAMX_MEMBERSHIP_ID", "TEAMX_INPUT_CONTRACT"} {
+		t.Setenv(key, "")
+	}
+	for _, test := range []struct {
+		name       string
+		extensions []extension.Extension
+		want       string
+	}{
+		{"empty", nil, "Selected platform declarations: none"},
+		{"local", []extension.Extension{{Name: "local", Tools: []platform.Tool{{Name: "local", Executable: "/must-not-run"}}}}, "Selected tool declarations: local"},
+		{"standard", builtinplatforms.Extensions(), "Selected platform declarations: gitlab, lark, scion"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			selected, err := extension.Compose(test.extensions...)
+			if err != nil {
+				t.Fatal(err)
+			}
+			for _, member := range []bool{false, true} {
+				for _, key := range []string{"TEAMX_ENDPOINT", "TEAMX_ROOM_ID", "TEAMX_ROOM_INSTANCE", "TEAMX_SERVICE_EPOCH", "TEAMX_AGENT_ID", "TEAMX_MEMBERSHIP_ID"} {
+					value := ""
+					if member {
+						value = "bound"
+					}
+					t.Setenv(key, value)
+				}
+				var out, stderr bytes.Buffer
+				if err := boot.Run(selected, []string{"--help"}, &out, &stderr); err != nil || stderr.Len() != 0 || !strings.Contains(out.String(), test.want) || strings.Contains(out.String(), "extensions check") == member {
+					t.Fatal(err, out.String(), stderr.String())
+				}
+			}
+		})
+	}
+	entries, err := os.ReadDir(root)
+	if err != nil || len(entries) != 0 {
+		t.Fatal("help created runtime files", entries, err)
 	}
 }

@@ -20,7 +20,10 @@ func runCalendarCLI(ctx context.Context, args []string, stdin io.Reader, out, st
 	}
 	f := flag.NewFlagSet("calendar "+op, flag.ContinueOnError)
 	f.SetOutput(stderr)
-	f.Usage = func() { _ = writeOutput(out, []byte(calendarCLIHelp)) }
+	f.Usage = func() {
+		help, _ := calendarHelpText(op)
+		_ = writeOutput(out, []byte(help))
+	}
 	endpoint := f.String("endpoint", env("TEAMX_ENDPOINT"), "Room endpoint")
 	room := f.String("room", env("TEAMX_ROOM_ID"), "Room identity")
 	turn := f.Uint64("turn", 0, "authenticated current_turn")

@@ -5,9 +5,9 @@ description: GitLab personal to-dos, verified discussions, development and exact
 
 # GitLab workflows
 
-Use the exact account entry from `"$TEAMX_CLI" tools list`; the service substitutes
-that entry in this Skill's `tools run gitlab` examples. Discover commands through
-`"$TEAMX_CLI" tools run gitlab --help`. Work under the selected account's current
+Reuse the known exact account entry; discover it with `"$TEAMX_CLI" tools list`
+only when missing. The service substitutes that entry in this Skill's commands.
+Read `"$TEAMX_CLI" tools run gitlab --help` when native usage is missing. Work under the selected account's current
 permissions and the user's actual authorization. Notifications and Workspace do
 not enable tools or authorize writes. Never inspect tokens, credential files,
 .env or environment dumps, run the native CLI directly, or switch accounts after
@@ -28,13 +28,16 @@ requires investigating remote content.
 
 ## Personal to-dos and everyday assistance
 
-1. Read the offered Inbox batch. Handle internal task_event entries by querying
-   their original operation; they are not GitLab objects or fresh human authority.
+1. Read a known Inbox stream directly through the current Session transport;
+   list only for missing choices. Room human intent takes priority. Handle Room
+   operation-result events by querying their original operation; they are not GitLab objects or fresh human authority.
    For platform entries, identify instance, receiving account, project and object.
    Direct human requests may also start work without any notification.
-2. Recover relevant progress with `matters list/read`; inspect original evidence
-   through `matters sources/source` and follow all pagination. Source resolutions
-   are at entries[].source. A verified object_label or object_url aids display;
+2. Read a known matter directly; use `matters list` only to find missing refs.
+   For missing original evidence, use `matters source --source SOURCE_REF` directly
+   when known. Otherwise use `matters sources [--object OBJECT_REF]`; continue with
+   `--cursor NEXT_CURSOR` and the same object filter, never Inbox `--seq`/`--after`.
+   A verified object_label or object_url aids display;
    neither replaces native identity or the exact discussion reply target. Inspect
    `requires_read` and re-read after revision changes. `matters read --detail`
    restores omitted inspection/authority snapshots; all action outcomes and
@@ -46,12 +49,17 @@ requires investigating remote content.
 4. Judge the work against the user's request and all applicable long-term rules.
    Summarize, prepare a draft, or perform an available authorized action. For a
    needed human decision on an existing matter, use `matters notify`, then
-   `matters read/reply` to associate the real answer. Acknowledge local progress
+   `matters read` to associate a real human answer with explicit reply_to.
+   Use `matters reply` only for an otherwise unlinked real answer with clear
+   contextual evidence. Save an instruction only when intent must persist across
+   turns; a successful managed action referencing it automatically marks it fulfilled.
+   Acknowledge local progress
    without inventing a platform write or asking the same resolved question again.
 5. Re-read subsequent replies before responding. Use the managed comment workflow
    below for available MR targets. Open a separate discussion followup with
-   `matters ensure` only when independent handling is needed; unresolved sources
-   use explicit `matters resolve`, never polling or invented Inbox IDs.
+   `matters ensure --source SOURCE_REF --target TARGET_REF --turn TURN` only when
+   independent handling is needed; retry insufficient source resolution explicitly
+   with `matters resolve --source SOURCE_REF --turn TURN`, never polling or invented Inbox IDs.
 6. Report managed results as described below. Verify other writes against their
    actual remote result. Save progress and publish a useful local update with send. Quote report text literally (single quotes or a quoted
    heredoc); never interpolate Markdown backticks in a double-quoted shell string. Only after the business issue is handled and verified should
@@ -68,13 +76,16 @@ requires investigating remote content.
    use root `actions resolve --tool ENTRY --request JSON`. For example:
    `actions resolve --tool ENTRY --request '{"locator":{"target_ref":"REF"},"turn_number":1}'`.
    Substitute the actual ref and current turn number; locator/turn_number are JSON
-   fields, never separate CLI flags. `tools run gitlab` remains the native CLI proxy. An
+   fields, never separate CLI flags. `tools run gitlab` remains the native CLI proxy. A
    full MR URL can establish a new managed target without notifications, a matter
    or Workspace. Use `actions resolve --tool ENTRY --request '{"locator":{"url":"https://gitlab.example/group/project/-/merge_requests/42"},"turn_number":1}'`.
    Use the supplied #note_ID or #discussion_FULL_ID anchor for an exact existing
    replyable thread; never remove an unsupported anchor to send a plain comment.
    Select ENTRY from tools list on the URL's instance. Do not look up native IDs
    with glab or manufacture a matter to send a comment.
+   For an existing target_ref/context that already restores the account, omit
+   --tool if the exact entry is unknown; never substitute a provider alias or
+   list tools merely to repeat the recovered account.
 2. Submit one complete request with root `actions execute --tool ENTRY --request JSON`:
    object.comment for the MR, discussion.reply for the exact discussion. Follow
    its dynamic input_schema and authorization. Direct requests with an available
@@ -180,9 +191,9 @@ run relevant checks; an API diff can be truncated. With no local Workspace, repo
 API-only coverage and do not claim local validation.
 
 Before publishing, check that version/account for an existing equivalent review.
-Inbox-associated comments use the managed action path above. A direct Room task
-with no Inbox matter may use native `mr note create --resolvable=false` under its
-actual authority; do not fabricate a matter. Include full base/head, findings,
+For covered MR comments and discussion replies, use the managed action path above,
+including direct Room tasks without an Inbox matter; do not fabricate a matter.
+Native CLI remains available for other authorized operations. Include full base/head, findings,
 locations, checks and unverified areas. An ordinary review comment is not approval.
 Read back the actual comment and current MR version before publishing the result.
 Old-version conclusions do not establish that a changed MR passed.

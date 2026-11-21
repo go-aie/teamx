@@ -324,7 +324,14 @@ func TestCalendarCLIHelpWithoutConnection(t *testing.T) {
 			if err := runCLIWithInput(t.Context(), args, nil, &out, io.Discard, func(string) string { return "" }); err != nil {
 				t.Fatal(err)
 			}
-			for _, required := range []string{"--turn", "--request-file", "human_source", "expected_version", "changes", "business_days", "operation_id", "publishing", "report_seq"} {
+			for _, required := range map[string][]string{
+				"":       {"list", "get", "update", "claim", "finish", "COMMAND --help"},
+				"list":   {"--state", "--from", "--cursor", "snapshot", "read-only"},
+				"get":    {"--task-id", "--run-id", "--history", "--result", "snapshot"},
+				"update": {"--turn", "--request-file", "human_source", "expected_version", "changes", "business_days", "operation_id"},
+				"claim":  {"--turn", "--run-id", "frozen", "Inbox", "cancellations", "calendar finish"},
+				"finish": {"--turn", "--request-file", "report", "publishing", "report_seq"},
+			}[op] {
 				if !strings.Contains(out.String(), required) {
 					t.Fatal("missing Calendar usage", required)
 				}

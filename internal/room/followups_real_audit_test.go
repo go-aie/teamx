@@ -12,6 +12,7 @@ import (
 	"testing"
 
 	"github.com/go-aie/actorx"
+	"github.com/go-aie/teamx/agent"
 	"github.com/go-aie/teamx/internal/agent/dsh"
 )
 
@@ -47,12 +48,29 @@ type policyRealBackend struct {
 }
 
 func (b policyRealBackend) OpenSession(ctx context.Context, opts SessionOptions) (Session, error) {
-	s, err := b.dshBackend.OpenSession(ctx, opts)
-	if s != nil {
-		ds := s.(*dshSession)
-		ds.component = &policyRealComponent{ds.component, b.audit}
+	backend := b.dshBackend
+	backend.factory = policyRealFactory{backend.selectedFactory(), b.audit}
+	backend.open = nil // Any fixture acquisition is already in the selected factory.
+	return backend.OpenSession(ctx, opts)
+}
+
+// Wrap acquisition before the public Session retains the component. Updating
+// dshSession.component after OpenSession no longer intercepts execution.
+type policyRealFactory struct {
+	agent.Factory
+	audit *policyRealAudit
+}
+
+func (f policyRealFactory) OpenSession(ctx context.Context, host agent.Host, resume bool) (*agent.Session, error) {
+	return agent.OpenSession(ctx, f, host, resume)
+}
+
+func (f policyRealFactory) Open(ctx context.Context, launch agent.Launch, resume bool) (agent.Component, error) {
+	c, err := f.Factory.Open(ctx, launch, resume)
+	if c == nil {
+		return nil, err
 	}
-	return s, err
+	return &policyRealComponent{c.(dshComponent), f.audit}, err
 }
 
 func (b policyRealBackend) switchSession(opts SessionOptions, from, to string) (Backend, error) {
@@ -115,7 +133,23 @@ func (c *policyRealComponent) observe(prompt string, run func() (dsh.TurnResult,
 }
 
 func (c *policyRealComponent) Activity() (dsh.TurnResult, bool) {
-	return c.dshComponent.(interface{ Activity() (dsh.TurnResult, bool) }).Activity()
+	if reader, ok := c.dshComponent.(interface{ Activity() (dsh.TurnResult, bool) }); ok {
+		return reader.Activity()
+	}
+	return dsh.TurnResult{}, false
+}
+
+func (c *policyRealComponent) RuntimeAgent() agent.Artifact {
+	if runtime, ok := c.dshComponent.(interface{ RuntimeAgent() agent.Artifact }); ok {
+		return runtime.RuntimeAgent()
+	}
+	return agent.Artifact{}
+}
+
+func (c *policyRealComponent) AddRedactionSecret(secret string) {
+	if private, ok := c.dshComponent.(interface{ AddRedactionSecret(string) }); ok {
+		private.AddRedactionSecret(secret)
+	}
 }
 
 func observePolicyReal(svc *service, audit *policyRealAudit) {
@@ -146,5 +180,27 @@ func TestPolicyRealAuditObservesPromptBlocks(t *testing.T) {
 	}
 	if strings.Contains(string(audit.Turns[0].Policy), "fixture") {
 		t.Fatal("image bytes leaked to policy audit")
+	}
+}
+
+func TestPolicyRealAuditObservesFactorySession(t *testing.T) {
+	h := newRoomHarness(t, historyRoom(0, ""), nil)
+	id := h.memberID("A", "generation-A")
+	audit := &policyRealAudit{Calls: map[string]int{}}
+	backend := policyRealBackend{dshBackend{store: h.store, open: func(context.Context, dsh.Options) (dshComponent, error) {
+		return &adapterComponent{run: func(context.Context, string) (dsh.TurnResult, error) {
+			return dsh.TurnResult{StopReason: "end_turn", Text: "observed through factory"}, nil
+		}}, nil
+	}}, audit}
+	session, err := backend.OpenSession(h.ctx, adapterOptions(h.store, id))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer session.Close(h.ctx)
+	if err := session.Run(h.ctx, UnreadChanged{MemberIdentity: id}); err != nil {
+		t.Fatal(err)
+	}
+	if len(audit.Turns) != 1 || audit.Turns[0].Result.Text != "observed through factory" || audit.Turns[0].PolicyBytes == 0 {
+		t.Fatal("factory Session bypassed the prompt/result audit", audit.Turns)
 	}
 }

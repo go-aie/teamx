@@ -193,7 +193,7 @@ func referenceCLIFlags(command, op string) string {
 	}
 	return common + " " + map[string]string{
 		"inbox/read": "limit peek", "matters/list": "object cursor include-completed limit", "matters/read": "object unit turn detail",
-		"matters/sources": "object after limit", "matters/source": "seq source", "matters/resolve": "seq source turn", "matters/ensure": "seq target turn",
+		"matters/sources": "object cursor after limit", "matters/source": "seq source", "matters/resolve": "seq source turn", "matters/ensure": "seq source target turn",
 		"actions/read": "id object unit detail", "actions/list": "object unit cursor limit",
 		"policy/read": "id detail", "policy/publish": "id version turn",
 	}[command+"/"+op]

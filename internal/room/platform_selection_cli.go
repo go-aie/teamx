@@ -11,45 +11,6 @@ import (
 	"time"
 )
 
-const platformSelectionHelp = `Usage:
-  teamx platforms selection start --kind account|groups|projects [--provider lark|gitlab --origin URL] --operation-id ID --source-seq SEQ [--platform-id ID --platform-version V --query NAME] [--name NAME] [--notify inbox|none]
-  teamx platforms selection status --operation-id ID | --source-seq SEQ
-  teamx platforms selection update --operation-id ID --version V [--selected-platform-id ID --selected-platform-version V --name NAME] [--chat-id CHAT_ID] [--group-message-mode all|mentions] [--project-id N --project-path PATH --event-type TYPE]
-  teamx platforms selection wait --operation-id ID [--timeout 20s]
-  teamx platforms selection cancel --operation-id ID --version V
-  teamx platforms selection notify --operation-id ID --mode inbox|none
-  teamx platforms selection acknowledge --operation-id ID --result-version V
-
-Output is already JSON; omit --json.
-For a requested card, read platforms skill, recover selection status by original
-source-seq, verify the exact account and start groups or projects with --notify inbox.
-Let the component search/paginate; do not enumerate candidates first or replace it
-with a text list. Confirm the receipt/subscription and end the turn without polling
-for clicks. Showing a card alone authorizes no notification change.
-
-Selections publish fixed account/name or group/message-mode forms in conversation
-and Settings. start input and initial draft are immutable; update replaces only
-the draft with compare-and-swap version checking. Human and Agent edits share the
-same version. Only the original human can submit the form. A submitted receipt
-cannot change and does not connect an account or configure notifications. Use the
-existing connect/member commands after reading the selection, latest intent and
-step receipts. Unknown submission: query the same ID; never create a replacement.
-Group forms require an exact verified account/version. Candidates are read from
-that account by the service with search/pagination, then checked again on submit.
-Only choose explicit stable IDs. Account forms may select a verified account or
-name a new connection. Fields expire after 24h; cancellation applies no settings.
-notify/acknowledge and bounded wait share the connection continuation semantics.
-GitLab account forms require --provider gitlab --kind account --origin URL and
-select only existing verified accounts on that exact instance. A missing account
-uses connect start with an existing compatible application, not a fabricated choice.
-GitLab project forms require --provider gitlab --kind projects --platform-id ID
---platform-version V [--query NAME]. They select one native project ID and exact
-path_with_namespace; submit rechecks both under the original account. update accepts
---project-id/--project-path and repeated --event-type (empty clears). Candidate pages,
-permission failures, stale versions and manual edits never change the submitted target.
-Source-seq status returns all selection steps for that original human request.
-`
-
 func runPlatformSelectionCLI(ctx context.Context, args []string, stdout, stderr io.Writer, env func(string) string, h *http.Client) error {
 	if len(args) == 0 || args[0] == "--help" || args[0] == "-h" {
 		return writeOutput(stdout, []byte(platformSelectionHelp))
@@ -58,7 +19,10 @@ func runPlatformSelectionCLI(ctx context.Context, args []string, stdout, stderr 
 	args = args[1:]
 	f := flag.NewFlagSet("platforms selection "+action, flag.ContinueOnError)
 	f.SetOutput(stderr)
-	f.Usage = func() { _ = writeOutput(stdout, []byte(platformSelectionHelp)) }
+	f.Usage = func() {
+		help, _ := platformSelectionHelpText(action)
+		_ = writeOutput(stdout, []byte(help))
+	}
 	req := platformSelectionRequest{}
 	in := platformSelectionInput{}
 	draft := platformSelectionDraft{}
@@ -111,6 +75,9 @@ func runPlatformSelectionCLI(ctx context.Context, args []string, stdout, stderr 
 		return ErrRequest
 	}
 	if err := f.Parse(args); err != nil {
+		if err == flag.ErrHelp {
+			return nil
+		}
 		return err
 	}
 	if f.NArg() != 0 || timeout < 0 || timeout > 2*time.Minute {
