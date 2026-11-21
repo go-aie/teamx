@@ -1,3 +1,4 @@
+const {toggleConversationDetails}=require('./conversation_details.cjs');
 // Exercises the real UI with a local manager and fixture CLI only.
 const {chromium}=require('playwright');
 const assert=require('node:assert/strict');
@@ -46,7 +47,7 @@ const assert=require('node:assert/strict');
   await page.setViewportSize({width:390,height:844});
   await page.reload();
   await page.locator('.room-choice[aria-current="true"]').click();
-  await page.locator('#room-menu-label').click();
+  await toggleConversationDetails(page);
   await page.locator('.member-summary').first().click();
   await page.locator('#agent-tab-platforms').click();
   await page.getByRole('button',{name:'编辑 飞书 的通知设置',exact:true}).click();

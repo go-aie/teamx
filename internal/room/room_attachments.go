@@ -130,7 +130,7 @@ func attachmentIDsEqual(a []RoomAttachment, b []RoomAttachmentInput) bool {
 	return true
 }
 func roomMessageBytes(m RoomMessage) int {
-	n := len(m.Text)
+	n := len(m.Text) + len(m.WorkspaceRootID)
 	if len(m.Attachments) > 0 {
 		b, _ := json.Marshal(m.Attachments)
 		n += len(b)

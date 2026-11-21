@@ -1,3 +1,4 @@
+const {toggleConversationDetails}=require('./conversation_details.cjs');
 // Actual Chromium and production HTTP. Competing writes use the human endpoints.
 const {chromium} = require('playwright');
 const assert = require('node:assert/strict');
@@ -38,7 +39,7 @@ const {join} = require('node:path');
     await page.goto(endpoint);
     if(viewport === 'mobile')await page.locator('#room-list .room-choice').filter({hasText:room.name}).first().click();
     if(viewport === 'mobile') {
-      await page.locator('#room-menu-label').click();
+      await toggleConversationDetails(page);
       if(await page.locator('#toggle-member-list').getAttribute('aria-expanded') === 'false')await page.locator('#toggle-member-list').click();
     }
     await page.locator('.member-summary').filter({hasText:agent}).first().click();

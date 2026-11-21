@@ -1,3 +1,4 @@
+const {toggleConversationDetails}=require('./conversation_details.cjs');
 // Production UI and HTTP service; official CLI responses are isolated fixtures.
 const {chromium} = require('playwright');
 const assert = require('node:assert/strict');
@@ -91,7 +92,7 @@ const {join} = require('node:path');
     await closeSettings();
     // The original fault: an enabled historical binding contains no actions.
     // Repair upgrades it in one explicit action; the switch stays enabled.
-    if (!(await page.locator('#agent-tab-platforms').isVisible())) await page.locator('#room-menu-label').click();
+    if (!(await page.locator('#agent-tab-platforms').isVisible())) await toggleConversationDetails(page);
     await page.locator('#agent-tab-platforms').click();
     const row = page.locator(`#member-notification-platforms [data-platform-id="${platformID}"]`);
     const toggle = row.getByRole('switch',{name:'工作飞书 使用工具'});

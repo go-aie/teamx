@@ -4,6 +4,7 @@ import { request, sameService, compactViewport } from "./client.mjs";
 import { renderMessageBody } from "./markdown.mjs";
 import { createSettings } from "./features/settings.mjs";
 import { createRooms } from "./features/rooms.mjs";
+import { createFiles } from "./features/files.mjs";
 import { createLayout } from "./features/layout.mjs";
 import { createWorkspace } from "./features/workspace.mjs";
 import { createNotifications } from "./features/notifications.mjs";
@@ -49,6 +50,7 @@ export async function createApp(overrides = {}) {
   const settingsUI = {};
   const roomsUI = {};
   const layoutUI = {};
+  const filesUI = {};
   const workspaceUI = {};
   const notificationsUI = {};
   const membersUI = {};
@@ -88,6 +90,8 @@ export async function createApp(overrides = {}) {
       if (state.managed && !layoutUI.roomsPanelOpen?.()) layers.push({ id:"mobile-conversation", close:layoutUI.showMobileRooms });
       if (layoutUI.membersPanelOpen?.()) layers.push({ id:"members", close:layoutUI.closeMobilePanels });
     }
+    if (filesUI.isOpen) layers.push({id:filesUI.navigationID, close:filesUI.back});
+    if (!$("conversation-menu").hidden) layers.push({id:"conversation-menu", close:filesUI.closeMenu});
     if ($("compose-menu").open) layers.push({id:"compose-menu", close:conversationUI.closeComposerMenu});
     if (!$("conversation-filter-menu").hidden) layers.push({ id:"conversation-filter", close:roomsUI.closeFilterMenu });
     for (const [id, button] of [["calendar-detail","calendar-detail-close"], ["calendar-mode-sheet","calendar-mode-close"], ["activity-dialog","close-activity"], ["notification-detail","close-notification"],
@@ -106,6 +110,7 @@ export async function createApp(overrides = {}) {
     return layers;
   }});
   function suspend() {
+    filesUI.suspend?.();
     updateConnection?.stop(); scheduler.pause();
     if (!state.suspended) viewVersion++;
     state.suspended = true; state.connected = false; state.catalogConnected = false;
@@ -199,6 +204,7 @@ export async function createApp(overrides = {}) {
     roomViews.scope([state.installationID, state.catalog?.service_epoch || serverIdentity?.[1], operator]);
     const entry = state.catalog?.rooms.find(room => room.room_id === info?.room_id && room.room_instance === info?.room_instance);
     const cached = info && (!state.managed || entry?.status === "ready") ? roomViews.get(info, entry?.human_read?.cleared_through || 0) : null;
+    filesUI.close?.({focus:false}); filesUI.closeMenu?.();
     conversationUI.saveDraft();
     roomsUI.closeRename(false);
     $("notification-detail").close();
@@ -259,6 +265,7 @@ export async function createApp(overrides = {}) {
     if (!currentView(version) || !current()) return;
     roomsUI.acceptCatalog(catalog);
     state.catalog = catalog; state.catalogConnected = true;
+    filesUI.syncIdentity?.();
     roomViews.scope([state.installationID, catalog.service_epoch, catalog.operator]);
     roomViews.reconcile(catalog.rooms);
     const currentRoom = catalog.rooms.find(room => room.room_id === state.info?.room_id && room.room_instance === state.info?.room_instance);
@@ -277,7 +284,10 @@ export async function createApp(overrides = {}) {
   }
 
   async function readWorkspace(options) {
-    if (state.managed && state.catalog) await workspaceUI.syncWorkspace(state.catalog, options);
+    if (state.managed && state.catalog) {
+      await workspaceUI.syncWorkspace(state.catalog, options);
+      filesUI.observeWorkspace?.(workspaceUI.workspaceView?.data || {});
+    }
   }
 
   function readConfiguration(options) {
@@ -540,8 +550,9 @@ export async function createApp(overrides = {}) {
     env, runtime, layoutUI, workspaceUI, conversationUI, settingsUI, membersUI, userMenuUI
   }));
   install(layoutUI, createLayout({
-    env, roomsUI, runtime, notificationsUI, membersUI, settingsUI, userMenuUI
+    env, roomsUI, runtime, notificationsUI, membersUI, settingsUI, userMenuUI, filesUI
   }));
+  install(filesUI, createFiles({env, runtime, layoutUI, membersUI}));
   install(workspaceUI, createWorkspace({
     env, runtime, notificationsUI, membersUI, roomsUI, conversationUI, settingsUI, connectionsUI
   }));
@@ -558,7 +569,7 @@ export async function createApp(overrides = {}) {
     env, settingsUI, notificationsUI, runtime, membersUI, policyUI
   }));
   install(conversationUI, createConversation({
-    calendarUI,
+    calendarUI, filesUI,
     env, runtime, roomsUI, membersUI, settingsUI, interactionsUI, workspaceUI, layoutUI, userMenuUI
   }));
   install(interactionsUI, createPlatformInteractions({
@@ -584,8 +595,8 @@ export async function createApp(overrides = {}) {
   const roomScope = () => [...globalScope(), viewVersion, state.info];
   const memberScope = () => [...roomScope(), membersUI.selectedAgent()?.agent_id, membersUI.selectedAgent()?.membership_id, membersUI.agentTab];
   const active = () => !state.suspended && !document.hidden && window.navigator?.onLine !== false;
-  const detail = tab => active() && $("activity-dialog").open && membersUI.agentTab === tab && !!membersUI.selectedAgent();
-  const notificationVisible = () => active() && !!state.catalog && !!workspaceUI.workspaceView &&
+  const detail = tab => !filesUI.isOpen && active() && $("activity-dialog").open && membersUI.agentTab === tab && !!membersUI.selectedAgent();
+  const notificationVisible = () => !filesUI.isOpen && active() && !!state.catalog && !!workspaceUI.workspaceView &&
     (layoutUI.membersPanelOpen() || detail("platforms") || $("notification-detail").open);
   // Both categories share one reader and one throttle. A summary remains
   // pending until a read starts; diagnostics cannot make a hidden inspector
@@ -671,7 +682,7 @@ export async function createApp(overrides = {}) {
     onError: error => readError("notifications", error),
   });
   register("tools", options => membersUI.loadCLITools(membersUI.memberToolsView, { background: true, ...options }),
-    () => active() && !!membersUI.memberToolsView && membersUI.toolsCurrent(membersUI.memberToolsView) &&
+    () => !filesUI.isOpen && active() && !!membersUI.memberToolsView && membersUI.toolsCurrent(membersUI.memberToolsView) &&
       ($("activity-dialog").open || $("notification-detail").open), memberScope);
   register("platforms", async options => {
     platformRead.invalidate();
@@ -731,6 +742,7 @@ export async function createApp(overrides = {}) {
   roomsUI.mount();
   layoutUI.mount();
   workspaceUI.mount();
+  filesUI.mount();
   notificationsUI.mount();
   membersUI.mount();
   policyUI.mount();

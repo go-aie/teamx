@@ -1,3 +1,4 @@
+const {toggleConversationDetails}=require('./conversation_details.cjs');
 const {chromium}=require('playwright'),assert=require('node:assert/strict');
 const {writeFileSync}=require('node:fs');
 (async()=>{
@@ -25,7 +26,7 @@ const {writeFileSync}=require('node:fs');
   }
   const info=await rpc(pages[0],'/__scope/info');
   for(const p of pages){
-   if(!await p.locator(`#members [data-activity-member="${info.member.membership_id}"]`).isVisible())await p.locator('#room-menu-label').click();
+   if(!await p.locator(`#members [data-activity-member="${info.member.membership_id}"]`).isVisible())await toggleConversationDetails(p);
    if(await p.locator('#toggle-member-list').getAttribute('aria-expanded')==='false')await p.locator('#toggle-member-list').click();
    for(let attempt=0;attempt<20;attempt++) {
     await p.waitForFunction(()=>document.querySelector('#connection').textContent==='服务已连接');

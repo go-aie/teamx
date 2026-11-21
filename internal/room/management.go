@@ -791,6 +791,10 @@ func (m *roomManager) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		m.servePlatformNotifications(w, r)
 		return
 	}
+	if r.URL.Path == "/v1/workspace/files" || strings.HasPrefix(r.URL.Path, "/v1/workspace/files/") {
+		m.serveWorkspaceFiles(w, r)
+		return
+	}
 	if r.URL.Path == "/v1/workspace/directories" {
 		m.serveWorkspaceDirectories(w, r)
 		return

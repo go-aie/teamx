@@ -45,10 +45,12 @@ func (h *sessionHost) PrepareOpen(ctx context.Context) (agent.Launch, error) {
 	if b.recover && !exists {
 		return agent.Launch{}, dshFailure(dsh.ErrRecoveryUnsupported)
 	}
+	trustedWorkspace := !b.recover
 	if ref.Directory != "" {
 		frozen, loadErr := b.restoreModelSnapshot(opts, ref)
 		if loadErr == nil {
 			b = frozen
+			trustedWorkspace = true
 		} else if b.model != nil || ref.ManagedModel || !errors.Is(loadErr, os.ErrNotExist) {
 			return agent.Launch{}, dshFailure(loadErr)
 		}
@@ -71,6 +73,20 @@ func (h *sessionHost) PrepareOpen(ctx context.Context) (agent.Launch, error) {
 	if !b.recover {
 		if err := b.saveModelSnapshot(opts, ref); err != nil {
 			return agent.Launch{}, dshFailure(err)
+		}
+	}
+	// Saving a new generation freezes this hint with the existing profile.
+	// Recovery never re-evaluates a saved alias to choose a different root.
+	// Older snapshots need a canonical saved path as evidence; otherwise only
+	// the optional file hint is suppressed, leaving execution/send unchanged.
+	rootID := ""
+	if b.model != nil {
+		rootID = b.model.WorkspaceRootID
+	}
+	if rootID == "" && trustedWorkspace {
+		canonical, canonicalErr := filepath.EvalSymlinks(componentOpts.Workspace)
+		if canonicalErr == nil && filepath.IsAbs(canonical) && (b.model == nil && !b.recover || canonical == componentOpts.Workspace) {
+			rootID = workspaceRootID(opts.RoomIdentity, opts.MembershipID, canonical)
 		}
 	}
 
@@ -97,6 +113,9 @@ func (h *sessionHost) PrepareOpen(ctx context.Context) (agent.Launch, error) {
 	var inbox *mcpInboxSession
 	if b.access != nil {
 		binding := executionBinding{ServiceInfo: ServiceInfo{RoomIdentity: opts.RoomIdentity}, Caller: Caller{Author: Author{Kind: "agent", ID: opts.AgentID}, MembershipID: opts.MembershipID}}
+		// componentOpts uses the restored generation's profile on recovery.
+		// Legacy recovery without a snapshot must never borrow today's cwd.
+		binding.WorkspaceRootID = rootID
 		for _, entry := range opts.CLIEnv {
 			if strings.HasPrefix(entry, "TEAMX_SERVICE_EPOCH=") {
 				binding.ServiceEpoch = strings.TrimPrefix(entry, "TEAMX_SERVICE_EPOCH=")

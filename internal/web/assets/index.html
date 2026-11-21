@@ -75,7 +75,11 @@
         </div>
         <div id="conversation-actions" class="room-actions">
           <button id="conversation-calendar" class="icon-button" type="button" aria-label="日历" title="日历" aria-controls="calendar-panel" aria-expanded="false" hidden><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="2.5" width="18" height="19" rx="1"/><path d="M3 7h18"/><text id="calendar-icon-day" x="12" y="18" text-anchor="middle"></text></svg></button>
-          <button id="room-menu-label" class="icon-button conversation-details-toggle" type="button" aria-label="房间详情" title="房间详情" aria-controls="member-rail" aria-expanded="true"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="5" cy="12" r="1.5"/><circle cx="12" cy="12" r="1.5"/><circle cx="19" cy="12" r="1.5"/></svg></button>
+          <button id="room-menu-label" class="icon-button conversation-details-toggle" type="button" aria-label="会话菜单" title="会话菜单" aria-controls="conversation-menu" aria-haspopup="menu" aria-expanded="false"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="5" cy="12" r="1.5"/><circle cx="12" cy="12" r="1.5"/><circle cx="19" cy="12" r="1.5"/></svg></button>
+          <div id="conversation-menu" class="conversation-menu" role="menu" aria-label="会话菜单" hidden>
+            <button id="conversation-open-files" type="button" role="menuitem">工作区文件</button>
+            <button id="conversation-open-details" type="button" role="menuitem">会话详情</button>
+          </div>
         </div>
         <div id="calendar-header-actions" class="calendar-toolbar-actions calendar-header-actions" hidden>
           <button id="calendar-new" type="button" class="primary button-compact" aria-label="新建任务" title="新建任务"><span id="calendar-new-label">新建任务</span><svg id="calendar-new-icon" viewBox="0 0 24 24" aria-hidden="true" hidden><path d="M12 5v14M5 12h14"/></svg></button>
@@ -211,6 +215,37 @@
     </section>
     <aside id="member-rail" class="member-rail" aria-label="团队成员与详情">
       <div id="member-resizer" class="sidebar-resizer member-resizer" role="separator" tabindex="0" aria-label="调整右侧栏宽度" aria-orientation="vertical" aria-controls="member-rail" title="左右拖动调整宽度"></div>
+      <section id="files-page" class="files-page" aria-label="工作区文件" hidden>
+        <header class="files-header">
+          <button id="files-back" type="button" class="text-button back-button" aria-label="返回列表" title="返回列表" hidden><svg class="navigation-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="m15 6-6 6 6 6"/></svg></button>
+          <div class="files-heading"><h2 id="files-title">工作区文件</h2><div id="files-meta" class="files-meta" hidden><p id="files-status" class="quiet" role="status"></p></div></div>
+          <button id="files-refresh" type="button" class="icon-button" aria-label="刷新" title="刷新"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 7v5h-5M4 17v-5h5M6 7a7 7 0 0 1 12-1l2 6M4 12l2 6a7 7 0 0 0 12-1"/></svg></button>
+          <a id="files-download" class="icon-button" aria-label="下载文件" title="下载文件" hidden><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12m-5-5 5 5 5-5M4 15v5h16v-5"/></svg></a>
+          <button id="files-expand" type="button" class="icon-button" aria-label="展开" title="展开" aria-expanded="false"><svg viewBox="0 0 24 24" aria-hidden="true"><path id="files-expand-icon" d="M14 4h6v6M20 4l-6 6M10 20H4v-6M4 20l6-6"/></svg><span id="files-expand-label" class="sr-only">展开</span></button>
+          <button id="files-close" type="button" class="icon-button" aria-label="关闭工作区文件" title="关闭工作区文件"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M6 18 18 6"/></svg></button>
+        </header>
+        <div class="files-location">
+          <div id="files-breadcrumb-row" class="files-breadcrumb-row">
+            <div id="files-source-field" class="files-source-field" hidden><label for="files-source" class="sr-only">工作目录来源</label><select id="files-source" class="field-control"></select></div>
+            <nav id="files-path" class="files-path" aria-label="文件路径"><span id="files-path-segments" class="files-path-segments"></span><button id="files-directory" type="button" class="files-crumb files-current-directory" hidden></button></nav>
+            <button id="files-path-edit" class="icon-button" type="button" aria-label="输入相对路径" title="输入相对路径"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m15 5 4 4M5 15 15 5a3 3 0 0 1 4 4L9 19l-5 1Z"/></svg></button>
+            <div id="files-view-mode" class="files-view-mode" role="group" aria-label="文件显示方式" hidden><button id="files-preview-mode" class="text-button" type="button" aria-pressed="true">预览</button><button id="files-source-toggle" class="text-button" type="button" aria-pressed="false">源码</button></div>
+          </div>
+          <form id="files-locate" hidden><input id="files-locate-path" class="field-control" placeholder="相对路径，如 docs/说明.md" aria-label="相对路径定位" autocomplete="off"><button type="submit" class="text-button">定位</button><button id="files-path-cancel" type="button" class="icon-button" aria-label="取消路径输入" title="取消"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M6 18 18 6"/></svg></button></form>
+        </div>
+        <div id="files-list-tools" class="files-list-tools">
+          <button id="files-up" type="button" class="icon-button" aria-label="上一级目录" title="上一级目录"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 20V4m-6 6 6-6 6 6"/></svg></button>
+          <input id="files-filter" class="field-control" type="search" placeholder="筛选当前目录…" aria-label="筛选当前目录" autocomplete="off">
+          <select id="files-sort" class="field-control" aria-label="排序方式"><option value="name">名称排序</option><option value="modified">最近修改</option></select>
+          <button id="files-options-toggle" type="button" class="icon-button" aria-label="目录选项" title="目录选项" aria-expanded="false" aria-controls="files-options"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/></svg></button>
+          <div id="files-options" class="files-options menu-surface" hidden><div class="files-mobile-sort"><label for="files-sort-mobile">排序方式</label><select id="files-sort-mobile" class="field-control"><option value="name">名称排序</option><option value="modified">最近修改</option></select></div><label class="files-hidden"><input id="files-hidden" type="checkbox">显示隐藏项</label></div>
+        </div>
+        <p id="files-error" class="files-feedback" role="alert" hidden></p>
+        <p id="files-truncated" class="files-feedback quiet" hidden>列表不完整，筛选仅作用于已返回条目。可用相对路径定位其他文件。</p>
+        <div id="files-list-heading" class="files-list-heading" aria-hidden="true"><span>名称</span><span class="file-entry-modified">修改时间</span><span class="file-entry-size">大小</span></div>
+        <div id="files-body" class="files-body" tabindex="0" aria-label="目录内容"></div>
+        <p id="files-count" class="files-count quiet" role="status"></p>
+      </section>
       <div id="member-list-view" class="member-list-view">
         <header class="rail-header member-rail-header">
           <button id="close-mobile-members" class="text-button mobile-panel-back back-button" type="button" aria-label="返回对话" title="返回对话"><svg class="navigation-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="m15 6-6 6 6 6"/></svg></button>

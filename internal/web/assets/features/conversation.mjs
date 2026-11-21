@@ -11,7 +11,7 @@ import { createMentionPicker } from "../mention-picker.mjs";
 import { roomEventDisplayText } from "../room-events.mjs";
 
 // Messages, drafts, mentions and the send/restart lifecycle.
-export function createConversation({ env, runtime, roomsUI, membersUI, settingsUI, interactionsUI, workspaceUI, layoutUI, userMenuUI, calendarUI }) {
+export function createConversation({ env, runtime, roomsUI, membersUI, settingsUI, interactionsUI, workspaceUI, layoutUI, userMenuUI, calendarUI, filesUI }) {
   const { document, window, requestAnimationFrame, performance, setTimeout, ResizeObserver, renderMessageBody } = env;
   const { state, $, notice, rpc, currentView, refresh, discussionBusy, reconcileChildren, storage, confirmAction } = runtime;
 
@@ -147,7 +147,10 @@ export function createConversation({ env, runtime, roomsUI, membersUI, settingsU
   const displayText = message => message.type === "event" ? roomEventDisplayText(message) : messageDisplayText(message, mentionLabel);
   const messageOptions = message => ({ mentions:message.mentions, mentionLabel, ...(message.author.kind === "integration"
     ? notificationOptions(state.info, state.operator, message.source, { seq: message.seq })
-    : { memberNames: state.members.map(m => m.agent_id), ...(roomsUI.isDirect() ? {openCalendar:taskID=>calendarUI?.openTask(taskID)} : {}) }), operatorNames: operatorNames() });
+    : { memberNames: state.members.map(m => m.agent_id), ...(roomsUI.isDirect() ? {openCalendar:taskID=>calendarUI?.openTask(taskID)} : {}) }),
+    ...(message.author.kind === "agent" && !message.type && !message.event && !message.source ? {
+      workspaceFiles:true, openWorkspaceFile:(path, opener)=>filesUI?.openMessage(message,path,opener),
+    } : {}), operatorNames: operatorNames() });
 
   function renderRestart() {
     const restart = state.restart;
@@ -340,6 +343,7 @@ export function createConversation({ env, runtime, roomsUI, membersUI, settingsU
   }
 
   function finishMessages() {
+    filesUI?.observeMessages();
     calendarUI?.renderLinks?.();
     $("empty").hidden = state.messages.size !== 0;
     $("load-history").hidden = state.oldest <= state.clearedThrough + 1;
@@ -642,6 +646,7 @@ export function createConversation({ env, runtime, roomsUI, membersUI, settingsU
   function applyClear(through) {
     if (through <= state.clearedThrough) return false;
     state.clearedThrough = through;
+    filesUI?.observeMessages();
     runtime.forgetRoomView(state.info);
     if (historyTask) cancelHistory("历史已清空，请重新选择回看目标。");
     if (visit) {

@@ -1,3 +1,4 @@
+const {toggleConversationDetails}=require('./conversation_details.cjs');
 const {chromium}=require('playwright');
 const assert=require('node:assert/strict');
 (async()=>{
@@ -10,7 +11,7 @@ const assert=require('node:assert/strict');
   const selector=`#room-list > [data-room-key=${JSON.stringify(JSON.stringify([room.room_id,room.room_instance]))}] > button:first-child`;
   await page.locator(selector).click();
   await page.waitForFunction(()=>!document.querySelector('#message-input').disabled);
-  if(!await page.locator('#shared-inbox-settings').isVisible())await page.locator('#room-menu-label').click();
+  if(!await page.locator('#shared-inbox-settings').isVisible())await toggleConversationDetails(page);
   const loaded=page.waitForResponse(r=>new URL(r.url()).pathname==='/v1/rooms/shared-inbox'&&r.request().method()==='GET');
   await page.locator('#shared-inbox-settings > summary').click();const before=await(await loaded).json();
   await page.waitForFunction(()=>document.querySelectorAll('#shared-inbox-preview p').length===1);
@@ -34,7 +35,7 @@ const assert=require('node:assert/strict');
   await page.screenshot({path:process.env.TEAMX_SHARED_BROWSER_DESKTOP||'/tmp/teamx-shared-inbox-desktop.png',fullPage:true});
   await page.locator('#close-notification').click();
   await page.setViewportSize({width:390,height:844});
-  if(!await page.locator('#shared-inbox-settings').isVisible())await page.locator('#room-menu-label').click();
+  if(!await page.locator('#shared-inbox-settings').isVisible())await toggleConversationDetails(page);
   await page.locator('#shared-inbox-platforms button').first().click();
   await page.locator('#notification-detail').waitFor({state:'visible'});
   if(!await page.locator("#gitlab-events-settings").evaluate(e=>e.open))await page.locator("#gitlab-events-settings > summary").click();

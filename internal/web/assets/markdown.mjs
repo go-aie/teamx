@@ -1,6 +1,7 @@
 import { Marked, Renderer, Tokenizer } from "./vendor/marked.mjs";
 import { createImageToolIcon, createNavigationIcon } from "./icons.mjs";
 import { mentionRanges, memberMentionRanges } from "./client.mjs";
+import { workspaceFilePath, workspaceFileTarget } from "./workspace-file-path.mjs";
 
 function escapeHTML(text, preserveEntities = false) {
   return text.replace(preserveEntities ? /&(?!(?:#\d+|#x[\da-f]+|\w+);)/gi : /&/g, "&amp;")
@@ -69,6 +70,12 @@ export function notificationOptions(info, operator, source, locator) {
 }
 
 function imageHTML({ href, text, title, width, height }, options) {
+  if (options.workspaceDocument) {
+    const current = options.workspaceDocument.path;
+    const target = workspaceFileTarget(linkAttribute(href), current.split("/").slice(0,-1).join("/"), current);
+    if (target && !target.fragment) return `<button type="button" class="workspace-image-load" data-file-path="${escapeHTML(target.path)}" data-image-alt="${escapeHTML(text || "图片")}">加载图片：${escapeHTML(text || "图片")}</button>`;
+    return webLink(href, escapeHTML(text || "图片"), title);
+  }
   const src = options.attachmentURL?.(href);
   if (!src) return webLink(href, escapeHTML(text || "图片"), title);
   const size = (width ? ` width="${width}"` : "") + (height ? ` height="${height}"` : "");
@@ -207,7 +214,9 @@ export function openImagePreview(doc, src, alt) {
       if (!dialog.open) dialog.showModal();
     }}; imagePreviews.set(doc, preview);
   }
+  preview.src = src;
   preview.show(src, alt);
+  return () => { if (preview.src === src && preview.dialog.open) preview.dialog.close(); };
 }
 
 function makeMarkdown(options = {}) {
@@ -227,6 +236,13 @@ function makeMarkdown(options = {}) {
       },
     },
     renderer: {
+      blockquote(token) {
+        // Quoted material never borrows the native message's file source.
+        const fileLinks = options.workspaceFiles;
+        options.workspaceFiles = false;
+        try { return Renderer.prototype.blockquote.call(this, token); }
+        finally { options.workspaceFiles = fileLinks; }
+      },
       html({ text }) {
         // Only attribute-free formatting tags are accepted from message HTML.
         // Links, images and all other markup still use the guarded renderers.
@@ -239,6 +255,13 @@ function makeMarkdown(options = {}) {
         const literal = list => list.map(token=>token.type==="roomMention" ? {type:"text",raw:token.raw,text:options.roomMentionTokens[token.index].raw} : token.tokens ? {...token,tokens:literal(token.tokens)} : token);
         const label = this.parser.parseInline(options.roomMentionTokens ? literal(tokens) : tokens);
         if (options.openCalendar && /^#calendar\/task\/task_[a-f0-9]{32}$/.test(href)) return `<a href="${href}" class="calendar-receipt-link">${label}</a>`;
+        if (options.workspaceDocument) {
+          const current = options.workspaceDocument.path;
+          const target = workspaceFileTarget(linkAttribute(href), current.split("/").slice(0,-1).join("/"), current);
+          if (target) return `<button type="button" class="workspace-file-link" data-file-path="${escapeHTML(target.path)}" data-file-fragment="${escapeHTML(target.fragment)}">${label}</button>`;
+        }
+        const path = options.workspaceFiles && workspaceFilePath(linkAttribute(href));
+        if (path) return `<button type="button" class="workspace-file-link" data-file-path="${escapeHTML(path)}"${title ? ` title="${escapeHTML(title)}"` : ""}>${label}</button>`;
         return webLink(href, label, title);
       },
       image({ href, text, title }) {
@@ -344,6 +367,9 @@ export function renderMessageBody(container, text, operator, options) {
   options={...options,operatorID:operator};
   container.innerHTML = markdownHTML(text, options);
   const doc = container.ownerDocument;
+  if (options.openWorkspaceFile) for (const link of container.querySelectorAll("button.workspace-file-link")) link.addEventListener("click", event => {
+    event.preventDefault(); options.openWorkspaceFile(link.dataset.filePath, link);
+  });
   if (options?.openCalendar) for (const link of container.querySelectorAll("a.calendar-receipt-link")) link.addEventListener("click", event => {
     event.preventDefault(); options.openCalendar(link.getAttribute("href").slice("#calendar/task/".length));
   });

@@ -70,7 +70,7 @@ for (const width of [390,1440]) {
   test(`member layout choice persists without rebuilding entries at ${width}px`, async () => {
     const api=fixture(),ui=await launch(api);
     ui.window.innerWidth=width;await ui.window.emit("resize");
-    if(ui.el("member-rail").inert)await ui.el("room-menu-label").emit("click");
+    if(ui.el("member-rail").inert)await ui.el("conversation-open-details").emit("click");
     const toggle=ui.el("toggle-member-list"),entry=ui.el("members").children[0];
     assert.equal(toggle.getAttribute("aria-expanded"),"false");
     assert.equal(ui.el("members").classList.contains("members-compact"),true);
@@ -85,7 +85,7 @@ for (const width of [390,1440]) {
     await reloaded.el("toggle-member-list").emit("click");
     const compact=await launch(api,reloaded.saved);
     assert.equal(compact.el("members").classList.contains("members-compact"),true);
-    if(compact.el("member-rail").inert)await compact.el("room-menu-label").emit("click");
+    if(compact.el("member-rail").inert)await compact.el("conversation-open-details").emit("click");
     await openMember(compact);await compact.el("close-activity").emit("click");await settle();
     assert.equal(compact.el("members").classList.contains("members-compact"),true);
     assert.equal(compact.el("member-list-view").hidden,false);
@@ -94,8 +94,8 @@ for (const width of [390,1440]) {
   for (const expanded of [false,true]) test(`avatar return restores the original sidebar and draft at ${width}px, expanded=${expanded}`, async () => {
     const api=fixture();messages(api);const ui=await launch(api);
     ui.window.innerWidth=width;await ui.window.emit("resize");
-    const isOpen=()=>ui.el("room-menu-label").getAttribute("aria-expanded")==="true";
-    if(isOpen()!==expanded)await ui.el("room-menu-label").emit("click");
+    const isOpen=()=>ui.el("conversation-open-details").getAttribute("aria-expanded")==="true";
+    if(isOpen()!==expanded)await ui.el("conversation-open-details").emit("click");
     await ui.draft("未发送草稿");ui.el("timeline").scrollTop=37;
     await avatar(ui).emit("click");assert.equal(ui.el("activity-dialog").open,true);
     ui.el("timeline").scrollTop=0;
@@ -107,7 +107,7 @@ for (const width of [390,1440]) {
 
   test(`member list return retains the list and its scroll position at ${width}px`, async () => {
     const ui=await launch(fixture());ui.window.innerWidth=width;await ui.window.emit("resize");
-    if(ui.el("member-rail").inert)await ui.el("room-menu-label").emit("click");
+    if(ui.el("member-rail").inert)await ui.el("conversation-open-details").emit("click");
     ui.el("member-sidebar").scrollTop=92;await openMember(ui);
     await ui.el("close-activity").emit("click");await settle();
     assert.equal(ui.el("member-rail").inert,false);assert.equal(ui.el("member-list-view").hidden,false);

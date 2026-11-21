@@ -7,6 +7,7 @@
 | [Agent 工具目录精简投影](agent-tool-discovery.zh.md) | S3b：明确 Agent 字段、准确入口与配置授权、可用性及修复诊断；所选组合验证和八回合真实模型只读对照 |
 | [现有工具绑定总开关短路径](agent-tool-toggle.zh.md) | S3a：服务端冻结现有绑定和授权、稳定回执、休眠授权恢复、并发复核与撤权结清；完整编辑合同保留 |
 | [DSH 内部助手操作与生命周期验证](agent-collaboration-boundaries.zh.md) | S2a：打包版本、子 Agent 实际工具与成员边界、取消／关闭及恢复／轮换证据；逐项兼容限制与修复单，不代表完整 S2／P4b |
+| [工作区图片、相对资源与下载](workspace-resources-and-downloads.zh.md) | F3：图片验证与放大、文档相对链接／锚点、图片预算和有界下载；隔离 HTTP／浏览器证据，真实模型闭环留 F4 |
 | [Agent 常驻流程收敛](agent-resident-guidance.zh.md) | S1d 候选：已有 topic 的直接路由与安全边界、最终工厂指导和分层验证；URL 真实模型成本门槛未闭合，未切换日常 Session |
 | [飞书嵌套动作别名评估](agent-lark-action-alias.zh.md) | S1c-C2：共享合同／回执对照、最终输出 Call 所有权差异与保留结论；不删除别名、不改生命周期 |
 | [飞书保存目标读取入口收敛](agent-lark-read-entry.zh.md) | S1c-C1：根 lark read 别名移除，准确 ENTRY 的正文／上下文分页、账号恢复及隔离；原 Runtime/Host、HTTP 与结清保留 |

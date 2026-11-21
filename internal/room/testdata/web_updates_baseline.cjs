@@ -1,3 +1,4 @@
+const {toggleConversationDetails}=require('./conversation_details.cjs');
 const {chromium}=require('playwright');
 const assert=require('node:assert/strict');
 const fs=require('node:fs/promises');
@@ -16,7 +17,7 @@ const os=require('node:os');
   const caller={kind:'human',id:catalog.operator};
 	const roster=await(await fetch(endpoint+'/v1/member/list',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({...info,caller})})).json();
 	for(const member of roster.members){const paused=await fetch(endpoint+'/v1/member/pause',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({...info,caller,agent_id:member.agent_id,membership_id:member.membership_id})});assert.equal(paused.status,200);}
-	if(await page.locator('#activity-dialog').evaluate(el=>el.open))await page.locator('#room-menu-label').click();
+	if(await page.locator('#activity-dialog').evaluate(el=>el.open))await toggleConversationDetails(page);
 	await page.waitForTimeout(2000);
   const output={recorded_at:new Date().toISOString(),platform:process.platform,arch:process.arch,node:process.version,browser:browser.version(),cpu:os.cpus()[0].model,fixture:{rooms:1,members:1,backend:'controlled, paused',viewport:[1440,1000]},window_ms:12000,scenarios:[]};
   let active=null;
@@ -29,7 +30,7 @@ const os=require('node:os');
   });
   for(const scenario of ['idle','continuous-messages','activity']){
    if(scenario==='activity'){
-    await page.locator('#room-menu-label').click();
+    await toggleConversationDetails(page);
     await page.locator('#agent-tab-activity').click();
     await page.waitForTimeout(2000);
    }

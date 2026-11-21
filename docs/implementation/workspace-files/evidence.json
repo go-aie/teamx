@@ -1,0 +1,150 @@
+{
+  "recorded_at": "2026-11-21T08:54:43.959443+00:00",
+  "phase": "F1",
+  "scope": "workspace directory and text browsing; isolated production HTTP and Store; controlled execution adapter; no real model",
+  "head_at_recording": "12e8b26aa6b26e9b19e6e519af00440037133cbc",
+  "working_tree": true,
+  "status": "implemented; focused backend, frontend and browser gates passed; full Go regression has unrelated architecture failures",
+  "frontend": {
+    "command": "node --test internal/web/tests/*_test.mjs",
+    "passed": 818,
+    "failed": 0
+  },
+  "backend": {
+    "focused": "passed",
+    "coverage": [
+      "root and file replacement",
+      "protected ancestors and descendants",
+      "relative and absolute symlinks including ordered parent traversal",
+      "real FIFO and cancellation",
+      "directory truncation",
+      "UTF-8 and text byte limits",
+      "operator and execution credential checks",
+      "source and Room isolation",
+      "final configuration admission"
+    ],
+    "full_packages": {
+      "command": "go test ./internal/room ./internal/web",
+      "room": "failed",
+      "web": "passed",
+      "failed_tests": [
+        "TestStaticAssemblySourcesAndCapabilitiesAgree",
+        "TestInboxAndActionCoreHasNoNativeProviderRules"
+      ],
+      "room_seconds": 581.867
+    }
+  },
+  "browser_cases": [
+    {
+      "case": "room-default",
+      "status": "passed",
+      "browser": "147.0.7727.15",
+      "node": "v26.7.0",
+      "platform": "darwin",
+      "arch": "arm64",
+      "sizes": [
+        1600,
+        1000,
+        390
+      ],
+      "markdown": true,
+      "sourceToggle": true,
+      "filter": true,
+      "locate": true,
+      "sidebarRestore": true,
+      "expanded": true,
+      "mobileBack": true,
+      "lateResponse": true,
+      "crossRoomIsolation": true,
+      "remoteImages": 0
+    },
+    {
+      "case": "room-external",
+      "status": "passed",
+      "browser": "147.0.7727.15",
+      "node": "v26.7.0",
+      "platform": "darwin",
+      "arch": "arm64",
+      "sizes": [
+        1600,
+        1000,
+        390
+      ],
+      "markdown": true,
+      "sourceToggle": true,
+      "filter": true,
+      "locate": true,
+      "sidebarRestore": true,
+      "expanded": true,
+      "mobileBack": true,
+      "lateResponse": true,
+      "crossRoomIsolation": true,
+      "remoteImages": 0
+    },
+    {
+      "case": "direct-default",
+      "status": "passed",
+      "browser": "147.0.7727.15",
+      "node": "v26.7.0",
+      "platform": "darwin",
+      "arch": "arm64",
+      "sizes": [
+        1600,
+        1000,
+        390
+      ],
+      "markdown": true,
+      "sourceToggle": true,
+      "filter": true,
+      "locate": true,
+      "sidebarRestore": true,
+      "expanded": true,
+      "mobileBack": true,
+      "lateResponse": true,
+      "crossRoomIsolation": true,
+      "remoteImages": 0
+    },
+    {
+      "case": "direct-external",
+      "status": "passed",
+      "browser": "147.0.7727.15",
+      "node": "v26.7.0",
+      "platform": "darwin",
+      "arch": "arm64",
+      "sizes": [
+        1600,
+        1000,
+        390
+      ],
+      "markdown": true,
+      "sourceToggle": true,
+      "filter": true,
+      "locate": true,
+      "sidebarRestore": true,
+      "expanded": true,
+      "mobileBack": true,
+      "lateResponse": true,
+      "crossRoomIsolation": true,
+      "remoteImages": 0
+    }
+  ],
+  "browser_regressions": {
+    "TestDirectConversationBrowser": "passed",
+    "TestWorkspaceDirectoriesBrowser": "passed"
+  },
+  "screenshots": [
+    "desktop-preview.png",
+    "narrow-preview.png",
+    "mobile-preview.png"
+  ],
+  "not_implemented": [
+    "F2 message file links and frozen execution binding",
+    "F3 images, relative resources and downloads"
+  ],
+  "not_validated": [
+    "F4 real DSH and model loop",
+    "physical mobile devices",
+    "Linux execution",
+    "remote devices"
+  ]
+}

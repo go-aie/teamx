@@ -1,3 +1,4 @@
+const {toggleConversationDetails}=require('./conversation_details.cjs');
 const {chromium}=require('playwright'),assert=require('node:assert/strict');
 (async()=>{
  const endpoint=process.argv[2],browser=await chromium.launch({headless:true});
@@ -61,11 +62,11 @@ const {chromium}=require('playwright'),assert=require('node:assert/strict');
   await page.locator('#member-rail').waitFor({state:'hidden'});
   assert.equal(await page.locator('#member-rail').isVisible(),false);
   assert.equal(await page.locator('#compose').evaluate(el=>el.getBoundingClientRect().bottom<=innerHeight),true);
-  await page.locator('#room-menu-label').click();
+  await toggleConversationDetails(page);
   await page.locator('#platforms-member-view').waitFor();
   await page.locator('#close-activity').click();
   await page.locator('#member-rail').waitFor({state:'hidden'});
-  await page.locator('#room-menu-label').focus();await page.keyboard.press('Enter');
+  await page.locator('#room-menu-label').focus();await page.keyboard.press('Enter');await page.locator('#conversation-open-details').click();
   await page.locator('#platforms-member-view').waitFor();await page.keyboard.press('Escape');
   await page.locator('#member-rail').waitFor({state:'hidden'});
   await page.waitForFunction(()=>document.activeElement.id==='room-menu-label');

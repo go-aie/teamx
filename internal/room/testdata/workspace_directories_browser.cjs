@@ -1,3 +1,4 @@
+const {toggleConversationDetails}=require('./conversation_details.cjs');
 const {chromium} = require('playwright');
 const assert = require('node:assert/strict');
 (async()=>{
@@ -81,7 +82,7 @@ const assert = require('node:assert/strict');
       await page.reload();
       await page.waitForFunction(()=>!document.querySelector('#message-input').disabled);
       if(viewport.width<=640)await page.locator('#room-list .room-choice').first().click();
-      if(await page.locator('#room-menu-label').getAttribute('aria-expanded')!=='true')await page.locator('#room-menu-label').click();
+      if(await page.locator('#conversation-open-details').getAttribute('aria-expanded')!=='true')await toggleConversationDetails(page);
       await inspect();
       await captureMember(`${viewport.width}x${viewport.height}`);
       await page.locator('#member-directory-choose').click();
@@ -120,7 +121,7 @@ const assert = require('node:assert/strict');
     await page.locator('#directory-select').click();await page.locator('#member-directory-apply').click();
     await page.waitForFunction(async({query,id,path})=>{const d=await(await fetch('/v1/workspace?'+query)).json();return d.operation?.status==='completed' && d.workspace.member_directories?.[id]===path;},{query:query.toString(),id:fixture.member.membership_id,path:fixture.child});
     await inspect();
-    await page.locator('#compose-more').click();await page.locator('#open-workspace').click();
+    await page.locator('#workspace-trigger').click();await page.locator('#workspace-select-settings').click();
     await page.locator('#workspace-directories-default').click();
     await page.locator('#workspace-directories-apply').click();
     await page.waitForFunction(async query=>{const d=await(await fetch('/v1/workspace?'+query)).json();return d.operation?.status==='completed' && !d.workspace.member_directories;},query.toString());

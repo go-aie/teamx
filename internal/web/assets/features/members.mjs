@@ -432,6 +432,7 @@ export function createMembers({ env, runtime, notificationsUI, workspaceUI, onbo
   }
 
   function openMemberActivity(member, opener, tab = state.managed ? "platforms" : "activity", { readingView = null, fromConversation = false, automatic = false } = {}) {
+    layoutUI.showMemberContent?.();
     notice("notification-next-step", "");
     notificationsUI.invalidateNavigation();
     if (!state.connected || !state.info) return;

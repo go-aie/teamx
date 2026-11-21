@@ -858,6 +858,12 @@ func (s *service) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		writeAPIError(w, ErrBusy)
 		return
 	}
+	if r.URL.Path == "/v1/workspace/files" || strings.HasPrefix(r.URL.Path, "/v1/workspace/files/") {
+		w.Header().Set("X-Content-Type-Options", "nosniff")
+		w.Header().Set("Cache-Control", "private, no-store")
+		writeWorkspaceFileError(w, fileError("workspace_source_unavailable"))
+		return
+	}
 	if strings.HasPrefix(r.URL.Path, "/v1/attachments/") {
 		s.serveRoomAttachments(w, r)
 		return
@@ -1017,7 +1023,8 @@ func (s *service) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 		result, err = callRoomWrite[PostReceipt](r.Context(), s.room, PostMessage{RoomIdentity: req.RoomIdentity, Caller: req.Caller,
-			ClientMessageID: req.ClientMessageID, Text: req.Text, ReplyTo: req.ReplyTo, Mentions: req.Mentions, Attachments: req.Attachments, inferMentions: inferred})
+			ClientMessageID: req.ClientMessageID, Text: req.Text, ReplyTo: req.ReplyTo, Mentions: req.Mentions, Attachments: req.Attachments, inferMentions: inferred,
+			WorkspaceRootID: requestWorkspaceRoot(r, req.ServiceInfo, req.Caller)})
 	case "/v1/read":
 		if s.unifiedInputs && req.Caller.Kind == "agent" && req.Mode == ReadUnread {
 			err = ErrVersion

@@ -1,3 +1,4 @@
+const {toggleConversationDetails}=require('./conversation_details.cjs');
 const {chromium}=require('playwright'),assert=require('node:assert/strict'),fs=require('node:fs/promises'),path=require('node:path');
 (async()=>{
  const [endpoint,out,membership]=process.argv.slice(2),browser=await chromium.launch({headless:true}),errors=[],checks=[];
@@ -22,7 +23,7 @@ const {chromium}=require('playwright'),assert=require('node:assert/strict'),fs=r
   await page.locator('#agent-quick-actions button').filter({hasText:'继续读取收件箱'}).waitFor();
   await page.locator('#activity-dialog').screenshot({path:path.join(out,'desktop-exhausted.png')});checks.push('three_attempts_stop_with_continue');
   await page.setViewportSize({width:390,height:844});
-  await page.locator('#room-menu-label').click();
+  await toggleConversationDetails(page);
   await page.locator(`#members .member-summary[data-activity-member="${membership}"]`).click();
   await page.locator('#activity-dialog').screenshot({path:path.join(out,'mobile-exhausted.png')});
   assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1),true);

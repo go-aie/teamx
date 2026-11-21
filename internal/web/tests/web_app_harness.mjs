@@ -37,10 +37,13 @@ class Element {
     return this.parts.get(selector);
   }
   querySelectorAll(selector) {
-    assert.equal(selector, "details[open]");
-    return this.children.flatMap(child => [
-      ...(child.tag === "details" && child.open ? [child] : []), ...child.querySelectorAll(selector),
-    ]);
+    const matches = child => selector.split(",").some(part => {
+      if (part === "details[open]") return child.tag === "details" && child.open;
+      if (part === "[data-heading-id]") return child.dataset.headingId !== undefined;
+      const [tag, cls] = part.split(".");
+      return child.tag === tag && (!cls || (child.className || "").split(" ").includes(cls));
+    });
+    return this.children.flatMap(child => [...(matches(child) ? [child] : []), ...child.querySelectorAll(selector)]);
   }
   addEventListener(event, handler) { (this.listeners[event] ||= []).push(handler); }
   dispatchEvent(event) { void this.emit(event.type); return true; }
@@ -82,6 +85,8 @@ export async function launch(api, saved = new Map(), environment = {}) {
     elements.get(id).tag = "input"; elements.get(id).value = value; elements.get(id).checked = false;
   }
   elements.get("member-notification-add-picker").hidden=true;
+  elements.get("conversation-menu").hidden=true;
+  elements.get("files-page").hidden=true;
   // Messages start outside the measured viewport. Tests explicitly choose visible
   // nodes; no-dwell reading must not observe every synthetic node at (0, 0).
   elements.get("message-template").content.firstElementChild.cloneNode = () => {

@@ -76,6 +76,31 @@ clone 失败会保留目标旁的 `.clone-pending` 标记，即使原生 CLI 已
 
 外部目录作为本地 cwd 使用，不继承默认仓库凭据；`teamx workspace-git` 返回 `managed_repository_required`。持久 Instructions／ToolEnv 保留，运行时按目录来源过滤受管仓库能力及说明，恢复默认后可重新使用。普通平台工具使用实际 cwd 与成员明确启用的连接。
 
+## 文件只读接口
+
+文件浏览使用管理器的 `service_epoch`，不依赖成员运行时启动。所有请求沿用登录／同源校验，要求 `caller_id` 等于当前 human operator，以及准确的 `room_id + room_instance`；执行凭据不能访问。当前实现支持 macOS 和 Linux。
+
+| GET 接口 | 增量参数与响应 |
+| --- | --- |
+| `/v1/workspace/files/sources` | 返回成员目录来源、可用性、`root_id`、共用目录展示键和能力上限 |
+| `/v1/workspace/files` | `membership_id + root_id + path`，可带 `show_hidden=true`；返回相对路径、目录优先的条目与 `truncated` |
+| `/v1/workspace/files/preview` | `membership_id + root_id + path`，或互斥的 `message_seq + path`；返回来源、能力上限、当前元数据、`preview_kind` 与有界文本或受控图片 `content_url` |
+| `/v1/workspace/files/content` | 同一互斥来源选择器与 `path`；默认仅交付验证后的 PNG／JPEG／WebP，`download=true` 流式下载普通文件 |
+
+`path` 必填，根目录用空字符串表示，不接受绝对路径、越界路径、控制字符或反斜杠。标准查询解码只执行一次。目录最多扫描 5,000 项、返回 1,000 项，JSON 最多约 256 KiB；文本最多 1 MiB，全局最多 4 个并发文件读取，等待可取消，请求预算 10 秒。能力由 `sources`／`preview` 的 `limits` 返回；图片、文档相对资源和下载沿用同一来源校验。下载的总预算为 30 秒。
+
+`root_id` 是 `wr1_` 加 SHA-256：确定性输入为版本、RoomID、RoomInstance、membership 和规范绝对目录，不包含整体配置版本。它只用于识别来源变化，不授予权限。服务重启和同目录内容变化不改变指纹；当前成员退出、目录变化或 Room 不可用后拒绝旧来源，不回退到其他成员或服务 cwd。
+
+消息预览通过当前可见的原生 Agent 消息取得作者 membership 及 `workspace_root_id`，再核对其当前目录；不能另传 membership／root 覆盖原作者。服务端不解析 Markdown，也不限制为正文列出的路径。每次请求及交付前都复核消息可见性与来源，清空消息后新请求返回 `reference_unavailable`。从预览进入目录列表时，显式改用当前工作区选择器。
+
+`workspace_root_id` 是消息的可选内部执行事实：Session 冻结 cwd → 现有 executionBinding → 已认证 HTTP 上下文 → send → 原子消息提交。同一指纹随已有私有 Session 配置快照冻结，避免恢复时路径别名换目标；新代际重新冻结自己的来源。外部 `/v1/send` JSON 和 CLI 没有可写入口。字段参与容量和分段日志不可变比较，幂等重试沿用首条消息的值；human 读取可见，Agent 业务 DTO 不增加此字段。恢复会话只使用原冻结配置；缺少可信快照或规范目录证据时不附加来源，不阻断文字发送，也不补写旧消息。
+
+读取以根目录句柄逐级约束；根内符号链接重新从根解析并校验保护路径，文件非阻塞打开后复核类型与对象身份。拒绝 FIFO、设备、socket、根外目标、TeamX 管理／凭据路径及 `.git`；受管目录仅豁免其管理祖先，不开放同级管理数据。正文读取后、交付前再次核对来源及文件变化；不持有管理器锁执行文件读取。
+
+响应带 `X-Content-Type-Options: nosniff` 和 `Cache-Control: private, no-store`。常见错误为 `workspace_source_unavailable`、`workspace_source_changed`、`reference_unavailable`、`file_not_found`、`file_not_allowed`、`file_changed`。超限或不支持类型仅返回元数据及原因，不发送截断正文。文本 1 MiB；图片 16 MiB／2,500 万像素；下载 64 MiB；全局读取与下载队列 4 个、共用附件解码队列 2 个。上限随 `sources`／`preview` 的 `limits` 返回，单篇文档最多自动加载 20 张图片。
+
+下载使用固定打开句柄、`application/octet-stream` 和标准库编码的 `Content-Disposition: attachment`；图片使用验证后的 MIME 和 `inline`。下载总时限 30 秒，通过 `ResponseController` 设置响应写截止时间，覆盖服务默认 15 秒写超时；客户端取消或服务关闭可中止传输。交付前重新核对文件与来源／消息，已准入传输不逐块重新解析路径，最多交付初始大小；之后来源失效的新请求拒绝。源码见 [内容与传输](../../internal/room/workspace_file_content.go)、[文件读取](../../internal/room/workspace_files.go)和 [HTTP 适配](../../internal/room/workspace_files_http.go)。
+
 ## 页面与凭据
 
 页面展示当前目录、各成员默认／实际路径、配置版本和初始化进度。选择／恢复默认只修改草稿，应用才提交完整 Workspace；单成员表单保留其他成员覆盖与仓库字段。轮询不覆盖未提交草稿，版本变化后须显式刷新，拒绝自动合并。目录响应按 Room 实例、管理器 epoch、成员和请求序号隔离，关闭重开也丢弃迟到响应。页面不接收凭据，选择已有 GitLab OAuth 或 Scion CLI profile 连接。浏览器仅保存按房间和操作者隔离的原操作 ID。
@@ -85,6 +110,21 @@ clone 失败会保留目标旁的 `.clone-pending` 标记，即使原生 CLI 已
 当前受管房间要求完整 runtime 与 Workspace 快照，不再提供旧运行时或 Workspace 迁移命令。使用方法见[根 README](../../README.md)。
 
 ## 真实验收
+
+### 文件生成与预览
+
+[TestWorkspaceFilesRealDSH](../../internal/room/workspace_files_real_test.go) 从指定配置复用 DSH 启动器及默认模型，只将选中模型和凭据复制到全新的私有 home。测试构建并启动独立 TeamX 服务，由真实模型生成 Markdown、相对文档、PNG 和下载文件，通过真实 CLI 发送文件链接，再用 Chromium 完成打开、修改刷新、正常重启、目录变化与消息清空验收。
+
+```sh
+NODE_PATH="$PWD/packaging/verifier/node_modules" \
+TEAMX_WORKSPACE_FILES_REAL=1 \
+TEAMX_WORKSPACE_FILES_CONFIG=/absolute/private-home/config.toml \
+TEAMX_DSH_OUTPUT=/absolute/new-files-evidence \
+go test -tags=e2e -timeout=18m ./internal/room \
+  -run '^TestWorkspaceFilesRealDSH$' -count=1 -v
+```
+
+需已安装 Playwright 与 Chromium，证据目录必须全新。测试只在隔离 Room 与工作目录中写入；没有复制平台连接，也不更改日常部署。`report.json` 记录实际模型／启动器、后端二进制摘要、真实 SessionID、生成文件摘要和浏览器步骤，截图覆盖桌面、窄桌面和手机尺寸；私有目录还包含凭据与 Session 数据，不应提交或公开。可分享结果及未验项见[文件真实闭环记录](../implementation/workspace-files-real-acceptance.zh.md)。
 
 ### 成员指定目录
 

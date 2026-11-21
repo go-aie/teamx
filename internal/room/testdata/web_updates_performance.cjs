@@ -1,3 +1,4 @@
+const {toggleConversationDetails}=require('./conversation_details.cjs');
 // Paired real-browser measurements. All writes target the isolated Go fixture.
 const {chromium}=require('playwright');
 const assert=require('node:assert/strict');
@@ -60,7 +61,7 @@ const summary=a=>{a=[...a].sort((a,b)=>a-b);const at=p=>a.length?a[Math.ceil(a.l
    }
    if(scenario==='activity'){
     if(dataset==='loaded'){const response=await fetch(endpoint+'/__measure/activity?marker=static');assert.equal(response.status,200);}
-    await page.locator('#room-menu-label').click();await page.locator('#agent-tab-activity').click();
+    await toggleConversationDetails(page);await page.locator('#agent-tab-activity').click();
     if(dataset==='loaded')await page.waitForFunction(()=>document.querySelector('#activity-timeline .activity-text')?.textContent.length>=240*1024);
     await page.waitForTimeout(2500);
    }

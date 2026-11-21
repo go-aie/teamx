@@ -70,6 +70,7 @@ type PostMessage struct {
 	Caller             Caller
 	ClientMessageID    string
 	Text               string
+	WorkspaceRootID    string // trusted execution binding; never decoded from HTTP
 	ReplyTo            uint64
 	DurablePublication bool // internal accepted publication intent; never decoded from HTTP
 	FollowupNotice     bool // internal durable outbox delivery; never accepted by /v1/send

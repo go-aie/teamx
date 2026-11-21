@@ -214,6 +214,9 @@ func (r *Room) Post(ctx actorx.Context, msg PostMessage, reply actorx.Reply[Post
 	if !validMentions(msg.Text, msg.Mentions) {
 		return ErrRequest
 	}
+	if !validMessageWorkspaceRoot(msg.WorkspaceRootID, msg.Caller.Author, msg.Caller.MembershipID) || msg.WorkspaceRootID != "" && (msg.FollowupNotice || msg.DurablePublication) {
+		return ErrRequest
+	}
 	if !validText(msg.ClientMessageID) || !validRoomMessageText(msg.Text, len(msg.Attachments)) || !validAttachmentInputs(msg.Attachments) || msg.ReplyTo > r.state.LatestSeq {
 		return ErrRequest
 	}
@@ -254,7 +257,7 @@ func (r *Room) Post(ctx actorx.Context, msg PostMessage, reply actorx.Reply[Post
 	if msg.ReplyTo != 0 && msg.ReplyTo <= r.state.ClearedThrough {
 		return ErrRequest
 	}
-	if r.state.LatestSeq == math.MaxUint64 || len(r.state.Messages) >= maxMessages || bytes+len(msg.Text) > maxHistoryBytes {
+	if r.state.LatestSeq == math.MaxUint64 || len(r.state.Messages) >= maxMessages || bytes+len(msg.Text)+len(msg.WorkspaceRootID) > maxHistoryBytes {
 		return ErrCapacity
 	}
 	next := r.candidate()
@@ -262,6 +265,7 @@ func (r *Room) Post(ctx actorx.Context, msg PostMessage, reply actorx.Reply[Post
 	next.Messages = append(next.Messages, RoomMessage{
 		Seq: next.LatestSeq, ClientMessageID: msg.ClientMessageID, Author: msg.Caller.Author,
 		Text: msg.Text, ReplyTo: msg.ReplyTo, CreatedAt: r.now().UTC(), AuthorMembershipID: msg.Caller.MembershipID, Mentions: slices.Clone(msg.Mentions),
+		WorkspaceRootID: msg.WorkspaceRootID,
 	})
 	if msg.FollowupNotice || msg.DurablePublication {
 		if next.FollowupNoticeReceipts == nil {

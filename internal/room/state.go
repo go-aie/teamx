@@ -54,6 +54,7 @@ type RoomMessage struct {
 	Type               string             `json:"type,omitempty"`
 	Event              *RoomEvent         `json:"event,omitempty"`
 	AuthorMembershipID string             `json:"author_membership_id,omitempty"`
+	WorkspaceRootID    string             `json:"workspace_root_id,omitempty"`
 	AgentName          string             `json:"agent_name,omitempty"`
 	Mentions           []MessageMention   `json:"mentions,omitempty"`
 	Seq                uint64             `json:"seq"`
@@ -151,6 +152,9 @@ func (s RoomSnapshot) validate() error {
 		if m.AuthorMembershipID != "" && (m.Author.Kind != "agent" || !safeMembershipID(m.AuthorMembershipID)) {
 			return fmt.Errorf("message %d: invalid author membership", i+1)
 		}
+		if !validMessageWorkspaceRoot(m.WorkspaceRootID, m.Author, m.AuthorMembershipID) || m.WorkspaceRootID != "" && (m.Event != nil || m.Source != nil) {
+			return fmt.Errorf("message %d: invalid workspace root", i+1)
+		}
 		if !validMentions(m.Text, m.Mentions) {
 			return fmt.Errorf("message %d: invalid mentions", i+1)
 		}
@@ -222,6 +226,23 @@ func (s RoomSnapshot) validate() error {
 		agents[m.AgentID], memberships[m.MembershipID] = true, true
 	}
 	return s.validateReadProofs()
+}
+
+// This optional execution fact contains no path or permission. Old messages
+// remain valid without it; only native Agent messages may carry it.
+func validMessageWorkspaceRoot(root string, author Author, membership string) bool {
+	if root == "" {
+		return true
+	}
+	if author.Kind != "agent" || !safeMembershipID(membership) || len(root) != 68 || !strings.HasPrefix(root, "wr1_") {
+		return false
+	}
+	for _, c := range root[4:] {
+		if !(c >= '0' && c <= '9' || c >= 'a' && c <= 'f') {
+			return false
+		}
+	}
+	return true
 }
 
 type TurnRecord struct {

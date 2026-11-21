@@ -1,3 +1,4 @@
+const {toggleConversationDetails}=require('./conversation_details.cjs');
 // Production UI + real local manager/Inbox actors. Synthetic input, no platform writes.
 const {chromium}=require('playwright');
 const fs=require('node:fs/promises');
@@ -18,7 +19,7 @@ const assert=require('node:assert/strict');
  const openRoom=async label=>{
   await page.locator('#room-list .room-choice').filter({hasText:label}).click();
   await page.waitForFunction(label=>document.querySelector('#room-name').textContent===label && !document.querySelector('#message-input').readOnly,label);
-  if(page.viewportSize().width<640 && !await page.locator('#members .member-summary').first().isVisible())await click('room-menu-label');
+  if(page.viewportSize().width<640 && !await page.locator('#members .member-summary').first().isVisible())await toggleConversationDetails(page);
   await page.locator('#members .member-summary').first().click();await click('agent-tab-inbox');
  };
 

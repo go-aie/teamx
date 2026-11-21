@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"os"
+	"path/filepath"
 	"reflect"
 	"strings"
 	"sync/atomic"
@@ -136,6 +137,11 @@ func TestModelSnapshotRequiresMatchingIdentityAndImmutableExecution(t *testing.T
 	if err := backend.saveModelSnapshot(opts, ref); err != nil {
 		t.Fatal(err)
 	}
+	canonical, err := filepath.EvalSymlinks(target.Profile.Workspace)
+	if err != nil {
+		t.Fatal(err)
+	}
+	target.WorkspaceRootID = workspaceRootID(id.RoomIdentity, id.MembershipID, canonical)
 	changed := target.clone()
 	changed.Profile.Model.ModelID = "changed"
 	backend.model = &changed

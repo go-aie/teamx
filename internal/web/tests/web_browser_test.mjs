@@ -102,7 +102,7 @@ test("phone conversation navigation retains the composer and restores desktop si
   assert.equal(ui.el("conversation-unread-total").hidden,true);
   assert.equal(ui.el("conversation-filter").getAttribute("aria-label"),"筛选消息：全部");
   assert.equal(ui.el("mobile-primary-navigation").hidden, true);
-  assert.equal(ui.el("room-menu-label").getAttribute("aria-expanded"), "false");
+  assert.equal(ui.el("conversation-open-details").getAttribute("aria-expanded"), "false");
   assert.equal(ui.el("workspace").style.getPropertyValue("--app-height"), "380px");
   ui.el("timeline").scrollTop=37;
   await ui.el("mobile-back-to-rooms").emit("click"); assert.equal(ui.el("conversation").inert, true);
@@ -112,12 +112,12 @@ test("phone conversation navigation retains the composer and restores desktop si
   assert.equal(ui.el("conversation").inert,false);
   assert.equal(ui.el("mobile-primary-navigation").hidden, true);
   assert.equal(ui.el("room-nav").scrollTop,80);assert.equal(ui.el("timeline").scrollTop,37);
-  await ui.el("room-menu-label").emit("click");
+  await ui.el("conversation-open-details").emit("click");
   assert.equal(ui.el("toggle-rooms").getAttribute("aria-expanded"), "false");
   await ui.el("close-mobile-members").emit("click");
   assert.equal(ui.el("conversation").inert, false);
   ui.window.innerWidth = 1440; await ui.window.emit("resize");
-  assert.equal(ui.el("room-menu-label").getAttribute("aria-expanded"), "true");
+  assert.equal(ui.el("conversation-open-details").getAttribute("aria-expanded"), "true");
   assert.equal(ui.el("toggle-rooms").hidden,false);assert.equal(ui.el("mobile-back-to-rooms").hidden,true);
   assert.equal(ui.el("user-menu-container").parentElement,ui.el("room-rail"));
   assert.equal(ui.el("conversation-filter").parentElement,ui.el("conversation-filter-container"));

@@ -39,9 +39,20 @@ type accessConfig struct {
 type accessSession struct{ expires time.Time }
 type executionBinding struct {
 	ServiceInfo
-	Caller Caller
+	Caller          Caller
+	WorkspaceRootID string `json:"-"`
 }
 type accessContextKey struct{}
+type executionContextKey struct{}
+
+func requestWorkspaceRoot(r *http.Request, info ServiceInfo, caller Caller) string {
+	binding, ok := r.Context().Value(executionContextKey{}).(executionBinding)
+	if !ok || binding.ServiceInfo != info || binding.Caller != caller || !validMessageWorkspaceRoot(binding.WorkspaceRootID, caller.Author, caller.MembershipID) {
+		return ""
+	}
+	return binding.WorkspaceRootID
+}
+
 type serverAccess struct {
 	inputBindings              map[[32]byte]*inputMCPBinding
 	inputMCP                   map[bool]*mcpHTTP                 // HTTP Inbox: four tools; CLI Inbox: History only.
@@ -522,6 +533,9 @@ func (a *serverAccess) wrap(next http.Handler) http.Handler {
 				return
 			}
 			r.Body = &replayedAccessBody{Reader: io.MultiReader(bytes.NewReader(captured.Bytes()), r.Body), closer: r.Body}
+		}
+		if binding != nil {
+			r = r.WithContext(context.WithValue(r.Context(), executionContextKey{}, *binding))
 		}
 		next.ServeHTTP(w, r)
 	})

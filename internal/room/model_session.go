@@ -26,6 +26,7 @@ type modelSessionSnapshot struct {
 	ExecutionDigest  string              `json:"execution_digest"`
 	Runtime          dsh.RuntimeIdentity `json:"runtime"`
 	Profile          dshProfile          `json:"profile"`
+	WorkspaceRootID  string              `json:"workspace_root_id,omitempty"` // optional frozen execution fact, never a credential
 }
 
 func (s modelSessionSnapshot) clone() modelSessionSnapshot {
@@ -57,6 +58,9 @@ func (s modelSessionSnapshot) validate(id MemberIdentity) error {
 	if validateMemberHeader(formatVersion, id) != nil || !filepath.IsAbs(s.Profile.Workspace) {
 		return ErrIdentity
 	}
+	if !validMessageWorkspaceRoot(s.WorkspaceRootID, Author{Kind: "agent", ID: id.AgentID}, id.MembershipID) {
+		return ErrInvalid
+	}
 	expected := modelEntry{CredentialRef: s.CredentialRef, ModelParameters: parametersFromLegacyModel(s.Profile.Model)}
 	if expected.executionDigest() != s.ExecutionDigest {
 		return ErrInvalid
@@ -70,7 +74,7 @@ func (s modelSessionSnapshot) validate(id MemberIdentity) error {
 	return dsh.CheckConfig(dsh.Options{BinaryPath: s.Profile.BinaryPath, BinaryArgs: s.Profile.BinaryArgs, Artifact: s.Profile.Artifact, Model: s.Profile.Model})
 }
 
-func (b dshBackend) saveModelSnapshot(opts SessionOptions, ref sessionReference) error {
+func (b *dshBackend) saveModelSnapshot(opts SessionOptions, ref sessionReference) error {
 	if b.model == nil {
 		return nil
 	}
@@ -87,14 +91,31 @@ func (b dshBackend) saveModelSnapshot(opts SessionOptions, ref sessionReference)
 	}
 	var existing modelSessionSnapshot
 	if err := readSnapshot(path, &existing, maxPrivateFileBytes); err == nil {
+		if err := existing.validate(opts.MemberIdentity); err != nil {
+			return err
+		}
+		// A caller may hold the original selection without the optional hint.
+		// Never recompute or backfill a generation already frozen on disk.
+		target.WorkspaceRootID = existing.WorkspaceRootID
 		if !reflect.DeepEqual(existing, target) {
 			return ErrConflict
 		}
+		b.model = &target
 		return nil
 	} else if !errors.Is(err, os.ErrNotExist) {
 		return err
 	}
-	return b.store.save(path, target, maxPrivateFileBytes)
+	// A new generation observes its own cwd, even when its model/profile was
+	// cloned from the previous generation. Failure never borrows the old root.
+	target.WorkspaceRootID = ""
+	if directory, err := filepath.EvalSymlinks(target.Profile.Workspace); err == nil && filepath.IsAbs(directory) {
+		target.WorkspaceRootID = workspaceRootID(opts.RoomIdentity, opts.MembershipID, directory)
+	}
+	if err := b.store.save(path, target, maxPrivateFileBytes); err != nil {
+		return err
+	}
+	b.model = &target
+	return nil
 }
 
 func (b dshBackend) restoreModelSnapshot(opts SessionOptions, ref sessionReference) (dshBackend, error) {

@@ -1,0 +1,205 @@
+{
+  "recorded_at": "2026-11-21T10:38:24.180507Z",
+  "backend_sha256": "b98d834ed1bc0d7afa31be92579bc17a75ffdff893d2deaa5f84387b5c670d29",
+  "model": "deepseek-v4.1-flash-1017",
+  "launcher_sha256": "1a03dee18683483ff6a1b27b2a1e650230da6bcca9a0f55f7d81b3308c3f307f",
+  "room": {
+    "room_id": "a3b0fb2f61019833240f496d605f7b55",
+    "room_instance": "e5b0fe30740baecc770c115c99bbdf60"
+  },
+  "membership_id": "d86ed769b4ee1a981964cac90967ccdf",
+  "initial_delivery": {
+    "author_membership_id": "d86ed769b4ee1a981964cac90967ccdf",
+    "workspace_root_id": "wr1_cd3517511c6cadc83b92911c435d2fad0eacc9512dcb56603fd88863f37cfa00",
+    "seq": 2,
+    "client_message_id": "preview-demo-20261121-turn1",
+    "author": {
+      "kind": "agent",
+      "id": "writer"
+    },
+    "text": "[预览示例](docs/preview.md)",
+    "created_at": "2026-11-21T10:39:05.23001Z"
+  },
+  "initial_files_sha256": {
+    "docs/guide.md": "46ffbd33b39b64b7ceb9c6fca6d3b3a9bf1ee56a01fdf0e3e50cbfa44982ac47",
+    "docs/preview.md": "aa71d13bc9f89ce92289b86a8eab8d1d9daa148dfccc4229b1516376c636f819",
+    "downloads/preview.bin": "28fe7672eb787f8c87efeb6c23c00a777d93fb07621e625e8c5d63e35b0e16c4",
+    "images/preview.png": "8caa85e564d0cea36fc8aec83973beae985dbaaf373b02daf9aab0aca36d8f59"
+  },
+  "modified_files_sha256": {
+    "docs/guide.md": "46ffbd33b39b64b7ceb9c6fca6d3b3a9bf1ee56a01fdf0e3e50cbfa44982ac47",
+    "docs/preview.md": "73c110fa839429901e9042fda6297f1c0ddd3a3c0d8d93a18d5126beb4bd07f3",
+    "downloads/preview.bin": "28fe7672eb787f8c87efeb6c23c00a777d93fb07621e625e8c5d63e35b0e16c4",
+    "images/preview.png": "8caa85e564d0cea36fc8aec83973beae985dbaaf373b02daf9aab0aca36d8f59"
+  },
+  "model_turns": 2,
+  "human_requests": 2,
+  "agent_deliveries": 2,
+  "browser": [
+    {
+      "phase": "modify",
+      "browser": "147.0.7727.15",
+      "node": "v26.7.0",
+      "real_model": true,
+      "real_serve_process": true,
+      "single_preview_request": true,
+      "source_toggle": true,
+      "relative_image": true,
+      "relative_document": true,
+      "directory": true,
+      "expanded": true,
+      "explicit_refresh": true,
+      "no_automatic_body_reads": true,
+      "markdown_download": true,
+      "status": "passed",
+      "page_errors": []
+    },
+    {
+      "phase": "restart",
+      "browser": "147.0.7727.15",
+      "node": "v26.7.0",
+      "real_model": true,
+      "real_serve_process": true,
+      "old_link_after_restart": true,
+      "sizes": [
+        1600,
+        1000,
+        390
+      ],
+      "mobile_browser_back": true,
+      "status": "passed",
+      "page_errors": []
+    },
+    {
+      "phase": "invalidate",
+      "browser": "147.0.7727.15",
+      "node": "v26.7.0",
+      "real_model": true,
+      "real_serve_process": true,
+      "admitted_download": {
+        "bytes": 33554432,
+        "received_before_clear": 16844,
+        "completed_after_clear": true,
+        "original_file_sha256": true
+      },
+      "source_change": true,
+      "restored_same_source": true,
+      "clear_denies_new_preview_image_download": true,
+      "direct_browse_after_clear": true,
+      "files_preserved": true,
+      "draft_preserved": true,
+      "status": "passed",
+      "page_errors": []
+    }
+  ],
+  "restart_new_epoch": true,
+  "read_only_agent_state_preserved": true,
+  "generated_files_preserved": true,
+  "daily_deployment_changed": false,
+  "external_platform_writes": 0,
+  "stage": "F4",
+  "status": "completed_with_existing_full_regression_failures",
+  "git_head": "c25cb6f7178220545176d4804a715e4874cef3e9",
+  "worktree": "Existing F1-F3 implementation and unrelated changes preserved; no commit or daily deployment change",
+  "environment": {
+    "go": "go1.27.1",
+    "node": "v26.7.0",
+    "os": "darwin",
+    "arch": "arm64",
+    "chromium": "147.0.7727.15"
+  },
+  "dsh": {
+    "version": "0.2.1-alpha.1",
+    "source": "https://github.com/deepseek-ai/deepseek-harness",
+    "git_head": "5badb15009ae1756c3afe0ae0cef1faafc290ccc",
+    "tracked_source_clean": true,
+    "launcher": "apps/cli/lib/bin.js via Node 26.7.0",
+    "executable_sha256": "aa7c3390685f1388f3b898b7d7f84edf95fcee4aa062725aa56dee348afbe6be",
+    "acp_identity": {
+      "source": "deepseek-harness-acp",
+      "version": "0.0.1"
+    },
+    "model_probe": {
+      "text": true,
+      "tool_round_trip": true,
+      "cleanup": true,
+      "image_advertised": true
+    }
+  },
+  "session": {
+    "before_restart": "cabd1b10-7689-4520-af23-2b9651157417",
+    "after_restart": "cabd1b10-7689-4520-af23-2b9651157417",
+    "workspace_preserved": true
+  },
+  "isolated_home": ".local/workspace-files-real-20261121-04/home",
+  "private_report": ".local/workspace-files-real-20261121-04/report.json",
+  "regression_logs": ".local/workspace-preview-regression-20261121",
+  "checks": [
+    {
+      "command": "TEAMX_WORKSPACE_FILES_REAL=1 TEAMX_WORKSPACE_FILES_CONFIG=\"$PWD/.teamx/config.toml\" TEAMX_DSH_OUTPUT=\"$PWD/.local/workspace-files-real-20261121-04\" NODE_PATH=\"$PWD/packaging/verifier/node_modules\" go test -tags=e2e ./internal/room -run \"^TestWorkspaceFilesRealDSH$\" -count=1 -timeout=18m -v",
+      "status": "passed",
+      "room_seconds": 63.054,
+      "scenario_seconds": 62.59
+    },
+    {
+      "command": "node --test internal/web/tests/*_test.mjs",
+      "status": "passed",
+      "tests": 824
+    },
+    {
+      "command": "TEAMX_FILES_BROWSER=1 NODE_PATH=\"$PWD/packaging/verifier/node_modules\" go test -tags=e2e ./internal/room -run \"^TestWorkspace(Resources|Files|MessageLinks)Browser$\" -count=1 -v",
+      "status": "passed",
+      "cases": 8,
+      "room_seconds": 52.501
+    },
+    {
+      "command": "go test ./...",
+      "status": "failed",
+      "room_seconds": 544.376,
+      "web_status": "passed",
+      "failed_tests": [
+        "TestStaticAssemblySourcesAndCapabilitiesAgree",
+        "TestInboxAndActionCoreHasNoNativeProviderRules",
+        "TestInputBridgeResumeConfigThroughStateSymlink"
+      ],
+      "details": [
+        "Existing GitLab Events source/lifecycle assembly mismatch",
+        "Existing native Lark rules/imports in actions_target.go and agent_contract.go",
+        "DSH symlink recovery cleanup deadline exceeded; focused and full DSH package reruns passed"
+      ]
+    },
+    {
+      "command": "go test ./internal/agent/dsh -run \"^TestInputBridgeResumeConfigThroughStateSymlink$\" -count=1 -v",
+      "status": "passed",
+      "seconds": 1.726
+    },
+    {
+      "command": "go test ./internal/agent/dsh -count=1",
+      "status": "passed",
+      "seconds": 33.482
+    },
+    {
+      "command": "node --check internal/room/testdata/workspace_files_real_browser.cjs; git diff --check",
+      "status": "passed"
+    }
+  ],
+  "acceptance_driver_notes": [
+    "Wait for completed Workspace operation, active service and matching ready catalog epoch before reopening the page; operation completion alone does not prove the browser has adopted the new runtime identity.",
+    "Two fixture startup validation errors and an early navigation wait were corrected before the final fresh-environment passing run. No production code was changed for F4."
+  ],
+  "not_verified": [
+    "Linux host",
+    "Physical phone",
+    "Remote device",
+    "Packaged release DSH launcher (this run used configured source launcher)",
+    "Real-model generation in default assistant or multi-member Room (this run used one-member managed Room; F1-F3 browser regression covers direct and multi-member fixtures)"
+  ],
+  "screenshots": [
+    "real-desktop.png",
+    "real-expanded.png",
+    "real-narrow.png",
+    "real-mobile.png",
+    "real-source-changed.png",
+    "real-after-clear.png"
+  ]
+}
