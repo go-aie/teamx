@@ -147,8 +147,9 @@ test('piped installation with terminal stderr shows archive progress on macOS an
       ? ['-q', '/dev/null', '/bin/bash', '-c', command]
       : ['-q', '-e', '-c', command, '/dev/null'];
     // macOS script needs a regular pipe rather than Node's socket for stdin.
+    // Linux script uses SHELL to run -c; the fixture's zsh need not be installed.
     const result = spawnSync('/bin/sh', ['-c', 'cat | script "$@"', 'terminal-test', ...args],
-      { input: '', env: f.env, encoding: 'utf8', timeout: 15000 });
+      { input: '', env: { ...f.env, SHELL: '/bin/bash' }, encoding: 'utf8', timeout: 15000 });
     assert.equal(result.status, 0, result.stdout + result.stderr);
     assert.equal(f.calls().length, 1);
     const [metadata, archive] = fs.readFileSync(f.env.INSTALL_TEST_CURL_ARGS, 'utf8').trim().split('\n');
