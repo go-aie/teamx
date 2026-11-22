@@ -13,6 +13,19 @@ const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
 const digest = path => hash(fs.readFileSync(path));
 const positive = n => /^[1-9]\d*$/.test(String(n)) && Number.isSafeInteger(Number(n));
 const ownerRepo = repo => /^[\w.-]+\/[\w.-]+$/.test(repo || '');
+function releaseNotes(sourceRoot, version) {
+  const relative = `docs/releases/${version}.md`, file = p.join(sourceRoot, relative);
+  let notes;
+  try {
+    must(fs.lstatSync(file).isFile(), `Release notes must be a regular file: ${relative}`);
+    notes = fs.readFileSync(file, 'utf8');
+  } catch (error) {
+    if (error.code === 'ENOENT') throw Error(`Missing release notes: ${relative}. Generate and commit this file before tagging.`);
+    throw error;
+  }
+  must(notes.trim().length > 0, `Release notes are empty: ${relative}. Write and commit the release notes before tagging.`);
+  return notes;
+}
 function releaseInstaller(sourceRoot, context) {
   must(ownerRepo(context.repository) && /^v\d+\.\d+\.\d+$/.test(context.version), 'Invalid installer release identity');
   return fs.readFileSync(p.join(sourceRoot, 'packaging/install.sh'), 'utf8')
@@ -56,6 +69,7 @@ export function releaseContext(sourceRoot = root, env = process.env) {
     env.GITHUB_REF === `refs/tags/${version}` && env.GITHUB_SHA === plan.commit &&
     env.GITHUB_WORKFLOW_REF === `${env.GITHUB_REPOSITORY}/.github/workflows/release.yml@${env.GITHUB_REF}`,
     'Publication requires the current release tag workflow at the exact source commit');
+  releaseNotes(sourceRoot, version);
   return { ...plan, context: { repository: env.GITHUB_REPOSITORY, version, commit: plan.commit, workflow: '.github/workflows/release.yml', ...batch } };
 }
 
@@ -71,6 +85,7 @@ function checkContext(context, sourceRoot) {
 // smoke checks; the release host rechecks all bytes, identities and CI reports.
 export function assembleRelease(candidates, verifications, context, output, sourceRoot = root) {
   const matrix = checkContext(context, sourceRoot);
+  const notes = releaseNotes(sourceRoot, context.version);
   const lock = json(p.join(sourceRoot, 'packaging/dependencies.lock.json'));
   must(matrix.every(row => !hasDependency(row.profile, 'git', lock) || !lock.targets[row.target].blockers.includes('git_tls_runtime')),
     'Linux full Git TLS runtime remains blocked');
@@ -121,9 +136,7 @@ export function assembleRelease(candidates, verifications, context, output, sour
     run('tar', ['-czf', p.join(stage, 'LICENSES.tar.gz'), '-C', temporary, 'licenses'], { env: { ...process.env, COPYFILE_DISABLE: '1' } });
     fs.copyFileSync(p.join(sourceRoot, 'docs/installation.zh.md'), p.join(stage, 'README.zh.md'));
     fs.writeFileSync(p.join(stage, 'install.sh'), releaseInstaller(sourceRoot, context), { mode: 0o755 });
-    const rows = records.map(r => `| ${r.target} | ${r.profile} | ${r.archive} |`).join('\n');
-    const profiles = [...new Set(records.map(r => r.profile))].join('/');
-    fs.writeFileSync(p.join(stage, 'release-notes.md'), `TeamX ${context.version}\n\n安装并启动常驻服务：\n\n    curl -fsSL https://github.com/${context.repository}/releases/download/${context.version}/install.sh | bash\n\n已有安装升级到最新稳定版：\n\n    teamx service upgrade\n\n指定版本使用 teamx service upgrade --version ${context.version}，离线使用 --archive FILE；升级自动创建一致备份。旧版 CLI 尚不支持联网升级时，执行：\n\n    curl -fsSL https://github.com/${context.repository}/releases/download/${context.version}/install.sh | bash -s -- --upgrade\n\n安装后在网页配置模型，后续用 teamx service status/stop/start/restart/logs 管理；Linux 管理命令前加 sudo，macOS 不加 sudo。普通安装器检测到已有安装会在下载应用包前提示退出。自定义路径、离线安装和恢复见 README.zh.md。\n\n四个平台的 ${profiles} 发行包已完成 CI 归档身份、摘要、依赖及原生 smoke 检查，并在独立 job 下载复验。检查使用固定协议 fixture；真实模型、浏览器、平台账号及用户设备测试由维护者在发布前按需安排。推荐 standard，Git Workspace 及需要本地 Git 的命令需自行安装 Git。\n\nmacOS 当前允许未签名、未公证发行，下载后的系统提示及首次使用、升级方法见 README.zh.md。DSH 0.2.2-rc.1 为预发布依赖；Scion 暂缓。\n\n| 平台 | 能力 | 下载文件 |\n| --- | --- | --- |\n${rows}\n\n校验和见 SHA256SUMS，逐包 CI 检查见 *-verification.json，许可汇总见 LICENSES.tar.gz。release.json 记录源码、构建批次和资产摘要；汇总直接使用已检查的原始归档。\n\n源码 commit：${context.commit}\n\n<!-- teamx-release:${context.commit} -->\n`);
+    fs.writeFileSync(p.join(stage, 'release-notes.md'), notes);
     writeJSON(p.join(stage, 'release.json'), { schema_version: 2, kind: 'github_release', context,
       installer: { file: 'install.sh', sha256: digest(p.join(stage, 'install.sh')) },
       dependency_lock_sha256: digest(p.join(sourceRoot, 'packaging/dependencies.lock.json')), bundles: records,
@@ -153,6 +166,8 @@ export function checkReleaseDirectory(directory, context, expectedSeal, sourceRo
   must(fs.readFileSync(p.join(directory, 'install.sh'), 'utf8') === releaseInstaller(sourceRoot, context) &&
     report.installer?.file === 'install.sh' && report.installer.sha256 === digest(p.join(directory, 'install.sh')),
     'Release installer differs from accepted source/version/repository');
+  must(fs.readFileSync(p.join(directory, 'release-notes.md'), 'utf8') === releaseNotes(sourceRoot, context.version),
+    `Release notes differ from tagged source: docs/releases/${context.version}.md`);
   must(report.schema_version === 2 && report.kind === 'github_release' && same(report.context, context) &&
     report.dependency_lock_sha256 === digest(p.join(sourceRoot, 'packaging/dependencies.lock.json')) &&
     same(report.bundles.map(r => `${r.target}/${r.profile}`).sort(), matrix.map(r => `${r.target}/${r.profile}`).sort()),
@@ -197,7 +212,7 @@ export async function publishRelease(directory, context, seal, { sourceRoot = ro
   const entries = checkReleaseDirectory(directory, context, seal, sourceRoot);
   await remoteTag(context, api);
   const marker = `<!-- teamx-assets:${seal} -->`;
-  const body = fs.readFileSync(p.join(directory, 'release-notes.md'), 'utf8') + '\n' + marker + '\n';
+  const body = fs.readFileSync(p.join(directory, 'release-notes.md'), 'utf8') + `\n<!-- teamx-release:${context.commit} -->\n${marker}\n`;
   // The tag endpoint only finds published releases. Listing with the publish
   // token includes drafts too; exhaust every page before deciding to create.
   const matches = (await list(context.repository, 'releases', undefined, api))
@@ -207,7 +222,7 @@ export async function publishRelease(directory, context, seal, { sourceRoot = ro
   if (release) must(release.draft === true && release.tag_name === context.version && release.body === body,
     'Existing release is published or belongs to different accepted assets; refusing overwrite');
   else release = await api(context.repository, 'releases', { method: 'POST', body: {
-    tag_name: context.version, target_commitish: context.commit, name: `TeamX ${context.version}`, body, draft: true, prerelease: false
+    tag_name: context.version, target_commitish: context.commit, name: context.version, body, draft: true, prerelease: false
   } });
   must(positive(release.id) && release.draft === true && release.tag_name === context.version, 'Invalid draft release response');
   const verifyRemote = async () => {

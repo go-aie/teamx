@@ -16,7 +16,7 @@ const version = 'v0.0.0';
 const digest = file => hash(fs.readFileSync(file));
 // Tiny synthetic archives exercise the release protocol. They contain no
 // runtime and do not establish real platform, model, browser or Git acceptance.
-function fixture(t) {
+function fixture(t, { notes = "## What's Changed\n\nA synthetic release.\n\n---\n\n## 更新内容\n\n测试发行说明。\n" } = {}) {
   const temp = fs.mkdtempSync(p.join(os.tmpdir(), 'teamx-publish-test-'));
   t.after(() => fs.rmSync(temp, { recursive: true, force: true }));
   const source = p.join(temp, 'source'), candidates = p.join(temp, 'candidates'), verifications = p.join(temp, 'verifications');
@@ -31,6 +31,10 @@ function fixture(t) {
   }
   const lock = json(p.join(source, 'packaging/dependencies.lock.json'));
   writeJSON(p.join(source, 'packaging/dependencies.lock.json'), lock);
+  if (notes !== null) {
+    fs.mkdirSync(p.join(source, 'docs/releases'), { recursive: true });
+    fs.writeFileSync(p.join(source, `docs/releases/${version}.md`), notes);
+  }
   const git = (...args) => run('git', args, { cwd: source, stdio: ['ignore', 'pipe', 'pipe'], env: {
     ...process.env, GIT_CONFIG_GLOBAL: '/dev/null', GIT_CONFIG_NOSYSTEM: '1',
     GIT_AUTHOR_NAME: 'test', GIT_COMMITTER_NAME: 'test', GIT_AUTHOR_EMAIL: 'test@example.invalid', GIT_COMMITTER_EMAIL: 'test@example.invalid'
@@ -76,7 +80,7 @@ function fixture(t) {
     rows.push({ row, directory, receipt, verification, verificationDir, verificationFile });
   }
   const output = p.join(temp, 'release');
-  return { temp, source, candidates, verifications, matrix, context, rows, output, git,
+  return { temp, source, candidates, verifications, matrix, context, rows, output, git, notes,
     assemble: () => assembleRelease(candidates, verifications, context, output, source) };
 }
 
@@ -143,11 +147,9 @@ test('full matrix assembles original bytes, installer, notices and CI reports wi
   }
   assert.ok(!/release_ready|qualified_release/.test(JSON.stringify(index)));
   const notes = fs.readFileSync(p.join(f.output, 'release-notes.md'), 'utf8');
-  assert.ok(notes.includes('*-verification.json'));
-  assert.ok(notes.includes('teamx service upgrade\n'));
-  assert.ok(notes.includes('teamx service upgrade --version v0.0.0'));
-  assert.ok(notes.includes('install.sh | bash -s -- --upgrade'));
-  assert.ok(!notes.includes('真实 DSH/ACP、浏览器及各自用户环境验收'));
+  assert.equal(notes, f.notes);
+  assert.equal(index.assets.find(asset => asset.file === 'release-notes.md').sha256,
+    digest(p.join(f.source, `docs/releases/${version}.md`)));
   const notices = run('tar', ['-tf', p.join(f.output, 'LICENSES.tar.gz')]);
   assert.ok(notices.includes('linux-arm64-standard/THIRD_PARTY_NOTICES/NOTICE'));
   assert.ok(!notices.includes('git-source'));
@@ -172,6 +174,42 @@ test('bundle and Release export one installation guide with navigation valid out
     assert.ok(target.startsWith('#'), `Guide depends on a repository file: ${target}`);
     assert.ok(headings.has(decodeURIComponent(target.slice(1))), `Missing guide section: ${target}`);
   }
+});
+
+test('missing or empty version notes stop the plan CLI and assembly before output', t => {
+  for (const notes of [null, '', ' \n\t']) {
+    const f = fixture(t, { notes });
+    const expected = notes === null ? /Missing release notes: docs\/releases\/v0\.0\.0\.md/ : /Release notes are empty: docs\/releases\/v0\.0\.0\.md/;
+    const output = p.join(f.temp, 'context.json'), githubOutput = p.join(f.temp, 'github-output');
+    const env = { ...process.env, GITHUB_REPOSITORY: f.context.repository, GITHUB_EVENT_NAME: 'push',
+      GITHUB_REF: `refs/tags/${version}`, GITHUB_SHA: f.context.commit,
+      GITHUB_WORKFLOW_REF: `${f.context.repository}/.github/workflows/release.yml@refs/tags/${version}`,
+      GITHUB_RUN_ID: String(f.context.run_id), GITHUB_RUN_ATTEMPT: String(f.context.run_attempt), GITHUB_OUTPUT: githubOutput };
+    assert.throws(() => releaseContext(f.source, env), expected);
+    assert.throws(f.assemble, expected);
+    assert.equal(fs.existsSync(f.output), false);
+    const result = spawnSync(process.execPath, [p.join(f.source, 'scripts/package-publish.mjs'), 'plan', output],
+      { cwd: f.source, encoding: 'utf8', env });
+    assert.equal(result.status, 1);
+    assert.match(result.stderr, expected);
+    assert.equal(fs.existsSync(output), false);
+    assert.equal(fs.existsSync(githubOutput), false);
+  }
+});
+
+test('resealed release notes cannot differ from the tagged Markdown before publication', async t => {
+  const f = fixture(t), r = remote(f);
+  f.assemble();
+  fs.writeFileSync(p.join(f.output, 'release-notes.md'), 'Different release notes\n');
+  const index = json(p.join(f.output, 'release.json'));
+  index.assets.find(asset => asset.file === 'release-notes.md').sha256 = digest(p.join(f.output, 'release-notes.md'));
+  writeJSON(p.join(f.output, 'release.json'), index);
+  fs.writeFileSync(p.join(f.output, 'SHA256SUMS'), fs.readdirSync(f.output).filter(name => name !== 'SHA256SUMS').sort()
+    .map(name => `${digest(p.join(f.output, name))}  ${name}\n`).join(''));
+  await assert.rejects(() => publishRelease(f.output, f.context, digest(p.join(f.output, 'SHA256SUMS')), r.options),
+    /Release notes differ from tagged source/);
+  assert.equal(r.state.calls.length, 0);
+  assert.equal(r.state.uploads.length, 0);
 });
 
 test('missing package, report, wrong attempt or failed smoke prevents aggregation', t => {
@@ -211,6 +249,8 @@ test('publication creates a draft, uploads unchanged accepted bytes, verifies do
   const result = await publishRelease(f.output, f.context, seal.checksums_sha256, r.options);
   assert.equal(result.status, 'published');
   assert.equal(r.state.calls.find(c => c.method === 'POST').body.draft, true);
+  assert.equal(r.state.release.name, version);
+  assert.equal(r.state.release.body, f.notes + `\n<!-- teamx-release:${f.context.commit} -->\n<!-- teamx-assets:${seal.checksums_sha256} -->\n`);
   assert.equal(r.state.calls.at(-1).method, 'PATCH');
   assert.equal(r.state.release.draft, false);
   assert.equal(r.state.assets.length, fs.readdirSync(f.output).length);

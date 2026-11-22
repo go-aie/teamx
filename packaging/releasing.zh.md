@@ -8,6 +8,10 @@
 
 将完整发布代码与 [release.yml](../.github/workflows/release.yml) 纳入将要打 tag 的源码。正式工作流只接受 tag push，不提供手动包型选择。手动构建使用 [Package snapshots](../.github/workflows/package.yml)，生成开发快照。
 
+打 tag 前，按仓库的 [github-release-notes skill](../.codex/skills/github-release-notes/SKILL.md) 生成并审阅 `docs/releases/vX.Y.Z.md`，与发布代码一起提交。文件名须与版本 tag 完全一致；缺失或正文为空时，CI 在最前面的 checks 阶段直接报错，不启动多平台构建。CI 不调用模型生成说明，也不回退到固定模板。
+
+Release 标题直接使用版本号。发布正文与下载资产 `release-notes.md` 使用同一份已提交的 Markdown，保留原文；发布正文另附源码与资产摘要的隐藏标记，供核对与草稿恢复。安装说明继续由 `README.zh.md` 和 `install.sh` 提供。
+
 正式工作流使用内置 `GITHUB_TOKEN`，仅最终 publish job 拥有 `contents: write`，其余 job 为只读。CI 使用固定协议 fixture，无需模型或平台凭据、浏览器安装、人工资格 JSON 或 Environment 审批。原有发布专用 Environment 和模型 Secrets 已无工作流引用，仓库管理员可另行清理；可选 Apple 签名凭据需配置在仓库可用的位置，见下文。
 
 在仓库根目录执行发布所需的本地检查：
@@ -22,7 +26,7 @@ node --test internal/web/tests/web*_test.mjs
 
 检查失败先修复，不绕过工作流门禁。真实模型、浏览器、平台账号、干净机器和长期部署测试由维护者在打 tag 前按版本改动安排；工具与范围见[独立本地验收](#独立本地验收)。CI 不读取或要求这些报告。
 
-当前尚未完成真实 GitHub 自动发布闭环验证；已知 Go 检查阻塞及本地验证结果见[实施记录](../docs/implementation/github-release-simplification.zh.md)。完成代码和文档更新不等于已经验证多平台发行。
+发布流程改造的历史记录见[实施记录](../docs/implementation/github-release-simplification.zh.md)；每次发布仍以该 tag 对应的实际工作流与远端资产为准。
 
 ## 推送版本 tag
 
@@ -40,7 +44,7 @@ git push GITHUB_REMOTE refs/tags/vX.Y.Z
 
 | Job | 完成内容 |
 | --- | --- |
-| `checks` | 精确 tag／完整 commit／干净源码、打包清单、脚本及 Go／Web 自动化检查 |
+| `checks` | 精确 tag／完整 commit／干净源码、对应版本的非空发布说明、打包清单、脚本及 Go／Web 自动化检查 |
 | `build` | 8 个包分别在原生 runner 构建，检查依赖、归档与固定协议 smoke；可选签名／公证在封存前完成 |
 | `verify` | 独立 job 下载同一归档，复核身份、摘要和构建批次，再执行原生 smoke |
 | `assemble` | 核对完整矩阵及逐包 CI 报告，汇总原始归档、安装器、许可、说明和校验和 |
@@ -69,7 +73,7 @@ git push GITHUB_REMOTE refs/tags/vX.Y.Z
 | `release.json` | schema 2、`kind=github_release`；记录版本、源码、来源工作流、构建批次、完整矩阵、签名模式和资产摘要 |
 | `SHA256SUMS` | 除自身外全部发行资产的 SHA-256 |
 | `LICENSES.tar.gz` | 各目标许可材料汇总 |
-| `README.zh.md`、`release-notes.md` | 安装指南与该版本的 CI 检查范围、下载清单 |
+| `README.zh.md`、`release-notes.md` | 安装指南与来自 `docs/releases/vX.Y.Z.md` 的版本说明 |
 
 归档的基础 manifest 保持 schema 1；其 `distribution` 使用 schema 2、`kind=release_archive`，保留实际签名结果。报告描述已完成的 CI 检查，不承载人工验收结论；汇总和发布不会重建或修改原始归档。
 
