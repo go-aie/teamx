@@ -185,6 +185,7 @@ func (s *service) memberBackend(runner RunnerConfig) dshBackend {
 		return nil
 	}
 	backend.isDirect, backend.access, backend.settings = s.isDirect, s.access, s.settings
+	backend.agentMCP = s.agentMCP
 	backend.profile, backend.turnTimeout = s.dshProfiles[runner.Profile], s.dshTurnTimeout
 	backend.prepare, backend.recoveryContext = s.prepareRoomMaterials, s.prepareDSHRecoveryContext
 

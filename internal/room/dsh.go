@@ -96,6 +96,7 @@ type dshBackend struct {
 	models         *modelExecution
 	model          *modelSessionSnapshot
 	credentials    *modelCredentials
+	agentMCP       agentMCPBindings
 	access         *serverAccess
 	// Nil only for explicit CLI compatibility or isolated adapter tests.
 	inboxMCP        *service
@@ -253,11 +254,12 @@ func (b dshBackend) componentOptions(opts SessionOptions, ref sessionReference) 
 	component := dsh.Options{BinaryPath: p.BinaryPath, BinaryArgs: p.BinaryArgs, Artifact: p.Artifact, Workspace: p.Workspace,
 		StateDir: filepath.Join(filepath.Dir(opts.StatePath), ref.Directory), Instructions: instructions, Model: p.Model.Clone(), ToolEnv: toolEnv, Limits: dsh.Limits{TextBytes: 64 << 10, TurnTimeout: b.turnTimeout}}
 	component.InputBridge = b.inputService != nil
+	component.MCPServers = b.agentMCP.servers(opts.MemberIdentity)
 	if b.store.observe != nil {
 		component.ObserveActivity = func() { b.store.changed("activity", opts.MemberIdentity) }
 	}
 	if b.mcpService() != nil {
-		component.MCPServers = []dsh.MCPHTTPServer{mcpHTTPConfiguration(toolEnv["TEAMX_ENDPOINT"], "")}
+		component.MCPServers = append([]dsh.MCPHTTPServer{mcpHTTPConfiguration(toolEnv["TEAMX_ENDPOINT"], "")}, component.MCPServers...)
 	}
 	if b.model != nil {
 		var err error

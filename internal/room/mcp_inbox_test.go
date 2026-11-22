@@ -363,8 +363,9 @@ func TestMCPInboxDSHInjectsAndRevokesOnNewResumeAndFailedOpen(t *testing.T) {
 		}
 	}
 	var tokens []string
-	b := dshBackend{store: h.store, access: a, inboxMCP: svc, open: func(_ context.Context, options dsh.Options) (dshComponent, error) {
-		if len(options.MCPServers) != 1 || !strings.Contains(options.Instructions, mcpInboxContract) || strings.Contains(options.Instructions, "inbox read") {
+	extra := dsh.MCPHTTPServer{Type: "http", Name: "sandbox", URL: "http://127.0.0.1:18080/mcp", Headers: []dsh.MCPHeader{{Name: "Authorization", Value: "Bearer independent-sandbox-key"}}}
+	b := dshBackend{store: h.store, access: a, inboxMCP: svc, agentMCP: agentMCPBindings{h.id: {extra}}, open: func(_ context.Context, options dsh.Options) (dshComponent, error) {
+		if len(options.MCPServers) != 2 || options.MCPServers[0].Name != "teamx" || options.MCPServers[1].Name != "sandbox" || options.MCPServers[1].Headers[0].Value != extra.Headers[0].Value || !strings.Contains(options.Instructions, mcpInboxContract) || strings.Contains(options.Instructions, "inbox read") {
 			t.Error("missing MCP session identity/guidance")
 		}
 		tokens = append(tokens, options.MCPServers[0].Headers[0].Value)

@@ -21,6 +21,7 @@ type startupConfig struct {
 	path           string
 	source         []byte
 	file           os.FileInfo
+	agentMCP       agentMCPBindings // Private startup capability bindings; never serialized.
 	Server         struct {
 		WorkspaceRoots       *[]string           `toml:"workspace_roots"`
 		TimeZone             *string             `toml:"time_zone"`
@@ -39,6 +40,7 @@ type startupConfig struct {
 		InboxSkipExpired     *bool               `toml:"inbox_skip_expired"`
 		ImageMaterials       imageMaterialConfig `toml:"image_materials"`
 		InboxMode            string              `toml:"inbox_mode"` // Empty/http: MCP; cli: explicit compatibility fallback.
+		AgentMCPFile         string              `toml:"agent_mcp_file"`
 	} `toml:"server"`
 	Access  accessConfig      `toml:"access"`
 	Runtime *teamRuntime      `toml:"runtime"`
@@ -112,6 +114,13 @@ func readStartupConfig(name string, required, validateRuntime bool) (startupConf
 		return startupConfig{}, err
 	}
 	base := filepath.Dir(path)
+	if config.Server.AgentMCPFile != "" {
+		config.Server.AgentMCPFile = configPath(base, config.Server.AgentMCPFile)
+		config.agentMCP, err = loadAgentMCPBindings(config.Server.AgentMCPFile)
+		if err != nil {
+			return startupConfig{}, err
+		}
+	}
 	if config.Models != nil {
 		if err := config.Models.validate(); err != nil {
 			return startupConfig{}, err

@@ -322,6 +322,7 @@ func runServerOnce(ctx context.Context, args []string, stdout, stderr io.Writer,
 			workspaceProtected: []string{layout.Root, layout.Home},
 			unifiedInputs:      options.create == nil, inputUpgradeLog: stderr,
 			modelStartup: &startup, modelProbe: options.probe, models: models, access: access, settings: settings,
+			agentMCP: startup.agentMCP,
 			endpoint: internalAccessEndpoint(listener.Addr().String()), mergeWindow: *mergeWindow, maxTurns: *maxTurns,
 			dshTurnTimeout: *dshTurnTimeout, inboxExpiry: inboxExpiry, inboxMode: startup.Server.InboxMode, imageMaterials: startup.Server.ImageMaterials,
 		}
@@ -340,6 +341,7 @@ func runServerOnce(ctx context.Context, args []string, stdout, stderr io.Writer,
 		access: access, settings: settings, unifiedInputs: options.create == nil, inputUpgradeLog: stderr,
 		endpoint: internalAccessEndpoint(listener.Addr().String()), cliPath: cliPath, mergeWindow: *mergeWindow, maxTurns: *maxTurns,
 		dshProfiles: profiles, uiProfiles: uiProfiles, dshTurnTimeout: *dshTurnTimeout, inboxExpiry: inboxExpiry, inboxMode: startup.Server.InboxMode, imageMaterials: startup.Server.ImageMaterials,
+		agentMCP: startup.agentMCP,
 	})
 	if err != nil {
 		return err

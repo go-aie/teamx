@@ -133,6 +133,7 @@ type service struct {
 	ownUpdates                bool
 	agentNames                *agentNameRegistry
 	models                    *modelExecution
+	agentMCP                  agentMCPBindings
 	modelTargets              map[string]modelSessionSnapshot
 	access                    *serverAccess
 	settings                  *systemSettings
@@ -319,6 +320,7 @@ func startConfiguredService(dir, roomID string, config serviceConfig, assemble f
 		grantsFrozen:         grantsFrozen,
 		dshProfiles:          config.dshProfiles,
 		models:               config.models, modelTargets: config.modelTargets,
+		agentMCP:   config.agentMCP,
 		uiProfiles: config.uiProfiles,
 	}
 	s.materialAttachments = s.roomMaterialAttachments(nil)

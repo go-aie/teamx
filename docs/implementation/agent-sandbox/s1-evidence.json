@@ -1,0 +1,672 @@
+{
+  "schema_version": 1,
+  "source_run": ".local/agent-sandbox/run-06",
+  "acceptance": {
+    "status": "passed",
+    "recorded_at": "2026-11-22T11:21:24Z",
+    "host": "macOS-15.7.4-arm64-arm-64bit-Mach-O",
+    "host_arch": "arm64",
+    "image": "enterprise-public-cn-beijing.cr.volces.com/vefaas-public/all-in-one-sandbox@sha256:5ca2cd5619ee1e18c5479301e740c1e35307ce85d4142a145aec65d459655eee",
+    "visual": {
+      "status": "passed_behavioral",
+      "matches": [
+        true,
+        true,
+        true
+      ],
+      "basis": "pixel-only random code absent from prompt/DOM/tool text; screenshot tool observed; no provider wire capture"
+    },
+    "s2_recommendation": "continue",
+    "usage": "unavailable via ACP",
+    "cleanup": {
+      "container_id": "1c8ea81ae229cdad41476279c98fe96511406fef426209693bd2be1c6a9bbe82",
+      "running": false,
+      "pid": 0,
+      "settled": true,
+      "removed": true,
+      "ingress_stopped": true,
+      "ingress_removed": true,
+      "network_removed": true
+    },
+    "scope": "S1 local DSH; no production Room or configuration writes",
+    "teamx_commit": "bf92e0a92eb2a6a361233628a7d8bbd9f01e0a79",
+    "docker": {
+      "Architecture": "aarch64",
+      "NCPU": 10,
+      "MemTotal": 8217448448,
+      "ServerVersion": "29.0.1"
+    },
+    "disk_free_bytes": 40633122816,
+    "ingress_image": "nginx@sha256:901e593c95dc85f5a729f5765516321366ef4ac401821431d408897e95287d0a",
+    "image_identity": {
+      "Id": "sha256:5ca2cd5619ee1e18c5479301e740c1e35307ce85d4142a145aec65d459655eee",
+      "Architecture": "arm64",
+      "Os": "linux",
+      "Size": 3314068454,
+      "RepoDigests": [
+        "enterprise-public-cn-beijing.cr.volces.com/vefaas-public/all-in-one-sandbox@sha256:5ca2cd5619ee1e18c5479301e740c1e35307ce85d4142a145aec65d459655eee"
+      ]
+    },
+    "model": {
+      "protocol": "openai-completions",
+      "base_url": "https://ai.space.opencsg.com/v1",
+      "model_id": "deepseek-v4.1-flash-1017",
+      "input_modalities": [
+        "text",
+        "image"
+      ],
+      "context_window": 1048576,
+      "max_tokens": 32768,
+      "reasoning_effort": "off",
+      "compat": {
+        "supports_developer_role": false
+      },
+      "api_key_env": "TEAMX_SANDBOX_MODEL_KEY"
+    },
+    "disk_quota": "not supported by Docker Desktop overlayfs; dedicated disposable container, bounded runtime, free disk preflight",
+    "seccomp": "unconfined",
+    "container_id": "1c8ea81ae229cdad41476279c98fe96511406fef426209693bd2be1c6a9bbe82",
+    "network": {
+      "aio_internal": true,
+      "host_bind": "127.0.0.1",
+      "ingress_container_id": "4ddcc1c64417f0ae5eec70c0aeca8ae58ace02196d367d64e43f0bdc6ec71c5e",
+      "mounts": "ingress config only; AIO has no host mounts",
+      "public_sample_expected": "egress denied"
+    },
+    "endpoint": "http://127.0.0.1:56275/mcp",
+    "cold_start_seconds": 5.121861291117966,
+    "unauthenticated_status": {
+      "/v1/sandbox": 401,
+      "/mcp": 401,
+      "/cdp/json/version": 401,
+      "/vnc/index.html": 401,
+      "/jupyter/": 401
+    },
+    "browser_info": {
+      "success": true,
+      "message": "Browser info retrieved",
+      "data": {
+        "user_agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.7680.31 Safari/537.36",
+        "cdp_url": "ws://127.0.0.1:56275/cdp/devtools/browser/784caea4-e99e-4600-bf81-6ac012e933a9",
+        "vnc_url": "http://127.0.0.1:56275/vnc/index.html?path=websockify",
+        "cdp_ui_url": "http://127.0.0.1:56275/browser-ui",
+        "viewport": {
+          "width": 1280,
+          "height": 1024
+        },
+        "page_viewport": {
+          "width": 1280,
+          "height": 885
+        }
+      },
+      "hint": null
+    },
+    "websocket_auth": {
+      "/cdp/devtools/browser/784caea4-e99e-4600-bf81-6ac012e933a9": {
+        "unauthenticated": 401,
+        "authenticated": 101
+      },
+      "/websockify": {
+        "unauthenticated": 401,
+        "authenticated": 101
+      }
+    },
+    "mcp_scope": "AIO authenticated nginx /mcp -> shipped browser server :8100/mcp; upstream schema/results unchanged",
+    "tools": {
+      "names": [
+        "browser_navigate",
+        "browser_go_back",
+        "browser_go_forward",
+        "browser_form_input_fill",
+        "browser_get_markdown",
+        "browser_get_text",
+        "browser_read_links",
+        "browser_new_tab",
+        "browser_tab_list",
+        "browser_switch_tab",
+        "browser_close_tab",
+        "browser_evaluate",
+        "browser_get_download_list",
+        "browser_screenshot",
+        "browser_click",
+        "browser_select",
+        "browser_hover",
+        "browser_get_clickable_elements",
+        "browser_scroll",
+        "browser_close",
+        "browser_press_key"
+      ],
+      "count": 21,
+      "schema_bytes": 8469,
+      "schema_sha256": "5a4d9544160d530dfe9ea92205c25512b7de09120e13d2cf108bd94840be2d72"
+    },
+    "task_interval_seconds": 65,
+    "go_test_exit": 0,
+    "resource_samples": 77,
+    "trials": [
+      {
+        "run": "1",
+        "passed": true,
+        "checks": {
+          "dynamic_value": true,
+          "submission": true,
+          "redirect": true,
+          "download_request": true,
+          "download_file": true,
+          "tools_observed": true,
+          "turn_finished": true
+        },
+        "seconds": 16.989238958,
+        "tool_calls": 11
+      },
+      {
+        "run": "2",
+        "passed": true,
+        "checks": {
+          "dynamic_value": true,
+          "submission": true,
+          "redirect": true,
+          "download_request": true,
+          "download_file": true,
+          "tools_observed": true,
+          "turn_finished": true
+        },
+        "seconds": 16.285099083,
+        "tool_calls": 11
+      },
+      {
+        "run": "3",
+        "passed": true,
+        "checks": {
+          "dynamic_value": true,
+          "submission": true,
+          "redirect": true,
+          "download_request": true,
+          "download_file": true,
+          "tools_observed": true,
+          "turn_finished": true
+        },
+        "seconds": 17.473699042,
+        "tool_calls": 11
+      }
+    ],
+    "screenshots": [
+      {
+        "file": "trial-1.png",
+        "bytes": 30073
+      },
+      {
+        "file": "trial-2.png",
+        "bytes": 29824
+      },
+      {
+        "file": "trial-3.png",
+        "bytes": 29528
+      }
+    ],
+    "screenshot_generated": true,
+    "failure_reported": true,
+    "public_sample": {
+      "status": "network_restricted",
+      "url": "https://example.com",
+      "observed_error": "net::ERR_NAME_NOT_RESOLVED",
+      "seconds": 3.938884083,
+      "tool_calls": 1
+    },
+    "local_cleanup_settled": true,
+    "controlled_passed": true,
+    "seconds": 344.25650091608986
+  },
+  "dsh": {
+    "installation": {
+      "binaryPath": "/Users/russellluo/Projects/ai/teamx/.local/agent-sandbox/node/node-v24.22.2-darwin-arm64/bin/node",
+      "binaryArgs": [
+        "/Users/russellluo/Projects/ai/teamx/.local/agent-sandbox/dsh-darwin/node_modules/@deepseek-ai/dsh/lib/bin.js"
+      ],
+      "version": "0.2.2-rc.1",
+      "binarySHA256": "b6fb419f0f43bb2fbca273700294dd2f3b685a64b60e8417c295f47646a70e4a"
+    },
+    "launcher_sha256": {
+      "/Users/russellluo/Projects/ai/teamx/.local/agent-sandbox/dsh-darwin/node_modules/@deepseek-ai/dsh/lib/bin.js": "b6640801a5a65aae9f53ca21bcce3b2ea28bd9e9554c939c1ff7c4448d91fa18"
+    },
+    "model": {
+      "protocol": "openai-completions",
+      "base_url": "https://ai.space.opencsg.com/v1",
+      "model_id": "deepseek-v4.1-flash-1017",
+      "api_key_env": "TEAMX_SANDBOX_MODEL_KEY",
+      "context_window": 1048576,
+      "max_tokens": 32768,
+      "reasoning_effort": "off",
+      "input_modalities": [
+        "text",
+        "image"
+      ],
+      "compat": {
+        "supports_developer_role": false
+      }
+    },
+    "session_id": "446feb29-4f61-4072-a060-a9e7735d699b",
+    "local_cleanup_settled": true,
+    "status": "passed",
+    "usage": "unavailable: ACP TurnResult has no token usage",
+    "deployment_lock_sha256": "32d6292ff1222f9d47d0708e905046f2a2e7828691c1b54271880c1be4028044",
+    "runtime_install_lock_matches_repository": true,
+    "node_archive_sha256": "aa9549349e47dffaa42dcf95d6e06ade8c4bdafc980979883b88767670df385a"
+  },
+  "pull": {
+    "image": "enterprise-public-cn-beijing.cr.volces.com/vefaas-public/all-in-one-sandbox@sha256:5ca2cd5619ee1e18c5479301e740c1e35307ce85d4142a145aec65d459655eee",
+    "seconds": 114.74205287499353,
+    "exit_code": 0
+  },
+  "expected": {
+    "1": {
+      "reading": "6144462799504eb86048",
+      "challenge": "229df31dda2153f5",
+      "receipt": "495fd6964b796b2cd35c",
+      "sha256": "41e8b92d2bd0c475e5eb7461e21cb98bc4c039ca9ed36bd69da87be7ee0c280a",
+      "bytes": 120,
+      "visual_code": "40657920"
+    },
+    "2": {
+      "reading": "207e7b852a774ba469dd",
+      "challenge": "01943ef8bde4f634",
+      "receipt": "9dfec001b4ef49f1a02b",
+      "sha256": "9983d60903bef2b14c9edfdc3f69c3e44af01380050a8c4bebdc359dcb208e77",
+      "bytes": 120,
+      "visual_code": "92637822"
+    },
+    "3": {
+      "reading": "6a18a149f58e699d2d58",
+      "challenge": "a06fb22a28ae8395",
+      "receipt": "709bb05c473b617d3d37",
+      "sha256": "18f00d5fdc851e065fbe627e57a29010b964e0284438fe57af1236356dedcd40",
+      "bytes": 120,
+      "visual_code": "95360865"
+    }
+  },
+  "server_receipts": [
+    {
+      "kind": "navigation",
+      "run": "1"
+    },
+    {
+      "kind": "dynamic",
+      "run": "1"
+    },
+    {
+      "kind": "submission",
+      "run": "1",
+      "answer": "229df31dda2153f5",
+      "matched": true
+    },
+    {
+      "kind": "complete",
+      "run": "1"
+    },
+    {
+      "kind": "download",
+      "run": "1",
+      "sha256": "41e8b92d2bd0c475e5eb7461e21cb98bc4c039ca9ed36bd69da87be7ee0c280a"
+    },
+    {
+      "kind": "navigation",
+      "run": "2"
+    },
+    {
+      "kind": "dynamic",
+      "run": "2"
+    },
+    {
+      "kind": "submission",
+      "run": "2",
+      "answer": "01943ef8bde4f634",
+      "matched": true
+    },
+    {
+      "kind": "complete",
+      "run": "2"
+    },
+    {
+      "kind": "download",
+      "run": "2",
+      "sha256": "9983d60903bef2b14c9edfdc3f69c3e44af01380050a8c4bebdc359dcb208e77"
+    },
+    {
+      "kind": "navigation",
+      "run": "3"
+    },
+    {
+      "kind": "dynamic",
+      "run": "3"
+    },
+    {
+      "kind": "submission",
+      "run": "3",
+      "answer": "a06fb22a28ae8395",
+      "matched": true
+    },
+    {
+      "kind": "complete",
+      "run": "3"
+    },
+    {
+      "kind": "download",
+      "run": "3",
+      "sha256": "18f00d5fdc851e065fbe627e57a29010b964e0284438fe57af1236356dedcd40"
+    },
+    {
+      "kind": "unavailable",
+      "status": 503
+    }
+  ],
+  "downloads": [
+    {
+      "path": "/home/gem/Downloads/trial-2.txt",
+      "name": "trial-2.txt",
+      "bytes": 120,
+      "sha256": "9983d60903bef2b14c9edfdc3f69c3e44af01380050a8c4bebdc359dcb208e77"
+    },
+    {
+      "path": "/home/gem/Downloads/trial-1.txt",
+      "name": "trial-1.txt",
+      "bytes": 120,
+      "sha256": "41e8b92d2bd0c475e5eb7461e21cb98bc4c039ca9ed36bd69da87be7ee0c280a"
+    },
+    {
+      "path": "/home/gem/Downloads/trial-3.txt",
+      "name": "trial-3.txt",
+      "bytes": 120,
+      "sha256": "18f00d5fdc851e065fbe627e57a29010b964e0284438fe57af1236356dedcd40"
+    }
+  ],
+  "resources": {
+    "sample_count": 77,
+    "first_sample": {
+      "BlockIO": "428MB / 2.33MB",
+      "CPUPerc": "2.47%",
+      "Container": "1c8ea81ae229cdad41476279c98fe96511406fef426209693bd2be1c6a9bbe82",
+      "ID": "1c8ea81ae229",
+      "MemPerc": "22.51%",
+      "MemUsage": "691.4MiB / 3GiB",
+      "Name": "teamx-browser-55e35ac89622",
+      "NetIO": "15.1kB / 39.7kB",
+      "PIDs": "184"
+    },
+    "peak_memory_bytes": 825858457.6,
+    "peak_cpu_percent": 78.44,
+    "peak_pids": 207,
+    "scope": "AIO only; Docker stats sampling, not host DSH or ingress peak; image Size is not disk quota",
+    "idle_probe": {
+      "ready_seconds": 7.7817793330177665,
+      "idle_stats": {
+        "BlockIO": "670MB / 17.1MB",
+        "CPUPerc": "2.44%",
+        "Container": "0603a771dc3de1add60e857844bee28ef80f48be8b7403c05292862ac8c94306",
+        "ID": "0603a771dc3d",
+        "MemPerc": "19.39%",
+        "MemUsage": "595.7MiB / 3GiB",
+        "Name": "teamx-browser-idle-210b771f92",
+        "NetIO": "0B / 0B",
+        "PIDs": "179"
+      },
+      "image": "enterprise-public-cn-beijing.cr.volces.com/vefaas-public/all-in-one-sandbox@sha256:5ca2cd5619ee1e18c5479301e740c1e35307ce85d4142a145aec65d459655eee",
+      "status": "passed",
+      "cleanup": {
+        "container_id": "0603a771dc3de1add60e857844bee28ef80f48be8b7403c05292862ac8c94306",
+        "settled": true,
+        "removed": true,
+        "running": false,
+        "pid": 0
+      }
+    }
+  },
+  "validation": {
+    "python_verifier_tests": {
+      "status": "passed",
+      "count": 4
+    },
+    "go_dsh_tests": "passed",
+    "go_dsh_race": "passed",
+    "e2e_entry_opt_in_skip": "passed",
+    "real_sigterm_startup_cleanup": {
+      "status": "failed",
+      "recorded_at": "2026-11-22T11:24:42Z",
+      "host": "macOS-15.7.4-arm64-arm-64bit-Mach-O",
+      "host_arch": "arm64",
+      "image": "enterprise-public-cn-beijing.cr.volces.com/vefaas-public/all-in-one-sandbox@sha256:5ca2cd5619ee1e18c5479301e740c1e35307ce85d4142a145aec65d459655eee",
+      "visual": "not_verified",
+      "s2_recommendation": "defer",
+      "usage": "unavailable via ACP",
+      "cleanup": {
+        "settled": true,
+        "container_id": "85e4374c6d648d31166b420a7b50a729ea432007a3fbd465711ea5bc81f3ba07",
+        "removed": true,
+        "running": false,
+        "pid": 0,
+        "ingress_stopped": true,
+        "ingress_removed": true,
+        "network_removed": true
+      },
+      "scope": "S1 local DSH; no production Room or configuration writes",
+      "teamx_commit": "bf92e0a92eb2a6a361233628a7d8bbd9f01e0a79",
+      "docker": {
+        "Architecture": "aarch64",
+        "NCPU": 10,
+        "MemTotal": 8217448448,
+        "ServerVersion": "29.0.1"
+      },
+      "disk_free_bytes": 40571183104,
+      "ingress_image": "nginx@sha256:901e593c95dc85f5a729f5765516321366ef4ac401821431d408897e95287d0a",
+      "image_identity": {
+        "Id": "sha256:5ca2cd5619ee1e18c5479301e740c1e35307ce85d4142a145aec65d459655eee",
+        "Architecture": "arm64",
+        "Os": "linux",
+        "Size": 3314068454,
+        "RepoDigests": [
+          "enterprise-public-cn-beijing.cr.volces.com/vefaas-public/all-in-one-sandbox@sha256:5ca2cd5619ee1e18c5479301e740c1e35307ce85d4142a145aec65d459655eee"
+        ]
+      },
+      "model": {
+        "protocol": "openai-completions",
+        "base_url": "https://ai.space.opencsg.com/v1",
+        "model_id": "deepseek-v4.1-flash-1017",
+        "input_modalities": [
+          "text",
+          "image"
+        ],
+        "context_window": 1048576,
+        "max_tokens": 32768,
+        "reasoning_effort": "off",
+        "compat": {
+          "supports_developer_role": false
+        },
+        "api_key_env": "TEAMX_SANDBOX_MODEL_KEY"
+      },
+      "disk_quota": "not supported by Docker Desktop overlayfs; dedicated disposable container, bounded runtime, free disk preflight",
+      "seccomp": "default",
+      "container_id": "85e4374c6d648d31166b420a7b50a729ea432007a3fbd465711ea5bc81f3ba07",
+      "network": {
+        "aio_internal": true,
+        "host_bind": "127.0.0.1",
+        "ingress_container_id": "af1576e593b906799e5f29189c5268edf4be4ba1f8788326d1c7a304e547daee",
+        "mounts": "ingress config only; AIO has no host mounts",
+        "public_sample_expected": "egress denied"
+      },
+      "endpoint": "http://127.0.0.1:61434/mcp",
+      "error": "InterruptedError: cancelled during AIO startup",
+      "seconds": 6.017896582838148
+    }
+  },
+  "prior_attempts": [
+    {
+      "status": "failed",
+      "error": "IndexError: list index out of range",
+      "cleanup": {
+        "container_id": "df3bb3b085d754bf62564ff9981e354e19d4dc0c351289c7b22d8290c1bc27ca",
+        "running": false,
+        "pid": 0,
+        "settled": true,
+        "removed": true,
+        "network_removed": true
+      },
+      "source_run": "run-01"
+    },
+    {
+      "status": "failed",
+      "error": "CalledProcessError: Command '('docker', 'cp', '054e456816c5f92a442bacba8c28e450bd7271091dbb7562b399a79d17956869:/tmp/teamx-browser-fixture/receipts.jsonl', '/Users/russellluo/Projects/ai/teamx/.local/agent-sandbox/run-02/receipts.jsonl')' returned non-zero exit status 1.",
+      "cleanup": {
+        "container_id": "054e456816c5f92a442bacba8c28e450bd7271091dbb7562b399a79d17956869",
+        "running": false,
+        "pid": 0,
+        "settled": true,
+        "removed": true,
+        "ingress_stopped": true,
+        "ingress_removed": true,
+        "network_removed": true
+      },
+      "go_test_exit": 1,
+      "source_run": "run-02",
+      "dsh_error": "ACP transport EOF",
+      "turn_errors": []
+    },
+    {
+      "status": "failed",
+      "error": "CalledProcessError: Command '('docker', 'cp', '6dd8fe87aa1e648fd32e39d619ca7b250da5bfc4cf5faa8ee7ede893a3f9d042:/tmp/teamx-browser-fixture/receipts.jsonl', '/Users/russellluo/Projects/ai/teamx/.local/agent-sandbox/run-03/receipts.jsonl')' returned non-zero exit status 1.",
+      "cleanup": {
+        "container_id": "6dd8fe87aa1e648fd32e39d619ca7b250da5bfc4cf5faa8ee7ede893a3f9d042",
+        "running": false,
+        "pid": 0,
+        "settled": true,
+        "removed": true,
+        "ingress_stopped": true,
+        "ingress_removed": true,
+        "network_removed": true
+      },
+      "go_test_exit": 1,
+      "source_run": "run-03",
+      "dsh_error": null,
+      "turn_errors": []
+    },
+    {
+      "status": "failed",
+      "cleanup": {
+        "container_id": "1f75a1c8bac72ed16980a32b1412ec31ebc9b5a02eee082994a1d3aa78afeb7c",
+        "running": false,
+        "pid": 0,
+        "settled": true,
+        "removed": true,
+        "ingress_stopped": true,
+        "ingress_removed": true,
+        "network_removed": true
+      },
+      "trials": [
+        {
+          "run": "1",
+          "passed": true,
+          "checks": {
+            "dynamic_value": true,
+            "submission": true,
+            "redirect": true,
+            "download_request": true,
+            "download_file": true,
+            "tools_observed": true,
+            "turn_finished": true
+          },
+          "seconds": 16.964498042,
+          "tool_calls": 13
+        },
+        {
+          "run": "2",
+          "passed": true,
+          "checks": {
+            "dynamic_value": true,
+            "submission": true,
+            "redirect": true,
+            "download_request": true,
+            "download_file": true,
+            "tools_observed": true,
+            "turn_finished": true
+          },
+          "seconds": 15.518581042,
+          "tool_calls": 12
+        },
+        {
+          "run": "3",
+          "passed": false,
+          "checks": {
+            "dynamic_value": true,
+            "submission": true,
+            "redirect": false,
+            "download_request": false,
+            "download_file": false,
+            "tools_observed": false,
+            "turn_finished": false
+          },
+          "seconds": 13.069481792,
+          "tool_calls": null
+        }
+      ],
+      "go_test_exit": 1,
+      "source_run": "run-04",
+      "dsh_error": null,
+      "turn_errors": [
+        {
+          "name": "trial-3",
+          "error": "DSH turn outcome may be uncertain; session disabled\nACP request failed (code -32603): model service rate limited (HTTP 429); wait before retrying"
+        }
+      ]
+    },
+    {
+      "status": "failed",
+      "error": "RuntimeError: MCP must expose browser tools only; inspect tools.json and configure the image",
+      "cleanup": {
+        "container_id": "c99836e8f6bdfbcd505d32d8850fd285b7297bf401ed6eeaefa04c436f78fe2f",
+        "running": false,
+        "pid": 0,
+        "settled": true,
+        "removed": true,
+        "ingress_stopped": true,
+        "ingress_removed": true,
+        "network_removed": true
+      },
+      "source_run": "run-05"
+    }
+  ],
+  "artifacts": [
+    {
+      "path": "s1-trial-1.png",
+      "bytes": 30073,
+      "sha256": "af6dff3ceed11d2d3ebc17815e049a3d8fecedbacb7dc56edbd9e40bac5fa94b",
+      "visually_checked": true
+    },
+    {
+      "path": "s1-trial-2.png",
+      "bytes": 29824,
+      "sha256": "910d39163bb1f161e731bcbd57c8f616f06c31ac545c4c3d56b42da9cdf740f2",
+      "visually_checked": true
+    },
+    {
+      "path": "s1-trial-3.png",
+      "bytes": 29528,
+      "sha256": "48b0aa8792483c494a332e083414e10ac39001d6ad9a012178b1db1cbcc0e4ee",
+      "visually_checked": true
+    }
+  ],
+  "mcp_image_attachments": [
+    {
+      "sha256": "910d39163bb1f161e731bcbd57c8f616f06c31ac545c4c3d56b42da9cdf740f2",
+      "bytes": 29824,
+      "png": true
+    },
+    {
+      "sha256": "af6dff3ceed11d2d3ebc17815e049a3d8fecedbacb7dc56edbd9e40bac5fa94b",
+      "bytes": 30073,
+      "png": true
+    },
+    {
+      "sha256": "48b0aa8792483c494a332e083414e10ac39001d6ad9a012178b1db1cbcc0e4ee",
+      "bytes": 29528,
+      "png": true
+    }
+  ]
+}

@@ -142,7 +142,9 @@ func (h *sessionHost) PrepareOpen(ctx context.Context) (agent.Launch, error) {
 				return agent.Launch{}, issueErr
 			}
 			revoke = sync.OnceFunc(func() { releaseMCP(); release() })
-			componentOpts.MCPServers = []dsh.MCPHTTPServer{mcpHTTPConfiguration(componentOpts.ToolEnv["TEAMX_ENDPOINT"], token)}
+			// componentOptions puts TeamX first. Refresh its per-generation token
+			// while retaining the operator's independent member MCP declarations.
+			componentOpts.MCPServers[0] = mcpHTTPConfiguration(componentOpts.ToolEnv["TEAMX_ENDPOINT"], token)
 			b.store.mcpOperations.mu.Lock()
 			inbox = b.store.mcpOperations.inboxes[opts.MemberIdentity]
 			b.store.mcpOperations.mu.Unlock()
