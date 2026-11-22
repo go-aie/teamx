@@ -231,12 +231,15 @@ h1 {
 .room-name-row > span { flex:none; font-size:var(--font-small); }
 .room-name-row button { flex:1; justify-content:flex-end; min-width:0; padding-inline:0; }
 #room-detail-name { min-width:0; overflow-wrap:anywhere; text-align:right; }
-.room-details { border-bottom:1px solid var(--line); padding-block:8px; }
-.room-rename { display:flex; flex-direction:column; align-items:stretch; gap:10px; padding-block:12px; }
-.room-rename label { color:var(--muted); font-size:var(--font-small); }
+.room-details { container:room-details / inline-size; border-bottom:1px solid var(--line); padding-block:8px; }
+.room-rename { display:grid; grid-template-columns:minmax(0,1fr) auto; align-items:center; gap:10px; padding-block:12px; }
+.room-rename label { grid-column:1 / -1; color:var(--muted); font-size:var(--font-small); }
 .room-rename input { width:100%; min-width:0; font-size:16px; }
-.room-rename .form-actions { justify-content:flex-end; }
-.room-rename .form-error { padding:0; margin:0; }
+.room-rename .form-actions { justify-content:flex-end; flex-wrap:nowrap; margin:0; }
+.room-rename .form-error { grid-column:1 / -1; padding:0; margin:0; }
+@container room-details (max-width:240px) {
+ .room-rename { grid-template-columns:minmax(0,1fr); }
+}
 .room-members-heading { margin:20px 0 4px; }
 .room-members-heading h2 { margin:0; font-size:var(--font-body); }
 .room-members-heading #member-count { margin-left:8px; color:var(--muted); font-size:var(--font-small); font-weight:var(--weight-medium); }

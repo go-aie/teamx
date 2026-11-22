@@ -74,7 +74,7 @@ const fs = require('node:fs');
       }
       await route.continue();
     });
-    await page.locator('#calendar-options-toggle').click();await page.locator('#calendar-refresh').click(); await held;
+    await page.locator('#calendar-view [data-view="calendar"]').click();await held;
     await choose(1); await page.locator('#message-input').fill('乙私信独立草稿');
     await showCalendar(1);
     const staleResponse = page.waitForResponse(response=>new URL(response.url()).pathname==='/v1/calendar/list' && response.request().postDataJSON().room_id===rooms[0].room_id);
