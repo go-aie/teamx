@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"os"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -63,6 +64,76 @@ func TestProfileReferenceAndNativeIdentity(t *testing.T) {
 	file, err = m.Load()
 	if err != nil || file.Platforms[0].Validation.Status != "unverified" {
 		t.Fatal(err)
+	}
+}
+
+func TestSharedProfileVerificationCommitsOnceAndSurvivesReload(t *testing.T) {
+	m, req, identity := profileManager(t)
+	a := commitRequest(t, m, req, false)
+	req.ID = strings.Repeat("b", 32)
+	b := commitRequest(t, m, req, false)
+	first, _ := m.BeginVerification(a.ID, a.Version)
+	second, _ := m.BeginVerification(b.ID, b.Version)
+	writes := 0
+	save := m.store.Save
+	m.store.Save = func(path string, value any, limit int64) error { writes++; return save(path, value, limit) }
+	result := platform.Validation{Status: "valid", CheckedAt: time.Now().UTC(), Username: "共享账号", Account: identity}
+	saved, err := m.CompleteVerifications([]Verification{first, second}, result)
+	if err != nil || writes != 1 || len(saved) != 2 {
+		t.Fatal("shared verification was not one commit", err, writes)
+	}
+	file, err := m.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, c := range file.Platforms {
+		if c.Validation.Account != identity || c.Validation.Status != "valid" {
+			t.Fatal("shared identity not saved")
+		}
+		if _, _, err := ResolveAccount(file, c); err != nil {
+			t.Fatal("saved verification cannot resolve", err)
+		}
+	}
+}
+
+func TestSharedProfileVerificationFailureNeverPartiallyAdoptsTargets(t *testing.T) {
+	for _, mode := range []string{"stale_second", "capacity_second", "save_failed"} {
+		t.Run(mode, func(t *testing.T) {
+			m, req, identity := profileManager(t)
+			a := commitRequest(t, m, req, false)
+			req.ID = strings.Repeat("b", 32)
+			b := commitRequest(t, m, req, false)
+			if mode == "capacity_second" {
+				file, _ := m.Load()
+				file.Platforms[1].Version = ^uint64(0)
+				if err := m.save(file); err != nil {
+					t.Fatal(err)
+				}
+				b.Version = ^uint64(0)
+			}
+			first, _ := m.BeginVerification(a.ID, a.Version)
+			second, _ := m.BeginVerification(b.ID, b.Version)
+			if mode == "stale_second" {
+				req.Version = b.Version
+				req.Name = "renamed"
+				req.CLIProfile = nil
+				commitRequest(t, m, req, false)
+			}
+			before, _ := m.Load()
+			writes := 0
+			m.store.Save = func(string, any, int64) error { writes++; return errors.New("injected failure") }
+			_, err := m.CompleteVerifications([]Verification{first, second}, platform.Validation{Status: "valid", CheckedAt: time.Now().UTC(), Username: "共享账号", Account: identity})
+			if err == nil {
+				t.Fatal("incomplete batch reported success")
+			}
+			after, loadErr := m.Load()
+			if loadErr != nil || !reflect.DeepEqual(before, after) {
+				t.Fatal("partial shared verification escaped", loadErr)
+			}
+			if mode == "save_failed" && writes != 1 || mode != "save_failed" && writes != 0 {
+				t.Fatal("preflight and save boundaries changed", writes)
+			}
+		})
 	}
 }
 

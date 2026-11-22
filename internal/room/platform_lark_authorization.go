@@ -2,6 +2,7 @@ package room
 
 import (
 	"context"
+	"errors"
 	"time"
 
 	"github.com/go-aie/teamx/internal/platform"
@@ -134,12 +135,17 @@ func (m *roomManager) startLarkAuthorizeLocked(ctx context.Context, op platformC
 	if err := m.savePlatformConnectLocked(&op); err != nil {
 		return fail(err)
 	}
-	_, targets, err := m.invalidateLarkAuthLocked(req)
+	_, targets, pause, err := m.invalidateLarkAuthLocked(req)
+	s.pause = pause
 	if err == nil {
 		err = m.checkOnboardingTargetLocked(ctx, platformOnboardingSpec{MemberIdentity: op.MemberIdentity})
 	}
 	if err != nil {
+		pause.release()
 		op.Status, op.ErrorCode, op.ResultVersion = "failed", "target_changed", 1
+		if errors.Is(err, errPlatformSettlement) {
+			op.ErrorCode = "notification_settlement_pending"
+		}
 		if saveErr := m.savePlatformConnectLocked(&op); saveErr != nil {
 			return fail(saveErr)
 		}
@@ -153,8 +159,10 @@ func (m *roomManager) startLarkAuthorizeLocked(ctx context.Context, op platformC
 	return op, nil
 }
 
-// Complete only the original native account. Preflight all shared revisions
-// before any verification commit; no member grant/evidence is ever rewritten.
+// Preserve every known native account and preflight all shared revisions before
+// committing the independently verified login. Failed/unverified connections
+// have no current identity to compare, but still need the new verification saved.
+// Member grants and binding evidence are never rewritten here.
 func (m *roomManager) completeLarkAuthorizationLocked(s *larkAuthSession) error {
 	if m.closing {
 		return ErrClosing
@@ -207,10 +215,7 @@ func (m *roomManager) completeLarkAuthorizationLocked(s *larkAuthSession) error 
 		if !found {
 			return ErrConflict
 		}
-		if !t.Account.Valid() {
-			continue
-		} // an unverified connection needs explicit verification
-		if t.Account != s.validation.Account {
+		if t.Account.Valid() && t.Account != s.validation.Account {
 			return ErrIdentity
 		}
 		ticket, err := m.platforms.BeginVerification(t.ID, t.Version)
@@ -219,12 +224,27 @@ func (m *roomManager) completeLarkAuthorizationLocked(s *larkAuthSession) error 
 		}
 		tickets = append(tickets, ticket)
 	}
-	for _, ticket := range tickets {
-		if _, err := m.platforms.CompleteVerification(ticket, s.validation); err != nil {
-			return err
+	if _, err := m.platforms.CompleteVerifications(tickets, s.validation); err != nil {
+		return err
+	}
+	ids := make([]string, 0, len(s.targets))
+	recoveryErrors := map[string]error{}
+	for _, target := range s.targets {
+		ids = append(ids, target.ID)
+	}
+	// The registry commit has succeeded. Recovery failures must not turn the
+	// adopted account into a failed authorization or trigger a second login.
+	err = m.applyLarkAccountCheckWithRecoveryLocked(s.profile, s.validation.Account, s.Permissions, func(id string) error {
+		recoveryErrors[id] = m.resumeLarkSubscriptionsLocked(id)
+		return nil
+	})
+	if err != nil {
+		for _, id := range ids {
+			recoveryErrors[id] = err
 		}
 	}
-	return m.applyLarkAccountCheckLocked(s.profile, s.validation.Account, s.Permissions)
+	s.Followup = m.authorizationFollowupLocked(ids, recoveryErrors)
+	return nil
 }
 
 func (m *roomManager) commitLarkAuthorizeLocked(op *platformConnectOperation, validation platform.Validation) error {

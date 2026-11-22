@@ -53,19 +53,50 @@ func (m *Manager) Query(ctx context.Context, v Verification) platform.Validation
 	return result
 }
 func (m *Manager) CompleteVerification(v Verification, result platform.Validation) (platform.Platform, error) {
-	if !validValidation(result) || result.Status == "unverified" || result.Status == "valid" && (v.credentialErr != nil || !m.validAccountResult(v.record.Provider, v.record.URL, result)) {
-		return platform.Platform{}, ErrInvalid
-	}
-	file, err := m.Load()
+	saved, err := m.CompleteVerifications([]Verification{v}, result)
 	if err != nil {
 		return platform.Platform{}, err
 	}
+	return saved[0], nil
+}
+
+// CompleteVerifications adopts one verified native account for the complete
+// frozen impact set in a single snapshot commit. Any stale/invalid target or
+// pre-replacement save failure leaves every previous record intact.
+func (m *Manager) CompleteVerifications(tickets []Verification, result platform.Validation) ([]platform.Platform, error) {
+	if len(tickets) == 0 || len(tickets) > 100 || !validValidation(result) || result.Status == "unverified" {
+		return nil, ErrInvalid
+	}
+	file, err := m.Load()
+	if err != nil {
+		return nil, err
+	}
+	seen := map[string]bool{}
+	saved := make([]platform.Platform, 0, len(tickets))
+	for _, v := range tickets {
+		if seen[v.record.ID] || result.Status == "valid" && (v.credentialErr != nil || !m.validAccountResult(v.record.Provider, v.record.URL, result)) {
+			return nil, ErrInvalid
+		}
+		seen[v.record.ID] = true
+		c, err := m.applyVerification(&file, v, result)
+		if err != nil {
+			return nil, err
+		}
+		saved = append(saved, c)
+	}
+	if err := m.save(file); err != nil {
+		return nil, err
+	}
+	return saved, nil
+}
+
+func (m *Manager) applyVerification(file *Snapshot, v Verification, result platform.Validation) (platform.Platform, error) {
 	selected := v.record
 	for i, c := range file.Platforms {
 		if c.ID != selected.ID {
 			continue
 		}
-		current, _, currentErr := credentialEvidence(file, c)
+		current, _, currentErr := credentialEvidence(*file, c)
 		if c.Generation != selected.Generation || c.Version != selected.Version || c.CredentialVersion != selected.CredentialVersion || (currentErr == nil) != (v.credentialErr == nil) || current.Reveal() != v.secret.Reveal() || !sameProfile(c.CLIProfile, selected.CLIProfile) {
 			return platform.Platform{}, ErrConflict
 		}
@@ -79,7 +110,7 @@ func (m *Manager) CompleteVerification(v Verification, result platform.Validatio
 			if c.CredentialKind == "cli_profile" && (!result.Account.Valid() || result.Account.Provider != c.Provider || result.Account.Instance != c.URL || result.UserID != 0) {
 				return platform.Platform{}, ErrInvalid
 			}
-			_, fp, err := credentialEvidence(file, c)
+			_, fp, err := credentialEvidence(*file, c)
 			if err != nil {
 				return platform.Platform{}, err
 			}
@@ -87,9 +118,6 @@ func (m *Manager) CompleteVerification(v Verification, result platform.Validatio
 		}
 		c.Version++
 		file.Platforms[i] = c
-		if err := m.save(file); err != nil {
-			return platform.Platform{}, err
-		}
 		return c.Platform, nil
 	}
 	return platform.Platform{}, ErrConflict

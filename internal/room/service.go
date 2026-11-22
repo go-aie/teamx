@@ -1095,6 +1095,8 @@ func writeAPIError(w http.ResponseWriter, err error) {
 		code, status = "closing", http.StatusServiceUnavailable
 	case errors.Is(err, ErrTurnBudget):
 		code, status = "turn_budget", http.StatusConflict
+	case errors.Is(err, errPlatformSettlement):
+		code, status = "notification_settlement_pending", http.StatusConflict
 	case errors.Is(err, ErrBusy), errors.Is(err, actorx.ErrFull):
 		code, status = "busy", http.StatusConflict
 	case errors.Is(err, ErrIdentity):
@@ -1120,6 +1122,9 @@ func writeAPIError(w http.ResponseWriter, err error) {
 		}
 	}
 	switch code {
+	case "notification_settlement_pending":
+		message = "Previous notification tasks or platform calls have not finished; authorization was not saved."
+		hint = "Wait for the original work to settle, then check the connection before retrying authorization."
 	case "schema_switch_required":
 		hint = "Preserve existing evidence and inspect its schema before switching; do not clear data."
 	case "identity":

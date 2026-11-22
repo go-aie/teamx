@@ -110,7 +110,7 @@ func TestGitLabCredentialRecoveryWaitsForPreviousWorker(t *testing.T) {
 	b := startBlockedTodo(t, h)
 	replacement := make(chan struct{}, 1)
 	h.m.mu.Lock()
-	err := h.m.invalidatePlatformQueriesLocked(h.connection.ID)
+	pause, err := h.m.invalidatePlatformQueriesLocked(h.connection.ID)
 	h.m.notifications.Source(gitlab.TodosSourceID).(*gitlab.TodosSource).Prepare = func(context.Context, string, RoomIdentity, gitlab.TodosQueryScope) (gitlab.TodoFetcher, error) {
 		select {
 		case replacement <- struct{}{}:
@@ -123,6 +123,7 @@ func TestGitLabCredentialRecoveryWaitsForPreviousWorker(t *testing.T) {
 	if err == nil {
 		err = h.m.resumeGitLabSubscriptionsLocked(h.connection.ID, true)
 	}
+	pause.release()
 	h.m.mu.Unlock()
 	if err != nil {
 		t.Fatal(err)
@@ -189,6 +190,12 @@ func TestGitLabAuthorizationRecoversOnlyOriginalSubscriptions(t *testing.T) {
 				}
 			} else if result.Status != "succeeded" || g.posts.Load() != 2 || g.revokes.Load() != 0 {
 				t.Fatal("notification recovery changed authorization ownership", result.Status, result.ErrorCode)
+			}
+			if scenario == "recovery_save_blocked" && (result.Followup == nil || result.Followup.Notifications != "pending" || len(result.Followup.PendingPlatforms) != 1) {
+				t.Fatal("saved authorization hid pending notification recovery", result.Followup)
+			}
+			if scenario == "same_account" && (result.Followup == nil || result.Followup.Notifications != "restored") {
+				t.Fatal("successful recovery was not confirmed", result.Followup)
 			}
 			m.mu.Lock()
 			defer m.mu.Unlock()

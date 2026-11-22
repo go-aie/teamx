@@ -16,6 +16,7 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"os"
+	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
@@ -222,6 +223,37 @@ func TestGitLabAuthAccountMismatchAndCommitFailure(t *testing.T) {
 	}
 }
 
+func TestGitLabCommittedAuthorizationSurvivesDisplayProjectionFailure(t *testing.T) {
+	parallelFixtureTest(t)
+	g := newGitlabLoginHarness(t)
+	v, cookie := g.login(t)
+	m := g.h.m
+	bad := filepath.Join(m.store.dir, "platform-onboarding", strings.Repeat("f", 32)+".json")
+	rename := m.store.ops.rename
+	m.store.ops.rename = func(from, to string) error {
+		if err := rename(from, to); err != nil {
+			return err
+		}
+		if to == m.platformsPathForTest() {
+			if err := os.MkdirAll(filepath.Dir(bad), 0700); err != nil {
+				return err
+			}
+			return os.WriteFile(bad, []byte(`{}`), 0600)
+		}
+		return nil
+	}
+	defer func() { m.store.ops.rename = rename; _ = os.Remove(bad) }()
+	g.callback(v, cookie, nil)
+	result := g.status(t, v, cookie)
+	if result.Status != "succeeded" || result.Followup == nil || result.Followup.ConnectionView != "pending" || g.posts.Load() != 1 || g.revokes.Load() != 0 {
+		t.Fatal("display error changed committed authorization", result.Status, result.ErrorCode, result.Followup)
+	}
+	file, err := m.platforms.Load()
+	if err != nil || len(file.OAuthCredentials) != 1 || file.OAuthCredentials[0].State != "active" || len(file.OAuthCleanup) != 0 {
+		t.Fatal("display error revoked or abandoned the saved grant", err)
+	}
+}
+
 func TestGitLabAuthSharedLogoutNoFallbackAndRelogin(t *testing.T) {
 	parallelFixtureTest(t)
 	g := newGitlabLoginHarness(t)
@@ -301,6 +333,75 @@ func TestGitLabAuthSharedLogoutNoFallbackAndRelogin(t *testing.T) {
 	g.callback(next, nextCookie, nil)
 	if result := g.status(t, next, nextCookie); result.Status != "succeeded" || len(result.Platforms) != 2 {
 		t.Fatal("relogin failed", result.Status, result.ErrorCode)
+	}
+}
+
+func TestGitLabLogoutRevokesCandidateReturnedWhileOldCallsSettle(t *testing.T) {
+	parallelFixtureTest(t)
+	g := newGitlabLoginHarness(t)
+	v, cookie := g.login(t)
+	g.callback(v, cookie, nil)
+	m := g.h.m
+	m.mu.Lock()
+	file, err := m.platforms.Load()
+	if err != nil {
+		m.mu.Unlock()
+		t.Fatal(err)
+	}
+	connection := file.Platforms[0]
+	account, err := registry.ResolveAuthorization(file, connection)
+	_, app, appErr := registry.OAuthRecord(file, connection.CredentialID)
+	m.mu.Unlock()
+	if err != nil || appErr != nil {
+		t.Fatal(err, appErr)
+	}
+	lease, err := m.acquireGitLabToken(context.Background(), RoomIdentity{}, account, time.Second)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer m.finishGitLabToken(lease)
+	g.req.Version = connection.Version
+	g.req.Affected = []gitlabAuthPlatform{{ID: connection.ID, Version: connection.Version}}
+	w := gitlabAuthHTTP(m, "logout", g.req, nil)
+	var out gitlabAuthView
+	if w.Code != 200 || json.Unmarshal(w.Body.Bytes(), &out) != nil {
+		t.Fatal("logout not admitted", w.Code)
+	}
+	cookie = w.Result().Cookies()[0]
+	select {
+	case <-lease.ctx.Done():
+	case <-time.After(3 * time.Second):
+		t.Fatal("old call not canceled")
+	}
+	// A refresh may already have issued a new token before logout closes its
+	// local grant. Its late receipt is cleanup-only, never a business credential.
+	m.mu.Lock()
+	cleanupID, err := m.platforms.KeepOAuthCandidate(app, platform.OAuthTokens{AccessToken: platform.NewSecret("late-refresh-candidate")})
+	done := m.gitlabAuthSessions[out.SessionID].done
+	m.mu.Unlock()
+	if err != nil || cleanupID == "" {
+		t.Fatal("late candidate not retained", err)
+	}
+	_ = m.finishGitLabToken(lease)
+	select {
+	case <-done:
+	case <-time.After(3 * time.Second):
+		t.Fatal("logout did not finish")
+	}
+	result := g.status(t, out, cookie)
+	if result.Status != "logged_out" || g.revokes.Load() != 2 {
+		t.Fatal("late candidate not revoked", result.Status, result.ErrorCode, g.revokes.Load())
+	}
+	m.mu.Lock()
+	file, err = m.platforms.Load()
+	m.mu.Unlock()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, cleanup := range file.OAuthCleanup {
+		if cleanup.State != "revoked" {
+			t.Fatal("logout left cleanup pending", cleanup.State)
+		}
 	}
 }
 

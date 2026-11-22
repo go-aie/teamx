@@ -88,10 +88,12 @@ func (m *roomManager) updatePlatform(req managedPlatformRequest, remove bool) (m
 		return managedPlatform{}, errPlatformReferenced
 	}
 	if change.Rotating() {
-		if err := m.invalidatePlatformQueriesLocked(req.ID); err != nil {
+		pause, err := m.invalidatePlatformQueriesLocked(req.ID)
+		defer pause.release()
+		if err != nil {
 			return managedPlatform{}, err
 		}
-		if err := m.settlePlatformQueriesLocked(req.ID); err != nil {
+		if err := m.settlePlatformQueriesLocked(pause); err != nil {
 			return managedPlatform{}, err
 		}
 	}

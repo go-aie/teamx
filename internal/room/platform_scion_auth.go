@@ -290,13 +290,14 @@ func (m *roomManager) logoutScionLocked(req scionAuthRequest) ([]managedPlatform
 			return nil, ErrConflict
 		}
 	}
-	var pending []<-chan struct{}
+	ids := make([]string, 0, len(matching))
 	for _, c := range matching {
-		if err := m.invalidatePlatformQueriesLocked(c.ID); err != nil {
-			return nil, err
-		}
-		pending = append(pending, m.notifications.PlatformDoneLocked(c.ID)...)
-		pending = append(pending, m.platformCalls.Pending(func(call *platformCall) bool { return call.platformID == c.ID })...)
+		ids = append(ids, c.ID)
+	}
+	pause, err := m.invalidatePlatformQueriesLocked(ids...)
+	defer pause.release()
+	if err != nil {
+		return nil, err
 	}
 	result := make([]managedPlatform, 0, len(matching))
 	for _, c := range matching {
@@ -314,7 +315,7 @@ func (m *roomManager) logoutScionLocked(req scionAuthRequest) ([]managedPlatform
 		}
 		result = append(result, item)
 	}
-	if err := m.settlePlatformCallsLocked(pending); err != nil {
+	if err := m.settlePlatformQueriesLocked(pause); err != nil {
 		return nil, err
 	}
 	if m.closing {

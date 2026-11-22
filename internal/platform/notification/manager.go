@@ -13,12 +13,16 @@ import (
 )
 
 type worker struct {
+	platformID                string
 	version                   uint64
 	cancel                    context.CancelFunc
 	done, wake                chan struct{}
 	force, cancelled, restart bool
 }
-type deliveryFlight struct{ done chan struct{} }
+type deliveryFlight struct {
+	platformID string
+	done       chan struct{}
+}
 type Manager struct {
 	operations        atomic.Uint64
 	retired           map[platform.RoomIdentity]bool
@@ -27,6 +31,7 @@ type Manager struct {
 	mu                sync.Mutex // directory and lifecycle only; never held across callbacks or I/O
 	owners            map[platform.RoomIdentity]*sourceOwner
 	workers           map[Key]*worker
+	platformPauses    map[string]int
 	deliveries        map[Key]*deliveryFlight
 	runtime           *actorx.Runtime
 	activation        uint64
@@ -73,11 +78,11 @@ func (m *Manager) Start() error {
 	return nil
 }
 func (m *Manager) startLocked(key Key, meta Metadata) {
-	if !m.started || m.stopping || !meta.Enabled || m.retired[key.Owner] || m.workers[key] != nil {
+	if !m.started || m.stopping || !meta.Enabled || m.retired[key.Owner] || m.workers[key] != nil || m.platformPauses[meta.PlatformID] > 0 {
 		return
 	}
 	ctx, cancel := context.WithCancel(context.Background())
-	w := &worker{version: meta.Version, cancel: cancel, done: make(chan struct{}), wake: make(chan struct{}, 1)}
+	w := &worker{platformID: meta.PlatformID, version: meta.Version, cancel: cancel, done: make(chan struct{}), wake: make(chan struct{}, 1)}
 	m.workers[key] = w
 	go m.run(ctx, key, w, m.sources[key.Source].NewRunner(&session{m: m, key: key, version: w.version, worker: w}))
 }
@@ -88,7 +93,7 @@ func (m *Manager) run(ctx context.Context, key Key, w *worker, runner Runner) {
 		defer m.mu.Unlock()
 		if m.workers[key] == w {
 			delete(m.workers, key)
-			if ok && (current.Metadata().Version != w.version || w.restart) {
+			if ok && w.restart {
 				m.startLocked(key, current.Metadata())
 			}
 		}
@@ -158,7 +163,14 @@ func (m *Manager) ChangedLocked(key Key) <-chan struct{} {
 	current, ok := m.StateLocked(key)
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	if ok && m.platformPauses[current.Metadata().PlatformID] > 0 {
+		if w := m.workers[key]; w != nil {
+			return w.done
+		}
+		return nil
+	}
 	if w := m.workers[key]; w != nil {
+		w.restart = true
 		w.cancel()
 		return w.done
 	}
@@ -171,10 +183,16 @@ func (m *Manager) WakeLocked(key Key) {
 	current, ok := m.StateLocked(key)
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	if ok && m.platformPauses[current.Metadata().PlatformID] > 0 {
+		return
+	}
 	if ok {
 		m.startLocked(key, current.Metadata())
 	}
 	if w := m.workers[key]; w != nil {
+		if w.cancelled {
+			w.restart = true
+		}
 		w.force = true
 		select {
 		case w.wake <- struct{}{}:
@@ -192,6 +210,7 @@ func (m *Manager) CancelLocked(key Key) <-chan struct{} {
 	defer m.mu.Unlock()
 	if w := m.workers[key]; w != nil {
 		w.cancelled = true
+		w.restart = false
 		w.cancel()
 		return w.done
 	}
@@ -281,6 +300,10 @@ func (m *Manager) Stop(ctx context.Context) error {
 	return nil
 }
 func (m *Manager) InvalidatePlatformLocked(id string) error {
+	// Fence starts before publishing a new version. The caller may hold an
+	// outer pause across credential replacement and wait on its fixed receipts.
+	pause := m.PausePlatforms(id)
+	defer pause.Release()
 	for key, s := range m.allStates() {
 		if s.state.Metadata().PlatformID != id {
 			continue
@@ -295,20 +318,8 @@ func (m *Manager) InvalidatePlatformLocked(id string) error {
 		if err != nil {
 			return err
 		}
-		m.CancelLocked(key)
 	}
 	return nil
-}
-func (m *Manager) PlatformDoneLocked(id string) []<-chan struct{} {
-	var out []<-chan struct{}
-	for key, s := range m.allStates() {
-		if s.state.Metadata().PlatformID == id {
-			if ch := m.DoneLocked(key); ch != nil {
-				out = append(out, ch)
-			}
-		}
-	}
-	return out
 }
 func (m *Manager) NewRunnerLocked(key Key) Runner {
 	s, ok := m.projection(key.Owner)[key]
@@ -321,6 +332,9 @@ func (m *Manager) EnsureLocked(key Key) {
 	current, ok := m.StateLocked(key)
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	if ok && m.platformPauses[current.Metadata().PlatformID] > 0 {
+		return
+	}
 	if w := m.workers[key]; w != nil && w.cancelled {
 		w.restart = true
 	}
@@ -366,6 +380,9 @@ func (s *session) Read(ctx context.Context) (State, Scope, error) {
 		return nil, Scope{}, ErrIdentity
 	}
 	state := current.state.CloneState()
+	if s.m.platformPaused(state.Metadata().PlatformID) {
+		return state, Scope{}, ErrBusy
+	}
 	s.revision = current.revision
 	s.context = ctx
 	scope, err := s.m.host.Admit(ctx, state)

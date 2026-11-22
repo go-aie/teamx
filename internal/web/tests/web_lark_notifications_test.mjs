@@ -888,6 +888,114 @@ test("expired credentials show an immediate authorization action while tool fail
  assert.match(broken.el("platforms-feedback").textContent,/版本不匹配/);assert.equal(broken.el("connection-guided").hidden,true);
 });
 
+test("Lark settlement timeout keeps the connection and explains old work is pending",async()=>{
+ const api=fixture(),original=api.request;
+ api.platforms[0].cli_profile={version:1,executable:"/fixture/lark-cli",profile:"explicit",brand:"feishu",cli_version:"1.0.99"};
+ api.request=async(path,body,...args)=>{
+  if(path.endsWith("/lark/login")){api.calls.push({path,body});throw Object.assign(Error("pending"),{code:"notification_settlement_pending"});}
+  return original(path,body,...args);
+ };
+ const ui=await launch(api);await ui.el("open-settings").emit("click");await ui.el("platforms-list").children[0].emit("click");
+ await ui.el("connection-reauthorize").emit("click");await ui.el("connection-auth-confirm").emit("click");
+ assert.match(ui.el("platforms-feedback").textContent,/旧通知任务或平台调用尚未退出.*本次授权未保存/);
+ assert.equal(api.calls.filter(c=>c.path.endsWith("/lark/login")).length,1);
+ assert.equal(api.calls.some(c=>c.path.endsWith("/lark/logout") || c.path.endsWith("/platforms/save")),false);
+ assert.equal(api.platforms.length,1);
+});
+test("failed saved Lark connection stays verified after authorization and reopening",async()=>{
+ const api=fixture();
+ const saved=api.platforms[0];saved.cli_profile={version:1,executable:"/fixture/lark-cli",profile:"explicit",brand:"feishu",cli_version:"1.0.99"};
+ saved.validation={status:"failed",error_code:"credential_unavailable"};
+ const ui=await launch(api);await ui.el("open-settings").emit("click");await ui.el("platforms-list").children[0].emit("click");
+ assert.equal(ui.el("connection-account-state").textContent,"验证失败");
+ await ui.el("connection-reauthorize").emit("click");
+ api.platforms[0]={...saved,version:3,validation:{status:"valid",username:"测试用户"}};
+ api.authView={session_id:"auth-session",status:"succeeded",username:"测试用户",platforms:[api.platforms[0]]};
+ await ui.el("connection-auth-confirm").emit("click");
+ assert.equal(ui.el("connection-account-state").textContent,"已验证");
+ assert.equal(ui.el("connection-account-state").dataset.kind,"success");
+ await ui.el("connection-back").emit("click");await ui.el("platforms-list").children[0].emit("click");
+ assert.equal(ui.el("connection-account-state").textContent,"已验证");
+ assert.equal(ui.el("connection-account-state").dataset.kind,"success");
+});
+test("native Lark login cannot mask a failed saved verification",async()=>{
+ const api=fixture();
+ api.platforms[0].cli_profile={version:1,executable:"/fixture/lark-cli",profile:"explicit",brand:"feishu",cli_version:"1.0.99"};
+ api.platforms[0].validation={status:"failed",error_code:"credential_unavailable"};
+ const ui=await launch(api);await ui.el("open-settings").emit("click");await ui.el("platforms-list").children[0].emit("click");
+ await ui.el("connection-reauthorize").emit("click");
+ api.authView={session_id:"auth-session",status:"succeeded",username:"测试用户",platforms:api.platforms};
+ await ui.el("connection-auth-confirm").emit("click");
+ assert.equal(ui.el("connection-account-state").textContent,"验证失败");
+ assert.equal(ui.el("connection-account-state").dataset.kind,"error");
+ assert.match(ui.el("platforms-feedback").textContent,/连接验证结果未确认/);
+ assert.equal(ui.el("connection-capabilities").hidden,true);
+});
+test("Lark saved authorization reports pending notification recovery without marking the account failed",async()=>{
+ const api=fixture();
+ api.platforms[0].cli_profile={version:1,executable:"/fixture/lark-cli",profile:"explicit",brand:"feishu",cli_version:"1.0.99"};
+ const ui=await launch(api);await ui.el("open-settings").emit("click");await ui.el("platforms-list").children[0].emit("click");
+ await ui.el("connection-reauthorize").emit("click");
+ api.authView={status:"succeeded",username:"测试用户",platforms:api.platforms,followup:{notifications:"pending",pending_platforms:["lark-connection"]}};
+ await ui.el("connection-auth-confirm").emit("click");
+ assert.equal(ui.el("connection-account-state").textContent,"已验证");
+ assert.equal(ui.el("connection-account-state").dataset.kind,"success");
+ assert.match(ui.el("platforms-feedback").textContent,/账号已验证.*部分通知尚未恢复/);
+ assert.equal(api.calls.filter(c=>c.path.endsWith("/lark/login")).length,1);
+});
+
+test("Lark committed authorization with unreadable connection details asks to refresh without another login",async()=>{
+ const api=fixture();
+ api.platforms[0].cli_profile={version:1,executable:"/fixture/lark-cli",profile:"explicit",brand:"feishu",cli_version:"1.0.99"};
+ api.platforms[0].validation={status:"unverified"};
+ const ui=await launch(api);await ui.el("open-settings").emit("click");await ui.el("platforms-list").children[0].emit("click");
+ await ui.el("connection-reauthorize").emit("click");
+ api.authView={status:"succeeded",username:"测试用户",platforms:[],followup:{connection_view:"pending",notifications:"not_required"}};
+ await ui.el("connection-auth-confirm").emit("click");
+ assert.match(ui.el("platforms-feedback").textContent,/账号授权已完成.*连接已保存.*返回列表刷新/);
+ assert.equal(ui.el("platforms-feedback").dataset.kind,"status");
+ assert.equal(api.calls.filter(c=>c.path.endsWith("/lark/login")).length,1);
+});
+
+test("Lark page reload observes the original session without storing URLs or repeating login",async()=>{
+ const api=fixture(),saved=new Map();
+ api.platforms[0].cli_profile={version:1,executable:"/fixture/lark-cli",profile:"explicit",brand:"feishu",cli_version:"1.0.99"};
+ const ui=await launch(api,saved);await ui.el("open-settings").emit("click");await ui.el("platforms-list").children[0].emit("click");
+ await ui.el("connection-reauthorize").emit("click");await ui.el("connection-auth-confirm").emit("click");
+ assert.equal(JSON.parse(saved.get("teamx.lark-authorization")).session_id,"auth-session");
+ assert.equal([...saved.values()].some(v=>/verification_url|device_code|qrcode_url|code=fixture/.test(v)),false);
+ await ui.window.emit("pagehide");
+ const logins=api.calls.filter(c=>c.path.endsWith("/lark/login")).length;
+ api.authView={status:"succeeded",username:"测试用户",platforms:api.platforms,followup:{notifications:"restored"}};
+ const reloaded=await launch(api,saved);await settle();
+ assert.equal(api.calls.filter(c=>c.path.endsWith("/lark/login")).length,logins);
+ assert.equal(api.calls.filter(c=>c.path.endsWith("/lark/cancel")).length,0);
+ assert.equal(saved.has("teamx.lark-authorization"),false);
+ assert.equal(reloaded.el("connection-account-state").textContent,"已验证");
+ assert.match(reloaded.el("platforms-feedback").textContent,/原有通知已恢复/);
+});
+
+test("Lark expired original session ends locally and never starts or cancels another authorization",async()=>{
+ const api=fixture();api.platforms[0].cli_profile={version:1,executable:"/fixture/lark-cli",profile:"explicit",brand:"feishu",cli_version:"1.0.99"};
+ const saved=new Map([["teamx.lark-authorization",JSON.stringify({installation_id:"",operator:"tester",service_epoch:"manager",session_id:"expired",platform_id:"lark-connection",profile:api.platforms[0].cli_profile,action:"login"})]]);
+ const original=api.request;
+ api.request=async(path,body,...args)=>{if(path.endsWith("/lark/status"))throw Object.assign(Error("expired"),{code:"conflict"});return original(path,body,...args);};
+ const ui=await launch(api,saved);await settle();
+ assert.match(ui.el("platforms-feedback").textContent,/原授权会话已结束/);
+ assert.equal(saved.has("teamx.lark-authorization"),false);
+ assert.equal(api.calls.some(c=>/\/lark\/(login|cancel|logout)$/.test(c.path)),false);
+});
+test("Lark restart reads saved connections and clears only the stale authorization reference",async()=>{
+ const api=fixture(),profile={version:1,executable:"/fixture/lark-cli",profile:"explicit",brand:"feishu"};
+ const saved=new Map([["teamx.lark-authorization",JSON.stringify({installation_id:"",operator:"tester",service_epoch:"previous-service",session_id:"old",platform_id:"lark-connection",action:"login",profile})]]);
+ const ui=await launch(api,saved);await settle();
+ assert.match(ui.el("platforms-feedback").textContent,/服务已重启.*核对连接状态/);
+ await ui.refresh();await settle();
+ assert.match(ui.el("platforms-feedback").textContent,/服务已重启.*核对连接状态/);
+ assert.equal(saved.has("teamx.lark-authorization"),false);
+ assert.equal(api.calls.some(c=>/\/lark\/(login|status|cancel|logout)$/.test(c.path)),false);
+ assert.ok(api.calls.some(c=>c.path.startsWith("/v1/platforms?")));
+});
 test("saved-profile authorization only mentions other platforms when they exist",async()=>{
  for(const shared of [false,true]){
   const api=fixture(),profile={version:1,executable:"/fixture/lark-cli",profile:"explicit",brand:"feishu",cli_version:"1.0.99"};

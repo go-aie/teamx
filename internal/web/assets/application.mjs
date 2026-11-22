@@ -776,6 +776,7 @@ export async function createApp(overrides = {}) {
   }
 
   if (state.catalogConnected) await gitlabUI.restoreAuthorization();
+  if (state.catalogConnected) await larkUI.restoreAuthorization();
 
   navigation.mount();
   lifecycle.mount();

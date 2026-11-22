@@ -33,6 +33,7 @@ type larkAuthRequest struct {
 }
 
 type larkAuthView struct {
+	Followup           *platformAuthFollowup `json:"followup,omitempty"`
 	SessionID          string                `json:"session_id"`
 	Status             string                `json:"status"`
 	URL                string                `json:"verification_url,omitempty"`
@@ -66,6 +67,7 @@ type larkAuthSession struct {
 	validation  platform.Validation
 	connectErr  error
 	targets     []larkAuthorizationTarget
+	pause       *platformQueryPause
 }
 
 func (m *roomManager) larkAuthBusyLocked(p *platform.CLIProfile) bool {
@@ -248,9 +250,11 @@ func (m *roomManager) serveLarkAuth(w http.ResponseWriter, r *http.Request) {
 	}
 	m.larkAuthSessions[id] = s
 	m.authorizationChanged(s.owner)
-	affected, targets, err := m.invalidateLarkAuthLocked(req)
+	affected, targets, pause, err := m.invalidateLarkAuthLocked(req)
 	s.targets = targets
+	s.pause = pause
 	if err != nil || m.closing {
+		pause.release()
 		cancel()
 		m.authorizationChanged(s.owner)
 		close(s.done)
@@ -326,10 +330,10 @@ func (m *roomManager) serveLarkAuthQRCode(w http.ResponseWriter, r *http.Request
 	_, _ = w.Write(data)
 }
 
-func (m *roomManager) invalidateLarkAuthLocked(req larkAuthRequest) ([]managedPlatform, []larkAuthorizationTarget, error) {
+func (m *roomManager) invalidateLarkAuthLocked(req larkAuthRequest) ([]managedPlatform, []larkAuthorizationTarget, *platformQueryPause, error) {
 	file, err := m.readPlatforms()
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 	var matching []managedPlatformRecord
 	for _, c := range file.Platforms {
@@ -340,12 +344,12 @@ func (m *roomManager) invalidateLarkAuthLocked(req larkAuthRequest) ([]managedPl
 		}
 	}
 	if len(matching) != len(req.Affected) {
-		return nil, nil, ErrConflict
+		return nil, nil, nil, ErrConflict
 	}
 	for _, c := range matching {
 		refs, err := m.managedPlatformReferencesLocked(c.ID)
 		if err != nil {
-			return nil, nil, err
+			return nil, nil, nil, err
 		}
 		found := false
 		for _, ack := range req.Affected {
@@ -355,42 +359,52 @@ func (m *roomManager) invalidateLarkAuthLocked(req larkAuthRequest) ([]managedPl
 			}
 		}
 		if !found {
-			return nil, nil, ErrConflict
+			return nil, nil, nil, ErrConflict
 		}
 	}
 	// Validate the complete impact snapshot before pausing anything or touching
 	// CLI credentials. A failure never starts the external authentication action.
+	ids := make([]string, 0, len(matching))
 	for _, c := range matching {
-		if err := m.invalidatePlatformQueriesLocked(c.ID); err != nil {
-			return nil, nil, err
-		}
+		ids = append(ids, c.ID)
 	}
-	for _, c := range matching {
-		if err := m.settlePlatformQueriesLocked(c.ID); err != nil {
-			return nil, nil, err
+	pause, err := m.invalidatePlatformQueriesLocked(ids...)
+	if err != nil {
+		pause.release()
+		return nil, nil, nil, err
+	}
+	// Transfer the hold to the auth session only after every preflight succeeds.
+	transferred := false
+	defer func() {
+		if !transferred {
+			pause.release()
 		}
+	}()
+	if err := m.settlePlatformQueriesLocked(pause); err != nil {
+		return nil, nil, nil, err
 	}
 	// Settlement yields the manager gate. Recheck the acknowledged room impact
 	// before native credential changes, alongside registry revision preflight.
 	for _, c := range matching {
 		refs, err := m.managedPlatformReferencesLocked(c.ID)
 		if err != nil {
-			return nil, nil, err
+			return nil, nil, nil, err
 		}
 		for _, ack := range req.Affected {
 			if ack.ID == c.ID && !samePlatformReferences(refs, ack.ReferencedRooms) {
-				return nil, nil, ErrConflict
+				return nil, nil, nil, ErrConflict
 			}
 		}
 	}
 	var result []managedPlatform
 	targets := []larkAuthorizationTarget{}
 	if len(matching) == 0 {
-		return result, targets, nil
+		transferred = true
+		return result, targets, pause, nil
 	}
 	updated, err := m.platforms.InvalidateCLIProfile(matching)
 	if err != nil {
-		return nil, nil, managedPlatformError(err)
+		return nil, nil, nil, managedPlatformError(err)
 	}
 	for _, c := range updated {
 		for _, before := range matching {
@@ -401,15 +415,17 @@ func (m *roomManager) invalidateLarkAuthLocked(req larkAuthRequest) ([]managedPl
 		delete(m.larkPermissionChecks, c.ID)
 		item, err := m.publicPlatformLocked(c.Platform)
 		if err != nil {
-			return nil, nil, err
+			return nil, nil, nil, err
 		}
 		result = append(result, item)
 	}
-	return result, targets, nil
+	transferred = true
+	return result, targets, pause, nil
 }
 
 func (m *roomManager) runLarkAuth(ctx context.Context, s *larkAuthSession, action string) {
 	defer s.cancel()
+	defer func() { s.pause.release() }()
 	var login lark.LoginResult
 	var err error
 	if action == "logout" {
@@ -451,7 +467,9 @@ func (m *roomManager) runLarkAuth(ctx context.Context, s *larkAuthSession, actio
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	s.URL, s.QRCode = "", ""
-	s.Status, s.Username = "succeeded", login.Validation.Username
+	// Verification/recovery may yield manager.mu. Keep a nonterminal status
+	// until all connection and subscription commits are observable together.
+	s.Status, s.Username = "starting", login.Validation.Username
 	s.RenewalUnavailable, s.ExpiresAt = login.RenewalUnavailable, login.ExpiresAt
 	s.Permissions = login.Permissions
 	// A late success must never revive an explicitly cancelled setup session.
@@ -473,7 +491,10 @@ func (m *roomManager) runLarkAuth(ctx context.Context, s *larkAuthSession, actio
 	s.validation = login.Validation
 	if err == nil && action != "logout" && len(s.targets) > 0 {
 		if commitErr := m.completeLarkAuthorizationLocked(s); commitErr != nil {
-			s.Status, s.ErrorCode = "failed", "identity_or_version_changed"
+			s.Status, s.ErrorCode = "failed", "connection_save_failed"
+			if errors.Is(commitErr, ErrConflict) {
+				s.ErrorCode = "identity_or_version_changed"
+			}
 			if errors.Is(commitErr, ErrIdentity) {
 				s.ErrorCode = "identity_mismatch"
 			}
@@ -485,15 +506,24 @@ func (m *roomManager) runLarkAuth(ctx context.Context, s *larkAuthSession, actio
 	for _, target := range s.targets {
 		file, loadErr := m.platforms.Load()
 		if loadErr != nil {
+			if s.Followup != nil {
+				s.Followup.ConnectionView = "pending"
+			}
 			break
 		}
 		for _, c := range file.Platforms {
 			if c.ID == target.ID {
 				if item, e := m.publicPlatformLocked(c.Platform); e == nil {
 					s.Platforms = append(s.Platforms, item)
+				} else if s.Followup != nil {
+					s.Followup.ConnectionView = "pending"
 				}
 			}
 		}
+	}
+	s.pause.release()
+	if s.Status == "starting" {
+		s.Status = "succeeded"
 	}
 	m.authorizationChanged(s.owner)
 	close(s.done)

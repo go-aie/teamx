@@ -32,16 +32,21 @@ func (m *Manager) Deliver(ctx context.Context, key Key, version uint64) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
+	current := m.projection(key.Owner)[key]
+	if current.state == nil {
+		return ErrIdentity
+	}
+	platformID := current.state.Metadata().PlatformID
 	m.mu.Lock()
 	if m.stopping || m.retired[key.Owner] {
 		m.mu.Unlock()
 		return ErrClosing
 	}
-	if m.deliveries[key] != nil {
+	if m.deliveries[key] != nil || m.platformPauses[platformID] > 0 {
 		m.mu.Unlock()
 		return ErrBusy
 	}
-	flight := &deliveryFlight{done: make(chan struct{})}
+	flight := &deliveryFlight{platformID: platformID, done: make(chan struct{})}
 	m.deliveries[key] = flight
 	m.mu.Unlock()
 	defer func() { m.mu.Lock(); delete(m.deliveries, key); close(flight.done); m.mu.Unlock() }()
@@ -55,7 +60,7 @@ func (m *Manager) Deliver(ctx context.Context, key Key, version uint64) error {
 	}); err != nil {
 		return err
 	}
-	current := m.projection(key.Owner)[key]
+	current = m.projection(key.Owner)[key]
 	scope, err := m.host.Admit(context.WithValue(ctx, deliveryAdmissionKey{}, true), current.state)
 	if err != nil {
 		if errors.Is(err, ErrIdentity) && current.state.Metadata().Pending > 0 {

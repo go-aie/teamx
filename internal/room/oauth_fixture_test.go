@@ -41,10 +41,12 @@ func testReauthorizePlatform(m *roomManager, req managedPlatformRequest) (manage
 	if err != nil {
 		return managedPlatform{}, err
 	}
-	if err = m.invalidatePlatformQueriesLocked(c.ID); err != nil {
+	pause, err := m.invalidatePlatformQueriesLocked(c.ID)
+	defer pause.release()
+	if err != nil {
 		return managedPlatform{}, err
 	}
-	if err = m.settlePlatformQueriesLocked(c.ID); err != nil {
+	if err = m.settlePlatformQueriesLocked(pause); err != nil {
 		return managedPlatform{}, err
 	}
 	_, err = m.platforms.CommitOAuthLogin([]registry.Record{c}, c.ID, c.Name, app, "", "tester", platform.OAuthTokens{AccessToken: platform.NewSecret("rotated-token"), RefreshToken: platform.NewSecret("rotated-refresh"), ExpiresAt: time.Now().Add(time.Hour).UTC(), Scopes: cred.Scopes}, c.Validation)

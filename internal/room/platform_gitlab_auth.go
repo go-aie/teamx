@@ -44,18 +44,19 @@ type gitlabAuthRequest struct {
 	Affected       []gitlabAuthPlatform `json:"affected,omitempty"`
 }
 type gitlabAuthView struct {
-	AccountUsername string            `json:"account_username,omitempty"`
-	OnboardingID    string            `json:"onboarding_id,omitempty"`
-	PlatformID      string            `json:"platform_id"`
-	SessionID       string            `json:"session_id"`
-	Status          string            `json:"status"`
-	URL             string            `json:"authorization_url,omitempty"`
-	ErrorCode       string            `json:"error_code,omitempty"`
-	RequestedScopes []string          `json:"requested_scopes,omitempty"`
-	MissingScopes   []string          `json:"missing_scopes,omitempty"`
-	Cleanup         string            `json:"cleanup_status,omitempty"`
-	ExpiresAt       time.Time         `json:"expires_at"`
-	Platforms       []managedPlatform `json:"platforms,omitempty"`
+	Followup        *platformAuthFollowup `json:"followup,omitempty"`
+	AccountUsername string                `json:"account_username,omitempty"`
+	OnboardingID    string                `json:"onboarding_id,omitempty"`
+	PlatformID      string                `json:"platform_id"`
+	SessionID       string                `json:"session_id"`
+	Status          string                `json:"status"`
+	URL             string                `json:"authorization_url,omitempty"`
+	ErrorCode       string                `json:"error_code,omitempty"`
+	RequestedScopes []string              `json:"requested_scopes,omitempty"`
+	MissingScopes   []string              `json:"missing_scopes,omitempty"`
+	Cleanup         string                `json:"cleanup_status,omitempty"`
+	ExpiresAt       time.Time             `json:"expires_at"`
+	Platforms       []managedPlatform     `json:"platforms,omitempty"`
 }
 type gitlabAuthSession struct {
 	gitlabAuthView
@@ -645,16 +646,22 @@ func (m *roomManager) serveGitLabCallback(w http.ResponseWriter, r *http.Request
 			code = "account_mismatch"
 		}
 	}
+	var pause *platformQueryPause
+	var adopted []platform.Platform
+	viewPending := false
 	if exchangeErr == nil {
 		s.Status = "settling"
 		m.authorizationChanged(s.owner)
+		ids := make([]string, 0, len(s.records))
 		for _, c := range s.records {
-			if exchangeErr = m.invalidatePlatformQueriesLocked(c.ID); exchangeErr != nil {
-				break
-			}
+			ids = append(ids, c.ID)
 		}
+		var pauseErr error
+		pause, pauseErr = m.invalidatePlatformQueriesLocked(ids...)
+		defer pause.release()
+		exchangeErr = pauseErr
 		if exchangeErr == nil {
-			exchangeErr = m.settleGitLabAuthLocked(s)
+			exchangeErr = m.settleGitLabAuthLocked(s, pause)
 		}
 		if exchangeErr == nil {
 			exchangeErr = m.checkGitLabAuthLocked(s)
@@ -667,14 +674,13 @@ func (m *roomManager) serveGitLabCallback(w http.ResponseWriter, r *http.Request
 			if s.importID != "" {
 				app.OwnerID = identity.UserID
 			}
-			var saved []platform.Platform
-			saved, exchangeErr = m.platforms.CommitOAuthLogin(s.records, s.targetID, s.name, app, s.importID, s.owner, tokens, identity)
+			adopted, exchangeErr = m.platforms.CommitOAuthLogin(s.records, s.targetID, s.name, app, s.importID, s.owner, tokens, identity)
 			if exchangeErr == nil {
-				for _, c := range saved {
+				for _, c := range adopted {
 					v, e := m.publicPlatformLocked(c)
 					if e != nil {
-						exchangeErr = e
-						break
+						viewPending = true
+						continue
 					}
 					s.Platforms = append(s.Platforms, v)
 				}
@@ -685,14 +691,30 @@ func (m *roomManager) serveGitLabCallback(w http.ResponseWriter, r *http.Request
 		// The OAuth grant is already adopted. Subscription recovery is best
 		// effort: a failed save leaves its pause visible and must never revoke
 		// the adopted token or turn this into another authorization attempt.
-		for _, c := range s.Platforms {
-			_ = m.resumeGitLabSubscriptionsLocked(c.ID, true)
+		s.Status = "continuing"
+		m.authorizationChanged(s.owner)
+		ids := make([]string, 0, len(adopted))
+		recoveryErrors := map[string]error{}
+		for _, c := range adopted {
+			ids = append(ids, c.ID)
+			recoveryErrors[c.ID] = m.resumeGitLabSubscriptionsLocked(c.ID, true)
+		}
+		s.Followup = m.authorizationFollowupLocked(ids, recoveryErrors)
+		if viewPending {
+			s.Followup.ConnectionView = "pending"
+		}
+		pause.release()
+		if s.OnboardingID != "" {
+			m.mu.Unlock()
+			op, applyErr := m.applyOnboarding(s.ctx, s.OnboardingID, s.owner)
+			m.mu.Lock()
+			s.Followup.Onboarding = "pending"
+			if applyErr == nil && !op.Cancelled && op.Connection.Status == "connected" && onboardingFinished(op.Notifications) && onboardingFinished(op.Tool) {
+				s.Followup.Onboarding = "completed"
+			}
 		}
 		m.finishGitLabAuthLocked(s, "succeeded", "")
 		m.mu.Unlock()
-		if s.OnboardingID != "" {
-			_, _ = m.applyOnboarding(r.Context(), s.OnboardingID, s.owner)
-		}
 	} else {
 		// A commit-unknown save must never lead to revoking a possibly adopted token.
 		s.Cleanup = "not_required"
@@ -706,6 +728,9 @@ func (m *roomManager) serveGitLabCallback(w http.ResponseWriter, r *http.Request
 		if s.Status == "settling" || s.Status == "committing" {
 			code = "switch_unconfirmed"
 		}
+		if errors.Is(exchangeErr, errPlatformSettlement) {
+			code = "notification_settlement_pending"
+		}
 		if errors.Is(exchangeErr, registry.ErrAccountConnected) {
 			code, s.AccountUsername = "account_already_connected", identity.Username
 		}
@@ -716,17 +741,14 @@ func (m *roomManager) serveGitLabCallback(w http.ResponseWriter, r *http.Request
 			m.cleanupGitLabCandidate(s, cleanupID)
 		}
 		m.mu.Lock()
+		pause.release()
 		m.finishGitLabAuthLocked(s, "failed", code)
 		m.mu.Unlock()
 	}
 	http.Redirect(w, r, gitlabCompletionLocation(s), 303)
 }
-func (m *roomManager) settleGitLabAuthLocked(s *gitlabAuthSession) error {
-	var pending []<-chan struct{}
-	for _, c := range s.records {
-		pending = append(pending, m.notifications.PlatformDoneLocked(c.ID)...)
-		pending = append(pending, m.platformCalls.Pending(func(call *platformCall) bool { return call.platformID == c.ID })...)
-	}
+func (m *roomManager) settleGitLabAuthLocked(s *gitlabAuthSession, pause *platformQueryPause) error {
+	pending := append([]<-chan struct{}(nil), pause.pending...)
 	// Refresh belongs to the shared credential, not just the selected registry.
 	seen := map[string]bool{}
 	for _, c := range s.records {
@@ -738,7 +760,7 @@ func (m *roomManager) settleGitLabAuthLocked(s *gitlabAuthSession) error {
 			}
 		}
 	}
-	return m.settlePlatformCallsLocked(pending)
+	return m.settlePlatformQueryReceiptsLocked(pending)
 }
 func (m *roomManager) cleanupGitLabCandidate(s *gitlabAuthSession, id string) {
 	m.mu.Lock()
@@ -810,12 +832,16 @@ func (m *roomManager) runGitLabLogout(s *gitlabAuthSession) {
 		}
 		s.Platforms = append(s.Platforms, v)
 	}
+	platformIDs := make([]string, 0, len(s.records))
 	for _, c := range s.records {
-		if e := m.invalidatePlatformQueriesLocked(c.ID); e != nil {
-			err = e
-		}
+		platformIDs = append(platformIDs, c.ID)
 	}
-	if e := m.settleGitLabAuthLocked(s); e != nil {
+	pause, pauseErr := m.invalidatePlatformQueriesLocked(platformIDs...)
+	defer pause.release()
+	if pauseErr != nil {
+		err = pauseErr
+	}
+	if e := m.settleGitLabAuthLocked(s, pause); e != nil {
 		err = e
 	}
 	if err != nil {
@@ -927,5 +953,5 @@ func (m *roomManager) serveGitLabComplete(w http.ResponseWriter, r *http.Request
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.Header().Set("Referrer-Policy", "no-referrer")
 	w.Header().Set("Content-Security-Policy", "default-src 'none'; frame-ancestors 'none'; base-uri 'none'")
-	_, _ = fmt.Fprintf(w, `<!doctype html><html lang="zh-CN"><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>GitLab 授权已处理</title><p>授权回调已处理。返回 TeamX 查询原操作的账号核验、连接保存和接续结果。</p><p><a href="%s">返回 TeamX 查看结果</a></p><p>也可以关闭此页，回到原标签页。</p></html>`, html.EscapeString(destination))
+	_, _ = fmt.Fprintf(w, `<!doctype html><html lang="zh-CN"><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>GitLab 授权结果</title><p>请返回 TeamX 查看授权结果。账号连接、通知恢复和接入设置会分别显示；此页不代表连接已保存。</p><p><a href="%s">返回 TeamX 查看结果</a></p><p>也可以关闭此页，回到原标签页。</p></html>`, html.EscapeString(destination))
 }

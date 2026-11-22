@@ -28,6 +28,34 @@ async function authorize(ui, action="login") {
  await ui.el(`gitlab-${action}`).emit("click");
  if (!ui.el("connection-auth-confirmation").hidden) await ui.el("connection-auth-confirm").emit("click");
 }
+test("GitLab settlement timeout names old work without retrying authorization",async()=>{
+ const api=fixture();
+ api.status={status:"failed",error_code:"notification_settlement_pending",cleanup_status:"manual_required"};
+ const ui=await edit(api);await authorize(ui);
+ assert.match(ui.el("platforms-feedback").textContent,/旧通知任务或平台调用尚未退出.*本次授权未保存/);
+ assert.match(ui.el("platforms-feedback").textContent,/未撤销现用授权/);
+ assert.equal(api.calls.filter(c=>c.path.endsWith("/gitlab/login")).length,1);
+ assert.equal(api.calls.some(c=>c.path.endsWith("/platforms/save")),false);
+});
+test("GitLab saved authorization distinguishes restored and pending followups without another login",async()=>{
+ for(const notifications of ["not_required","restored","pending"]){
+  const api=fixture();api.status={status:"succeeded",platforms:[{...api.items[0],version:3}],followup:{notifications,onboarding:notifications==="pending"?"pending":"completed"}};
+  const ui=await edit(api);await authorize(ui);
+  assert.match(ui.el("platforms-feedback").textContent,/授权已更新/);
+  if(notifications==="restored")assert.match(ui.el("platforms-feedback").textContent,/原有通知已恢复/);
+  if(notifications==="pending")assert.match(ui.el("platforms-feedback").textContent,/部分通知尚未恢复.*接入设置尚未完成/);
+  else assert.doesNotMatch(ui.el("platforms-feedback").textContent,/手动同步恢复|未完成/);
+  assert.equal(api.calls.filter(c=>c.path.endsWith("/gitlab/login")).length,1);
+  assert.match(ui.el("gitlab-account").textContent,/已连接/);
+ }
+});
+
+test("GitLab continuing local setup keeps its original authorization active",async()=>{
+ const api=fixture();api.status={status:"continuing"};const ui=await edit(api);await authorize(ui);
+ assert.match(ui.el("platforms-feedback").textContent,/授权已保存.*后续设置/);
+ assert.equal(ui.el("gitlab-login").disabled,true);
+ assert.equal(api.calls.filter(c=>c.path.endsWith("/gitlab/login")).length,1);
+});
 test("GitLab reauthorization keeps saved scopes and displays incompatible callback details",async()=>{
  const api=fixture();api.prepared={...api.prepared,status:"application_incompatible",application_id:undefined,scopes:["api"],applications:[{client_id:"saved-client",scopes:["api"],callback_compatible:false,missing_scopes:[]}]};
  const ui=await edit(api);
@@ -587,4 +615,12 @@ test('GitLab returning with an expired browser binding never retries authorizati
  const ui=await launch(api,saved);await settle();
  assert.equal(api.calls.filter(c=>c.path.endsWith('/gitlab/login')).length,0);assert.equal(saved.has('teamx.gitlab-authorization'),false);
  assert.match(ui.el('platforms-feedback').textContent,/原授权会话已失效/);
+});
+test('GitLab restart reconciles the connection list without replaying the stale session',async()=>{
+ const api=fixture(),saved=new Map([['teamx.gitlab-authorization',JSON.stringify({installation_id:'',operator:'tester',service_epoch:'previous-service',session_id:'old',platform_id:'original'})]]);
+ const ui=await launch(api,saved);await settle();
+ assert.match(ui.el('platforms-feedback').textContent,/服务已重启.*核对连接状态/);
+ assert.equal(saved.has('teamx.gitlab-authorization'),false);
+ assert.equal(api.calls.some(c=>/\/gitlab\/(login|status|cancel|logout)$/.test(c.path)),false);
+ assert.ok(api.calls.some(c=>c.path.startsWith('/v1/platforms?')));
 });

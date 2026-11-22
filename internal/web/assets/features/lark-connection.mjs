@@ -4,6 +4,38 @@ export function createLarkConnection({ env, runtime, connectionsUI, settingsUI, 
   const { document, window, Option, setTimeout, request } = env;
   const { $, setSelectOptions } = runtime;
 
+  const returnKey="teamx.lark-authorization";
+  function clearSavedAuthorization() {try{runtime.storage?.removeItem(returnKey);}catch{}}
+  function saveAuthorization(auth) {
+    const ref={installation_id:runtime.state.installationID || "",operator:runtime.state.operator,service_epoch:runtime.state.catalog?.service_epoch,
+      session_id:auth.session_id,platform_id:connectionsUI.platforms.selected?.id || "",action:auth.action,profile:auth.profile,stage:auth.stage};
+    try{runtime.storage?.setItem(returnKey,JSON.stringify(ref));}catch{}
+  }
+  async function restoreAuthorization() {
+    let ref;try{ref=JSON.parse(runtime.storage?.getItem(returnKey) || "null");}catch{}
+    if(!ref)return;
+    const state=runtime.state;
+    const validProfile=ref.profile && ref.profile.version===1 && typeof ref.profile.profile==="string" && typeof ref.profile.executable==="string" && ["feishu","lark"].includes(ref.profile.brand);
+    if(ref.installation_id!==(state.installationID || "") || ref.operator!==state.operator || typeof ref.session_id!=="string" || !["setup","login","logout"].includes(ref.action) || ref.action!=="setup" && !validProfile) {clearSavedAuthorization();return;}
+    await settingsUI.openSettings("platforms");
+    const item=connectionsUI.platforms.items.find(item=>item.id===ref.platform_id);
+    if(ref.service_epoch!==state.catalog?.service_epoch) {
+      clearSavedAuthorization();
+      connectionsUI.showAuthorizationNotice("服务已重启，原飞书授权会话已结束。请核对连接状态；不会自动重新授权。");return;
+    }
+    await connectionsUI.editPlatform(item,{discover:!!item});
+    if(!item) {
+      $("connection-provider").value=ref.profile?.brand || "feishu";
+      connectionsUI.connectionAuthFields();
+      if(ref.profile) {
+        $("connection-executable").value=ref.profile.executable;
+        await detectLarkPlatform({profile:ref.profile.profile,exact:true});
+      }
+    }
+    connectionsUI.platforms.auth={session_id:ref.session_id,action:ref.action,profile:ref.profile,stage:ref.stage,owner:connectionsUI.connectionPayload({}),affected:[]};
+    renderLarkAccount();await refreshAuthorization();
+  }
+
   function connectionBrand() { return $("connection-provider").value === "lark" ? "lark" : "feishu"; }
 
   function connectionOrigin() { return connectionBrand() === "lark" ? "https://open.larksuite.com" : "https://open.feishu.cn"; }
@@ -75,7 +107,7 @@ export function createLarkConnection({ env, runtime, connectionsUI, settingsUI, 
     const changedUser = same && v?.status === "valid" && !!option?.user && option.user !== v.username;
     const flowVerified = setup?.status === "succeeded" && setup.username === option?.user;
     const loginVerified = connectionsUI.platforms.larkAccountVerified?.username === option?.user && JSON.stringify(connectionsUI.platforms.larkAccountVerified?.profile) === JSON.stringify(larkProfileDraft());
-    const verified = !expired && !changedUser && (same && v?.status === "valid" || flowVerified || loginVerified);
+    const verified = !expired && !changedUser && (same ? v?.status === "valid" : flowVerified || loginVerified);
     const needsAuth = !option?.user || expired || setup?.stage === "authorization" && incomplete;
     const needsRepair = !!connectionsUI.platforms.larkDiscoveryError || !!connectionsUI.platforms.larkSetupUncertain || expired || same && v?.status === "failed" || connectionBrand() === "lark" && !hasProfiles && !!connectionsUI.platforms.discovery;
     if (active || pending || connectionsUI.platforms.detecting) closeLarkControls();
@@ -121,7 +153,7 @@ export function createLarkConnection({ env, runtime, connectionsUI, settingsUI, 
     $("connection-detect").textContent = connectionsUI.platforms.detecting ? "正在检测…" : "重新检测";
     renderLarkSetupCommand();
 
-    renderLarkCapabilities(!!option?.user && !expired && !changedUser && !incomplete && !active && !pending && !connectionsUI.platforms.detecting);
+    renderLarkCapabilities(!!option?.user && !expired && !changedUser && !incomplete && !active && !pending && !connectionsUI.platforms.detecting && (!same || v?.status === "valid"));
     connectionsUI.renderPlatformReferences();
 
     const checkFailed = capabilityView?.key === capabilityKey() && !!capabilityView.errorCode;
@@ -138,7 +170,7 @@ export function createLarkConnection({ env, runtime, connectionsUI, settingsUI, 
       if (option?.user) {
         status.hidden = false;
         status.textContent = expired ? "需要重新授权" : changedUser ? "账号已变化" : checkFailed ? "检查未通过" : verified ? "已验证" : same && v?.status === "failed" ? "验证失败" : "已登录，待验证";
-        status.dataset.kind = expired || changedUser || checkFailed || v?.status === "failed" ? "error" : verified ? "success" : "status";
+        status.dataset.kind = expired || changedUser || checkFailed || same && v?.status === "failed" ? "error" : verified ? "success" : "status";
       }
     }
   }
@@ -228,6 +260,7 @@ export function createLarkConnection({ env, runtime, connectionsUI, settingsUI, 
     clearLarkAuthView(); connectionsUI.platforms.formVersion++;
     const version = connectionsUI.platforms.formVersion;
     if (!auth) return;
+    clearSavedAuthorization();
     // Detach the original local flow. Cancellation is never a logout/revocation.
     connectionsUI.platforms.auth = null;
     if (auth.action === "setup") connectionsUI.platforms.larkSetupUncertain = true;
@@ -296,6 +329,7 @@ export function createLarkConnection({ env, runtime, connectionsUI, settingsUI, 
       }
       for (const c of result.platforms || []) connectionsUI.updatePlatformItem(c);
       connectionsUI.platforms.auth = {session_id:result.session_id,action,profile,affected,owner,stage:result.stage};
+      saveAuthorization(connectionsUI.platforms.auth);
       connectionsUI.platforms.larkStarting = null;
       $("connection-account").textContent = action === "logout" ? "正在退出登录…" : "正在准备授权页面…";
       await refreshAuthorization();
@@ -306,7 +340,7 @@ export function createLarkConnection({ env, runtime, connectionsUI, settingsUI, 
         connectionsUI.connectionFeedback(connectionsUI.connectionValidationErrors[error.code] || (error.code === "busy" ? "已有操作正在处理，请稍后重新检测。" : error.code === "setup_brand_unverified" ? "此品牌的网页配置尚未验证，请展开「修复连接」检查本机应用。" : "配置结果未确认，请先重新检测。"), "error");
         return;
       }
-      connectionsUI.connectionFeedback(error.code === "conflict" ? "连接或引用范围已变化，请返回列表重新加载。" : error.code === "busy" ? "操作尚未结束，请稍后重新检测。" : "授权结果未确认，请重新检测。", "error");
+      connectionsUI.connectionFeedback(connectionsUI.connectionValidationErrors[error.code] || (error.code === "conflict" ? "连接或引用范围已变化，请返回列表重新加载。" : error.code === "busy" ? "操作尚未结束，请稍后重新检测。" : "授权结果未确认，请重新检测。"), "error");
     } finally {
       connectionsUI.platforms.larkStarting = null;
       connectionsUI.platforms.sending = false; settingsUI.renderSettingsNavigation(); $("connection-fields").disabled = false; $("connection-back").disabled = false; $("close-settings").disabled = false;
@@ -341,7 +375,7 @@ export function createLarkConnection({ env, runtime, connectionsUI, settingsUI, 
 
         return;
       }
-      clearLarkAuthView(); connectionsUI.platforms.auth = null; finished = true;
+      clearSavedAuthorization();clearLarkAuthView(); connectionsUI.platforms.auth = null; finished = true;
       for (const item of result.platforms || []) connectionsUI.updatePlatformItem(item);
       void runtime.observe("configuration");
       const setup = auth.action === "setup";
@@ -363,16 +397,27 @@ export function createLarkConnection({ env, runtime, connectionsUI, settingsUI, 
           connectionsUI.platforms.larkAccountVerified = {profile:auth.profile,username:result.username};renderLarkAccount();
         }
         const savedProfile = connectionsUI.platforms.selected && JSON.stringify(auth.profile) === JSON.stringify(connectionsUI.platforms.selected.cli_profile);
+        if (auth.action === "login" && savedProfile && connectionsUI.platforms.selected.validation.status !== "valid") {
+          if (result.followup?.connection_view === "pending") {
+            connectionsUI.connectionFeedback("账号授权已完成。" + connectionsUI.authorizationFollowupFeedback(result.followup).message, "status");return;
+          }
+          connectionsUI.connectionFeedback("账号已授权，连接验证结果未确认，请重新验证。", "error");return;
+        }
         const sharedCount = (auth.affected || []).filter(c => c.id !== connectionsUI.platforms.selected?.id).length;
         const message = auth.action === "logout" ? "已退出登录。" : savedProfile ? "账号已验证。" : "账号已验证，请保存连接。";
         const shared = auth.action !== "logout" && sharedCount ? `已核对 ${sharedCount} 个共享连接；本人投递需在对应成员中重新核验。` : "";
         const renewal = result.renewal_unavailable ? "登录无法自动续期，请联系应用管理员。" : "";
         const detail = auth.action === "logout" ? "退出登录不等于取消应用的全部授权。如需完全取消，请前往飞书 / Lark 授权管理页。" : result.renewal_unavailable ? () => `登录将于 ${settingsUI.formatDate(result.expires_at)} 到期。请应用管理员在开发者后台开启「刷新 user_access_token」并发布新版本，再重新授权。` : "";
-        connectionsUI.connectionFeedback(message + shared + renewal, result.renewal_unavailable ? "status" : "success", detail);
+        const followup=connectionsUI.authorizationFollowupFeedback(result.followup);
+        connectionsUI.connectionFeedback(message + shared + renewal + followup.message, result.renewal_unavailable || followup.pending ? "status" : "success", detail);
       } else connectionsUI.connectionFeedback(setup ? larkSetupFailure(result) : result.status === "cancelled" ? "登录已取消，请重新检测。" : connectionsUI.connectionValidationErrors[result.error_code] || "认证失败或已过期，请重新发起。", "error");
     } catch (error) {
       if (finished) { if (version === connectionsUI.platforms.formVersion) connectionsUI.connectionFeedback("授权已完成，验证结果未确认。请重新验证。", "error"); return; }
       if (!current() || connectionsUI.platforms.auth !== auth) return;
+      if (["identity","conflict"].includes(error.code)) {
+        clearSavedAuthorization();clearLarkAuthView();connectionsUI.platforms.auth=null;renderLarkAccount();
+        connectionsUI.connectionFeedback("原授权会话已结束或不属于当前账号，请核对连接列表；不会自动重新授权。", "status");return;
+      }
       connectionsUI.connectionFeedback("授权状态暂不可读，正在核对原操作；不会重新发起或取消授权。", "error"); onFailure(error);
 
     }
@@ -461,6 +506,7 @@ export function createLarkConnection({ env, runtime, connectionsUI, settingsUI, 
   }
 
   return {
+    restoreAuthorization,
     readAuthorization,
     mount,
     connectionOrigin,

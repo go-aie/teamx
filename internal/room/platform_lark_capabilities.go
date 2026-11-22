@@ -15,6 +15,10 @@ import (
 // subscription only resumes its existing collector, not its member actions.
 // Callers must verify the account outside the manager lock before entering here.
 func (m *roomManager) applyLarkAccountCheckLocked(profile platform.CLIProfile, account platform.AccountIdentity, check *lark.PermissionCheck) error {
+	return m.applyLarkAccountCheckWithRecoveryLocked(profile, account, check, m.resumeLarkSubscriptionsLocked)
+}
+
+func (m *roomManager) applyLarkAccountCheckWithRecoveryLocked(profile platform.CLIProfile, account platform.AccountIdentity, check *lark.PermissionCheck, restore func(string) error) error {
 	if !account.Valid() || account.Provider != "lark" || check != nil && check.Account != account {
 		return ErrIdentity
 	}
@@ -38,7 +42,7 @@ func (m *roomManager) applyLarkAccountCheckLocked(profile platform.CLIProfile, a
 			m.updates.mark(uiUpdate{Topic: "platforms"})
 			m.updates.markSubscribedRooms("tools")
 		}
-		if err := m.resumeLarkSubscriptionsLocked(c.ID); err != nil {
+		if err := restore(c.ID); err != nil {
 			return err
 		}
 	}

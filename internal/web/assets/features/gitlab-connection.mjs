@@ -13,8 +13,11 @@ export function createGitLabConnection({ env, connectionsUI, runtime, settingsUI
   async function restoreAuthorization() {
     let ref;try{ref=JSON.parse(runtime.storage?.getItem(returnKey) || "null");}catch{}
     if(!ref)return;
-    if(ref.installation_id!==(state.installationID || "") || ref.operator!==state.operator || ref.service_epoch!==state.catalog?.service_epoch || typeof ref.session_id!=="string") {clearSavedAuthorization();return;}
+    if(ref.installation_id!==(state.installationID || "") || ref.operator!==state.operator || typeof ref.session_id!=="string") {clearSavedAuthorization();return;}
     await settingsUI.openSettings("platforms");
+    if(ref.service_epoch!==state.catalog?.service_epoch) {
+      clearSavedAuthorization();connectionsUI.showAuthorizationNotice("服务已重启，原 GitLab 授权会话已结束。请核对连接状态；不会自动重新授权。");return;
+    }
     const item=connectionsUI.platforms.items.find(item=>item.id===ref.platform_id);
     await connectionsUI.editPlatform(item);
     connectionsUI.platforms.gitlabAuth={session_id:ref.session_id,platform_id:ref.platform_id,onboarding_id:ref.onboarding_id,affected:[],requestedScopes:["api"]};
@@ -298,8 +301,9 @@ export function createGitLabConnection({ env, connectionsUI, runtime, settingsUI
     try {
       const result = await request("/v1/platforms/gitlab/status",connectionsUI.connectionPayload({session_id:auth.session_id}));
       if (!current() || connectionsUI.platforms.gitlabAuth !== auth || version !== connectionsUI.platforms.formVersion) return;
-      if (["waiting", "exchanging", "settling", "committing", "cleaning", "disconnecting"].includes(result.status)) {
+      if (["waiting", "exchanging", "settling", "committing", "continuing", "cleaning", "disconnecting"].includes(result.status)) {
         auth.status=result.status;renderGitLabAccount();
+        if(result.status==="continuing")connectionsUI.connectionFeedback("授权已保存，正在完成后续设置…");
         return;
       }
       clearSavedAuthorization();clearGitLabAuthView();connectionsUI.platforms.gitlabAuth=null;
@@ -313,11 +317,12 @@ export function createGitLabConnection({ env, connectionsUI, runtime, settingsUI
         } catch {if(onboardingUI.onboardingCurrent(resultVersion,resultIdentity)){onboardingUI.onboarding.error="账号登录结果已返回，通知与工具的进度未确认，请读取接入进度。";onboardingUI.renderOnboarding();}}
       }
       const savedMessage=auth.updatingApplication ? "应用配置已更新。" : auth.creatingPlatform ? "已连接 GitLab。" : "授权已更新。";
-      const messages={succeeded:savedMessage + (auth.affected.some(c=>c.referenced_rooms?.length) ? "通知请手动同步恢复。" : ""),logged_out:"已退出登录，远端撤销已确认。",disconnected:"本地已断开，远端撤销或调用结清未确认。",cancelled:"本次登录已取消，请核对连接状态。",expired:"本次登录已过期，可以重新登录。",failed:"授权未完成，保存或切换结果请返回列表核对。"};
+      const followup=connectionsUI.authorizationFollowupFeedback(result.followup);
+      const messages={succeeded:savedMessage + followup.message,logged_out:"已退出登录，远端撤销已确认。",disconnected:"本地已断开，远端撤销或调用结清未确认。",cancelled:"本次登录已取消，请核对连接状态。",expired:"本次登录已过期，可以重新登录。",failed:"授权未完成，保存或切换结果请返回列表核对。"};
       const requestedScopes=result.requested_scopes || auth.requestedScopes, missingScopes=result.missing_scopes || [];
       const scopeError=`${missingScopes.length ? `GitLab 应用缺少权限：${missingScopes.join(" + ")}。` : `GitLab 拒绝了申请的权限：${requestedScopes.join(" + ")}。`}请打开 GitLab 应用设置，核对当前 Application ID 并勾选 ${requestedScopes.join(" + ")}，保存后重新登录。${requestedScopes.includes("write_repository") ? "若不需要拉取和推送代码，可取消 write_repository 后重新授权。" : ""}`;
       const duplicateAccount=result.error_code==="account_already_connected";
-      const errors={account_already_connected:`${result.account_username ? `@${result.account_username}` : "本次授权的 GitLab 账号"} 已连接其他平台，请切换账号后重试。`,invalid_client:"应用凭据无效，请检查 Application ID 和 Secret。",invalid_scope:scopeError,invalid_grant:"授权已失效，请重新登录 GitLab。",identity_mismatch:"GitLab 账号与原账号不符，请为另一个账号新建连接；原连接未切换。"};
+      const errors={switch_unconfirmed:"连接保存结果未确认，请先核对列表，不要重复授权。",source_changed:"连接或引用已变化，本次授权未保存，请核对列表。",notification_settlement_pending:"旧通知任务或平台调用尚未退出，本次授权未保存。请稍后核对连接再重试。",account_already_connected:`${result.account_username ? `@${result.account_username}` : "本次授权的 GitLab 账号"} 已连接其他平台，请切换账号后重试。`,invalid_client:"应用凭据无效，请检查 Application ID 和 Secret。",invalid_scope:scopeError,invalid_grant:"授权已失效，请重新登录 GitLab。",identity_mismatch:"GitLab 账号与原账号不符，请为另一个账号新建连接；原连接未切换。"};
       const cleanupMessage=result.cleanup_status === "manual_required" ? "候选授权待人工清理，未撤销现用授权。" : ["pending","unconfirmed"].includes(result.cleanup_status) ? "候选令牌或远端撤销未确认，请在 GitLab 个人应用页面核对授权。" : result.cleanup_status === "revoked" && result.status === "failed" ? "本次未采用的候选令牌已撤销。" : "";
       const message=`${errors[result.error_code] || messages[result.status] || "请核对连接状态。"}${duplicateAccount ? "" : cleanupMessage}`;
       if (result.status === "failed" && auth.clientImportID) {
@@ -326,7 +331,7 @@ export function createGitLabConnection({ env, connectionsUI, runtime, settingsUI
         $("gitlab-setup").hidden=false;$("gitlab-advanced").open=true;
         connectionsUI.connectionFeedback();gitlabSetupFeedback(message,"error");
         renderGitLabAccount();
-      } else connectionsUI.connectionFeedback(message,["succeeded","logged_out"].includes(result.status)?"success":"error",duplicateAccount ? result.cleanup_status==="manual_required" ? "本次未使用的授权尚未自动撤销，已有平台的授权保持不变。" : cleanupMessage : "");
+      } else connectionsUI.connectionFeedback(message,result.status==="succeeded" && followup.pending ? "status" : ["succeeded","logged_out"].includes(result.status)?"success":"error",duplicateAccount ? result.cleanup_status==="manual_required" ? "本次未使用的授权尚未自动撤销，已有平台的授权保持不变。" : cleanupMessage : "");
     } catch(error) {
       if(connectionsUI.platforms.gitlabAuth===auth && version===connectionsUI.platforms.formVersion && error.code==="identity") {
         clearSavedAuthorization();clearGitLabAuthView();connectionsUI.platforms.gitlabAuth=null;renderGitLabAccount();

@@ -102,12 +102,13 @@ func (m *roomManager) runLarkSetup(ctx context.Context, s *larkAuthSession, exec
 	if err == nil {
 		// Normally there are no affected platforms for a freshly allocated
 		// profile. Recheck at the handoff; never bypass existing impact guards.
-		_, _, err = m.invalidateLarkAuthLocked(larkAuthRequest{Profile: &s.profile})
+		_, _, s.pause, err = m.invalidateLarkAuthLocked(larkAuthRequest{Profile: &s.profile})
 		if err != nil {
 			err = &lark.Error{Code: "configuration_changed"}
 		}
 	}
 	if err != nil {
+		s.pause.release()
 		s.Status, s.ErrorCode = "failed", lark.ErrorCode(err)
 		if ctx.Err() == context.Canceled || m.closing {
 			s.Status, s.ErrorCode = "cancelled", "cancelled"

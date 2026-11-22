@@ -328,11 +328,25 @@ func TestScionLogoutWaitsBeforeDeletingCredentialsAndRejectsConcurrentEdits(t *t
 		t.Fatal("old call not cancelled")
 	}
 	// Wait for the join to release the catalog gate; cancellation alone is not settlement.
-	m.mu.Lock()
-	busy := m.busy
-	m.mu.Unlock()
-	if !busy {
-		t.Fatal("logout did not own the catalog while settling")
+	// Cancellation can also be observed while invalidation is publishing its
+	// paused states outside the gate. Observe the actual join before asserting
+	// its catalog ownership, rather than depending on goroutine scheduling.
+	deadline := time.Now().Add(3 * time.Second)
+	for {
+		m.mu.Lock()
+		busy := m.busy
+		m.mu.Unlock()
+		if busy {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("logout did not own the catalog while settling")
+		}
+		select {
+		case code := <-result:
+			t.Fatal("logout returned before the previous call settled", code)
+		case <-time.After(time.Millisecond):
+		}
 	}
 	m.mu.Lock()
 	file, err := m.readPlatforms()

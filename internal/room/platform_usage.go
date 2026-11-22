@@ -2,12 +2,14 @@ package room
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"reflect"
 	"time"
 
 	"github.com/go-aie/teamx/internal/app/platforms"
 	"github.com/go-aie/teamx/internal/platform"
+	"github.com/go-aie/teamx/internal/platform/notification"
 	"github.com/go-aie/teamx/internal/platform/registry"
 )
 
@@ -107,22 +109,54 @@ func samePlatformReferences(refs []managedPlatformReference, acknowledged []Room
 // Pause BEFORE committing the replacement. A partial failure preserves the
 // previous connection. Paused subscriptions require verified same-account
 // recovery or explicit sync. Revisions reject all late results.
-func (m *roomManager) invalidatePlatformQueriesLocked(id string) error {
-	m.cancelPlatformCallsLocked(func(c *platformCall) bool { return c.platformID == id })
+type platformQueryPause struct {
+	notifications *notification.PlatformPause
+	pending       []<-chan struct{}
+}
+
+func (p *platformQueryPause) release() {
+	if p != nil {
+		p.notifications.Release()
+	}
+}
+
+// Requires manager.mu on entry and return. Freeze all shared connections
+// before publishing invalidated subscriptions, and retain the exact receipts
+// captured at cancellation rather than querying replacement workers later.
+func (m *roomManager) invalidatePlatformQueriesLocked(ids ...string) (*platformQueryPause, error) {
+	p := &platformQueryPause{notifications: m.notifications.PausePlatforms(ids...)}
+	p.pending = p.notifications.Done()
+	for _, id := range ids {
+		p.pending = append(p.pending, m.cancelPlatformCallsLocked(func(c *platformCall) bool { return c.platformID == id })...)
+	}
 	m.mu.Unlock()
-	err := m.notifications.InvalidatePlatformLocked(id)
+	var err error
+	for _, id := range ids {
+		if err = m.notifications.InvalidatePlatformLocked(id); err != nil {
+			break
+		}
+	}
 	m.mu.Lock()
-	return notificationRoomError(err)
+	return p, notificationRoomError(err)
 }
 
 var errPlatformReferenced = fmt.Errorf("%w: connection is referenced; explicitly replace or unbind it first", ErrConflict)
+var errPlatformSettlement = fmt.Errorf("%w: previous platform work has not settled", ErrBusy)
 
 // Requires manager.mu on entry AND return. A rotation owns the catalog while
 // joining old query processes, but never closes the active model service.
-func (m *roomManager) settlePlatformQueriesLocked(id string) error {
-	pending := m.notifications.PlatformDoneLocked(id)
-	pending = append(pending, m.platformCalls.Pending(func(call *platformCall) bool { return call.platformID == id })...)
-	return m.settlePlatformCallsLocked(pending)
+func (m *roomManager) settlePlatformQueriesLocked(p *platformQueryPause) error {
+	return m.settlePlatformQueryReceiptsLocked(p.pending)
+}
+
+func (m *roomManager) settlePlatformQueryReceiptsLocked(pending []<-chan struct{}) error {
+	if err := m.settlePlatformCallsLocked(pending); err != nil {
+		if errors.Is(err, ErrBusy) {
+			return errPlatformSettlement
+		}
+		return err
+	}
+	return nil
 }
 
 // Joins canceled work without holding the catalog gate. Requires mu on entry and return.
