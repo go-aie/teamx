@@ -398,14 +398,33 @@ func executableDigest(path string) (string, error) {
 }
 
 type configOption struct {
-	ID           string `json:"id"`
-	CurrentValue string `json:"currentValue"`
-	Options      []struct {
-		Group   string `json:"group"`
-		Options []struct {
-			Value string `json:"value"`
-		} `json:"options"`
-	} `json:"options"`
+	ID           string        `json:"id"`
+	CurrentValue string        `json:"currentValue"`
+	Options      []configValue `json:"options"`
+}
+
+type configValue struct {
+	Value   string        `json:"value"`
+	Group   string        `json:"group"`
+	Options []configValue `json:"options"`
+}
+
+func reasoningValue(options []configOption, effort string) bool {
+	var contains func([]configValue) bool
+	contains = func(values []configValue) bool {
+		for _, value := range values {
+			if value.Value == effort || contains(value.Options) {
+				return true
+			}
+		}
+		return false
+	}
+	for _, option := range options {
+		if option.ID == "reasoning_effort" {
+			return contains(option.Options)
+		}
+	}
+	return false
 }
 
 func modelValue(options []configOption, model ModelConfig) (string, error) {

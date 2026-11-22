@@ -18,11 +18,12 @@ type modelMemberView struct {
 	OperationID    string           `json:"operation_id,omitempty"`
 }
 type modelActualView struct {
-	EntryID    string `json:"entry_id"`
-	Revision   uint64 `json:"revision"`
-	ModelID    string `json:"model_id"`
-	Generation string `json:"generation"`
-	Pending    bool   `json:"pending"`
+	EntryID         string `json:"entry_id"`
+	Revision        uint64 `json:"revision"`
+	ModelID         string `json:"model_id"`
+	Generation      string `json:"generation"`
+	Pending         bool   `json:"pending"`
+	ReasoningEffort string `json:"reasoning_effort,omitempty"`
 }
 
 func (c *modelController) memberViewLocked(ref memberModelReference) modelMemberView {
@@ -32,7 +33,7 @@ func (c *modelController) memberViewLocked(ref memberModelReference) modelMember
 	if reference, _, err := readSessionReference(path, ref.MemberIdentity); err == nil && reference.Directory != "" {
 		var frozen modelSessionSnapshot
 		if readSnapshot(filepath.Join(filepath.Dir(path), reference.Directory+".model.json"), &frozen, maxPrivateFileBytes) == nil && frozen.validate(ref.MemberIdentity) == nil {
-			v.Actual = &modelActualView{frozen.EntryID, frozen.EntryRevision, frozen.Profile.Model.ModelID, reference.Directory, reference.Pending}
+			v.Actual = &modelActualView{frozen.EntryID, frozen.EntryRevision, frozen.Profile.Model.ModelID, reference.Directory, reference.Pending, frozen.Profile.Model.ReasoningEffort}
 		}
 	}
 	return v
@@ -86,6 +87,10 @@ func (m *roomManager) serveModels(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	c := m.modelControl
+	if r.Method == http.MethodPost && r.URL.Path == "/v1/models/member-reasoning" {
+		c.serveMemberReasoning(w, r)
+		return
+	}
 	if r.Method == http.MethodGet && r.URL.Path == "/v1/models" {
 		m.mu.Lock()
 		defer m.mu.Unlock()

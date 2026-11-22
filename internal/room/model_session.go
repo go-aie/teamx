@@ -212,6 +212,12 @@ func newModelSessionSnapshot(catalog modelCatalog, ref memberModelReference, gen
 	if validation.EntryID != entry.ID || validation.Revision != entry.Revision || validation.CredentialRef != entry.CredentialRef || validation.ExecutionDigest != entry.executionDigest() || !validation.Result.Text || !validation.Result.ToolRoundTrip || !validation.Result.Cleanup {
 		return modelSessionSnapshot{}, errors.New("model validation does not match the execution target")
 	}
+	// The receipt verifies the catalog route; the member override is checked
+	// locally and confirmed by ACP when the new generation opens.
+	entry, err = ref.Selection.executionEntry(entry)
+	if err != nil {
+		return modelSessionSnapshot{}, err
+	}
 	if len(profile.ToolEnv) == 0 {
 		profile.ToolEnv = nil
 	}

@@ -121,13 +121,32 @@ func (c modelCatalog) validate() error {
 type modelSelection struct {
 	Mode    string `json:"mode"`
 	EntryID string `json:"entry_id,omitempty"`
+	// Empty inherits the selected model's default. Overrides apply to new generations.
+	ReasoningEffort string `json:"reasoning_effort,omitempty"`
 }
 
 func (s modelSelection) validate() error {
+	switch s.ReasoningEffort {
+	case "", "off", "minimal", "low", "medium", "high", "xhigh", "max":
+	default:
+		return invalidField("reasoning_effort", "choose a supported reasoning effort")
+	}
 	if s.Mode == "default" && s.EntryID == "" || s.Mode == "explicit" && modelEntryID.MatchString(s.EntryID) {
 		return nil
 	}
 	return invalidField("model_selection", "choose default or a model entry")
+}
+
+// Derive an execution copy without changing the shared catalog or its receipt.
+func (s modelSelection) executionEntry(entry modelEntry) (modelEntry, error) {
+	entry = entry.clone()
+	if s.ReasoningEffort != "" {
+		entry.ReasoningEffort = s.ReasoningEffort
+	}
+	if err := dsh.CheckConfig(dsh.Options{BinaryPath: "/model-validation", Model: entry.materialize()}); err != nil {
+		return modelEntry{}, err
+	}
+	return entry, nil
 }
 func (c modelCatalog) resolve(s modelSelection) (modelEntry, error) {
 	if err := s.validate(); err != nil {
@@ -165,6 +184,14 @@ func modelImpacts(before, after modelCatalog, refs []memberModelReference) ([]Me
 			return nil, err
 		}
 		next, err := after.resolve(ref.Selection)
+		if err != nil {
+			return nil, err
+		}
+		old, err = ref.Selection.executionEntry(old)
+		if err != nil {
+			return nil, err
+		}
+		next, err = ref.Selection.executionEntry(next)
 		if err != nil {
 			return nil, err
 		}

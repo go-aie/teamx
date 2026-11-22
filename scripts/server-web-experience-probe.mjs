@@ -189,10 +189,10 @@ try {
     check(`${name}: cancelling deletion returns to editor`,await page.locator("#model-edit-form").isVisible() && !(await page.locator("#model-list-view").isVisible()));
     await page.locator("#close-settings").click(); await returnToConversation();
     if(name === "phone") {
-      await page.locator("#room-menu-label").click();
+      await page.locator("#room-menu-label").click();await page.locator("#conversation-open-details").click();
       check("member settings start collapsed with status visible",!(await page.locator("#agent-controls").isVisible()) && await page.locator("#agent-status").isVisible());
-      await page.locator("#toggle-agent-controls").click();await page.locator("#member-model-selection").waitFor();
-      await page.locator("#member-model-selection").selectOption("model-b");
+      await page.locator("#toggle-agent-controls").click();await page.locator("#member-model-trigger").waitFor();
+      await page.locator("#member-model-trigger").click();await page.locator("#member-model-open-list").click();await page.locator('#member-model-options [data-value="model-b"]').click();
       await page.waitForFunction(()=>document.querySelector("#member-model-feedback").textContent.includes("等待当前回合结束"));
       await page.locator("#member-model-progress").click();
       check("touch member details visibly show waiting, target and actual model",await page.locator("#member-model-feedback").isVisible() && (await page.locator("#member-model-target").textContent()).includes("upstream-b") && (await page.locator("#member-model-actual").textContent()).includes("upstream-a"));

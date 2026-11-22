@@ -3866,7 +3866,7 @@ test("direct conversations prefer the exact default, keep the inspector stable, 
   assert.equal(ui.el("room-list").children[1].children.length,2);
   assert.equal(ui.el("activity-dialog").open,true);assert.equal(ui.el("close-activity").hidden,false);
   assert.equal(ui.el("activity-title").textContent,"设置");
-  assert.equal(ui.el("agent-context-name").textContent,"个人助理");
+  assert.equal(ui.el("agent-context-name"),undefined);
   assert.equal(ui.el("members").children[0].querySelector(".avatar").children[0].getAttribute("class"),"assistant-icon");
   assert.equal(ui.el("direct-status"),undefined);assert.equal(ui.el("conversation-open-details").hidden,false);
   assert.equal(ui.el("conversation-open-details").getAttribute("aria-label"),"设置");assert.equal(ui.el("room-title-count").hidden,true);

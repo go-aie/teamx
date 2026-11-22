@@ -61,23 +61,10 @@ func (b dshBackend) switchSession(opts SessionOptions, from, to string) (Backend
 		if b.models == nil {
 			return nil, ErrInvalid
 		}
-		var saved managedRoomConfig
-		if err := readSnapshot(filepath.Join(b.store.dir, "room-config.json"), &saved, maxPrivateFileBytes); err != nil {
+		var err error
+		b, err = b.latestModelSelection(opts)
+		if err != nil {
 			return nil, err
-		}
-		found := false
-		for _, member := range saved.Members {
-			if saved.RoomIdentity == opts.RoomIdentity && member.AgentID == opts.AgentID && member.MembershipID == opts.MembershipID && member.ModelSelection != nil {
-				target, err := b.models.target(opts.MemberIdentity, *member.ModelSelection, member.ModelSelectionVersion, b.profile)
-				if err != nil {
-					return nil, err
-				}
-				b.model, b.profile, found = &target, target.Profile, true
-				break
-			}
-		}
-		if !found {
-			return nil, ErrIdentity
 		}
 	}
 	ref, _, err := b.reference(opts)
@@ -121,6 +108,29 @@ func (b dshBackend) switchSession(opts SessionOptions, from, to string) (Backend
 	}
 	b.recover = false
 	return b, nil
+}
+
+func (b dshBackend) latestModelSelection(opts SessionOptions) (dshBackend, error) {
+	profile := b.profile
+	if b.model != nil {
+		profile = b.model.Profile
+	}
+	var saved managedRoomConfig
+	if err := readSnapshot(filepath.Join(b.store.dir, "room-config.json"), &saved, maxPrivateFileBytes); err != nil {
+		return b, err
+	}
+	for _, member := range saved.Members {
+		if saved.RoomIdentity == opts.RoomIdentity && member.AgentID == opts.AgentID && member.MembershipID == opts.MembershipID && member.ModelSelection != nil {
+			target, err := b.models.target(opts.MemberIdentity, *member.ModelSelection, member.ModelSelectionVersion, profile)
+			if err != nil {
+				return b, err
+			}
+			b.model = &target
+			b.profile.Model = target.Profile.Model.Clone()
+			return b, nil
+		}
+	}
+	return b, ErrIdentity
 }
 
 func (b dshBackend) recoverableFailure(err error) bool {

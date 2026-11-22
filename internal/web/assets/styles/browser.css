@@ -67,7 +67,6 @@
   .workspace .activity-dialog > .activity-header { height:45px; min-height:45px; }
   .workspace .activity-header.detail-header h2 { font-size:16px; }
   .workspace .member-model { gap:6px; padding:0 12px; min-height:44px; }
-  .workspace .member-model select { min-height:44px; padding-block:7px; font-size:16px; }
   .workspace .member-model-progress { padding-inline:4px; }
   .workspace .agent-overview { min-height:44px; padding:0 12px; gap:4px 8px; }
   .workspace .agent-overview .member-actions { gap:8px; }
@@ -145,8 +144,6 @@
   .settings-dialog .connection-guided .primary { min-height:var(--primary-height); }
   .settings-dialog fieldset { grid-template-columns:minmax(0,1fr); }
   .model-settings .field-control { width:100%; min-width:0; }
-  .member-model { min-width:0; flex-wrap:wrap; }
-  .member-model select { min-width:0; max-width:100%; }
   .settings-picker-options { max-height:min(224px,30dvh); }
   .workspace-form footer { flex-wrap:wrap; }
 }

@@ -498,7 +498,6 @@
           <button id="close-activity" type="button" class="text-button back-button" aria-label="返回" title="返回" autofocus><svg class="navigation-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="m15 6-6 6 6 6"/></svg></button>
           <div class="agent-heading"><h2 id="activity-title">成员详情</h2></div>
         </header>
-        <p id="agent-context-name" class="agent-context-name" hidden></p>
         <div class="agent-settings-heading">
           <button id="toggle-agent-controls" class="text-button agent-controls-toggle" type="button" aria-label="展开成员设置" title="展开成员设置" aria-controls="agent-controls" aria-expanded="false"><span id="agent-settings-label">成员设置</span><span class="agent-settings-summary"><span id="agent-status" class="member-status"></span><span id="agent-model-alert" role="status" aria-live="polite" hidden></span></span><svg class="navigation-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg></button>
           <div id="agent-quick-actions" class="member-actions" hidden></div>
@@ -512,14 +511,22 @@
             <div class="form-actions"><span id="agent-name-feedback" class="quiet" role="status"></span><button id="agent-name-cancel" class="text-button" type="button">取消</button><button id="agent-name-save" class="primary" type="submit">保存</button></div>
           </form>
           <div id="member-model" class="member-model" hidden>
-            <label for="member-model-selection">模型</label>
-            <select id="member-model-selection" class="field-control" aria-label="切换成员模型" title="切换模型；当前回合结束后应用，私有上下文将重置。"></select>
+            <span class="member-model-label">模型</span>
+            <button id="member-model-trigger" type="button" class="text-button member-model-trigger" aria-haspopup="dialog" aria-controls="member-model-popover" aria-expanded="false"><span id="member-model-summary"></span><span id="member-reasoning-summary" class="quiet"></span><svg class="navigation-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg></button>
             <button id="member-model-progress" type="button" class="text-button button-compact member-model-progress" aria-label="查看模型详情" title="查看模型详情" aria-controls="member-model-details" aria-expanded="false">
               <svg id="member-model-ok" viewBox="0 0 24 24" aria-hidden="true" hidden><path d="m5 12 4 4L19 6"/></svg>
               <svg id="member-model-busy" viewBox="0 0 24 24" aria-hidden="true" hidden><path d="M20 12a8 8 0 1 1-5-7.4"/></svg>
               <svg id="member-model-error-icon" viewBox="0 0 24 24" aria-hidden="true" hidden><circle cx="12" cy="12" r="9"/><path d="M12 7v6m0 4h.01"/></svg>
-              <span id="member-model-status"></span><svg class="navigation-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>
+              <span id="member-model-status" class="sr-only"></span>
             </button>
+            <div id="member-model-popover" class="member-model-popover" popover="manual" role="dialog" aria-label="模型与推理强度" hidden>
+              <div class="member-model-heading"><button id="member-model-open-list" type="button" class="text-button member-model-choice" aria-haspopup="menu" aria-controls="member-model-menu" aria-expanded="false"><strong id="member-reasoning-value"></strong><span class="member-model-choice-name"><span id="member-model-name"></span><svg class="navigation-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></span></button><button id="member-reasoning-default" class="text-button member-reasoning-reset" type="button" aria-label="推理强度跟随模型默认" title="推理强度跟随模型默认"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 10a8 8 0 1 1 1 7M4 4v6h6"/></svg></button></div>
+              <div class="reasoning-slider"><div class="reasoning-rail" aria-hidden="true"><div class="reasoning-fill"></div></div><div id="member-reasoning-ticks" class="reasoning-ticks" aria-hidden="true"></div><div class="reasoning-thumb" aria-hidden="true"></div><input id="member-reasoning-effort" type="range" min="0" max="3" step="1" aria-label="成员推理强度" aria-describedby="member-reasoning-hint"></div>
+              <p id="member-reasoning-hint" class="member-picker-hint">强度仅对新 Session 生效</p>
+              <p id="member-picker-status" class="reasoning-feedback quiet" role="status" hidden></p>
+              <p id="member-reasoning-feedback" class="reasoning-feedback quiet" role="status" aria-live="polite" hidden></p>
+            </div>
+            <div id="member-model-menu" class="member-model-menu" popover="manual" role="menu" aria-label="选择模型" hidden><p class="member-model-menu-title">选择模型</p><div id="member-model-options" role="group"></div><button id="member-model-info" type="button" class="text-button member-model-info" role="menuitem">当前 Session 与应用进度</button></div>
           </div>
         <section id="member-model-details" class="member-model-details" aria-label="成员模型详情" hidden>
           <p id="member-model-target"></p><p id="member-model-actual"></p>

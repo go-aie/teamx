@@ -29,6 +29,13 @@ function fixture() {
 }
 async function openSettings(ui) {await ui.el("open-settings").emit("click");await ui.el("settings-tab-models").emit("click");await settle();}
 async function openMember(ui) {await ui.el("members").children[0].querySelector(".member-summary").emit("click");await settle();}
+const selectedMemberModel = ui => ui.el("member-model-options").children.find(option=>option.getAttribute("aria-checked")==="true")?.dataset.value;
+async function chooseMemberModel(ui, value) {
+ if(ui.el("member-model-popover").hidden)await ui.el("member-model-trigger").emit("click");
+ if(ui.el("member-model-menu").hidden)await ui.el("member-model-open-list").emit("click");
+ const option=ui.el("member-model-options").children.find(option=>option.dataset.value===value);assert.ok(option);
+ await option.emit("click");await settle();
+}
 
 test("member settings start collapsed, retain their state while polling and reset on reopening",async()=>{
  const api=fixture(),ui=await launch(api);await openMember(ui);
@@ -68,7 +75,8 @@ test("running members can pause beside collapsed settings and runtime failures r
 
 test("member model picker names its default and distinguishes applied, pending and unstarted sessions",async()=>{
  const api=fixture(),ui=await launch(api);await openMember(ui);
- assert.equal(ui.el("member-model-selection").children[0].textContent,"跟随默认 · 日常");
+ assert.equal(ui.el("member-model-options").children[0].children[0].textContent,"跟随默认 · 日常");
+ assert.equal(ui.el("member-model-summary").textContent,"日常");
  assert.equal(ui.el("member-model-status").textContent,"已生效");assert.equal(ui.el("member-model-ok").hidden,false);
  api.models.members[0].actual.pending=true;await (ui.invalidate("models"), ui.clock.advance(2000));
  assert.equal(ui.el("member-model-status").textContent,"待启动");assert.equal(ui.el("member-model-ok").hidden,true);
@@ -144,25 +152,25 @@ test("online editor reuses credentials and shared three-state parameters without
 
 test("compact member picker applies immediately with the captured versions and retains the choice while validating",async()=>{
  const api=fixture(),ui=await launch(api);await openMember(ui);
- const selector=ui.el("member-model-selection");assert.equal(selector.children.length,3);assert.equal(selector.children[0].value,"default");assert.equal(selector.children[1].value,"A");
+ const selector=ui.el("member-model-trigger"), options=ui.el("member-model-options");assert.equal(options.children.length,3);assert.equal(options.children[0].dataset.value,"default");assert.equal(options.children[1].dataset.value,"A");
  assert.match(ui.el("member-model-progress").title,/model-A/);
- selector.value="A";await selector.emit("change");
+ await chooseMemberModel(ui,"A");
  api.models.members[0].version=2;api.models.members[0].selection={mode:"explicit",entry_id:"B"};api.models.catalog.version=2;
- await openSettings(ui);assert.equal(selector.value,"A");
+ await openSettings(ui);assert.equal(selectedMemberModel(ui),"A");
  const sent=api.calls.find(call=>call.path==="/v1/models/change").body;
  assert.deepEqual(sent.selection,{mode:"explicit",entry_id:"A"});assert.equal(sent.expected_selection_version,1);assert.equal(sent.expected_version,1);assert.equal(sent.membership_id,"member-A");
  assert.equal(selector.disabled,true);assert.equal(ui.el("member-model-progress").dataset.state,"busy");
  assert.equal(ui.el("member-model-save"),undefined);
  api.models.operations[0].status="completed";api.models.members[0].selection={mode:"explicit",entry_id:"A"};
- await (ui.invalidate("models"), ui.clock.advance(1000));assert.equal(selector.disabled,false);assert.equal(selector.value,"A");assert.equal(ui.el("member-model-progress").dataset.state,"ready");
+ await (ui.invalidate("models"), ui.clock.advance(1000));assert.equal(selector.disabled,false);assert.equal(selectedMemberModel(ui),"A");assert.equal(ui.el("member-model-progress").dataset.state,"ready");
 });
 
 test("member picker restores the published choice and exposes validation failures through its status icon",async()=>{
  const api=fixture(),ui=await launch(api);await openMember(ui);
- const selector=ui.el("member-model-selection");selector.value="B";await selector.emit("change");
+ const selector=ui.el("member-model-trigger");await chooseMemberModel(ui,"B");
  api.models.operations[0].status="failed";api.models.operations[0].message="模型验证失败";
  await (ui.invalidate("models"), ui.clock.advance(1000));
- assert.equal(selector.value,"default");assert.equal(selector.disabled,false);
+ assert.equal(selectedMemberModel(ui),"default");assert.equal(selector.disabled,false);
  assert.equal(ui.el("member-model-progress").dataset.state,"error");assert.match(ui.el("member-model-progress").title,/模型验证失败/);assert.equal(ui.el("member-model-error-icon").hidden,false);
  await ui.el("member-model-progress").emit("click");assert.equal(ui.el("member-model-details").hidden,false);
  assert.match(ui.el("member-model-feedback").textContent,/模型验证失败/);
@@ -189,7 +197,7 @@ test("deletion previews default and fixed references, keeps the expected version
  assert.equal(sent.kind,"delete");assert.equal(sent.entry_id,"A");assert.equal(sent.replacement_id,"B");assert.equal(sent.expected_version,1);
  api.models.catalog.entries[0].pending_deletion=true;await openSettings(ui);
  assert.match(textOf(ui.el("model-list").children[0]),/待删除/);assert.equal(ui.el("model-list").children[0].children[0].disabled,true);
- await openMember(ui);assert(!ui.el("member-model-selection").children.some(el=>el.value==="A"));
+ await openMember(ui);assert(!ui.el("member-model-options").children.some(el=>el.dataset.value==="A"));
 });
 
 test("unverified missing-key imports request only the key and template references block deletion",async()=>{
@@ -350,4 +358,105 @@ test("a visible model operation only observes invalidations and recovery, with n
  assert.equal(api.calls.filter(c=>c.path==="/v1/models/change").length,0);
  api.models.operations[0].status="completed";ui.invalidate("models");await ui.clock.advance(1000);
  assert.equal(ui.el("model-operations").children.length,0);
+});
+
+test("member reasoning persists across reopening without changing the catalog or current session", async () => {
+ const api=fixture();api.models.catalog.entries[0].reasoning_effort="low";
+ api.models.members[0].actual.reasoning_effort="low";
+ const catalog=structuredClone(api.models.catalog), actual=structuredClone(api.models.members[0].actual);
+ api.hook=(path,body)=>{
+  if(path!=="/v1/models/member-reasoning")return;
+  assert.equal(body.service_epoch,"manager");assert.equal(body.expected_version,1);
+  assert.equal(body.expected_selection_version,api.models.members[0].version);
+  assert.equal(body.membership_id,"member-A");assert.equal(body.agent_id,"assistant");
+  api.models.members[0].selection.reasoning_effort=body.reasoning_effort;api.models.members[0].version++;
+  return structuredClone(api.models.members[0]);
+ };
+ const ui=await launch(api);await openMember(ui);
+ assert.equal(ui.el("member-model").hidden,false);
+ assert.equal(ui.el("member-reasoning-summary").textContent,"低");
+ await ui.el("member-model-trigger").emit("click");
+ ui.el("member-reasoning-effort").value="4";await ui.el("member-reasoning-effort").emit("change");await settle();
+ assert.equal(ui.el("member-reasoning-summary").textContent,"高");
+ assert.equal(ui.el("member-reasoning-feedback").textContent,"已保存");
+ assert.deepEqual(api.models.catalog,catalog);assert.deepEqual(api.models.members[0].actual,actual);
+ assert.equal(api.calls.some(c=>c.path==="/v1/models/change"),false);
+ await ui.el("close-activity").emit("click");await openMember(ui);
+ assert.equal(ui.el("member-reasoning-summary").textContent,"高");
+ assert.match(ui.el("member-model-actual").textContent,/推理强度：low/);
+ const reopened=await launch(api);await openMember(reopened);
+ assert.equal(reopened.el("member-reasoning-summary").textContent,"高");
+ await chooseMemberModel(reopened,"B");
+ const changed=api.calls.findLast(c=>c.path==="/v1/models/change");
+ assert.equal(changed.body.selection.reasoning_effort,"high");
+});
+
+test("member reasoning offers protocol levels and rejects stale edits without replacing the saved choice", async () => {
+ const api=fixture();api.models.catalog.entries[0].model_id="deepseek-v4-flash";
+ api.models.members[0].selection.reasoning_effort="low";
+ api.hook=(path)=>{if(path==="/v1/models/member-reasoning")throw Object.assign(Error("changed"),{code:"conflict"});};
+ const ui=await launch(api);await openMember(ui);
+ assert.equal(ui.el("member-reasoning-effort").max,"3");
+ ui.el("member-reasoning-effort").value="2";await ui.el("member-reasoning-effort").emit("change");await settle();
+ assert.equal(ui.el("member-reasoning-summary").textContent,"低");assert.equal(ui.el("member-reasoning-effort").disabled,false);
+ assert.match(ui.el("member-reasoning-feedback").textContent,/刷新后重新选择/);
+});
+
+test("member reasoning selection stays visible while saving and returning to default uses an empty override", async () => {
+ const api=fixture();let release;
+ api.hook=(path,body)=>{if(path!=="/v1/models/member-reasoning")return;return new Promise(resolve=>{release=()=>{
+  api.models.members[0].selection.reasoning_effort=body.reasoning_effort;api.models.members[0].version++;resolve({});
+ };});};
+ const ui=await launch(api);await openMember(ui);
+ ui.el("member-reasoning-effort").value="0";const save=ui.el("member-reasoning-effort").emit("change");await settle();
+ assert.equal(ui.el("member-reasoning-summary").textContent,"关闭");assert.equal(ui.el("member-reasoning-effort").disabled,true);
+ assert.equal(ui.el("member-model-trigger").disabled,true);
+ release();await save;await settle();
+ const reset=ui.el("member-reasoning-default").emit("click");await settle();
+ assert.equal(api.calls.findLast(c=>c.path==="/v1/models/member-reasoning").body.reasoning_effort,"");
+ release();await reset;await settle();assert.equal(ui.el("member-reasoning-summary").textContent,"默认");
+});
+
+test("reasoning slider previews without saving, commits on release, and Escape cancels a preview", async () => {
+ const api=fixture();api.models.members[0].selection.reasoning_effort="low";
+ api.hook=(path,body)=>{if(path!=="/v1/models/member-reasoning")return;
+  api.models.members[0].selection.reasoning_effort=body.reasoning_effort;api.models.members[0].version++;return {};
+ };
+ const ui=await launch(api);await openMember(ui);await ui.el("member-model-trigger").emit("click");
+ assert.equal(ui.el("member-model-popover").hidden,false);
+ ui.el("member-reasoning-effort").value="4";await ui.el("member-reasoning-effort").emit("input");
+ assert.equal(ui.el("member-reasoning-value").textContent,"高");
+ assert.equal(api.calls.some(c=>c.path==="/v1/models/member-reasoning"),false);
+ ui.invalidate("models");await ui.clock.advance(1000);
+ assert.equal(ui.el("member-reasoning-value").textContent,"高");
+ await ui.window.emit("keydown",{key:"Escape"});
+ assert.equal(ui.el("member-model-popover").hidden,true);
+ assert.equal(ui.el("member-reasoning-summary").textContent,"低");
+ assert.equal(ui.el("activity-dialog").open,true);
+ await ui.el("member-model-trigger").emit("click");
+ ui.el("member-reasoning-effort").value="4";await ui.el("member-reasoning-effort").emit("change");await settle();
+ assert.equal(api.calls.filter(c=>c.path==="/v1/models/member-reasoning").length,1);
+ assert.equal(api.models.members[0].selection.reasoning_effort,"high");
+ await ui.document.emit("pointerdown",{target:ui.el("activity-title")});
+ assert.equal(ui.el("member-model-popover").hidden,true);
+});
+
+test("combined picker opens a separate model menu, dismisses one layer at a time and exposes Session details", async () => {
+ const api=fixture(),ui=await launch(api);await openMember(ui);
+ assert.equal(ui.el("member-model-progress").hidden,true);
+ await ui.el("member-model-trigger").emit("click");await ui.el("member-model-open-list").emit("click");
+ assert.equal(ui.el("member-model-popover").hidden,false);assert.equal(ui.el("member-model-menu").hidden,false);
+ assert.equal(selectedMemberModel(ui),"default");
+ await ui.el("member-model-menu").emit("keydown",{key:"End"});
+ assert.equal(ui.document.activeElement,ui.el("member-model-options").children.at(-1));
+ await ui.window.emit("keydown",{key:"Escape"});
+ assert.equal(ui.el("member-model-menu").hidden,true);assert.equal(ui.el("member-model-popover").hidden,false);
+ assert.equal(ui.document.activeElement,ui.el("member-model-open-list"));
+ await ui.window.emit("keydown",{key:"Escape"});
+ assert.equal(ui.el("member-model-popover").hidden,true);assert.equal(ui.el("activity-dialog").open,true);
+ await ui.el("member-model-trigger").emit("click");await ui.el("member-model-open-list").emit("click");
+ await ui.el("member-model-info").emit("click");
+ assert.equal(ui.el("member-model-menu").hidden,true);assert.equal(ui.el("member-model-popover").hidden,true);
+ assert.equal(ui.el("member-model-details").hidden,false);assert.match(ui.el("member-model-actual").textContent,/model-A/);
+ assert.equal(api.calls.some(c=>["/v1/models/change","/v1/models/member-reasoning"].includes(c.path)),false);
 });

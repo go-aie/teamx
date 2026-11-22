@@ -55,6 +55,14 @@ func (h *sessionHost) PrepareOpen(ctx context.Context) (agent.Launch, error) {
 			return agent.Launch{}, dshFailure(loadErr)
 		}
 	} else {
+		// A room can be active before this member creates its first Session.
+		// Read its latest choice only here; existing generations use their snapshot.
+		if b.model != nil && !b.model.Legacy && b.models != nil {
+			b, err = b.latestModelSelection(opts)
+			if err != nil {
+				return agent.Launch{}, dshFailure(err)
+			}
+		}
 		ref = sessionReference{Version: formatVersion, MemberIdentity: opts.MemberIdentity, Directory: filepath.Base(dshStateDir(opts.StatePath))}
 	}
 	if b.model != nil && b.model.Legacy && (!b.recover || !exists) {

@@ -3,15 +3,17 @@ import { randomUUID } from "../random-id.mjs";
 import { createNavigationIcon } from "../icons.mjs";
 import { captureReturnView } from "../view-return.mjs";
 import { fillModelParameters, readModelParameters, syncModelProtocol, modelDraftFields, snapshotModelFields, restoreModelFields, setModelKeyVisible } from "../model-form.mjs";
+import { createMemberModelPicker } from "../member-model-picker.mjs";
 
 export function createModels({env, runtime, openSettings, onMemberStatus}) {
   const {document, window, request, Option} = env;
   const crypto = window.crypto || globalThis.crypto;
-  const {state, $, setSelectOptions} = runtime;
+  const {state, $} = runtime;
   const field = id => $(`catalog-${id}`);
   let data, editor, saving = false, read = 0, memberView, memberSaving = false, defaultReview;
   let lastOperation, operationRenderKey, listRenderKey, restoredKey;
   let editorReturn;
+  const memberPicker = createMemberModelPicker({document, window, $, onChange:saveMemberReasoning, onModelChange:saveMemberModel, onDetails:showMemberDetails});
   const operationRows = new Map();
   const draftKey = () => JSON.stringify(["teamx.model-draft",state.installationID || "",state.operator]);
   function persist() {
@@ -266,8 +268,11 @@ export function createModels({env, runtime, openSettings, onMemberStatus}) {
   }
   function currentMemberView(v) { return v === memberView && $("activity-dialog").open && state.info?.room_id === v.room_id && state.info?.room_instance === v.room_instance && state.catalog?.service_epoch === v.epoch; }
   async function openMember(member) {
+    memberPicker.close();
     memberView = {room_id:state.info.room_id,room_instance:state.info.room_instance,agent_id:member.agent_id,membership_id:member.membership_id,epoch:state.catalog?.service_epoch};
     $("member-model-feedback").textContent = ""; $("member-model").hidden = true;
+    $("member-reasoning-feedback").textContent = "";
+    $("member-reasoning-feedback").hidden = true;
     $("member-model-details").hidden = true; $("member-model-progress").setAttribute("aria-expanded", "false");
     onMemberStatus({});
     await load();
@@ -276,34 +281,39 @@ export function createModels({env, runtime, openSettings, onMemberStatus}) {
     const v = memberView;
     if (!v || !currentMemberView(v) || !data) return;
     const member = data.members.find(m => m.room_id === v.room_id && m.room_instance === v.room_instance && m.agent_id === v.agent_id && m.membership_id === v.membership_id);
-    if (!member) {$("member-model").hidden = true; onMemberStatus({}); return;}
+    if (!member) {memberPicker.close();$("member-model").hidden = true; onMemberStatus({}); return;}
     v.member = member;
     v.expectedVersion = member.version; v.catalogVersion = data.catalog.version;
     $("member-model").hidden = false;
-    const select = $("member-model-selection");
     const entries = data.catalog.entries.filter(e=>!e.pending_deletion);
     const defaultEntry = entries.find(e=>e.id===data.catalog.default);
     const operation = data.operations.find(op=>op.id === (member.operation_id || v.operationID));
     const pending = memberSaving || !!member.operation_id || operation && ["validating","prepared","applying"].includes(operation.status);
     if (!pending) v.pendingSelection = undefined;
-    setSelectOptions("member-model-selection", [new Option(`跟随默认 · ${defaultEntry ? modelName(defaultEntry) : "未设置"}`,"default"), ...entries.map(e => new Option(modelName(e),e.id))],
-      v.pendingSelection ?? (member.selection.mode === "default" ? "default" : member.selection.entry_id));
-    select.dataset.mode = select.value === "default" ? "default" : "explicit";
-    select.title = `${select.value === "default" ? `默认模型：${modelName(entries.find(e=>e.id===data.catalog.default) || {model_id:""})}。` : ""}切换模型；当前回合结束后应用，私有上下文将重置。`;
-    select.disabled = !!pending || saving;
+    const targetEntry = entries.find(e => e.id === member.target_entry_id);
+    const deepseek = targetEntry?.protocol === "deepseek-messages" || targetEntry?.model_id?.toLowerCase().startsWith("deepseek-");
+    const efforts = deepseek ? ["off", "low", "high", "max"] : ["off", "minimal", "low", "medium", "high", "xhigh", "max"];
+    $("member-reasoning-feedback").hidden = !$("member-reasoning-feedback").textContent;
+    $("member-reasoning-feedback").classList.toggle("sr-only", $("member-reasoning-feedback").textContent === "已保存");
     const actual = member.actual;
     const error = v.error || (operation?.status === "failed" ? operation.message || "模型应用失败" : "");
     const status = error ? `模型切换失败：${error}` : pending ? operation?.status === "validating" ? "正在验证模型" : "正在应用模型，等待当前回合结束" : actual?.pending ? "模型已应用，待下一次工作启动" : actual ? "模型已生效" : "模型尚未启动";
     const detail = `${status}${actual ? `；当前 Session：${actual.model_id}` : ""}。点击查看模型详情。`;
     const progress = $("member-model-progress"); progress.dataset.state = error ? "error" : pending ? "busy" : actual && !actual.pending ? "ready" : "idle"; progress.title = detail; progress.setAttribute("aria-label", detail);
+    progress.hidden = !error && !pending;
     onMemberStatus({state:progress.dataset.state,detail});
     $("member-model-status").textContent = error ? "切换失败" : pending ? operation?.status === "validating" ? "验证中" : "应用中" : actual?.pending ? "待启动" : actual ? "已生效" : "未启动";
     $("member-model-ok").hidden = !!error || !!pending || !actual || !!actual.pending; $("member-model-busy").hidden = !!error || !pending; $("member-model-error-icon").hidden = !error;
     $("member-model-feedback").textContent = status;
     const targetID = v.pendingSelection && v.pendingSelection !== "default" ? v.pendingSelection : v.pendingSelection === "default" ? data.catalog.default : member.target_entry_id;
     const target = data.catalog.entries.find(entry => entry.id === targetID);
+    const modelValue = v.pendingSelection ?? (member.selection.mode === "default" ? "default" : member.selection.entry_id);
+    const displayedEntry = modelValue === "default" ? defaultEntry : entries.find(entry => entry.id === modelValue);
+    memberPicker.render({efforts, selected:v.pendingReasoning ?? member.selection.reasoning_effort ?? "", defaultEffort:targetEntry?.reasoning_effort || "", disabled:!!pending || saving || !!v.reasoningSaving,
+      models:[{value:"default", name:`跟随默认 · ${defaultEntry ? modelName(defaultEntry) : "未设置"}`}, ...entries.map(entry => ({value:entry.id, name:modelName(entry)}))],
+      modelValue, modelName:displayedEntry ? modelName(displayedEntry) : "尚未选择", modelInherited:modelValue === "default", notice:error || pending ? status : ""});
     $("member-model-target").textContent = `目标模型：${target ? `${modelName(target)}${modelName(target) !== target.model_id ? `（${target.model_id}）` : ""}` : targetID || "尚未选择"}`;
-    $("member-model-actual").textContent = actual ? `当前 Session：${actual.model_id}${actual.pending ? "（待启动）" : ""}` : "当前 Session：尚未启动";
+    $("member-model-actual").textContent = actual ? `当前 Session：${actual.model_id}${actual.pending ? "（待启动）" : ""}；推理强度：${actual.reasoning_effort || "提供方默认"}` : "当前 Session：尚未启动";
     $("member-model-retry").hidden = !(operation?.status === "failed" && operation.committed);
     v.operation = operation;
   }
@@ -313,6 +323,7 @@ export function createModels({env, runtime, openSettings, onMemberStatus}) {
   }
 
   function mount() {
+    memberPicker.mount();
     for (const id of modelDraftFields) {
       field(id).addEventListener("input",persist); field(id).addEventListener("change",persist);
     }
@@ -347,19 +358,41 @@ export function createModels({env, runtime, openSettings, onMemberStatus}) {
       try { await action(v.operation.id,"retry"); }
       finally { $("member-model-retry").disabled = false; }
     });
-    $("member-model-selection").addEventListener("change",async () => {
-      const v = memberView;if (!v || !currentMemberView(v) || !v.member || memberSaving || saving || v.member.operation_id) return;
-      const value = $("member-model-selection").value;
-      const selection = value === "default" ? {mode:"default"} : {mode:"explicit",entry_id:value};
-      const identity = {room_id:v.room_id,room_instance:v.room_instance,agent_id:v.agent_id,membership_id:v.membership_id};
-      if (selection.mode === v.member.selection.mode && selection.entry_id === v.member.selection.entry_id) return;
-      const expectedVersion = v.catalogVersion, expectedSelectionVersion = v.expectedVersion;
-      memberSaving = true; v.pendingSelection=value; v.error=""; renderMember();
-      const accepted = await submit({kind:"selection",...identity,selection,expected_version:expectedVersion,expected_selection_version:expectedSelectionVersion});
-      memberSaving=false;
-      if (currentMemberView(v)) {v.operationID=accepted?.id;if (!accepted) v.error=$("model-feedback").textContent || "提交未确认，请查看模型设置。";renderMember();}
-    });
-    window.addEventListener("pagehide",() => {persist();field("api-key").value="";setModelKeyVisible(field,false);});
+    window.addEventListener("pagehide",() => {memberPicker.close();persist();field("api-key").value="";setModelKeyVisible(field,false);});
+  }
+  async function saveMemberModel(value) {
+    const v = memberView;if (!v || !currentMemberView(v) || !v.member || v.reasoningSaving || memberSaving || saving || v.member.operation_id) return;
+    const selection = value === "default" ? {mode:"default"} : {mode:"explicit",entry_id:value};
+    if (v.member.selection.reasoning_effort) selection.reasoning_effort = v.member.selection.reasoning_effort;
+    const identity = {room_id:v.room_id,room_instance:v.room_instance,agent_id:v.agent_id,membership_id:v.membership_id};
+    if (selection.mode === v.member.selection.mode && selection.entry_id === v.member.selection.entry_id) return;
+    const expectedVersion = v.catalogVersion, expectedSelectionVersion = v.expectedVersion;
+    memberSaving = true; v.pendingSelection=value; v.error=""; renderMember();
+    const accepted = await submit({kind:"selection",...identity,selection,expected_version:expectedVersion,expected_selection_version:expectedSelectionVersion});
+    memberSaving=false;
+    if (currentMemberView(v)) {v.operationID=accepted?.id;if (!accepted) v.error=$("model-feedback").textContent || "提交未确认，请查看模型设置。";renderMember();}
+  }
+  async function saveMemberReasoning(reasoning_effort) {
+    const v = memberView;
+    if (!v || !currentMemberView(v) || !v.member || v.reasoningSaving || memberSaving || saving || v.member.operation_id) return;
+    if (reasoning_effort === undefined) return;
+    if (reasoning_effort === (v.member.selection.reasoning_effort || "")) return;
+    const input = {...envelope(), room_id:v.room_id, room_instance:v.room_instance, agent_id:v.agent_id, membership_id:v.membership_id,
+      expected_version:v.catalogVersion, expected_selection_version:v.expectedVersion, reasoning_effort};
+    v.reasoningSaving = true;
+    v.pendingReasoning = reasoning_effort;
+    $("member-reasoning-feedback").textContent = "正在保存…"; renderMember();
+    try {
+      await request("/v1/models/member-reasoning", input);
+      if (currentMemberView(v)) $("member-reasoning-feedback").textContent = "已保存";
+    } catch (error) {
+      if (currentMemberView(v)) $("member-reasoning-feedback").textContent = error.code === "conflict" ? "设置已变化，请刷新后重新选择。" : `保存未确认：${error.message}`;
+    } finally {
+      v.reasoningSaving = false;
+      v.pendingReasoning = undefined;
+      await load();
+      if (currentMemberView(v)) renderMember();
+    }
   }
   return {mount,load,readModels,needsRead,openMember,showMemberDetails,returnFromEditor,clearKey:() => {field("api-key").value="";setModelKeyVisible(field,false);clearReview();}};
 }

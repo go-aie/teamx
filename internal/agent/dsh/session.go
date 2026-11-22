@@ -203,6 +203,26 @@ func open(ctx context.Context, opts Options, resume bool) (openedSession *Sessio
 	if !confirmed {
 		return nil, errors.New("DSH did not confirm configured model")
 	}
+	// Configure only during setup, before any prompt. The generation's effective
+	// model (including a member override) remains part of recovery identity.
+	if effort := opts.Model.ReasoningEffort; effort != "" {
+		if !reasoningValue(selected.ConfigOptions, effort) {
+			return nil, errors.New("DSH did not advertise configured reasoning effort")
+		}
+		selected.ConfigOptions = nil
+		if err := s.conn.call(handshakeCtx, "session/set_config_option", map[string]any{"sessionId": s.id, "configId": "reasoning_effort", "value": effort}, &selected); err != nil {
+			return nil, err
+		}
+		confirmed = false
+		for _, option := range selected.ConfigOptions {
+			if option.ID == "reasoning_effort" && option.CurrentValue == effort {
+				confirmed = true
+			}
+		}
+		if !confirmed {
+			return nil, errors.New("DSH did not confirm configured reasoning effort")
+		}
+	}
 	artifact := opts.Artifact
 	if artifact == (Artifact{}) {
 		artifact = identity

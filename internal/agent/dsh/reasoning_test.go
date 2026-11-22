@@ -8,8 +8,29 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
+
+func TestReasoningRequiresACPAdvertisementAndConfirmation(t *testing.T) {
+	for _, mode := range []string{"no-reasoning", "unconfirmed-reasoning", "missing-reasoning-state"} {
+		t.Run(mode, func(t *testing.T) {
+			opts := fixtureOptions(t)
+			opts.Model.ReasoningEffort = "low"
+			if mode == "missing-reasoning-state" {
+				opts.Model.ReasoningEffort = "high"
+			}
+			opts.ToolEnv["TEAMX_DSH_MODE"] = mode
+			_, err := Open(context.Background(), opts)
+			if err == nil || !strings.Contains(err.Error(), "reasoning effort") {
+				t.Fatal(err)
+			}
+			if _, err := os.Stat(filepath.Join(opts.Workspace, "prompt.json")); !errors.Is(err, os.ErrNotExist) {
+				t.Fatal("unsupported reasoning sent a prompt")
+			}
+		})
+	}
+}
 
 func TestConfiguredReasoningEffortMaterializedAndRecoveryBound(t *testing.T) {
 	for _, protocol := range []string{"openai-completions", "deepseek-messages"} {
@@ -23,6 +44,14 @@ func TestConfiguredReasoningEffortMaterializedAndRecoveryBound(t *testing.T) {
 				}
 				s := openFixture(t, opts)
 				defer s.Close(context.Background())
+				var configured struct {
+					ConfigID string `json:"configId"`
+					Value    string `json:"value"`
+				}
+				selection, err := os.ReadFile(filepath.Join(opts.Workspace, "reasoning-config.json"))
+				if err != nil || json.Unmarshal(selection, &configured) != nil || configured.ConfigID != "reasoning_effort" || configured.Value != effort {
+					t.Fatal("ACP did not receive the effective reasoning effort", string(selection), err)
+				}
 				data, err := os.ReadFile(filepath.Join(opts.StateDir, "home", "cordis.patch.yml"))
 				var patches []struct {
 					ID     string `json:"id"`

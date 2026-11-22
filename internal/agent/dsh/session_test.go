@@ -68,6 +68,13 @@ func TestDSHProcess(t *testing.T) {
 	var selected [2]string
 	_ = json.Unmarshal([]byte(model), &selected)
 	config := []any{map[string]any{"id": "model", "currentValue": model, "options": []any{map[string]any{"group": selected[0], "options": []any{map[string]string{"value": model}}}}}}
+	if mode != "no-reasoning" {
+		values := []any{}
+		for _, effort := range []string{"off", "minimal", "low", "medium", "high", "xhigh", "max"} {
+			values = append(values, map[string]string{"value": effort})
+		}
+		config = append(config, map[string]any{"id": "reasoning_effort", "currentValue": "high", "options": values})
+	}
 	if mode == "bad-model" {
 		config = nil
 	}
@@ -170,6 +177,26 @@ func TestDSHProcess(t *testing.T) {
 			sessionID = params.SessionID
 			respond(f.ID, map[string]any{"configOptions": config})
 		case "session/set_config_option":
+			var params struct {
+				ConfigID string `json:"configId"`
+				Value    string `json:"value"`
+			}
+			_ = json.Unmarshal(f.Params, &params)
+			if params.ConfigID == "reasoning_effort" {
+				if mode == "missing-reasoning-state" {
+					respond(f.ID, map[string]any{})
+					continue
+				}
+				_ = os.WriteFile("reasoning-config.json", f.Params, 0600)
+				if mode != "unconfirmed-reasoning" {
+					for _, item := range config {
+						option := item.(map[string]any)
+						if option["id"] == params.ConfigID {
+							option["currentValue"] = params.Value
+						}
+					}
+				}
+			}
 			if mode == "reference-failure" {
 				_ = os.Mkdir(filepath.Join(os.Getenv("DSH_HOME"), "..", "backend.json"), 0700)
 			}

@@ -58,7 +58,15 @@ func (c *modelController) prepareLocked(ctx context.Context, op *modelChangeOper
 		if err != nil {
 			return err
 		}
-		changed := !old.sameExecution(entry)
+		oldExecution, err := ref.Selection.executionEntry(old)
+		if err != nil {
+			return err
+		}
+		nextExecution, err := selection.executionEntry(entry)
+		if err != nil {
+			return err
+		}
+		changed := !oldExecution.sameExecution(nextExecution)
 		repairing := op.Input.Kind == "save" && op.Input.Entry.ID == entry.ID || op.Input.Kind == "default" && op.Input.EntryID == entry.ID || op.Input.Kind == "delete" && op.Input.ReplacementID == entry.ID
 		if repairing && !entry.Unverified && !m.config.models.hasValidation(old.ID) {
 			path := filepath.Join(m.roomDir(ref.RoomID), "agents", ref.MembershipID, "session.json")
@@ -98,7 +106,7 @@ func (c *modelController) prepareLocked(ctx context.Context, op *modelChangeOper
 			// execution without fabricating a probe receipt or resetting context.
 			path := filepath.Join(m.roomDir(ref.RoomID), "agents", ref.MembershipID, "session.json")
 			if generation, exists, readErr := readSessionReference(path, ref.MemberIdentity); readErr == nil && exists {
-				if frozen, loadErr := readModelSessionSnapshot(filepath.Join(filepath.Dir(path), generation.Directory+".model.json"), ref.MemberIdentity, generation.Directory); loadErr == nil && frozen.ExecutionDigest == entry.executionDigest() {
+				if frozen, loadErr := readModelSessionSnapshot(filepath.Join(filepath.Dir(path), generation.Directory+".model.json"), ref.MemberIdentity, generation.Directory); loadErr == nil && frozen.ExecutionDigest == nextExecution.executionDigest() {
 					frozen.Selection, frozen.SelectionVersion, frozen.CatalogVersion = selection, version, next.Version
 					frozen.EntryID, frozen.EntryRevision = entry.ID, entry.Revision
 					target, err = frozen, nil

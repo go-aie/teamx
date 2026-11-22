@@ -30,7 +30,8 @@ async function stop(){if(!server)return;server.child.kill('SIGTERM');const resul
 function memberRoot(){const index=JSON.parse(fs.readFileSync(path.join(home,'data/rooms.json'),'utf8'));const room=index.rooms.find(r=>r.is_direct);const dir=path.join(home,'data/rooms',room.room_id);const saved=JSON.parse(fs.readFileSync(path.join(dir,'room-config.json'),'utf8'));return path.join(dir,'agents',saved.members[0].membership_id);}
 function turnNumber(){const file=path.join(memberRoot(),'agent.json');return fs.existsSync(file)?JSON.parse(fs.readFileSync(file,'utf8')).turn_number:0;}
 async function waitTurn(previous=0){await until(()=>{const file=path.join(memberRoot(),'agent.json');if(!fs.existsSync(file))return false;const state=JSON.parse(fs.readFileSync(file,'utf8'));return state.turn_number>previous&&state.turn?.status==='completed';},'turn completion');}
-async function showMemberModel(){if(!await page.locator('#member-model-selection').isVisible()){if(await page.locator('#room-menu-label').getAttribute('aria-expanded')==='false')await page.locator('#room-menu-label').click();if(!await page.locator('#agent-controls').isVisible())await page.locator('#toggle-agent-controls').click();}await page.locator('#member-model-selection').waitFor();}
+async function showMemberModel(){if(!await page.locator('#member-model-trigger').isVisible()){if(!await page.locator('#toggle-agent-controls').isVisible()){if(await page.locator('#conversation-details').isVisible())await page.locator('#conversation-details').click();else{await page.locator('#room-menu-label').click();await page.locator('#conversation-open-details').click();}}if(!await page.locator('#agent-controls').isVisible())await page.locator('#toggle-agent-controls').click();}await page.locator('#member-model-trigger').waitFor();}
+async function selectMemberModel(value){await showMemberModel();if(await page.locator('#member-model-trigger').getAttribute('aria-expanded')!=='true')await page.locator('#member-model-trigger').click();await page.locator('#member-model-open-list').click();await page.locator(`#member-model-options [data-value="${value}"]`).click();}
 async function openSettings(){if(!await page.locator('#open-settings').isVisible()){if(!await page.locator('#user-menu-toggle').isVisible()){if(await page.locator('#close-activity').isVisible())await page.locator('#close-activity').click();await page.locator('#mobile-back-to-rooms').click();}await page.locator('#user-menu-toggle').click();}await page.locator('#open-settings').click();}
 try{
  proxy=http.createServer(async(req,res)=>{try{const chunks=[];for await(const chunk of req)chunks.push(chunk);const body=Buffer.concat(chunks);let payload={};try{payload=JSON.parse(body);}catch{}
@@ -58,8 +59,8 @@ try{
  assert(report.requests.slice(beforeBRequests).some(r=>r.model===value('model_id')&&r.max_tokens===8192&&!r.developer));const targetRef=JSON.parse(fs.readFileSync(path.join(memberRoot(),'session.json'),'utf8'));const targetSnapshot=JSON.parse(fs.readFileSync(path.join(memberRoot(),targetRef.directory+'.model.json'),'utf8'));assert.equal(targetSnapshot.profile.model.max_tokens,8192);checked('real subsequent Session reaches B route with system compatibility; generation binds output limit 8192');
  // Pin the same current model: reference changes without another generation.
  const before=JSON.parse(fs.readFileSync(path.join(memberRoot(),'session.json'),'utf8')).directory;
- // Direct conversations expose member detail through the assistant avatar.
- await showMemberModel();await page.locator('#member-model-selection').selectOption(bID);
+ // Open member settings through the conversation settings entry.
+ await selectMemberModel(bID);
  await until(async()=>{const d=await read();return d.members[0].selection.mode==='explicit'&&d.operations.every(o=>o.status==='completed');},'pin B');
  assert.equal(JSON.parse(fs.readFileSync(path.join(memberRoot(),'session.json'),'utf8')).directory,before);checked('member pins current B without rotating');
  await openSettings();await page.locator('#settings-tab-models').click();await page.getByRole('button',{name:'编辑模型 '+value('model_id'),exact:true}).click();await page.locator('#model-set-default').click();await page.getByRole('button',{name:'验证并设为默认',exact:true}).click();await until(async()=>{const d=await read();return d.catalog.default==='daily'&&d.operations.every(o=>o.status==='completed');},'default A keeps explicit B');
@@ -69,7 +70,7 @@ try{
  const beforeRequests=report.requests.length, previousTurn=turnNumber();await page.locator('#message-input').fill('请使用 send 在会话中仅回复 TEAMX_LIVE_RESTART_OK。');await page.locator('#send').click();await waitTurn(previousTurn);await until(()=>report.requests.length>beforeRequests,'real B after restart');checked('restart keeps fixed B and its managed key despite empty host key');
  if(mode==='delivery'){
   report.scope+='; delete default with default/fixed references, real post-delete and restart dialogue';
-  await showMemberModel();await page.locator('#member-model-selection').selectOption('daily');
+  await selectMemberModel('daily');
   await until(async()=>{const d=await read();return d.members[0].selection.entry_id==='daily'&&d.operations.every(o=>o.status==='completed');},'fixed A before delete');
   await page.evaluate(async()=>{const catalog=await(await fetch('/v1/rooms')).json();const session=await(await fetch('/v1/access/session')).json();const response=await fetch('/v1/rooms/create',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({service_epoch:catalog.service_epoch,caller:{kind:'human',id:session.operator},is_direct:true,agent_role_id:'assistant',create_id:'deletion-follower'})});if(!response.ok)throw Error('create default follower failed: '+await response.text());});
   const oldGeneration=JSON.parse(fs.readFileSync(path.join(memberRoot(),'session.json'),'utf8')).directory;

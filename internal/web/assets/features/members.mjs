@@ -493,8 +493,6 @@ export function createMembers({ env, runtime, notificationsUI, workspaceUI, onbo
     const selected=selectedAgent();
     const settings = roomsUI.isDirect() && !activityReturn?.previous;
     $("activity-title").textContent=settings ? "设置" : selected ? agentName(selected) : "成员详情";
-    $("agent-context-name").hidden=!settings || !selected;
-    $("agent-context-name").textContent=selected && settings ? agentName(selected) : "";
     $("agent-tabs").hidden = false;
     $("agent-tab-platforms").hidden = !state.managed;
     const member = selectedAgent();
