@@ -65,7 +65,7 @@
 .member-platform-row .notification-source-name strong { display:flex; align-items:center; gap:5px; min-width:0; }
 .member-platform-name { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .member-platform-attention { flex:none; color:var(--muted); font-size:var(--font-small); font-weight:400; white-space:nowrap; }
-.platform-edit-icon { flex:none; width:12px; height:12px; fill:none; stroke:currentColor; stroke-width:1.6; stroke-linecap:round; stroke-linejoin:round; color:var(--muted); opacity:0; transition:opacity .12s; }
+.platform-edit-icon { opacity:0; transition:opacity .12s; }
 .member-platform-row .notification-source:hover .platform-edit-icon,.member-platform-row:focus-within .platform-edit-icon { opacity:1; }
 @media (hover:none),(pointer:coarse) { .member-platform-row .platform-edit-icon { opacity:1; } }
 @media (prefers-reduced-motion:reduce) { .platform-edit-icon { transition:none; } }

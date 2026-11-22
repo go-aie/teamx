@@ -55,36 +55,32 @@
 .agent-heading { flex:1; min-width:0; }
 .agent-heading h2 { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .activity-header > .agent-detail-close { order:1; }
-.agent-profile-summary { display:flex; align-items:center; gap:12px; padding:16px var(--panel-space); border-bottom:1px solid var(--line); }
-#activity-avatar { flex:none; width:40px; height:40px; font-size:14px; }
-.agent-profile-identity { flex:1; min-width:0; }
-.agent-profile-name-row button { display:flex; align-items:center; gap:6px; min-width:0; max-width:100%; padding:0; font-size:var(--font-body); font-weight:var(--weight-medium); color:var(--text); text-align:left; }
+.agent-profile-summary { display:flex; flex-wrap:wrap; align-items:center; gap:4px 12px; min-height:56px; box-sizing:border-box; padding:8px var(--panel-space); border-bottom:1px solid var(--line); }
+#activity-avatar { flex:none; width:32px; height:32px; font-size:12px; }
+.agent-profile-identity { display:flex; flex:1 1 136px; align-items:center; gap:10px; min-width:0; }
+.agent-profile-name { flex:1; min-width:0; }
+.agent-profile-summary:has(.agent-name-form:not([hidden])) .agent-profile-identity { flex-basis:100%; align-items:flex-start; }
+.agent-profile-summary:has(.agent-name-form:not([hidden])) #activity-avatar { margin-top:2px; }
+.agent-profile-summary:has(.agent-name-form:not([hidden])) .agent-state-row { display:none; }
+.agent-profile-name-row button { display:flex; align-items:center; gap:8px; min-width:0; max-width:100%; min-height:36px; padding:0; font-size:var(--font-body); font-weight:var(--weight-medium); color:var(--text); text-align:left; }
 #agent-name-summary,#agent-profile-name { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 #agent-profile-name { display:block; }
-.agent-profile-name-row svg { flex:none; width:14px; height:14px; }
-.agent-profile-status { margin-top:2px; display:flex; align-items:center; gap:6px; min-width:0; font-size:11px; line-height:16px; }
-.agent-profile-status .member-status { font-size:inherit; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.agent-profile-status { display:flex; flex-wrap:wrap; align-items:center; justify-content:flex-end; gap:4px 8px; min-width:0; font-size:var(--font-small); }
+.agent-profile-status .member-status { font-size:inherit; white-space:normal; overflow-wrap:anywhere; }
+.agent-profile-status .member-status::before { flex:none; }
 #agent-actions { flex:none; margin:0; }
 #agent-actions button { font-size:var(--font-small); min-height:32px; padding:4px 8px; }
-#agent-model-alert { font-size:11px; white-space:nowrap; }
+#agent-model-alert { font-size:var(--font-small); }
 #agent-model-alert[data-state="error"] { color:var(--danger); }
 #agent-model-alert[data-state="busy"] { color:var(--accent); }
 .agent-controls { flex:1; min-width:0; min-height:0; overflow-y:auto; overscroll-behavior:contain; scrollbar-width:thin; font-size:var(--font-small); line-height:1.6; }
-.agent-controls > .conversation-settings { padding:16px var(--panel-space) 0; }
-.agent-controls :is(.agent-name-row,.agent-overview) > .quiet { font-size:inherit; }
-.agent-name-row button,.agent-name-form .form-actions button,.agent-controls .member-directory button,.agent-overview .member-actions button { font-size:var(--font-small); font-weight:400; line-height:20px; }
-.agent-overview {
-  display:flex;
-  flex-shrink:0;
-  flex-wrap:wrap;
-  align-items:center;
-  justify-content:space-between;
-  gap:10px 16px;
-  padding:4px var(--panel-space);
-  min-height:44px;
-  box-sizing:border-box;
-}
-.agent-overview .member-status { font-size:var(--font-small); }
+.agent-controls > .conversation-settings { margin-top:0; padding:12px var(--panel-space) 0; border-top:0; }
+.member-model-label,.member-directory h3 { font-weight:var(--weight-medium); }
+.agent-controls .agent-name-row > .quiet { font-size:inherit; }
+.agent-name-row button,.agent-name-form .form-actions button,.agent-controls .member-directory button { font-size:var(--font-small); font-weight:400; line-height:20px; }
+.agent-state-row { display:flex; flex:0 1 auto; align-items:center; gap:8px; min-width:0; max-width:100%; margin-left:auto; }
+.agent-state-row .agent-profile-status { flex:0 1 auto; }
+.agent-profile-summary + .agent-error:not([hidden]) { padding-top:12px; }
 .agent-recovery-actions { margin:8px var(--panel-space); }
 .agent-enable-hint { flex-shrink:0; margin:0 var(--panel-space) 12px; font-size:var(--font-small); line-height:1.6; }
 .agent-error { flex-shrink:0; margin:0; padding:0 var(--panel-space) 14px; white-space:pre-wrap; }
@@ -97,6 +93,7 @@
 .agent-tabs button:hover:not([aria-selected="true"]) { color:var(--text); }
 .member-platform-toolbar { display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom:8px; }
 .member-platform-toolbar > .quiet { margin:0; font-size:var(--font-small); font-weight:400; }
+.member-platform-toolbar > .add-button { flex:none; margin-left:auto; }
 #activity-dialog > #inbox-member-view { padding-top:0; }
 #activity-dialog > .activity-body { padding:0 var(--panel-space) var(--space-5); overscroll-behavior:contain; }
 #activity-dialog > .activity-footer { padding:12px var(--panel-space); }
@@ -292,11 +289,13 @@
 #gitlab-compatibility-details { margin-top:10px; }
 #gitlab-application { width:100%; }
 
-.agent-name-form { margin:0; padding:12px var(--panel-space); border-bottom:1px solid var(--line); }
-.agent-name-form label { display:block; margin-bottom:6px; color:var(--muted); font-size:var(--font-small); }
+.agent-name-form { display:flex; flex-wrap:wrap; align-items:center; gap:8px; margin:0; padding:0; }
+.agent-name-form input { flex:1 1 128px; width:0; min-width:0; }
 .agent-name-form .quiet { font-size:var(--font-small); line-height:1.6; }
-.agent-name-form .form-actions { margin-top:8px; }
+.agent-name-form .form-actions { flex:none; flex-wrap:nowrap; gap:6px; margin:0 0 0 auto; }
+.agent-name-form .form-actions button { min-height:32px; padding:4px 8px; }
+.agent-name-form > .quiet { flex-basis:100%; margin:0; overflow-wrap:anywhere; }
 .agent-name-row { padding:0 var(--panel-space); min-height:44px; box-sizing:border-box; border-bottom:1px solid var(--line); }
-#agent-name-summary { min-width:0; overflow-wrap:anywhere; text-align:right; }
+#agent-name-summary { min-width:0; text-align:left; }
 
 .member-error.recovering { color:var(--muted); }

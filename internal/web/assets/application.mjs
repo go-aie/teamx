@@ -598,7 +598,9 @@ export async function createApp(overrides = {}) {
 
   const globalScope = () => []; // Service changes fence all readers in the stream owner.
   const roomScope = () => [...globalScope(), viewVersion, state.info];
-  const memberScope = () => [...roomScope(), membersUI.selectedAgent()?.agent_id, membersUI.selectedAgent()?.membership_id, membersUI.agentTab];
+  const memberIdentityScope = () => [...roomScope(), membersUI.selectedAgent()?.agent_id, membersUI.selectedAgent()?.membership_id];
+  const memberScope = () => [...memberIdentityScope(), membersUI.agentTab];
+  const memberToolsScope = () => [...memberIdentityScope(), membersUI.memberToolsView?.generation];
   const active = () => !state.suspended && !document.hidden && window.navigator?.onLine !== false;
   const detail = tab => !layoutUI.auxiliaryOpen && active() && $("activity-dialog").open && membersUI.agentTab === tab && !!membersUI.selectedAgent();
   const notificationVisible = () => !layoutUI.auxiliaryOpen && active() && !!state.catalog && !!workspaceUI.workspaceView &&
@@ -689,7 +691,7 @@ export async function createApp(overrides = {}) {
   });
   register("tools", options => membersUI.loadCLITools(membersUI.memberToolsView, { background: true, ...options }),
     () => !layoutUI.auxiliaryOpen && active() && !!membersUI.memberToolsView && membersUI.toolsCurrent(membersUI.memberToolsView) &&
-      ($("activity-dialog").open || $("notification-detail").open), memberScope);
+      ($("activity-dialog").open || $("notification-detail").open), memberToolsScope);
   register("platforms", async options => {
     platformRead.invalidate();
     await Promise.all([workspaceUI.loadWorkspacePlatforms({ background: true, ...options }),

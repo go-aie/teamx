@@ -68,9 +68,11 @@
   .workspace .activity-header.detail-header h2 { font-size:16px; }
   .workspace .member-model { gap:6px; padding:0 12px; min-height:44px; }
   .workspace .member-model-progress { padding-inline:4px; }
-  .workspace .agent-overview { min-height:44px; padding:0 12px; gap:4px 8px; }
-  .workspace .agent-overview .member-actions { gap:8px; }
-  .workspace .agent-overview button { min-height:36px; padding:5px 10px; }
+  .workspace .agent-profile-summary { padding-block:6px; }
+  .workspace .agent-profile-identity { gap:8px; }
+  .workspace #activity-avatar { width:28px; height:28px; font-size:11px; }
+  .workspace .agent-profile-summary:has(.agent-name-form:not([hidden])) #activity-avatar { margin-top:8px; }
+  .workspace .agent-name-form .form-actions button { min-height:36px; }
   .workspace #agent-actions button { min-height:36px; padding:5px 10px; }
   .member-platform-account-actions > button { min-height:var(--button-height); }
   .workspace .agent-tabs { gap:0; justify-content:space-between; padding:0 12px; }

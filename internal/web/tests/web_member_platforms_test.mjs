@@ -9,6 +9,44 @@ const calls=(api,path)=>api.calls.filter(c=>c.path===path);
 const row=(ui,id)=>ui.el("member-notification-platforms").children.find(r=>r.dataset.platformId===id);
 const toolToggle=(ui,id)=>row(ui,id).children[1].children[2].children[0];
 
+const directRoom=()=>({service_epoch:"manager",operator:"tester",teams:[],rooms:[{room_id:"R",room_instance:"instance-R",name:"助理",is_direct:true,status:"ready",service:{room_id:"R",room_instance:"instance-R",service_epoch:"runtime"}}]});
+
+test("switching member tabs preserves an automatic pending tool read and completes the platform count",async()=>{
+ const api=fixture();let release;
+ api.members.splice(1);
+ api.tools.bindings.push({agent_id:"a",membership_id:"member-a",tool:"gitlab",platform_id:"gl"});
+ api.hook=path=>path==="/v1/rooms" ? directRoom() : undefined;
+ const ui=await launch(api);
+ api.hook=path=>path==="/v1/rooms" ? directRoom() : path.startsWith("/v1/tools/bindings?") ? new Promise(resolve=>{release=resolve;}) : undefined;
+ await ui.el("close-activity").emit("click");await ui.el("conversation-details").emit("click");await settle();
+ assert.equal(ui.el("activity-dialog").open,true);
+ assert.equal(typeof release,"function");assert.ok(row(ui,"gl"));
+ assert.equal(ui.el("member-platform-count").hidden,true);
+ await ui.el("agent-tab-platforms").emit("click");await settle();
+ release(structuredClone(api.tools));await settle();
+ assert.equal(ui.el("member-platform-count").hidden,false);
+ assert.equal(ui.el("member-notification-source-count").textContent,"2");
+ assert.equal(toolToggle(ui,"gl").checked,true);assert.equal(toolToggle(ui,"gl").disabled,false);
+ assert.equal(calls(api,"/v1/tools/bind").length,0);
+});
+
+test("reopening the same member while a tool read is pending reads into the new view",async()=>{
+ const api=fixture(),releases=[];
+ api.members.splice(1);
+ api.hook=path=>path==="/v1/rooms" ? directRoom() : undefined;
+ const ui=await launch(api),open=()=>ui.el("conversation-details").emit("click");
+ api.hook=path=>path==="/v1/rooms" ? directRoom() : path.startsWith("/v1/tools/bindings?") ? new Promise(resolve=>releases.push(resolve)) : undefined;
+ await ui.el("close-activity").emit("click");await open();await settle();
+ assert.equal(releases.length,1);
+ await ui.el("close-activity").emit("click");await open();await settle();
+ releases[0](structuredClone(api.tools));await settle();
+ assert.equal(releases.length,2);
+ releases[1](structuredClone(api.tools));await settle();
+ assert.equal(ui.el("member-platform-count").hidden,false);
+ assert.equal(ui.el("member-notification-source-count").textContent,"2");
+ assert.equal(calls(api,"/v1/tools/bind").length,0);
+});
+
 for(const id of ["gl","lark"])test(`platform ${id} shows account recovery only when its account needs attention`,async()=>{
  const api=fixture(),ui=await launch(api);await openMemberInbox(ui,"member-a");
  assert.equal(row(ui,id).children[3].hidden,true);

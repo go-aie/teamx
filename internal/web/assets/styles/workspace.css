@@ -60,13 +60,21 @@
 @media(prefers-reduced-motion:reduce) { .workspace-dialog[open] { animation:none; } .workspace-button { transition:none; } }
 
 .member-directory { margin:0; padding:12px var(--panel-space); border-bottom:1px solid var(--line); }
-.member-directory-heading { display:flex; align-items:center; justify-content:space-between; gap:12px; min-width:0; }
+.member-directory-heading { display:flex; align-items:center; gap:12px; min-width:0; min-height:24px; }
 .member-directory h3 { margin:0; color:var(--muted); font-size:var(--font-small); font-weight:400; }
-.member-directory .directory-path { margin:8px 0 0; color:var(--text-secondary); font-size:var(--font-small); line-height:1.6; }
+.member-directory h3,.member-directory-heading svg { flex:none; }
+#member-directory-summary { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; text-align:right; }
+.member-directory-heading svg { width:14px; height:14px; color:var(--muted); }
+.member-directory-details[open] > summary svg { transform:rotate(180deg); }
+.member-directory-path-row { display:flex; align-items:flex-start; gap:12px; margin-top:8px; }
+.member-directory .directory-path { flex:1; min-width:0; margin:0; color:var(--text-secondary); font-size:var(--font-small); line-height:1.6; overflow-wrap:anywhere; user-select:text; }
+#member-directory-copy { flex:none; padding:0; min-height:24px; }
 .member-directory .quiet:empty { display:none; }
 .member-directory .quiet { margin:8px 0 0; font-size:var(--font-small); line-height:1.6; }
-.member-directory-details { min-width:0; margin-top:8px; }
-.member-directory-details > summary { cursor:pointer; color:var(--text-secondary); font-size:var(--font-small); line-height:1.6; overflow-wrap:anywhere; }
+.member-directory-details { min-width:0; }
+.member-directory-details > summary { cursor:pointer; color:var(--text-secondary); font-size:var(--font-small); line-height:1.6; list-style:none; }
+.member-directory-details > summary::-webkit-details-marker { display:none; }
+.member-directory-details > summary::before { content:none; }
 .member-directory-details > summary:hover { color:var(--accent); }
 .directory-path { min-width:0; overflow-wrap:anywhere; white-space:pre-wrap; line-height:1.65; }
 .directory-dialog { width:min(560px,calc(100vw - 32px)); height:min(520px,calc(100dvh - 48px)); max-height:calc(100dvh - 32px); padding:0; }

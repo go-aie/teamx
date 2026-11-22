@@ -29,6 +29,7 @@ export function createMembers({ env, runtime, notificationsUI, workspaceUI, onbo
 
   let nameEditor=null,nameSaving=false,nameEditing=false;
   let memberToolsView = null;
+  let memberToolsGeneration = 0;
   let memberModelStatus = {};
 
   function renderDiagnostics(prefix, detail) {
@@ -72,7 +73,7 @@ export function createMembers({ env, runtime, notificationsUI, workspaceUI, onbo
     if (!state.managed || !state.info || !state.catalogConnected) {
       notificationsUI.renderNotificationPlatforms();return;
     }
-    memberToolsView = { identity: toolsIdentity(), runtimeEpoch:state.info.service_epoch, member, cli: null, cliConnected:false };
+    memberToolsView = { identity: toolsIdentity(), runtimeEpoch:state.info.service_epoch, generation:++memberToolsGeneration, member, cli: null, cliConnected:false };
     if (automatic) await runtime.observe("configuration", { cached: true });
     else await connectionsUI.refreshPlatformState();
   }
@@ -294,7 +295,7 @@ export function createMembers({ env, runtime, notificationsUI, workspaceUI, onbo
       row.children[0].setAttribute("aria-label",hasNotifications ? `编辑 ${item.name} 的通知设置` : `${item.name} 平台详情`);
       const heading=row.children[0].children[1].children[0],name=document.createElement("span"),edit=document.createElementNS("http://www.w3.org/2000/svg","svg"),path=document.createElementNS("http://www.w3.org/2000/svg","path");
       name.className="member-platform-name";name.textContent=item.name;
-      edit.setAttribute("class","platform-edit-icon");edit.setAttribute("viewBox","0 0 24 24");edit.setAttribute("aria-hidden","true");edit.setAttribute("focusable","false");
+      edit.setAttribute("class","edit-icon platform-edit-icon");edit.setAttribute("viewBox","0 0 24 24");edit.setAttribute("aria-hidden","true");edit.setAttribute("focusable","false");
       path.setAttribute("d","m15 5 4 4M4 20l4-1L20 7a2.8 2.8 0 0 0-4-4L4 15Z");edit.append(path);heading.replaceChildren(name,edit);
       const attention=v?.attention?.available && v.attention.sources.find(p=>p.platform_id===item.id);
       const attentionLabel={high:"重点",low:"较少"}[attention?.attention];
@@ -493,19 +494,21 @@ export function createMembers({ env, runtime, notificationsUI, workspaceUI, onbo
     else if(!nameSaving && $("agent-display-name").value===nameEditor.expected){nameEditor.expected=agentName(member);$("agent-display-name").value=agentName(member);}
     $("agent-name-row").hidden=!state.managed || nameEditing;
     $("agent-name-form").hidden=!state.managed || !nameEditing;
-    $("agent-profile-name").hidden = state.managed && !nameEditing;
+    $("agent-profile-name").hidden = state.managed;
     $("agent-name-label").textContent=roomsUI.isDirect() ? "私信名称" : "成员名称";
     $("agent-name-summary").textContent=agentName(member);
-    $("edit-agent-name").setAttribute("aria-label",`修改${roomsUI.isDirect() ? "私信" : "成员"}名称`);
+    const editNameLabel=`${agentName(member)}，修改${roomsUI.isDirect() ? "私信" : "成员"}名称`;
+    $("edit-agent-name").setAttribute("aria-label",editNameLabel);
+    $("edit-agent-name").title=editNameLabel;
     $("edit-agent-name").setAttribute("aria-expanded",String(nameEditing));
     $("edit-agent-name").disabled=nameSaving;
     $("agent-name-save").disabled=nameSaving || !nameEditing;
     $("agent-name-cancel").disabled=nameSaving;
     $("agent-display-name").disabled=nameSaving;
-    $("agent-status").textContent = member.execution?.active ? "运行中" : statusNames[member.status] || member.status;
+    $("agent-status").textContent = member.execution?.active ? "运行中" :
+      ["idle", "completed"].includes(member.status) ? member.execution?.paused ? "已暂停" : "空闲" : statusNames[member.status] || member.status;
     $("agent-status").classList.toggle("running", !!member.execution?.active || recovering(member));
     $("agent-status").classList.toggle("failed", /failed|blocked|unavailable|interrupted/.test(member.status));
-    $("agent-cooperation-status").textContent = member.execution ? member.execution.paused ? "已暂停" : "已启用" : "未连接";
     renderMemberActions(member, $("agent-recovery-actions"), "recovery");
     $("agent-recovery-actions").hidden = !$("agent-recovery-actions").children.length;
     renderMemberProfile();
@@ -516,7 +519,7 @@ export function createMembers({ env, runtime, notificationsUI, workspaceUI, onbo
     const effects = [];
     if (reset) effects.push("重置会话，清除私有上下文");
     if (exhausted) effects.push(`追加 ${budget.grant || 16} 回合`);
-    notice("agent-enable-hint", effects.length ? `启用协作将${effects.join("，并")}。` : "");
+    notice("agent-enable-hint", effects.length ? `启用将${effects.join("，并")}。` : "");
     notice("agent-error", executionMessage(member));
     $("agent-error").classList.toggle("form-error", !recovering(member) && !(execution?.inbox_recovery || execution?.input_recovery));
     renderDiagnostics("agent", recovering(member) ? "" : execution?.error);
@@ -574,7 +577,7 @@ export function createMembers({ env, runtime, notificationsUI, workspaceUI, onbo
       button.disabled = memberBusy.has(member.membership_id) || !state.connected || discussionBusy() || member.status === "checkpoint_failed" || member.status === "rotating" && action !== "pause";
       button.addEventListener("click", () => controlMember(member, action)); actions.append(button);
     };
-    if (mode === "primary") add(enable ? "启用协作" : "暂停", enable ? "run" : "pause");
+    if (mode === "primary") add(enable ? "启用" : "暂停", enable ? "run" : "pause");
     if (mode === "recovery" && (execution.inbox_recovery || execution.input_recovery) && !execution.active && !execution.paused && !execution.inbox?.recovery_blocked && !execution.input_recovery?.blocked && ["completed", "failed", "interrupted"].includes(execution.agent?.turn?.status) && ["inbox_waiting", "inbox_stalled"].includes(member.status)) add("继续读取收件箱", "inbox/continue");
   }
 
@@ -741,7 +744,7 @@ export function createMembers({ env, runtime, notificationsUI, workspaceUI, onbo
     $("profile").replaceChildren(...profiles.map((name) => new Option(name, name)));
     if (profiles.includes(selected)) $("profile").value = selected;
     $("add-member").disabled = profiles.length === 0 || discussionBusy();
-    notice("profile-hint", profiles.length ? "新成员默认暂停，添加后点击「启用协作」。" : "还没有可用角色。请在启动服务时通过 --dsh-config 指定配置文件。");
+    notice("profile-hint", profiles.length ? "新成员默认暂停，添加后点击「启用」。" : "还没有可用角色。请在启动服务时通过 --dsh-config 指定配置文件。");
   }
 
   function renderActivity({ loading, data, error }, selected) {

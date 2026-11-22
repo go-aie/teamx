@@ -1,4 +1,5 @@
 /* Shared controls own appearance. Feature styles own composition and layout. */
+.edit-icon { flex:none; width:12px; height:12px; fill:none; stroke:currentColor; stroke-width:1.6; stroke-linecap:round; stroke-linejoin:round; color:var(--muted); }
 :is(.primary,.secondary-button,.text-button,.back-button) {
   display:inline-flex;
   align-items:center;

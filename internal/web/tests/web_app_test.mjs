@@ -3281,7 +3281,7 @@ for (const [name, reset, exhausted] of [["paused", false, false], ["budget", fal
     assert.equal(hint.textContent.includes("重置会话，清除私有上下文"), reset);
     assert.equal(hint.textContent.includes("追加 7 回合"), exhausted);
     const button = ui.el("agent-actions").children[0];
-    assert.equal(button.textContent, "启用协作"); assert.equal(button.disabled, false);
+    assert.equal(button.textContent, "启用"); assert.equal(button.disabled, false);
     await button.emit("click"); await settle();
     assert.equal(api.calls.filter(call => call.path === "/v1/member/run").length, 1);
     assert.equal(api.calls.some(call => call.path === "/v1/member/session/rotate"), false);
@@ -4510,11 +4510,16 @@ test("member directories show a compact summary with an expandable exact path an
   ws.workspace.member_directories={"member-A":path,"review-A":path};
   const ui=await launch(api);await inspectDirectoryMember(ui);
   assert.equal(ui.el("member-directory-details").open,false);
-  assert.ok(ui.el("member-directory-summary").textContent.length<60);
+  assert.equal(ui.el("member-directory-summary").textContent,"指定 · "+path.split("/").at(-1));
   assert.equal(ui.el("member-directory-summary").title,path);
   assert.ok(ui.el("member-directory-path").textContent.endsWith(path));
   assert.equal(ui.el("member-directory-sharing").hidden,false);
   assert.match(ui.el("member-directory-sharing").textContent,/reviewer.*共用/i);
+  let copied="";
+  ui.window.navigator={clipboard:{writeText:async value=>{copied=value;}}};
+  await ui.el("member-directory-copy").emit("click");
+  assert.equal(copied,path);
+  assert.equal(ui.el("member-directory-feedback").textContent,"路径已复制。");
   ui.el("member-directory-details").open=true;await ui.refresh();
   assert.equal(ui.el("member-directory-details").open,true);
   await inspectDirectoryMember(ui,1);

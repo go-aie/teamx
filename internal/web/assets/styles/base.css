@@ -231,7 +231,6 @@ h1 {
 .room-name-row > span { flex:none; font-size:var(--font-small); }
 .room-name-row button { flex:1; justify-content:flex-end; min-width:0; padding-inline:0; }
 #room-detail-name { min-width:0; overflow-wrap:anywhere; text-align:right; }
-.room-name-row svg { flex:none; width:18px; height:18px; }
 .room-details { border-bottom:1px solid var(--line); padding-block:8px; }
 .room-rename { display:flex; flex-direction:column; align-items:stretch; gap:10px; padding-block:12px; }
 .room-rename label { color:var(--muted); font-size:var(--font-small); }

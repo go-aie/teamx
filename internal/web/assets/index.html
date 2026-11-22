@@ -274,7 +274,7 @@
         <div id="member-sidebar" class="sidebar" aria-label="房间成员">
           <p id="direct-settings-loading" class="quiet" role="status" aria-live="polite" hidden>正在读取助理设置…</p>
           <section id="room-details" class="room-details" aria-label="房间设置">
-            <div id="room-name-row" class="room-name-row"><span class="quiet">房间名称</span><button id="rename-room" class="text-button" type="button" aria-label="修改房间名称" title="修改房间名称" aria-controls="rename-form" disabled><span id="room-detail-name"></span><svg class="navigation-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button></div>
+            <div id="room-name-row" class="room-name-row"><span class="quiet">房间名称</span><button id="rename-room" class="text-button" type="button" aria-label="修改房间名称" title="修改房间名称" aria-controls="rename-form" disabled><span id="room-detail-name"></span><svg class="edit-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="m15 5 4 4M4 20l4-1L20 7a2.8 2.8 0 0 0-4-4L4 15Z"/></svg></button></div>
             <form id="rename-form" class="room-rename" aria-label="修改房间名称" hidden>
               <label for="rename-room-name">房间名称</label><input id="rename-room-name" class="field-control" maxlength="256" required autocomplete="off" aria-describedby="rename-error">
               <div class="form-actions"><button id="cancel-rename" class="text-button" type="button">取消</button><button id="save-room-name" class="primary" type="submit">保存</button></div>
@@ -508,22 +508,26 @@
         </div>
         <section id="agent-controls" class="agent-controls" role="tabpanel" aria-labelledby="agent-tab-profile">
           <div class="agent-profile-summary">
-            <div id="activity-avatar" class="avatar" aria-hidden="true"></div>
             <div class="agent-profile-identity">
-              <span id="agent-name-label" class="sr-only">成员名称</span>
-              <div id="agent-name-row" class="agent-profile-name-row" hidden><button id="edit-agent-name" class="text-button" type="button" aria-label="修改成员名称" aria-controls="agent-name-form" aria-expanded="false"><span id="agent-name-summary"></span><svg class="navigation-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button></div>
-              <strong id="agent-profile-name"></strong>
-              <div class="agent-profile-status"><span id="agent-status" class="member-status"></span><span id="agent-model-alert" role="status" aria-live="polite" hidden></span></div>
+              <div id="activity-avatar" class="avatar" aria-hidden="true"></div>
+              <div class="agent-profile-name">
+                <span id="agent-name-label" class="sr-only">成员名称</span>
+                <div id="agent-name-row" class="agent-profile-name-row" hidden><button id="edit-agent-name" class="text-button" type="button" aria-label="修改成员名称" title="修改名称" aria-controls="agent-name-form" aria-expanded="false"><span id="agent-name-summary"></span><svg class="edit-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="m15 5 4 4M4 20l4-1L20 7a2.8 2.8 0 0 0-4-4L4 15Z"/></svg></button></div>
+                <strong id="agent-profile-name"></strong>
+                <form id="agent-name-form" class="agent-name-form" hidden>
+                  <label for="agent-display-name" class="sr-only">显示名称</label><input id="agent-display-name" class="field-control" maxlength="256" autocomplete="off" required aria-describedby="agent-name-hint">
+                  <p id="agent-name-hint" class="sr-only">用于消息署名和 @；私信标题使用同一名称。</p>
+                  <div class="form-actions"><button id="agent-name-cancel" class="text-button" type="button">取消</button><button id="agent-name-save" class="primary" type="submit">保存</button></div>
+                  <p id="agent-name-feedback" class="quiet" role="status" hidden></p>
+                </form>
+              </div>
             </div>
-            <div id="agent-actions" class="member-actions" hidden></div>
+            <div class="agent-state-row"><div class="agent-profile-status"><span id="agent-status" class="member-status" role="status"></span><span id="agent-model-alert" role="status" aria-live="polite" hidden></span></div><div id="agent-actions" class="member-actions" hidden></div></div>
           </div>
           <p id="agent-error" class="agent-error form-error" role="status" hidden></p>
-
-          <form id="agent-name-form" class="agent-name-form" hidden>
-            <label for="agent-display-name">显示名称</label><input id="agent-display-name" class="field-control" maxlength="256" autocomplete="off" required aria-describedby="agent-name-hint">
-            <p id="agent-name-hint" class="quiet">用于消息署名和 @；私信标题使用同一名称。</p>
-            <div class="form-actions"><span id="agent-name-feedback" class="quiet" role="status"></span><button id="agent-name-cancel" class="text-button" type="button">取消</button><button id="agent-name-save" class="primary" type="submit">保存</button></div>
-          </form>
+          <div id="agent-recovery-actions" class="member-actions agent-recovery-actions" hidden></div>
+          <p id="agent-enable-hint" class="agent-enable-hint quiet" role="status" hidden></p>
+          <details id="agent-diagnostics" class="execution-diagnostics" hidden><summary>诊断详情</summary><pre id="agent-diagnostic-error"></pre></details>
           <div id="member-model" class="member-model" hidden>
             <span class="member-model-label">模型</span>
             <button id="member-model-trigger" type="button" class="text-button member-model-trigger" aria-haspopup="dialog" aria-controls="member-model-popover" aria-expanded="false"><span id="member-model-summary"></span><span id="member-reasoning-summary" class="quiet"></span><svg class="navigation-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg></button>
@@ -549,15 +553,10 @@
         </section>
 
         <section id="member-directory" class="member-directory" aria-labelledby="member-directory-title" hidden>
-          <div class="member-directory-heading"><h3 id="member-directory-title">工作目录</h3></div>
-          <details id="member-directory-details" class="member-directory-details"><summary id="member-directory-summary" title="展开完整路径"></summary><p id="member-directory-path" class="directory-path"></p></details>
+          <details id="member-directory-details" class="member-directory-details"><summary class="member-directory-heading" title="展开或收起完整路径"><h3 id="member-directory-title">工作目录</h3><span id="member-directory-summary"></span><svg class="navigation-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg></summary><div class="member-directory-path-row"><p id="member-directory-path" class="directory-path"></p><button id="member-directory-copy" class="text-button" type="button" aria-label="复制完整路径">复制</button></div></details>
           <p id="member-directory-sharing" class="quiet" hidden></p>
           <p id="member-directory-feedback" class="quiet" role="status" aria-live="polite"></p>
         </section>
-        <div class="agent-overview"><span class="quiet">协作状态</span><span id="agent-cooperation-status"></span></div>
-        <div id="agent-recovery-actions" class="member-actions agent-recovery-actions" hidden></div>
-        <p id="agent-enable-hint" class="agent-enable-hint quiet" role="status" hidden></p>
-        <details id="agent-diagnostics" class="execution-diagnostics" hidden><summary>诊断详情</summary><pre id="agent-diagnostic-error"></pre></details>
         </section>
         <div id="platforms-member-view" class="activity-body" role="tabpanel" aria-labelledby="agent-tab-platforms" hidden>
           <section id="member-notification-sources" class="member-notification-sources" aria-label="当前成员平台" hidden>

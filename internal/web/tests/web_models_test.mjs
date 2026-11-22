@@ -40,7 +40,7 @@ async function chooseMemberModel(ui, value) {
 test("member profile opens by default and polling preserves the selected tab",async()=>{
  const api=fixture(),ui=await launch(api);await openMember(ui);
  assert.equal(ui.el("agent-controls").hidden,false);assert.equal(ui.el("agent-tab-profile").getAttribute("aria-selected"),"true");
- assert.equal(ui.el("agent-status").textContent,"等待消息");assert.equal(ui.el("agent-model-alert").hidden,true);
+ assert.equal(ui.el("agent-status").textContent,"空闲");assert.equal(ui.el("agent-model-alert").hidden,true);
  await ui.el("agent-tab-platforms").emit("click");assert.equal(ui.el("agent-controls").hidden,true);
  await ui.refresh();assert.equal(ui.el("agent-controls").hidden,true);
  await ui.el("close-activity").emit("click");await openMember(ui);assert.equal(ui.el("agent-controls").hidden,false);
@@ -58,11 +58,13 @@ test("profile contains pause and enable controls and failures retain diagnostics
  };
  const ui=await launch(api);await openMember(ui);
  assert.equal(ui.el("agent-actions").children[0].textContent,"暂停");
+ assert.equal(ui.el("agent-status").textContent,"运行中");
  assert.equal(ui.el("agent-controls").hidden,false);
  await ui.el("agent-actions").children[0].emit("click");await settle();
  assert.equal(api.calls.filter(c=>c.path==="/v1/member/pause").length,1);
  assert.equal(ui.el("agent-controls").hidden,false);assert.equal(ui.el("agent-actions").hidden,false);
- assert.equal(ui.el("agent-actions").children[0].textContent,"启用协作");
+ assert.equal(ui.el("agent-actions").children[0].textContent,"启用");
+ assert.equal(ui.el("agent-status").textContent,"已暂停");
  member.execution.error="服务暂不可用";member.status="backend_blocked";await ui.refresh();
  assert.equal(ui.el("agent-model-alert").textContent,"运行异常");
  await ui.el("agent-tab-profile").emit("click");assert.equal(ui.el("agent-controls").hidden,false);

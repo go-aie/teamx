@@ -58,12 +58,8 @@ export function createMemberDirectories({ env, runtime, membersUI, workspaceView
     const [fullPath, ...sharing] = describe(workspace, member).split("\n");
     const path = member.effective_directory || workspace.member_directories?.[member.membership_id] || member.default_directory || member.workspace;
     const parts = path.split("/").filter(Boolean);
-    const short = parts.slice(-2).map(part => {
-      if (/^[a-f0-9]{32}$/i.test(part)) return part.slice(0, 8) + "…";
-      const chars = [...part];
-      return chars.length > 32 ? chars.slice(0, 16).join("") + "…" + chars.slice(-8).join("") : part;
-    }).join("/");
-    $("member-directory-summary").textContent = `${workspace.member_directories?.[member.membership_id] ? "指定目录" : "默认目录"} · ${parts.length > 2 ? "…/" : ""}${short}`;
+    const basename = parts.at(-1) || path;
+    $("member-directory-summary").textContent = `${workspace.member_directories?.[member.membership_id] ? "指定" : "默认"} · ${basename}`;
     $("member-directory-summary").title = path;
     const detail = $("member-directory-details"), key = `${ws.key}/${member.membership_id}`;
     if (detail.dataset.member !== key) { detail.open = false; detail.dataset.member = key; }
@@ -102,6 +98,20 @@ export function createMemberDirectories({ env, runtime, membersUI, workspaceView
   function mount() {
     picker.mount();
     $("workspace-selector").addEventListener("close", picker.reconcile);
+    $("member-directory-copy").addEventListener("click", async () => {
+      const path = $("member-directory-summary").title;
+      const member = $("member-directory-details").dataset.member;
+      const feedback = message => {
+        if ($("member-directory-details").dataset.member === member && $("member-directory-summary").title === path)
+          runtime.notice("member-directory-feedback", message);
+      };
+      try {
+        await env.window.navigator.clipboard.writeText(path);
+        feedback("路径已复制。");
+      } catch {
+        feedback("复制失败，请选择完整路径手动复制。");
+      }
+    });
   }
 
   return { mount, render, picker, composer:{state:composerState, choose:chooseComposer,
