@@ -3,8 +3,8 @@ import assert from "node:assert/strict";
 import { launch, settle } from "./web_app_harness.mjs";
 import { fixture } from "./web_member_platform_fixture.mjs";
 
-const kinds = ["files", "calendar", "settings"];
-const shortcuts = ["conversation-files", "conversation-calendar", "conversation-details"];
+const kinds = ["files", "calendar", "environment", "settings"];
+const shortcuts = ["conversation-files", "conversation-calendar", "conversation-environment", "conversation-details"];
 function toolFixture() {
   const api = fixture(), request = api.request.bind(api);
   api.members.splice(1); api.direct = true; api.operator = "tester";
@@ -49,15 +49,15 @@ test("pin preferences survive reload, remain scoped to the account and tolerate 
   const ui = await launch(api, new Map(), {localStorage:storage});
   await menu(ui); await pin(ui, "files"); await pin(ui, "settings");
   const reloaded = await launch(api, new Map(), {localStorage:storage});
-  assert.deepEqual(shown(reloaded), ["conversation-calendar"]);
+  assert.deepEqual(shown(reloaded), ["conversation-calendar", "conversation-environment"]);
   api.operator = "another-user"; await reloaded.refresh();
   assert.deepEqual(shown(reloaded), shortcuts);
   api.operator = "tester"; await reloaded.refresh();
-  assert.deepEqual(shown(reloaded), ["conversation-calendar"]);
+  assert.deepEqual(shown(reloaded), ["conversation-calendar", "conversation-environment"]);
   const key = [...storage.values.keys()][0];
   storage.values.set(key, '{"files":"false","calendar":false,"settings":null}');
   await reloaded.window.emit("storage", {key});
-  assert.deepEqual(shown(reloaded), ["conversation-files", "conversation-details"]);
+  assert.deepEqual(shown(reloaded), ["conversation-files", "conversation-environment", "conversation-details"]);
   storage.values.set(key, "malformed"); await reloaded.window.emit("storage", {key});
   assert.deepEqual(shown(reloaded), shortcuts);
 });
@@ -74,14 +74,14 @@ test("phone menus open unpinned tools and restore desktop preferences after resi
   await ui.el("calendar-close").emit("click");
   assert.equal(ui.document.activeElement, ui.el("room-menu-label"));
   ui.window.innerWidth = 1440; await ui.window.emit("resize");
-  assert.deepEqual(shown(ui), ["conversation-files", "conversation-details"]);
+  assert.deepEqual(shown(ui), ["conversation-files", "conversation-environment", "conversation-details"]);
 });
 
 test("calendar availability never overwrites its pin preference and menus support keyboard navigation", async () => {
   const api = toolFixture(), ui = await launch(api);
   api.direct = false; await ui.refresh();
   assert.equal(ui.el("conversation-tool-calendar").hidden, true);
-  assert.deepEqual(shown(ui), ["conversation-files", "conversation-details"]);
+  assert.deepEqual(shown(ui), ["conversation-files", "conversation-environment", "conversation-details"]);
   api.direct = true; await ui.refresh();
   assert.deepEqual(shown(ui), shortcuts);
   await ui.el("room-menu-label").emit("keydown", {key:"ArrowDown"});

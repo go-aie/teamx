@@ -83,7 +83,10 @@ func (r *Room) AppendEvent(ctx actorx.Context, msg AppendRoomEvent, reply actorx
 	key := roomEventKey(msg.Event)
 	event := msg.Event
 	event.Targets = slices.Clone(msg.Event.Targets)
-	m := RoomMessage{Type: "event", Event: &event, Seq: r.state.LatestSeq + 1, ClientMessageID: key, Author: msg.Event.Actor, Text: msg.Summary, CreatedAt: msg.CreatedAt}
+	// Match ordinary messages: JSON cannot preserve monotonic clock data or
+	// location identity. Keep the installed event equal to its persisted form
+	// so subsequent Room commits can verify immutable history.
+	m := RoomMessage{Type: "event", Event: &event, Seq: r.state.LatestSeq + 1, ClientMessageID: key, Author: msg.Event.Actor, Text: msg.Summary, CreatedAt: msg.CreatedAt.UTC()}
 	if msg.CreatedAt.IsZero() || !validText(msg.Summary) || len(msg.Summary) > maxTextBytes {
 		return ErrRequest
 	}

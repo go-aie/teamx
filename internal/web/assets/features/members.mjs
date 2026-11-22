@@ -564,7 +564,7 @@ export function createMembers({ env, runtime, notificationsUI, workspaceUI, onbo
 
   function renderMemberActions(member, actions, mode) {
     const execution = member.execution;
-    const signature = JSON.stringify([member.agent_id, agentName(member), member.membership_id, member.status, execution?.paused, execution?.active,
+    const signature = JSON.stringify([member.agent_id, agentName(member), member.membership_id, member.status, execution?.paused, execution?.active, execution?.environment_control?.phase,
       execution?.session_reset_required, execution?.inbox_recovery, execution?.input_recovery, execution?.inbox?.recovery_blocked, state.connected, discussionBusy(), memberBusy.has(member.membership_id), member.unread_count, execution?.agent?.turn?.status, mode]);
     if (actions.dataset.signature === signature) return;
     actions.dataset.signature = signature;
@@ -574,7 +574,7 @@ export function createMembers({ env, runtime, notificationsUI, workspaceUI, onbo
     const add = (label, action) => {
       const button = document.createElement("button"); button.type = "button"; button.className = "secondary-button button-compact"; button.textContent = label;
       button.setAttribute("aria-label", `${label} ${agentName(member)}`);
-      button.disabled = memberBusy.has(member.membership_id) || !state.connected || discussionBusy() || member.status === "checkpoint_failed" || member.status === "rotating" && action !== "pause";
+      button.disabled = memberBusy.has(member.membership_id) || !state.connected || discussionBusy() || member.status === "checkpoint_failed" || member.status === "rotating" && action !== "pause" || ["waiting","ready","finishing"].includes(execution.environment_control?.phase) && action!=="pause";
       button.addEventListener("click", () => controlMember(member, action)); actions.append(button);
     };
     if (mode === "primary") add(enable ? "启用" : "暂停", enable ? "run" : "pause");

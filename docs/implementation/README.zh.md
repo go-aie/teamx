@@ -4,6 +4,7 @@
 
 | 记录 | 范围 |
 | --- | --- |
+| [右侧环境画面与人工接管](agent-sandbox/environment-viewer.zh.md) | noVNC 侧栏、独立网关配置、暂停与交还、成员与登录隔离；真实 AIO 输入／虚构登录和受控 Agent 恢复验收 |
 | [Agent 工具目录精简投影](agent-tool-discovery.zh.md) | S3b：明确 Agent 字段、准确入口与配置授权、可用性及修复诊断；所选组合验证和八回合真实模型只读对照 |
 | [现有工具绑定总开关短路径](agent-tool-toggle.zh.md) | S3a：服务端冻结现有绑定和授权、稳定回执、休眠授权恢复、并发复核与撤权结清；完整编辑合同保留 |
 | [DSH 内部助手操作与生命周期验证](agent-collaboration-boundaries.zh.md) | S2a：打包版本、子 Agent 实际工具与成员边界、取消／关闭及恢复／轮换证据；逐项兼容限制与修复单，不代表完整 S2／P4b |

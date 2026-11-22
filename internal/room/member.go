@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"strings"
 	"sync/atomic"
 	"time"
 
@@ -43,7 +44,8 @@ type MemberAgent struct {
 	RecoveryPending      bool // Startup candidate; armed only after HTTP is serving.
 	recoveryArmed        bool
 	recoveryAttempted    bool
-	enabled              bool // Durable user intent, independent of fault pause.
+	enabled              bool                // Durable user intent, independent of fault pause.
+	environmentControl   *environmentHandoff // Actor-owned; a lost viewer leaves durable scheduling paused.
 	rotationRequest      bool
 	rotationNext         time.Time
 	BackendBlocked       string // Restored backend cannot safely open a new session.
@@ -211,6 +213,7 @@ func (m *MemberAgent) status() MemberStatus {
 	result := MemberStatus{CurrentGeneration: m.currentGeneration, PauseRevision: m.pauseRevision, Status: status, Active: m.active, Paused: m.paused || m.rotation != nil && m.rotation.Status == "failed", Agent: &state, Error: m.lastError,
 		SessionResetRequired: m.BackendBlocked != "", SessionGeneration: m.sessionGeneration, SessionStartUsed: m.sessionStartUsed,
 		TurnBudget: &TurnBudget{Limit: m.turnLimit, Used: m.turnsUsed, Grant: m.MaxTurns}}
+	result.EnvironmentControl = m.environmentControlView()
 	if m.automaticRotation() {
 		result.TurnBudget = nil
 		result.SessionTurns = &SessionTurns{Limit: m.SessionMaxTurns, Total: m.turnsUsed, BaselineKnown: m.sessionGeneration != ""}
@@ -253,6 +256,10 @@ func (m *MemberAgent) Control(ctx actorx.Context, msg ControlMember) (MemberStat
 	if msg.MemberIdentity != m.Options.MemberIdentity {
 		return MemberStatus{}, ErrIdentity
 	}
+	m.expireEnvironmentControl()
+	if m.environmentHeld() && (msg.Action == "run" || msg.Action == "enable" || msg.Action == "rotate" || msg.modelGate != nil) {
+		return m.status(), ErrBusy
+	}
 	if msg.modelGate != nil {
 		if *msg.modelGate != "" && m.ModelGate != "" && m.ModelGate != *msg.modelGate {
 			return m.status(), ErrBusy
@@ -274,6 +281,9 @@ func (m *MemberAgent) Control(ctx actorx.Context, msg ControlMember) (MemberStat
 		if err := m.initializeScheduling(); err != nil {
 			return MemberStatus{}, err
 		}
+	}
+	if strings.HasPrefix(msg.Action, "environment_") {
+		return m.controlEnvironment(ctx, msg)
 	}
 	switch msg.Action {
 	case "inbox_continue":
@@ -414,6 +424,7 @@ func (m *MemberAgent) maintain() error {
 	}, func(_ struct{}, err error) bool {
 		defer m.observeStatus()
 		if err == nil {
+			m.expireEnvironmentControl()
 			if err := m.maintain(); err != nil {
 				m.owner.Stop(fmt.Errorf("member maintenance unavailable: %w", err))
 			} else {

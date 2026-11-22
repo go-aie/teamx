@@ -1,6 +1,6 @@
 import { compactViewport } from "../client.mjs";
 // Room/member sidebars, responsive visibility and width persistence.
-export function createLayout({ env, roomsUI, runtime, notificationsUI, membersUI, settingsUI, userMenuUI, filesUI, calendarUI, conversationToolsUI }) {
+export function createLayout({ env, roomsUI, runtime, notificationsUI, membersUI, settingsUI, userMenuUI, filesUI, calendarUI, environmentUI, conversationToolsUI }) {
   const { document, window } = env;
   const { state, $, storage } = runtime;
 
@@ -17,6 +17,7 @@ export function createLayout({ env, roomsUI, runtime, notificationsUI, membersUI
   function hideAuxiliary() {
     if (auxiliary === "files") filesUI.hide();
     if (auxiliary === "calendar") calendarUI.hide();
+    if (auxiliary === "environment") environmentUI.hide();
   }
 
   function openAuxiliary(kind) {
@@ -49,7 +50,8 @@ export function createLayout({ env, roomsUI, runtime, notificationsUI, membersUI
 
   const panelsKey = "teamx.room-panels";
 
-  const panels = { rooms: true, members: true, roomWidth: null, memberWidth: null, fileWidth: null, calendarWidth: null };
+  const panels = { rooms: true, members: true, roomWidth: null, memberWidth: null, fileWidth: null, calendarWidth: null, environmentWidth: null };
+  const auxiliaryWidthKey = () => ({files:"fileWidth", calendar:"calendarWidth", environment:"environmentWidth"})[auxiliary];
 
   let sidebarResize = null;
 
@@ -86,7 +88,7 @@ export function createLayout({ env, roomsUI, runtime, notificationsUI, membersUI
     if (auxiliary) {
       const limits = sidebarWidthLimits("members"), handle = $("member-resizer");
       const available = $("workspace").clientWidth - (state.managed ? $("room-rail").getBoundingClientRect().width : 0);
-      const key = auxiliary === "files" ? "fileWidth" : "calendarWidth";
+      const key = auxiliaryWidthKey();
       const width = Math.max(limits.min, Math.min(limits.max, panels[key] ?? Math.max(600, available * .5)));
       $("workspace").style.setProperty("--members-open-width", `${width}px`);
       handle.setAttribute("aria-valuemin",String(limits.min)); handle.setAttribute("aria-valuemax",String(limits.max)); handle.setAttribute("aria-valuenow",String(Math.round(width)));
@@ -120,7 +122,7 @@ export function createLayout({ env, roomsUI, runtime, notificationsUI, membersUI
 
   function setSidebarWidth(side, width) {
     const limits = sidebarWidthLimits(side);
-    panels[side === "members" && auxiliary ? auxiliary === "files" ? "fileWidth" : "calendarWidth" : sidebarConfig[side].key] = Math.round(Math.max(limits.min, Math.min(limits.max, width)));
+    panels[side === "members" && auxiliary ? auxiliaryWidthKey() : sidebarConfig[side].key] = Math.round(Math.max(limits.min, Math.min(limits.max, width)));
     applySidebarWidths(side);
   }
 
@@ -132,10 +134,11 @@ export function createLayout({ env, roomsUI, runtime, notificationsUI, membersUI
     const auxiliaryCover = !!auxiliary && (mobile || auxiliaryExpanded || available < 1080);
     workspace.classList.toggle("files-open", auxiliary === "files");
     workspace.classList.toggle("calendar-open", auxiliary === "calendar");
+    workspace.classList.toggle("environment-open", auxiliary === "environment");
     workspace.classList.toggle("auxiliary-open", !!auxiliary);
     workspace.classList.toggle("auxiliary-cover", auxiliaryCover);
     workspace.classList.toggle("auxiliary-expanded", !!auxiliary && auxiliaryExpanded);
-    for (const kind of ["files", "calendar"]) {
+    for (const kind of ["files", "calendar", "environment"]) {
       const expand = $(`${kind}-expand`), label = auxiliaryExpanded ? "还原" : "展开";
       expand.title = label; expand.setAttribute("aria-label", label);
       expand.setAttribute("aria-expanded", String(auxiliaryExpanded));
@@ -289,7 +292,7 @@ export function createLayout({ env, roomsUI, runtime, notificationsUI, membersUI
     try {
       const saved = JSON.parse(storage?.getItem(panelsKey));
       for (const side of ["rooms", "members"]) if (typeof saved?.[side] === "boolean") panels[side] = saved[side];
-      for (const key of ["roomWidth", "memberWidth", "fileWidth", "calendarWidth"]) if (Number.isFinite(saved?.[key]) && saved[key] > 0) panels[key] = saved[key];
+      for (const key of ["roomWidth", "memberWidth", "fileWidth", "calendarWidth", "environmentWidth"]) if (Number.isFinite(saved?.[key]) && saved[key] > 0) panels[key] = saved[key];
     } catch { /* Sidebars remain usable when tab storage is unavailable. */ }
 
     $("toggle-rooms").addEventListener("click", () => {

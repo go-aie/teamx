@@ -2,11 +2,12 @@ import { compactViewport } from "../client.mjs";
 import { createFolderIcon, createSettingsIcon } from "../icons.mjs";
 
 // One registry drives desktop shortcuts and the complete conversation menu.
-export function createConversationTools({ env, runtime, roomsUI, layoutUI, filesUI, calendarUI }) {
+export function createConversationTools({ env, runtime, roomsUI, layoutUI, filesUI, calendarUI, environmentUI }) {
   const { document, window } = env, { $, state } = runtime;
   const tools = [
     {key:"files", label:"文件", shortcut:"conversation-files", action:"conversation-open-files", open:opener=>filesUI.open(opener), active:()=>filesUI.isOpen},
     {key:"calendar", label:"日历", shortcut:"conversation-calendar", action:"conversation-open-calendar", open:()=>calendarUI.open(), active:()=>calendarUI.visible()},
+    {key:"environment", label:"环境", shortcut:"conversation-environment", action:"conversation-open-environment", open:opener=>environmentUI.open(opener), active:()=>environmentUI.isOpen},
     {key:"settings", label:"设置", shortcut:"conversation-details", action:"conversation-open-details", open:()=>layoutUI.toggleDetails(), active:()=>layoutUI.membersPanelOpen()},
   ];
   const preferences = new Map();
@@ -53,6 +54,7 @@ export function createConversationTools({ env, runtime, roomsUI, layoutUI, files
     close();
     if (toggle && tool.key === "files" && tool.active()) { filesUI.close({focus:false}); opener.focus({preventScroll:true}); }
     else if (toggle && tool.key === "calendar" && tool.active()) calendarUI.backToChat();
+    else if (toggle && tool.key === "environment" && tool.active()) environmentUI.close();
     else void tool.open(opener);
     render();
   }

@@ -6,6 +6,7 @@ import { createSettings } from "./features/settings.mjs";
 import { createRooms } from "./features/rooms.mjs";
 import { createConversationTools } from "./features/conversation-tools.mjs";
 import { createFiles } from "./features/files.mjs";
+import { createEnvironment } from "./features/environment.mjs";
 import { createLayout } from "./features/layout.mjs";
 import { createWorkspace } from "./features/workspace.mjs";
 import { createNotifications } from "./features/notifications.mjs";
@@ -52,6 +53,7 @@ export async function createApp(overrides = {}) {
   const roomsUI = {};
   const layoutUI = {};
   const filesUI = {};
+  const environmentUI = {};
   const conversationToolsUI = {};
   const workspaceUI = {};
   const notificationsUI = {};
@@ -94,6 +96,7 @@ export async function createApp(overrides = {}) {
     }
     if (filesUI.isOpen) layers.push({id:filesUI.navigationID, close:filesUI.back});
     if (calendarUI.visible?.()) layers.push({id:calendarUI.navigationID, close:calendarUI.back});
+    if (environmentUI.isOpen) layers.push({id:"environment", close:environmentUI.back});
     if (!$("conversation-menu").hidden) layers.push({id:"conversation-menu", close:conversationToolsUI.close});
     if ($("compose-menu").open) layers.push({id:"compose-menu", close:conversationUI.closeComposerMenu});
     if (!$("conversation-filter-menu").hidden) layers.push({ id:"conversation-filter", close:roomsUI.closeFilterMenu });
@@ -114,6 +117,7 @@ export async function createApp(overrides = {}) {
   }});
   function suspend() {
     filesUI.suspend?.();
+    environmentUI.suspend?.();
     updateConnection?.stop(); scheduler.pause();
     if (!state.suspended) viewVersion++;
     state.suspended = true; state.connected = false; state.catalogConnected = false;
@@ -131,6 +135,7 @@ export async function createApp(overrides = {}) {
     conversationUI.composerState();
     recoveryTask = Promise.resolve(refreshTask).then(() => refresh({ background: true })).finally(() => {
       state.recovering = false; recoveryTask = null; updateConnection?.start();
+      environmentUI.resume?.();
     });
     return recoveryTask;
   }
@@ -207,7 +212,7 @@ export async function createApp(overrides = {}) {
     roomViews.scope([state.installationID, state.catalog?.service_epoch || serverIdentity?.[1], operator]);
     const entry = state.catalog?.rooms.find(room => room.room_id === info?.room_id && room.room_instance === info?.room_instance);
     const cached = info && (!state.managed || entry?.status === "ready") ? roomViews.get(info, entry?.human_read?.cleared_through || 0) : null;
-    filesUI.close?.({focus:false}); conversationToolsUI.close?.();
+    filesUI.close?.({focus:false}); environmentUI.close?.({focus:false}); conversationToolsUI.close?.();
     conversationUI.saveDraft();
     roomsUI.closeRename(false);
     $("notification-detail").close();
@@ -269,6 +274,7 @@ export async function createApp(overrides = {}) {
     roomsUI.acceptCatalog(catalog);
     state.catalog = catalog; state.catalogConnected = true;
     filesUI.syncIdentity?.();
+    environmentUI.syncIdentity?.();
     roomViews.scope([state.installationID, catalog.service_epoch, catalog.operator]);
     roomViews.reconcile(catalog.rooms);
     const currentRoom = catalog.rooms.find(room => room.room_id === state.info?.room_id && room.room_instance === state.info?.room_instance);
@@ -312,6 +318,7 @@ export async function createApp(overrides = {}) {
     const changed = names(state.members) !== names(nextMembers);
     state.members = nextMembers;
     state.membersReady = true;
+    environmentUI.syncIdentity?.();
     if (changed) conversationUI.renderMessages();
     membersUI.renderMembers();
     notice("sync-error", members.write_error ? `${roomsUI.conversationType()}写入暂停：${members.write_error}` : "");
@@ -554,10 +561,11 @@ export async function createApp(overrides = {}) {
     env, runtime, layoutUI, workspaceUI, conversationUI, settingsUI, membersUI, userMenuUI
   }));
   install(layoutUI, createLayout({
-    env, roomsUI, runtime, notificationsUI, membersUI, settingsUI, userMenuUI, filesUI, calendarUI, conversationToolsUI
+    env, roomsUI, runtime, notificationsUI, membersUI, settingsUI, userMenuUI, filesUI, calendarUI, environmentUI, conversationToolsUI
   }));
   install(filesUI, createFiles({env, runtime, layoutUI, membersUI, conversationToolsUI}));
-  install(conversationToolsUI, createConversationTools({env,runtime,roomsUI,layoutUI,filesUI,calendarUI}));
+  install(environmentUI, createEnvironment({env, runtime, layoutUI, conversationToolsUI}));
+  install(conversationToolsUI, createConversationTools({env,runtime,roomsUI,layoutUI,filesUI,calendarUI,environmentUI}));
   install(workspaceUI, createWorkspace({
     env, runtime, notificationsUI, membersUI, roomsUI, conversationUI, settingsUI, connectionsUI
   }));
@@ -751,6 +759,7 @@ export async function createApp(overrides = {}) {
   layoutUI.mount();
   workspaceUI.mount();
   filesUI.mount();
+  environmentUI.mount();
   conversationToolsUI.mount();
   notificationsUI.mount();
   membersUI.mount();

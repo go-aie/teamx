@@ -40,6 +40,8 @@ type apiRequest struct {
 	automaticInbox   *InboxStatus
 	internalPause    bool
 	expectedPause    *uint64
+	environmentID    string
+	environmentOwner string
 	OperationID      string `json:"operation_id,omitempty"`
 	FromGeneration   string `json:"from_generation,omitempty"`
 	RotationReason   string `json:"rotation_reason,omitempty"`
@@ -762,8 +764,8 @@ func (s *service) control(ctx context.Context, req apiRequest, action string) (M
 				callCtx = s.ctx
 			}
 			result, err := s.target(member.MembershipID).Call[MemberStatus](callCtx, ControlMember{MemberIdentity: id, Action: action,
-				ExecutionID: req.ExecutionID,
-				automatic:   req.automatic, recovering: req.recovering, automaticInbox: req.automaticInbox, Retry: req.Retry, Cancel: req.Cancel, Resume: req.Resume, State: state, OperationID: req.OperationID, FromGeneration: req.FromGeneration, Reason: req.RotationReason, ContinueRotation: req.ContinueRotation, Replenish: rotationReplenish, lease: lease, internalPause: req.internalPause, expectedPause: req.expectedPause})
+				ExecutionID: req.ExecutionID, environmentID: req.environmentID, environmentOwner: req.environmentOwner,
+				automatic: req.automatic, recovering: req.recovering, automaticInbox: req.automaticInbox, Retry: req.Retry, Cancel: req.Cancel, Resume: req.Resume, State: state, OperationID: req.OperationID, FromGeneration: req.FromGeneration, Reason: req.RotationReason, ContinueRotation: req.ContinueRotation, Replenish: rotationReplenish, lease: lease, internalPause: req.internalPause, expectedPause: req.expectedPause})
 			if err != nil {
 				lease.close()
 			}

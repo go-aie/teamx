@@ -55,6 +55,35 @@ func appendInputEvent(t *testing.T, h *roomHarness, name, target string) PostRec
 	}
 	return roomCall[PostReceipt](t, h, AppendRoomEvent{RoomIdentity: h.id, Event: RoomEvent{ID: name, Kind: "user_selection", SourceSeq: 1, OperationID: name, ResultVersion: 1, ResultRef: "platforms/selection/" + name, Actor: Author{Kind: "human", ID: "actual-clicker"}, Targets: targets}, Summary: "选择结果已更新", CreatedAt: time.Date(2026, 11, 17, 3, 0, 0, 0, time.UTC)})
 }
+
+func TestUnifiedEventTimestampRoundTrip(t *testing.T) {
+	for name, created := range map[string]time.Time{
+		"monotonic":  time.Now(),
+		"fixed_zone": time.Date(2026, 11, 22, 22, 9, 2, 0, time.FixedZone("event-zone", 8*60*60)),
+	} {
+		t.Run(name, func(t *testing.T) {
+			h, s := unifiedReaderFixture(t, 1)
+			id := s.storage.id
+			event := AppendRoomEvent{RoomIdentity: h.id, Event: RoomEvent{ID: name, Kind: "environment_handoff_completed", OperationID: name, ResultVersion: 1, ResultRef: "environment/" + name, Actor: humanCaller.Author, Targets: []string{id.MembershipID}}, Summary: "人工环境操作已完成", CreatedAt: created}
+			receipt := roomCall[PostReceipt](t, h, event)
+			// Complete the real input delivery and native confirmation before
+			// reopening; a restart would hide a timestamp representation mismatch.
+			page := deliverRoom(t, s, inputstream.ReadRequest{Turn: 1, Stream: roomStreamRef(id), ID: "handoff"})
+			if len(page.RoomEntries) != 2 || h.list(t).Members[0].ReadThrough != receipt.Seq {
+				t.Fatal("event delivery did not advance the native cursor", page)
+			}
+			roomCall[PostReceipt](t, h, h.post(humanCaller, "after-event-human", "继续操作"))
+			roomCall[PostReceipt](t, h, h.post(agentCallerIdentity(id), "after-event-agent", "已收到交还通知"))
+			h.reload(t, true)
+			if got := roomCall[PostReceipt](t, h, event); got != receipt {
+				t.Fatal("event retry changed after restart", got, receipt)
+			}
+			event.CreatedAt = event.CreatedAt.Add(time.Second)
+			roomError[PostReceipt](t, h, event, ErrConflict)
+		})
+	}
+}
+
 func deliverRoom(t *testing.T, s *inputSession, q inputstream.ReadRequest) platformInputView {
 	t.Helper()
 	b, _ := json.Marshal(q)

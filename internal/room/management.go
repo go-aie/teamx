@@ -170,7 +170,9 @@ type roomsIndex struct {
 // The root lock owns catalog mutations and live services. Catalog reads use
 // the published immutable view. Durable operations outlive their HTTP caller.
 type roomManager struct {
-	calendars *CalendarService
+	environmentInputsMu sync.Mutex
+	environmentInputs   map[string]map[*environmentInputStream]bool
+	calendars           *CalendarService
 
 	catalog                  atomic.Pointer[roomsCatalogSnapshot]
 	updates                  *uiUpdateHub
@@ -711,6 +713,10 @@ func (m *roomManager) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	if r.URL.Path == "/v1/updates" {
 		m.serveUIUpdates(w, r)
+		return
+	}
+	if r.URL.Path == "/v1/environments" || strings.HasPrefix(r.URL.Path, "/v1/environment/") {
+		m.serveEnvironment(w, r)
 		return
 	}
 	if r.URL.Path == "/v1/ui" && r.Method == http.MethodGet {

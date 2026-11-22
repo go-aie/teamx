@@ -1,4 +1,4 @@
-/* Files and calendar share placement, expansion and header controls. */
+/* Auxiliary views share placement, expansion and header controls. */
 .auxiliary-page { display:flex; flex-direction:column; width:100%; height:100%; min-height:0; min-width:0; background:var(--surface); }
 .auxiliary-page[hidden],.auxiliary-page [hidden] { display:none!important; }
 .auxiliary-open .member-rail { min-width:0; overflow:hidden; }
@@ -11,6 +11,13 @@
 .auxiliary-cover .member-rail { position:absolute!important; z-index:20; inset:0 0 0 auto; width:calc(100% - var(--rooms-width,0px)); max-width:none; height:100%; border-left:1px solid var(--line); }
 .auxiliary-cover .member-resizer { display:none; }
 .auxiliary-cover #conversation { visibility:hidden; }
+.environment-source { display:flex; align-items:center; gap:12px; padding:10px 16px; border-bottom:1px solid var(--divider); color:var(--muted); font-size:var(--font-small); }
+.environment-source select { flex:1; min-width:0; }
+.environment-screen { flex:1; min-height:0; display:flex; background:#17191d; }
+.environment-screen:empty { background:var(--surface); }
+.environment-screen iframe { display:block; width:100%; height:100%; flex:1; min-height:0; border:0; }
+.environment-status { flex:none; margin:0; padding:10px 16px; border-top:1px solid var(--divider); color:var(--muted); font-size:var(--font-small); }
+.environment-screen:empty + .environment-status { flex:1; display:grid; place-content:center; border-top:0; text-align:center; }
 
 @media(max-width:640px), (max-height:500px) and (pointer:coarse) {
  .auxiliary-cover .member-rail { position:fixed!important; inset:var(--app-top,0px) 0 auto; width:100%; height:var(--app-height,100dvh); padding-top:env(safe-area-inset-top); padding-bottom:env(safe-area-inset-bottom); }
@@ -21,5 +28,5 @@
  .calendar-header-actions { margin-left:auto; }
  #calendar-close { margin-left:auto; }
  .calendar-header-actions:not([hidden]) ~ #calendar-close { margin-left:0; }
- #calendar-expand { display:none; }
+ #calendar-expand, #environment-expand { display:none; }
 }

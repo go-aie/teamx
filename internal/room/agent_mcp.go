@@ -15,7 +15,12 @@ import (
 // startup file and ephemeral Launch values, never Room/model snapshots or UI.
 // A binding includes the full persistent member identity; names alone cannot
 // grant another Room, replacement membership or recreated Room access.
-type agentMCPBindings map[MemberIdentity][]dsh.MCPHTTPServer
+type agentMCPBinding struct {
+	Servers     []dsh.MCPHTTPServer
+	Environment *environmentConfig
+}
+
+type agentMCPBindings map[MemberIdentity]agentMCPBinding
 
 func loadAgentMCPBindings(path string) (agentMCPBindings, error) {
 	if path == "" {
@@ -49,7 +54,8 @@ func loadAgentMCPBindings(path string) (agentMCPBindings, error) {
 		Version  int `json:"version"`
 		Bindings []struct {
 			MemberIdentity
-			Servers []dsh.MCPHTTPServer `json:"servers"`
+			Servers     []dsh.MCPHTTPServer `json:"servers"`
+			Environment *environmentConfig  `json:"environment,omitempty"`
 		} `json:"bindings"`
 	}
 	dec := json.NewDecoder(bytes.NewReader(data))
@@ -59,7 +65,7 @@ func loadAgentMCPBindings(path string) (agentMCPBindings, error) {
 	}
 	bindings := agentMCPBindings{}
 	for _, binding := range cfg.Bindings {
-		if validateMemberHeader(formatVersion, binding.MemberIdentity) != nil || len(binding.Servers) == 0 || len(binding.Servers) > 8 {
+		if validateMemberHeader(formatVersion, binding.MemberIdentity) != nil || len(binding.Servers) == 0 && binding.Environment == nil || len(binding.Servers) > 8 {
 			return fail()
 		}
 		if _, exists := bindings[binding.MemberIdentity]; exists {
@@ -74,14 +80,17 @@ func loadAgentMCPBindings(path string) (agentMCPBindings, error) {
 		if dsh.CheckConfig(opts) != nil {
 			return fail()
 		}
-		bindings[binding.MemberIdentity] = binding.Servers
+		if binding.Environment != nil && !binding.Environment.valid() {
+			return fail()
+		}
+		bindings[binding.MemberIdentity] = agentMCPBinding{Servers: binding.Servers, Environment: binding.Environment}
 	}
 	return bindings, nil
 }
 
 func (bindings agentMCPBindings) servers(id MemberIdentity) []dsh.MCPHTTPServer {
 	var result []dsh.MCPHTTPServer
-	for _, server := range bindings[id] {
+	for _, server := range bindings[id].Servers {
 		server.Headers = append([]dsh.MCPHeader{}, server.Headers...)
 		result = append(result, server)
 	}
