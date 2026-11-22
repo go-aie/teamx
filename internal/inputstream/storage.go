@@ -954,7 +954,7 @@ func decodeProjection(c Codec, schema int, b json.RawMessage) (Projection, error
 func (r *Repository) partitionSpec(d Descriptor) PartitionSpec {
 	spec := d.Spec(r.member)
 	if r.sharedDir != "" {
-		spec.Ref = Ref("partition_", "inbox", r.sharedInbox, d.Provider)
+		spec.Ref = SharedPartitionRef(r.sharedInbox, d.Provider)
 		spec.QuotaScope = Ref("quota_", "inbox", r.sharedInbox)
 	}
 	return spec

@@ -386,8 +386,7 @@ func (s *Store) readFollowupSource(id MemberIdentity, seq uint64, sourceRef stri
 		return followupEvent{}, err
 	}
 	if seq == 0 {
-		link, _, err := s.inputSourceContentLocked(id, sourceRef)
-		return link, err
+		return s.inputSourceLocked(id, sourceRef)
 	}
 	link, err := s.followupEventAtLocked(id, seq)
 	if err == nil && link.SourceRef != sourceRef {
@@ -421,7 +420,8 @@ func (s *Store) readFollowupSourceContent(id MemberIdentity, seq uint64, sourceR
 	if err != nil {
 		return link, nil, err
 	}
-	return link, &entry, nil
+	validated, err := s.validateFollowupEventLocked(entry, link, s.inboxContextOnly(entry))
+	return validated, &entry, err
 }
 
 // Labels name verified alternate native IDs with their namespaces. In particular,

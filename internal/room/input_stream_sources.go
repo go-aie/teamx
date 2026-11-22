@@ -85,50 +85,33 @@ func (s *Store) authorizeInputLocationLocked(id MemberIdentity, turn uint64, l i
 	return ErrIdentity
 }
 
-func reclaimedInputSourceProof(link followupEvent) string {
-	return referenceDigest("reclaimed_source_", link.MemberIdentity, *link.Location, link.Seq, link.DeliveryID, link.SourceRef, link.Source)
-}
-
-// source_ref is the only new Agent locator. Missing retained bodies are errors;
-// only a committed reclamation boundary yields an expired body.
-func (s *Store) inputSourceContentLocked(id MemberIdentity, ref string) (followupEvent, *InboxEntry, error) {
+// A stable source reference names a saved association, independently of input
+// content, deduplication receipts and the currently opened input repository.
+func (s *Store) inputSourceLocked(id MemberIdentity, ref string) (followupEvent, error) {
 	var link followupEvent
 	if !validOpaqueRef(ref, "src_") {
-		return link, nil, ErrRequest
+		return link, ErrRequest
 	}
-	if err := readSnapshot(filepath.Join(s.followupRoot(id), "input-sources", ref+".json"), &link, followupBytes); err != nil {
-		return link, nil, err
+	link, err := readFollowupEventSnapshot(filepath.Join(s.followupRoot(id), "input-sources", ref+".json"))
+	if err != nil {
+		return link, err
 	}
 	if link.Location == nil || link.MemberIdentity != id || link.SourceRef != ref {
-		return link, nil, ErrIdentity
+		return link, ErrIdentity
+	}
+	return s.validateFollowupRecordLocked(id, link)
+}
+
+// Only the input store's committed retention boundary can report expiry.
+// Missing or damaged retained content remains an error.
+func (s *Store) inputSourceContentLocked(id MemberIdentity, ref string) (followupEvent, *InboxEntry, error) {
+	link, err := s.inputSourceLocked(id, ref)
+	if err != nil {
+		return link, nil, err
 	}
 	entry, err := s.businessInputLocked(id, 0, link.Location)
 	if errors.Is(err, inputstream.ErrExpired) {
-		entry = InboxEntry{MemberIdentity: id, Location: link.Location, Seq: link.Location.Seq}
-		entry.Item.DeliveryID = link.DeliveryID
-		entry.Item.Source = link.Source
-		if !validText(link.DeliveryID) || !validIntegrationSource(link.Source) {
-			return link, nil, ErrInvalid
-		}
-		p := s.platformInputs[id.MembershipID]
-		provider, _, err := p.repository.Locate(*link.Location)
-		if err != nil {
-			return link, nil, err
-		}
-		if provider != link.Source.Provider {
-			return link, nil, ErrIdentity
-		}
-		entry.sourceRef, err = p.repository.DeliverySourceRef(*link.Location, link.Source.Channel, link.DeliveryID)
-		if errors.Is(err, inputstream.ErrExpired) {
-			if link.ReclaimedSourceProof != reclaimedInputSourceProof(link) {
-				return link, nil, ErrInvalid
-			}
-			entry.sourceRef = link.SourceRef
-		} else if err != nil {
-			return link, nil, err
-		}
-		validated, err := s.validateFollowupEventLocked(entry, link, link.ContextOnly)
-		return validated, nil, err
+		return link, nil, nil
 	}
 	if err != nil {
 		return link, nil, err
@@ -150,7 +133,7 @@ func (s *Store) visitInputSourcesLocked(id MemberIdentity, visit func(followupEv
 			return ErrInvalid
 		}
 		ref := name[:len(name)-5]
-		link, _, err := s.inputSourceContentLocked(id, ref)
+		link, err := s.inputSourceLocked(id, ref)
 		if err != nil {
 			return err
 		}

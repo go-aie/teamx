@@ -598,8 +598,7 @@ func (s *inputSession) historyEntry(v historyStream, l inputstream.Location, roo
 	item := e.Item
 	source := followupSourceSummary{SourceRef: inputSourceRef(e), Status: "not_checked", Reason: "Saved source evidence has not been verified against the business target."}
 	// Existing associations are evidence only. Never resolve or create one here.
-	var link followupEvent
-	err = readSnapshot(p.store.inputEventPath(e), &link, followupBytes)
+	link, err := readFollowupEventSnapshot(p.store.inputEventPath(e))
 	if err == nil {
 		if link.Version != followupSchema || link.MemberIdentity != e.MemberIdentity || link.SourceRef != inputSourceRef(e) || link.Seq != l.Seq || link.DeliveryID != item.DeliveryID || link.Source != item.Source || link.Location == nil || *link.Location != l || link.Revision == 0 {
 			return nil, inputstream.ErrCorrupt

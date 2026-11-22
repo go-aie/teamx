@@ -551,7 +551,7 @@ func convertLegacyPlatform(old, next *Store, id MemberIdentity, a *AgentInbox, e
 func convertLegacyLinks(old, next *Store, id MemberIdentity, specs map[string]inputstream.PartitionSpec, expired uint64, entries map[uint64]InboxEntry) error {
 	eventAt := func(seq uint64) (followupEvent, error) {
 		if seq <= expired {
-			return old.expiredFollowupEventLocked(id, seq)
+			return old.followupEventAtLocked(id, seq)
 		}
 		entry, ok := entries[seq]
 		if !ok {
@@ -566,12 +566,6 @@ func convertLegacyLinks(old, next *Store, id MemberIdentity, specs map[string]in
 		}
 		loc := inputstream.Location{Partition: spec.Ref, Seq: link.Seq}
 		link.Location = &loc
-		p := next.platformInputs[id.MembershipID]
-		if _, err := p.repository.DeliverySourceRef(loc, link.Source.Channel, link.DeliveryID); errors.Is(err, inputstream.ErrExpired) {
-			link.ReclaimedSourceProof = reclaimedInputSourceProof(link)
-		} else if err != nil {
-			return err
-		}
 		path := filepath.Join(next.followupRoot(id), "input-sources", link.SourceRef+".json")
 		if err := next.save(path, link, followupBytes); err != nil {
 			return err

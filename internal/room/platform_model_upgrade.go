@@ -413,14 +413,27 @@ func validatePlatformFollowups(s *Store) error {
 		}
 		switch p[3] {
 		case "events":
-			var event followupEvent
-			if err := readSnapshot(path, &event, followupBytes); err != nil {
+			event, err := readFollowupEventSnapshot(path)
+			if err != nil {
 				return err
 			}
 			if event.MembershipID != p[1] || filepath.Base(path) != inboxEntryName(event.Seq) {
 				return ErrInvalid
 			}
-			_, err := s.followupEventAtLocked(event.MemberIdentity, event.Seq)
+			_, err = s.followupEventAtLocked(event.MemberIdentity, event.Seq)
+			return err
+		case "input-sources":
+			event, err := readFollowupEventSnapshot(path)
+			if err != nil {
+				return err
+			}
+			if len(p) != 5 || event.MembershipID != p[1] || filepath.Base(path) != event.SourceRef+".json" {
+				return ErrInvalid
+			}
+			if err := s.checkFollowupsLocked(event.MemberIdentity, false); err != nil {
+				return err
+			}
+			_, err = s.inputSourceLocked(event.MemberIdentity, event.SourceRef)
 			return err
 		case "objects":
 			if len(p) == 7 && p[5] == "units" {

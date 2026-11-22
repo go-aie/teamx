@@ -5,6 +5,16 @@ import (
 	"strings"
 )
 
+// Partition references bind retained source locations to their original owner
+// and provider, independently of whether any body or receipt remains.
+func PrivatePartitionRef(m Member, provider string) string {
+	return Ref("partition_", m, provider)
+}
+
+func SharedPartitionRef(inbox Inbox, provider string) string {
+	return Ref("partition_", "inbox", inbox, provider)
+}
+
 func validSourceRef(ref string) bool {
 	if ref == "" {
 		return true

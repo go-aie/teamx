@@ -76,7 +76,7 @@ func (m *roomManager) checkAttachmentReaderLocked(ctx context.Context, req attac
 		return ErrIdentity
 	}
 	if req.SourceRef != "" {
-		link, _, err := svc.store.inputSourceContentLocked(reader.MemberIdentity, req.SourceRef)
+		link, err := svc.store.inputSourceLocked(reader.MemberIdentity, req.SourceRef)
 		if err != nil {
 			return err
 		}

@@ -32,13 +32,10 @@ type storedTarget struct {
 	Target    platform.TargetIdentity `json:"target"`
 }
 
-// The original Inbox entry is the authority for source text and delivery.
-// This separate record owns resolution evidence, never a rewritten source.
+// A committed association owns its immutable source identity and resolution
+// evidence. The input store independently owns original content and its retention.
 type followupEvent struct {
-	// Independent location proof for source evidence that outlived a body
-	// and its original delivery receipt.
-	ReclaimedSourceProof string                `json:"reclaimed_source_proof,omitempty"`
-	Location             *inputstream.Location `json:"input_location,omitempty"`
+	Location *inputstream.Location `json:"input_location,omitempty"`
 	followupHeader
 	Seq         uint64                     `json:"seq"`
 	DeliveryID  string                     `json:"delivery_id"`
@@ -288,46 +285,64 @@ func (s *Store) loadFollowupEventLocked(e InboxEntry) (followupEvent, error) {
 	if e.payloadType() != InboxPlatformNotification {
 		return r, ErrRequest
 	}
-	if err := readSnapshot(s.inputEventPath(e), &r, followupBytes); err != nil {
+	r, err := readFollowupEventSnapshot(s.inputEventPath(e))
+	if err != nil {
 		return r, err
 	}
-	contextOnly := s.inboxContextOnly(e)
-	if r.ContextOnly && !contextOnly {
-		return r, ErrInvalid
-	}
-	return s.validateFollowupEventLocked(e, r, contextOnly)
+	return s.validateFollowupEventLocked(e, r, s.inboxContextOnly(e))
 }
 
-// For an expired source the existing event owns source/target resolution, and
-// the committed Inbox boundary owns the absence of its body. The envelope below
-// is used only for identity validation; it is never returned as original content.
+// Business reads do not reopen the original Inbox entry. Source identity was
+// checked against that entry before committing the association.
 func (s *Store) followupEventAtLocked(id MemberIdentity, seq uint64) (followupEvent, error) {
-	e, err := s.inboxEntryLocked(id, seq)
-	if err == nil {
-		return s.loadFollowupEventLocked(e)
-	}
-	if !errors.Is(err, ErrInboxExpired) {
-		return followupEvent{}, err
-	}
-	return s.expiredFollowupEventLocked(id, seq)
-}
-
-func (s *Store) expiredFollowupEventLocked(id MemberIdentity, seq uint64) (followupEvent, error) {
 	var r followupEvent
-	if err := readSnapshot(s.eventPath(id, seq), &r, followupBytes); err != nil {
+	if seq == 0 {
+		return r, ErrRequest
+	}
+	r, err := readFollowupEventSnapshot(s.eventPath(id, seq))
+	if err != nil {
 		return r, err
 	}
-	e := InboxEntry{MemberIdentity: id, Seq: seq}
-	e.Item.DeliveryID, e.Item.Source = r.DeliveryID, r.Source
-	if !validText(r.DeliveryID) || !validIntegrationSource(r.Source) {
+	if r.Seq != seq || r.Location != nil {
 		return r, ErrInvalid
 	}
-	return s.validateFollowupEventLocked(e, r, r.ContextOnly)
+	return s.validateFollowupRecordLocked(id, r)
 }
 
+// Use the retained input at association creation/update and explicit content
+// reads. Its receipt is never a dependency of saved business facts.
 func (s *Store) validateFollowupEventLocked(e InboxEntry, r followupEvent, contextOnly bool) (followupEvent, error) {
-	if r.Version != followupSchema || r.MemberIdentity != e.MemberIdentity || r.Seq != e.Seq || r.DeliveryID != e.Item.DeliveryID ||
-		r.Source != e.Item.Source || r.SourceRef != inputSourceRef(e) || !reflect.DeepEqual(r.Location, e.Location) || r.Revision == 0 {
+	if r.MemberIdentity != e.MemberIdentity || r.Seq != e.Seq || r.DeliveryID != e.Item.DeliveryID ||
+		r.Source != e.Item.Source || r.SourceRef != inputSourceRef(e) || !reflect.DeepEqual(r.Location, e.Location) || r.ContextOnly && !contextOnly {
+		return r, ErrInvalid
+	}
+	// Retained input can establish context-only classification for an older
+	// association. Reclamation persists it before dropping the original input.
+	checked := r
+	checked.ContextOnly = contextOnly
+	_, err := s.validateFollowupRecordLocked(e.MemberIdentity, checked)
+	return r, err
+}
+
+func (s *Store) validateFollowupRecordLocked(id MemberIdentity, r followupEvent) (followupEvent, error) {
+	if r.Version != followupSchema || r.MemberIdentity != id || validateMemberHeader(formatVersion, id) != nil ||
+		r.Seq == 0 || r.Revision == 0 || !validText(r.DeliveryID) || !validIntegrationSource(r.Source) || !validOpaqueRef(r.SourceRef, "src_") {
+		return r, ErrInvalid
+	}
+	if r.Location != nil {
+		if r.Location.Seq != r.Seq {
+			return r, ErrInvalid
+		}
+		private := inputstream.PrivatePartitionRef(inputMember(id), r.Source.Provider)
+		shared := inputstream.SharedPartitionRef(sharedInboxIdentity(id.RoomIdentity), r.Source.Provider)
+		if r.Location.Partition != private && r.Location.Partition != shared {
+			return r, ErrIdentity
+		}
+	}
+	// Resolution validators consume source identity only, never original text.
+	e := InboxEntry{MemberIdentity: id, Seq: r.Seq, Location: r.Location}
+	e.Item.Source, e.Item.DeliveryID = r.Source, r.DeliveryID
+	if r.Location == nil && r.SourceRef != inputSourceRef(e) {
 		return r, ErrInvalid
 	}
 	if err := validateFollowupResolution(e, r.Resolution, r.Access); err != nil {
@@ -339,7 +354,7 @@ func (s *Store) validateFollowupEventLocked(e InboxEntry, r followupEvent, conte
 		}
 		if attempt := r.LastAttempt.Resolution; attempt.ObjectVerified {
 			previous, current := verifiedResolutionTarget(r.Resolution), verifiedResolutionTarget(attempt)
-			if attempt.Status != platform.ResolutionPartial || targetReference(e.MemberIdentity, objectIdentity(current)) != r.ObjectRef ||
+			if attempt.Status != platform.ResolutionPartial || targetReference(id, objectIdentity(current)) != r.ObjectRef ||
 				(previous.Discussion.Valid() && current.Discussion.Valid() && previous.Discussion != current.Discussion) ||
 				(previous.Message.Valid() && current.Message.Valid() && previous.Message != current.Message) {
 				return r, ErrInvalid
@@ -347,14 +362,14 @@ func (s *Store) validateFollowupEventLocked(e InboxEntry, r followupEvent, conte
 		}
 	}
 	if r.Resolution.ObjectVerified {
-		t, err := s.loadTargetLocked(e.MemberIdentity, r.ObjectRef, r.TargetRef)
+		t, err := s.loadTargetLocked(id, r.ObjectRef, r.TargetRef)
 		if err != nil {
 			return r, err
 		}
 		if !sameNativeTarget(t.Target, verifiedResolutionTarget(r.Resolution)) {
 			return r, ErrInvalid
 		}
-		if _, err := s.loadUnitLocked(e.MemberIdentity, r.ObjectRef, referenceDigest("unit_", r.ObjectRef)); err != nil && !(contextOnly && errors.Is(err, os.ErrNotExist)) {
+		if _, err := s.loadUnitLocked(id, r.ObjectRef, referenceDigest("unit_", r.ObjectRef)); err != nil && !(r.ContextOnly && errors.Is(err, os.ErrNotExist)) {
 			return r, err
 		}
 	} else if r.ObjectRef != "" || r.TargetRef != "" {
@@ -520,6 +535,9 @@ func (s *Store) recordInputResolution(id MemberIdentity, seq uint64, location *i
 		}
 		link.ObjectRef, link.TargetRef = object.Ref, target.Ref
 	}
+	if _, err := s.validateFollowupEventLocked(e, link, link.ContextOnly); err != nil {
+		return link, err
+	}
 	return link, s.save(s.inputEventPath(e), link, followupBytes)
 }
 
@@ -547,7 +565,7 @@ func (s *Store) ensureInputDiscussion(id MemberIdentity, seq uint64, sourceRef s
 	}
 	var location *inputstream.Location
 	if sourceRef != "" && seq == 0 {
-		link, _, err := s.inputSourceContentLocked(id, sourceRef)
+		link, err := s.inputSourceLocked(id, sourceRef)
 		if err != nil {
 			return followupUnit{}, false, err
 		}

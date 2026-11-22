@@ -159,7 +159,7 @@ type Descriptor struct {
 }
 
 func (d Descriptor) Spec(m Member) PartitionSpec {
-	return PartitionSpec{m, Ref("partition_", m, d.Provider), "notification", d.Provider, "jsonl/v1", map[string]int{d.Codec: d.Schema}, append([]string(nil), d.Channels...), Ref("quota_", m), d.Policy}
+	return PartitionSpec{m, PrivatePartitionRef(m, d.Provider), "notification", d.Provider, "jsonl/v1", map[string]int{d.Codec: d.Schema}, append([]string(nil), d.Channels...), Ref("quota_", m), d.Policy}
 }
 
 // Codec validates and groups a provider-owned stored payload.
