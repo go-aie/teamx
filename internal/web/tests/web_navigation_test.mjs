@@ -154,7 +154,7 @@ test("an avatar opened over another member detail restores that member and its t
 test("opening the same member from a conversation restores its previous tab on return", async () => {
   const api=fixture();messages(api);const ui=await launch(api);await openMember(ui);
   await ui.el("agent-tab-inbox").emit("click");await settle();ui.el("inbox-member-view").scrollTop=42;
-  await avatar(ui).emit("click");assert.equal(ui.el("agent-tab-platforms").getAttribute("aria-selected"),"true");
+  await avatar(ui).emit("click");assert.equal(ui.el("agent-tab-profile").getAttribute("aria-selected"),"true");
   await avatar(ui).emit("click");
   await ui.el("close-activity").emit("click");await settle();
   assert.equal(ui.el("activity-dialog").open,true);assert.equal(ui.el("agent-tab-inbox").getAttribute("aria-selected"),"true");

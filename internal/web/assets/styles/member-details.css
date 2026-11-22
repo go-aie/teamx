@@ -52,21 +52,25 @@
 
 /* Agent details share the context rail gutters and settings controls. */
 #activity-dialog > .activity-header { flex-wrap:nowrap; }
-.activity-header > .agent-detail-close { order:1; }
 .agent-heading { flex:1; min-width:0; }
 .agent-heading h2 { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-.agent-settings-heading { display:flex; flex:none; flex-wrap:wrap; align-items:center; gap:0 8px; padding:0 var(--panel-space); border-bottom:1px solid var(--line); }
-#agent-quick-actions { flex:none; margin:0 0 0 auto; padding-block:4px; }
-.agent-controls-toggle { flex:1 1 180px; justify-content:space-between; gap:12px; min-width:0; min-height:44px; padding:8px 0; margin:0; font-size:var(--font-small); font-weight:var(--weight-medium); }
-#agent-settings-label { flex:none; color:var(--text); }
-.agent-settings-summary { display:flex; flex:1; min-width:0; flex-wrap:wrap; align-items:center; justify-content:flex-end; gap:4px 8px; font-weight:400; }
-.agent-controls-toggle > svg { width:18px; height:18px; transition:transform var(--motion-fast); }
-.agent-controls-toggle[aria-expanded="true"] > svg { transform:rotate(180deg); }
-@media(prefers-reduced-motion:reduce) { .agent-controls-toggle > svg { transition:none; } }
-.agent-controls-toggle[data-state="error"],.agent-controls-toggle[data-state="error"]:hover:not(:disabled) { color:var(--danger); }
-.agent-controls-toggle[data-state="busy"] { color:var(--accent); }
-#agent-model-alert { font-size:var(--font-small); white-space:nowrap; }
-.agent-controls { flex:none; min-width:0; max-height:50dvh; overflow:auto; border-bottom:1px solid var(--line); font-size:var(--font-small); line-height:1.6; }
+.activity-header > .agent-detail-close { order:1; }
+.agent-profile-summary { display:flex; align-items:center; gap:12px; padding:16px var(--panel-space); border-bottom:1px solid var(--line); }
+#activity-avatar { flex:none; width:40px; height:40px; font-size:14px; }
+.agent-profile-identity { flex:1; min-width:0; }
+.agent-profile-name-row button { display:flex; align-items:center; gap:6px; min-width:0; max-width:100%; padding:0; font-size:var(--font-body); font-weight:var(--weight-medium); color:var(--text); text-align:left; }
+#agent-name-summary,#agent-profile-name { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+#agent-profile-name { display:block; }
+.agent-profile-name-row svg { flex:none; width:14px; height:14px; }
+.agent-profile-status { margin-top:2px; display:flex; align-items:center; gap:6px; min-width:0; font-size:11px; line-height:16px; }
+.agent-profile-status .member-status { font-size:inherit; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+#agent-actions { flex:none; margin:0; }
+#agent-actions button { font-size:var(--font-small); min-height:32px; padding:4px 8px; }
+#agent-model-alert { font-size:11px; white-space:nowrap; }
+#agent-model-alert[data-state="error"] { color:var(--danger); }
+#agent-model-alert[data-state="busy"] { color:var(--accent); }
+.agent-controls { flex:1; min-width:0; min-height:0; overflow-y:auto; overscroll-behavior:contain; scrollbar-width:thin; font-size:var(--font-small); line-height:1.6; }
+.agent-controls > .conversation-settings { padding:16px var(--panel-space) 0; }
 .agent-controls :is(.agent-name-row,.agent-overview) > .quiet { font-size:inherit; }
 .agent-name-row button,.agent-name-form .form-actions button,.agent-controls .member-directory button,.agent-overview .member-actions button { font-size:var(--font-small); font-weight:400; line-height:20px; }
 .agent-overview {
@@ -81,14 +85,14 @@
   box-sizing:border-box;
 }
 .agent-overview .member-status { font-size:var(--font-small); }
-.agent-overview .member-actions { margin:0; }
+.agent-recovery-actions { margin:8px var(--panel-space); }
 .agent-enable-hint { flex-shrink:0; margin:0 var(--panel-space) 12px; font-size:var(--font-small); line-height:1.6; }
 .agent-error { flex-shrink:0; margin:0; padding:0 var(--panel-space) 14px; white-space:pre-wrap; }
 .execution-diagnostics { margin:0 var(--panel-space) 14px; color:var(--muted); font-size:13px; }
 .execution-diagnostics summary { cursor:pointer; }
 .execution-diagnostics pre { white-space:pre-wrap; overflow-wrap:anywhere; font:inherit; user-select:text; }
 .activity-section .execution-diagnostics { margin:10px 0; }
-.agent-tabs { flex-shrink:0; min-width:0; gap:20px; margin:0; padding:0 var(--panel-space); background:var(--surface); }
+.agent-tabs { flex-shrink:0; min-width:0; gap:0; justify-content:space-between; margin:0; padding:0 var(--panel-space); background:var(--surface); }
 .agent-tabs button { min-height:var(--control-height); padding:8px 0 10px; }
 .agent-tabs button:hover:not([aria-selected="true"]) { color:var(--text); }
 .member-platform-toolbar { display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom:8px; }

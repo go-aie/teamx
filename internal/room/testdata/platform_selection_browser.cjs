@@ -39,7 +39,7 @@ const {chromium}=require('playwright'),assert=require('node:assert/strict'),{mkd
   await group.getByRole('button',{name:'完整设置',exact:true}).click();await page.locator("#platforms-list-view").waitFor({state:"visible"});assert.equal(await page.locator("#settings-dialog [data-interaction-id]").count(),0);await page.locator('#close-settings').click();
   if(current.is_direct){
    assert.equal(await page.locator('#member-list-view').isVisible(),false);
-   assert.equal(await page.locator('#agent-tab-platforms').getAttribute('aria-selected'),'true');
+   assert.equal(await page.locator('#activity-dialog').evaluate(el=>el.open),true);
   }
   const second=await context.newPage();await second.goto(endpoint);
   const other=second.locator(`#messages [data-interaction-id="${groupID}"]`);

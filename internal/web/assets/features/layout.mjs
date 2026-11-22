@@ -183,7 +183,7 @@ export function createLayout({ env, roomsUI, runtime, notificationsUI, membersUI
       $("room-rail").insertBefore($("user-menu-container"), $("mobile-primary-navigation"));
     }
     $("room-menu-label").disabled = !state.info;
-    const settingsParent = $(roomsUI.isDirect() ? state.managed ? "platforms-member-view" : "activity-body" : "member-sidebar");
+    const settingsParent = $(roomsUI.isDirect() ? "agent-controls" : "member-sidebar");
     if ($("conversation-settings").parentElement !== settingsParent) settingsParent.append($("conversation-settings"));
     $("member-rail").inert = !membersOpen;
     $("member-rail").setAttribute("aria-hidden", String(!membersOpen));
@@ -238,7 +238,7 @@ export function createLayout({ env, roomsUI, runtime, notificationsUI, membersUI
   function closeMobilePanels() {
     const rooms = directMobileRooms;
     directMobileDetails = false; directMobileRooms = false;
-    renderPanels(); membersUI.syncDirectDetail(); $(rooms ? "mobile-back-to-rooms" : "room-menu-label").focus();
+    renderPanels(); $(rooms ? "mobile-back-to-rooms" : "room-menu-label").focus();
   }
 
   function showMobileRooms() {
@@ -296,7 +296,7 @@ export function createLayout({ env, roomsUI, runtime, notificationsUI, membersUI
       if (compactViewport(window)) directMobileRooms = !directMobileRooms;
       else panels.rooms = !panels.rooms;
       if (compactViewport(window) && directMobileRooms) directMobileDetails = false;
-      savePanels(); renderPanels(); membersUI.syncDirectDetail();
+      savePanels(); renderPanels();
     });
 
     for (const [side, config] of Object.entries(sidebarConfig)) {
@@ -347,7 +347,7 @@ export function createLayout({ env, roomsUI, runtime, notificationsUI, membersUI
     }
     window.visualViewport?.addEventListener("resize", updateViewport);
     window.visualViewport?.addEventListener("scroll", updateViewport);
-    window.addEventListener("resize", () => { updateViewport(); renderPanels(); membersUI.syncDirectDetail(); settingsUI.renderSettingsNavigation(); });
+    window.addEventListener("resize", () => { updateViewport(); renderPanels(); settingsUI.renderSettingsNavigation(); });
 
     updateViewport(); renderPanels();
   }

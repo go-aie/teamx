@@ -5,7 +5,18 @@ const {chromium}=require('playwright'),assert=require('node:assert/strict');
  try {
   const context=await browser.newContext({viewport:{width:1440,height:1000}}),page=await context.newPage(),errors=[];
   page.on('pageerror',e=>errors.push(e.message));page.setDefaultTimeout(15000);
+  await page.addInitScript(()=>{
+   window.directMemberListFrames=0;
+   const sample=()=>{const workspace=document.querySelector('#workspace'),rail=document.querySelector('#member-rail'),members=document.querySelector('#members');
+    if(workspace?.classList.contains('direct-conversation') && rail && !rail.inert && members?.getClientRects().length && getComputedStyle(members).visibility!=='hidden')window.directMemberListFrames++;
+    requestAnimationFrame(sample);
+   };requestAnimationFrame(sample);
+  });
   await page.goto(endpoint);
+  const openMemberDetails=async()=>{
+   if(!await page.locator('#member-rail').isVisible())await toggleConversationDetails(page);
+   await page.locator('#agent-controls').waitFor();
+  };
   if(process.argv[3]==='restore'){
    const before=await(await fetch(endpoint+'/v1/rooms')).json();assert.equal(before.default_assistant.status,'deleted');
    await page.getByRole('button',{name:'恢复默认助理（新建会话）',exact:true}).waitFor();
@@ -13,7 +24,7 @@ const {chromium}=require('playwright'),assert=require('node:assert/strict');
    await page.reload();assert.equal(await page.locator('#room-list [data-direct="true"] .room-choice').count(),0);
    await page.getByRole('button',{name:'恢复默认助理（新建会话）',exact:true}).click();
    await page.locator('#room-list [data-default-assistant="true"] .room-choice[aria-current="true"]').waitFor();
-   await page.locator('#activity-dialog[open]').waitFor();
+   await page.locator('#agent-controls').waitFor();
    const after=await(await fetch(endpoint+'/v1/rooms')).json();assert.equal(after.default_assistant.status,'completed');assert.notEqual(after.default_assistant.room_instance,before.default_assistant.room_instance);
    assert.equal(after.rooms.length,1);assert.equal(await page.locator('#messages .message').count(),0);
    assert.equal(await page.locator('#room-list [data-default-assistant="true"] .room-delete').count(),0);
@@ -24,7 +35,20 @@ const {chromium}=require('playwright'),assert=require('node:assert/strict');
   assert.equal(await page.locator('#direct-notifications').count(),0);
   await page.locator('#room-list [data-direct="true"] .room-choice[aria-current="true"]').waitFor();
   assert.equal(await page.locator('#room-list [data-direct="true"]').count(),1);
-  await page.locator('#activity-dialog[open]').waitFor();
+  await openMemberDetails();
+  // A cold page holds member readiness while the private settings stay open.
+  const cold=await context.newPage();let releaseMembers;
+  const membersReady=new Promise(resolve=>{releaseMembers=resolve;});
+  await cold.route('**/v1/member/list',async route=>{await membersReady;await route.continue();});
+  await cold.goto(endpoint);
+  if(!await cold.locator('#member-rail').isVisible())await toggleConversationDetails(cold);
+  await cold.locator('#direct-settings-loading').waitFor();
+  assert.equal(await cold.locator('#members').isVisible(),false);
+  assert.equal(await cold.locator('#activity-dialog').evaluate(el=>el.open),false);
+  releaseMembers();await cold.locator('#agent-controls').waitFor();
+  assert.equal(await cold.locator('#direct-settings-loading').isVisible(),false);
+  assert.equal(await cold.locator('#activity-title').innerText(),'设置');
+  await cold.close();
   // Escape dismisses a nested picker before its parent settings dialog.
   await page.locator('#user-menu-toggle').click();await page.locator('#open-settings').click();await page.locator('#settings-tab-general').click();
   await page.locator('#timezone-picker-toggle').click();await page.keyboard.press('Escape');
@@ -34,11 +58,39 @@ const {chromium}=require('playwright'),assert=require('node:assert/strict');
   assert.equal(await page.locator('#settings-dialog').evaluate(el=>el.open),false);
   assert.equal(await page.locator('#close-activity').isVisible(),true);
   assert.equal(await page.locator('#member-list-view').isVisible(),false);
-  assert.equal(await page.locator('#agent-tab-platforms').getAttribute('aria-selected'),'true');
-  await page.locator('#toggle-agent-controls').click();
+  assert.equal(await page.locator('#agent-tab-profile').getAttribute('aria-selected'),'true');
+  assert.deepEqual(await page.locator('#agent-tabs button').allTextContents(),['档案','平台','通知','规则','活动']);
+  assert.equal(await page.locator('#activity-title').innerText(),'设置');
+  assert.equal(await page.locator('#activity-dialog > header #activity-avatar').count(),0);
+  assert.equal(await page.locator('#agent-controls #activity-avatar').isVisible(),true);
   await page.locator('#agent-actions').getByRole('button',{name:/暂停/}).waitFor();
   await page.locator('#agent-actions').getByRole('button',{name:/暂停/}).click();
   await page.locator('#agent-actions').getByRole('button',{name:/启用协作/}).waitFor();
+  const layouts=[];
+  for(const viewport of [{width:1440,height:1000},{width:390,height:844},{width:320,height:568},{width:844,height:390}]) {
+   await page.setViewportSize(viewport);
+   await page.evaluate(()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve))));
+   if(!await page.locator('#member-rail').isVisible())await toggleConversationDetails(page);
+   if(!await page.locator('#activity-dialog').evaluate(el=>el.open))await openMemberDetails();
+   await page.locator('#agent-tab-profile').click();
+   const before=await page.locator('#agent-tabs').boundingBox();
+   await page.locator('#agent-controls').evaluate(el=>{el.scrollTop=el.scrollHeight;});
+   const metrics=await page.evaluate(()=>{
+    const header=document.querySelector('#activity-dialog .activity-header').getBoundingClientRect(),tabs=document.querySelector('#agent-tabs').getBoundingClientRect();
+    return {headerBottom:header.bottom,tabTop:tabs.top,tabBottom:tabs.bottom,overflow:document.documentElement.scrollWidth-innerWidth,
+     allTabsVisible:[...document.querySelectorAll('#agent-tabs button')].every(button=>{const r=button.getBoundingClientRect();return r.left>=0 && r.right<=innerWidth && r.bottom<=innerHeight;})};
+   });
+   assert(Math.abs(metrics.tabTop-before.y)<1,JSON.stringify(metrics));
+   assert(metrics.tabTop-metrics.headerBottom<2 && metrics.allTabsVisible && metrics.overflow<=1,JSON.stringify({viewport,metrics}));
+   assert.equal(await page.locator('#agent-actions').isVisible(),true);
+   if(process.env.TEAMX_DM_BROWSER_ARTIFACTS){const fs=require('node:fs/promises'),path=require('node:path');await fs.mkdir(process.env.TEAMX_DM_BROWSER_ARTIFACTS,{recursive:true});await page.locator('#member-rail').screenshot({path:path.join(process.env.TEAMX_DM_BROWSER_ARTIFACTS,`profile-${viewport.width}x${viewport.height}.png`)});}
+   await page.locator('#agent-tab-platforms').click();assert.equal(await page.locator('#agent-controls').isVisible(),false);
+   assert.equal(await page.locator('#activity-avatar').isVisible(),false);assert.equal(await page.locator('#agent-actions').isVisible(),false);
+   await page.locator('#agent-tab-platforms').press('End');assert.equal(await page.locator('#agent-tab-activity').getAttribute('aria-selected'),'true');
+   await page.locator('#agent-tab-activity').press('Home');assert.equal(await page.locator('#agent-tab-profile').getAttribute('aria-selected'),'true');
+   layouts.push({viewport,...metrics});
+  }
+  await page.setViewportSize({width:1440,height:1000});
   await page.locator('#message-input').fill('DM draft');
   // Polling preserves selected tab, mounted node and focus.
   await page.locator('#agent-tab-inbox').click();await page.locator('#message-input').focus();
@@ -55,7 +107,7 @@ const {chromium}=require('playwright'),assert=require('node:assert/strict');
   await page.locator('#room-list .room-choice[aria-current="true"]').waitFor();
   assert.equal(await page.locator('#message-input').inputValue(),'Room draft');
   await page.locator('#room-list [data-direct="true"] .room-choice').first().click();
-  await page.locator('#activity-dialog[open]').waitFor();
+  await openMemberDetails();
   assert.equal(await page.locator('#message-input').inputValue(),'DM draft');
   // Narrow view starts with chat; the conversation menu opens full-height details.
   await page.setViewportSize({width:390,height:844});
@@ -63,11 +115,11 @@ const {chromium}=require('playwright'),assert=require('node:assert/strict');
   assert.equal(await page.locator('#member-rail').isVisible(),false);
   assert.equal(await page.locator('#compose').evaluate(el=>el.getBoundingClientRect().bottom<=innerHeight),true);
   await toggleConversationDetails(page);
-  await page.locator('#platforms-member-view').waitFor();
+  await openMemberDetails();
   await page.locator('#close-activity').click();
   await page.locator('#member-rail').waitFor({state:'hidden'});
   await page.locator('#room-menu-label').focus();await page.keyboard.press('Enter');await page.locator('#conversation-open-details').click();
-  await page.locator('#platforms-member-view').waitFor();await page.keyboard.press('Escape');
+  await openMemberDetails();await page.keyboard.press('Escape');
   await page.locator('#member-rail').waitFor({state:'hidden'});
   await page.waitForFunction(()=>document.activeElement.id==='room-menu-label');
   assert.equal(await page.evaluate(()=>document.activeElement.id),'room-menu-label');
@@ -134,6 +186,8 @@ const {chromium}=require('playwright'),assert=require('node:assert/strict');
   assert.equal(await second.locator('#room-list [data-default-assistant="true"]').count(),1);
   if(process.env.TEAMX_DM_BROWSER_ARTIFACTS){const fs=require('node:fs/promises'),path=require('node:path');await fs.mkdir(process.env.TEAMX_DM_BROWSER_ARTIFACTS,{recursive:true});await page.screenshot({path:path.join(process.env.TEAMX_DM_BROWSER_ARTIFACTS,'desktop.png'),fullPage:true});await page.setViewportSize({width:390,height:844});await page.screenshot({path:path.join(process.env.TEAMX_DM_BROWSER_ARTIFACTS,'mobile.png'),fullPage:true});}
   assert.deepEqual(errors,[]);
+  assert.equal(await page.evaluate(()=>window.directMemberListFrames),0);
+  console.log(JSON.stringify({layouts,direct_member_list_frames:0,cold_settings_loading:true}));
   console.log('Chromium passed: unified conversations, protected default and HTTP rejection, manual DM deletion, direct inspector, polling focus/tab, member platform entry, mobile and second tab.');
  } finally {await browser.close();}
 })().catch(e=>{console.error(e);process.exitCode=1});

@@ -154,7 +154,7 @@ for(const removed of [false,true])test(`M4 unfinished onboarding details locate 
   if(removed){api.members.splice(1,1,{agent_id:"b",membership_id:"replacement-b",runner:{profile:"p"}});await ui.refresh();}
   await ui.el("onboarding-notification-settings").emit("click");await settle();
   if(removed){assert.equal(ui.el("settings-dialog").open,true);assert.match(ui.el("onboarding-result-error").textContent,/移除|替换/);assert.equal(ui.el("notification-detail").open,false);}
-  else {assert.equal(ui.el("notification-title").textContent,"b · 公司 GitLab 设置");assert.equal(ui.selectedAgent()?.membership_id,"member-b");await ui.el("close-notification").emit("click");assert.equal(ui.el("agent-tab-platforms").attributes["aria-selected"],"true");}
+  else {assert.equal(ui.el("notification-title").textContent,"b · 公司 GitLab 设置");assert.equal(ui.selectedAgent()?.membership_id,"member-b");await ui.el("close-notification").emit("click");assert.equal(ui.el("agent-tab-profile").attributes["aria-selected"],"true");}
   assert.equal(writes(api).length,0);
 });
 

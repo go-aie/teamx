@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"maps"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -112,25 +113,46 @@ func TestWorkspaceDirectoriesRealDSH(t *testing.T) {
 	report["room"] = room.RoomIdentity
 	report["paths"] = map[string]string{"shared": shared, "other": other, "room": roomDir}
 
-	var browserRuns []json.RawMessage
-	report["browser"] = &browserRuns
+	var directoryRuns []json.RawMessage
+	report["directory_operations"] = &directoryRuns
 	choose := func(index int, path, mode string) {
 		t.Helper()
-		fixture, err := json.Marshal(map[string]any{"index": index, "path": path, "mode": mode, "root": projects, "room": room.RoomIdentity, "epoch": epoch, "caller": caller.ID, "screenshots": output})
-		must(err)
-		cmd := exec.CommandContext(ctx, "node", "testdata/workspace_directories_runtime.cjs", d.endpoint, string(fixture))
-		result, err := cmd.CombinedOutput()
-		if err != nil {
-			t.Fatalf("real browser: %v\n%s", err, result)
-		}
-		if !json.Valid(result) {
-			t.Fatalf("browser did not return evidence: %s", result)
-		}
-		browserRuns = append(browserRuns, json.RawMessage(result))
 		var receipt struct {
 			OperationID string `json:"operation_id"`
 		}
-		must(json.Unmarshal(result, &receipt))
+		if mode == "repair" {
+			fixture, err := json.Marshal(map[string]any{"mode": mode, "room": room.RoomIdentity, "epoch": epoch, "caller": caller.ID, "screenshots": output})
+			must(err)
+			cmd := exec.CommandContext(ctx, "node", "testdata/workspace_directories_runtime.cjs", d.endpoint, string(fixture))
+			result, err := cmd.CombinedOutput()
+			if err != nil {
+				t.Fatalf("real browser: %v\n%s", err, result)
+			}
+			must(json.Unmarshal(result, &receipt))
+			directoryRuns = append(directoryRuns, json.RawMessage(result))
+		} else {
+			// Per-member overrides remain a backend capability, outside the common
+			// webpage flow. Preserve real Session isolation coverage via this API.
+			status, err := d.realWorkspaceStatus(epoch, room)
+			must(err)
+			target := *status.Workspace
+			target.MemberDirectories = maps.Clone(target.MemberDirectories)
+			if target.MemberDirectories == nil {
+				target.MemberDirectories = map[string]string{}
+			}
+			member := initial.Members[index].MembershipID
+			if mode == "default" {
+				delete(target.MemberDirectories, member)
+			} else {
+				target.MemberDirectories[member] = path
+			}
+			operationID, err := newOpaqueID()
+			must(err)
+			must(d.managementRequest("/v1/workspace/apply", workspaceApplyRequest{ServiceEpoch: epoch, RoomIdentity: room.RoomIdentity, Caller: caller, OperationID: operationID, ExpectedVersion: status.Version, Target: target}, &receipt))
+			evidence, err := json.Marshal(map[string]any{"entry": "management API", "operation_id": receipt.OperationID, "mode": mode, "member": member, "path": path})
+			must(err)
+			directoryRuns = append(directoryRuns, json.RawMessage(evidence))
+		}
 		must(d.until(func() (bool, error) {
 			status, err := d.realWorkspaceStatus(epoch, room)
 			if err != nil {

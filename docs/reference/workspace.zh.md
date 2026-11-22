@@ -6,7 +6,7 @@
 
 生效配置保存在 `room-config.json`，带 `workspace_version`。默认根目录为房间内 `workspaces`，每个成员的默认路径为 `<root>/<membership_id>/`；默认仓库按成员独立 clone。
 
-`workspace.member_directories` 以当前 Room 的 `membership_id` 为键、服务端规范绝对目录为值，覆盖成员实际 cwd。缺省使用默认路径，删除该键恢复默认。成员记录的 `workspace` 始终保存默认相对路径；状态另给出 `default_directory`、`effective_directory`、`directory_source`（`managed`／`external`）。模板禁止携带非空目录覆盖，避免传播机器路径。旧快照缺少字段时行为不变。
+`workspace.member_directories` 以当前 Room 的 `membership_id` 为键、服务端规范绝对目录为值，覆盖成员实际 cwd。缺省使用默认路径，删除该键恢复默认。成员记录的 `workspace` 始终保存默认相对路径；状态同时返回 Room 冻结的 `scheduling`（`serial`／`parallel`），供网页限制共用目录选择；成员状态另给出 `default_directory`、`effective_directory`、`directory_source`（`managed`／`external`）。模板禁止携带非空目录覆盖，避免传播机器路径。旧快照缺少字段时行为不变。
 
 当前执行组装、模型配置、普通平台工具 cwd 和状态展示均通过统一解析器得到有效目录。历史 Backend 使用冻结 cwd 与指纹恢复，不能把新覆盖值写入旧 Session。源码见 [workspace_directories.go](../../internal/room/workspace_directories.go)、[workspace_config.go](../../internal/room/workspace_config.go)。
 
@@ -143,7 +143,7 @@ go test -tags=e2e -timeout=20m ./internal/room \
 
 需已安装 Playwright 与 Chromium；`NODE_PATH` 指向其实际依赖目录。未显式指定 DSH 时使用配置启动器；发布验收应明确选择交付包入口，避免误用开发源码版本。证据目录必须全新；其中包含私有模型凭据和 Session 数据，不应提交或公开分享。
 
-场景覆盖串行共用未提交文件、独立 SessionID、单成员换目录、正常停服重启恢复、恢复默认，以及路径缺失后从网页修复并显式执行。`report.json` 和截图记录模型、启动器、路径、各阶段 SessionID 及页面操作；外部仓库的 HEAD、dirty 内容和本地配置也会独立核对。
+场景覆盖串行共用未提交文件、独立 SessionID、通过管理 API 单成员换目录及恢复默认、正常停服重启恢复，以及路径缺失后从聊天框目录入口统一恢复默认并显式执行。逐成员覆盖保留为底层能力，网页仅提供各自默认或全员共用。`report.json` 和截图记录模型、启动器、路径、各阶段 SessionID 及页面操作；外部仓库的 HEAD、dirty 内容和本地配置也会独立核对。
 
 目录变化的托管模型轮换通过既有 `rotation.json` 的 `model_target` 冻结新 cwd 与模型执行事实，在发布 pending Session 引用前保存新代际模型快照。重试复用原轮换目标，旧 Backend 与模型快照保持原样。
 

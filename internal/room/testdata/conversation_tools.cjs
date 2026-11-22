@@ -16,7 +16,7 @@ async function verifyConversationTools(page, shot) {
   assert.equal(await page.locator('#conversation-details path').getAttribute('d'),await page.locator('#open-settings path').getAttribute('d'));
   assert.equal(await page.locator('#conversation-files').getAttribute('title'),'文件');
   assert.equal(await page.locator('#activity-title').innerText(),'设置');
-  assert.equal(await page.locator('#agent-context-name').isVisible(),true);
+  assert.equal(await page.locator('#agent-controls').isVisible(),true);
   await shot('desktop-settings');
   await page.locator('#conversation-files').click();await page.locator('#files-page').waitFor();
   assert.equal(await page.locator('#files-title').innerText(),'文件');await page.locator('#files-close').click();
@@ -64,9 +64,9 @@ async function verifyConversationTools(page, shot) {
     });
     assert.ok(Math.abs(bounds.offset)<2);assert.equal(bounds.overflow,false);
     await page.locator('#room-menu-label').click();await page.locator('#conversation-open-details').click();
-    await page.locator('#activity-dialog').waitFor();
+    await page.locator('#agent-controls').waitFor();
     assert.equal(await page.locator('#activity-title').innerText(),'设置');
-    assert.equal(await page.locator('#agent-context-name').isVisible(),true);
+    assert.equal(await page.locator('#agent-controls').isVisible(),true);
     await shot('mobile-settings-'+width);await page.locator('#close-activity').click();
     await page.waitForFunction(()=>!document.querySelector('#conversation').inert);
   }

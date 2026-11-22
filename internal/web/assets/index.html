@@ -272,6 +272,7 @@
           <button id="close-room-details" class="icon-button desktop-panel-close" type="button" aria-label="关闭设置" title="关闭设置"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M6 18 18 6"/></svg></button>
         </header>
         <div id="member-sidebar" class="sidebar" aria-label="房间成员">
+          <p id="direct-settings-loading" class="quiet" role="status" aria-live="polite" hidden>正在读取助理设置…</p>
           <section id="room-details" class="room-details" aria-label="房间设置">
             <div id="room-name-row" class="room-name-row"><span class="quiet">房间名称</span><button id="rename-room" class="text-button" type="button" aria-label="修改房间名称" title="修改房间名称" aria-controls="rename-form" disabled><span id="room-detail-name"></span><svg class="navigation-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button></div>
             <form id="rename-form" class="room-rename" aria-label="修改房间名称" hidden>
@@ -496,15 +497,28 @@
       <dialog id="activity-dialog" class="activity-dialog" aria-labelledby="activity-title">
         <header class="activity-header detail-header">
           <button id="close-activity" type="button" class="text-button back-button" aria-label="返回" title="返回" autofocus><svg class="navigation-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="m15 6-6 6 6 6"/></svg></button>
-          <div class="agent-heading"><h2 id="activity-title">成员详情</h2></div>
+          <div class="agent-heading"><h2 id="activity-title">设置</h2></div>
         </header>
-        <div class="agent-settings-heading">
-          <button id="toggle-agent-controls" class="text-button agent-controls-toggle" type="button" aria-label="展开成员设置" title="展开成员设置" aria-controls="agent-controls" aria-expanded="false"><span id="agent-settings-label">成员设置</span><span class="agent-settings-summary"><span id="agent-status" class="member-status"></span><span id="agent-model-alert" role="status" aria-live="polite" hidden></span></span><svg class="navigation-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg></button>
-          <div id="agent-quick-actions" class="member-actions" hidden></div>
+        <div id="agent-tabs" class="notification-tabs agent-tabs" role="tablist" aria-label="Agent 详情">
+          <button id="agent-tab-profile" type="button" role="tab" aria-selected="true" aria-controls="agent-controls">档案</button>
+          <button id="agent-tab-platforms" type="button" role="tab" aria-selected="false" aria-controls="platforms-member-view" tabindex="-1">平台</button>
+          <button id="agent-tab-inbox" type="button" role="tab" aria-selected="false" aria-controls="inbox-member-view" tabindex="-1">通知</button>
+          <button id="agent-tab-policy" type="button" role="tab" aria-selected="false" aria-controls="policy-member-view" tabindex="-1">规则</button>
+          <button id="agent-tab-activity" type="button" role="tab" aria-selected="false" aria-controls="activity-body" tabindex="-1">活动</button>
         </div>
-        <p id="agent-error" class="agent-error form-error" role="status" hidden></p>
-        <section id="agent-controls" class="agent-controls" aria-label="成员设置与运行控制" hidden>
-          <div id="agent-name-row" class="room-name-row agent-name-row" hidden><span id="agent-name-label" class="quiet">成员名称</span><button id="edit-agent-name" class="text-button" type="button" aria-label="修改成员名称" aria-controls="agent-name-form" aria-expanded="false"><span id="agent-name-summary"></span><svg class="navigation-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button></div>
+        <section id="agent-controls" class="agent-controls" role="tabpanel" aria-labelledby="agent-tab-profile">
+          <div class="agent-profile-summary">
+            <div id="activity-avatar" class="avatar" aria-hidden="true"></div>
+            <div class="agent-profile-identity">
+              <span id="agent-name-label" class="sr-only">成员名称</span>
+              <div id="agent-name-row" class="agent-profile-name-row" hidden><button id="edit-agent-name" class="text-button" type="button" aria-label="修改成员名称" aria-controls="agent-name-form" aria-expanded="false"><span id="agent-name-summary"></span><svg class="navigation-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button></div>
+              <strong id="agent-profile-name"></strong>
+              <div class="agent-profile-status"><span id="agent-status" class="member-status"></span><span id="agent-model-alert" role="status" aria-live="polite" hidden></span></div>
+            </div>
+            <div id="agent-actions" class="member-actions" hidden></div>
+          </div>
+          <p id="agent-error" class="agent-error form-error" role="status" hidden></p>
+
           <form id="agent-name-form" class="agent-name-form" hidden>
             <label for="agent-display-name">显示名称</label><input id="agent-display-name" class="field-control" maxlength="256" autocomplete="off" required aria-describedby="agent-name-hint">
             <p id="agent-name-hint" class="quiet">用于消息署名和 @；私信标题使用同一名称。</p>
@@ -535,25 +549,17 @@
         </section>
 
         <section id="member-directory" class="member-directory" aria-labelledby="member-directory-title" hidden>
-          <div class="member-directory-heading"><h3 id="member-directory-title">工作目录</h3><button id="member-directory-choose" class="secondary-button button-compact" type="button">选择目录</button></div>
+          <div class="member-directory-heading"><h3 id="member-directory-title">工作目录</h3></div>
           <details id="member-directory-details" class="member-directory-details"><summary id="member-directory-summary" title="展开完整路径"></summary><p id="member-directory-path" class="directory-path"></p></details>
           <p id="member-directory-sharing" class="quiet" hidden></p>
-          <div id="member-directory-actions" class="directory-actions"><button id="member-directory-default" class="text-button button-compact" type="button">恢复默认</button><button id="member-directory-apply" class="primary button-compact" type="button">应用</button></div>
           <p id="member-directory-feedback" class="quiet" role="status" aria-live="polite"></p>
-          <button id="member-directory-refresh" class="text-button" type="button" hidden>刷新设置并重新选择</button>
-          <button id="member-directory-overview" class="text-button" type="button" hidden>查看房间目录与修复</button>
         </section>
-        <div class="agent-overview"><span class="quiet">协作状态</span><div id="agent-actions" class="member-actions"></div></div>
+        <div class="agent-overview"><span class="quiet">协作状态</span><span id="agent-cooperation-status"></span></div>
+        <div id="agent-recovery-actions" class="member-actions agent-recovery-actions" hidden></div>
         <p id="agent-enable-hint" class="agent-enable-hint quiet" role="status" hidden></p>
         <details id="agent-diagnostics" class="execution-diagnostics" hidden><summary>诊断详情</summary><pre id="agent-diagnostic-error"></pre></details>
         </section>
-        <div id="agent-tabs" class="notification-tabs agent-tabs" role="tablist" aria-label="Agent 详情">
-          <button id="agent-tab-platforms" type="button" role="tab" aria-selected="true" aria-controls="platforms-member-view">平台</button>
-          <button id="agent-tab-policy" type="button" role="tab" aria-selected="false" aria-controls="policy-member-view" tabindex="-1">规则</button>
-          <button id="agent-tab-inbox" type="button" role="tab" aria-selected="false" aria-controls="inbox-member-view" tabindex="-1">通知</button>
-          <button id="agent-tab-activity" type="button" role="tab" aria-selected="false" aria-controls="activity-body" tabindex="-1">活动记录</button>
-        </div>
-        <div id="platforms-member-view" class="activity-body" role="tabpanel" aria-labelledby="agent-tab-platforms">
+        <div id="platforms-member-view" class="activity-body" role="tabpanel" aria-labelledby="agent-tab-platforms" hidden>
           <section id="member-notification-sources" class="member-notification-sources" aria-label="当前成员平台" hidden>
             <div class="member-platform-toolbar"><p id="member-platform-count" class="quiet">共 <span id="member-notification-source-count">0</span> 个平台</p><button id="member-notification-add-toggle" class="add-button" type="button" aria-label="添加平台" title="添加平台" aria-expanded="false" aria-controls="member-notification-add-picker"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg></button></div>
             <div id="member-platform-issues" role="status"></div>
@@ -679,26 +685,22 @@
   </dialog>
   <dialog id="workspace-selector" class="workspace-selector dialog-surface" aria-labelledby="workspace-select-title">
     <header class="workspace-selector-header"><h2 id="workspace-select-title" class="sr-only">工作目录</h2><input id="workspace-select-search" class="field-control" type="search" placeholder="搜索目录或输入绝对路径" aria-label="搜索工作目录" autocomplete="off" spellcheck="false" autocapitalize="none"><button id="workspace-select-close" class="icon-button" type="button" aria-label="关闭目录选择" title="关闭目录选择"><svg class="navigation-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M6 18 18 6"/></svg></button></header>
+    <p id="workspace-select-scope" class="workspace-selector-feedback quiet"></p>
+    <p id="workspace-select-parallel" class="workspace-selector-feedback quiet" hidden>当前群聊并行执行，仅支持各自默认；共用目录需要串行执行。</p>
     <div id="workspace-select-options" class="workspace-select-options" role="group" aria-label="工作目录选项"></div>
     <p id="workspace-select-empty" class="quiet workspace-selector-empty" hidden>没有匹配目录，可输入绝对路径定位，或浏览其他目录。</p>
     <button id="workspace-select-browse" class="workspace-selector-browse" type="button"><svg class="navigation-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 7V5h6l2 2h10v13H3ZM3 10h18m-9 3v4m-2-2h4"/></svg><span id="workspace-select-browse-label">选择其他目录…</span></button>
     <p id="workspace-select-feedback" class="workspace-selector-feedback quiet" role="status" aria-live="polite"></p>
-    <footer class="workspace-selector-actions"><button id="workspace-select-settings" class="text-button" type="button">更多设置</button><button id="workspace-select-refresh" class="text-button" type="button" hidden>刷新后重新选择</button><button id="workspace-select-apply" class="primary" type="button" hidden>应用目录</button></footer>
+    <footer class="workspace-selector-actions"><button id="workspace-select-settings" class="text-button" type="button">仓库设置</button><button id="workspace-select-status" class="text-button" type="button" hidden>查看状态</button><button id="workspace-select-retry" class="text-button" type="button" hidden>重试原操作</button><button id="workspace-select-new" class="text-button" type="button" hidden>重新选择</button><button id="workspace-select-refresh" class="text-button" type="button" hidden>刷新后重新选择</button><button id="workspace-select-apply" class="primary" type="button" hidden>应用目录</button></footer>
   </dialog>
   <dialog id="workspace-dialog" class="workspace-dialog dialog-surface" aria-labelledby="workspace-title">
-    <header class="dialog-header"><h2 id="workspace-title">工作目录</h2><button id="close-workspace" class="icon-button" type="button" aria-label="关闭工作目录设置" title="关闭工作目录设置"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M6 18 18 6"/></svg></button></header>
+    <header class="dialog-header"><h2 id="workspace-title">仓库设置</h2><button id="close-workspace" class="icon-button" type="button" aria-label="关闭仓库设置" title="关闭仓库设置"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M6 18 18 6"/></svg></button></header>
     <form id="workspace-form" class="workspace-form" autocomplete="off">
-      <p class="quiet">成员可使用默认或指定目录。选择的是 TeamX 服务所在机器的目录。</p>
-      <section aria-label="成员工作目录">
-        <div id="workspace-directories"></div>
-        <p id="workspace-directories-feedback" class="quiet" role="status" aria-live="polite"></p>
-        <div class="directory-actions"><button id="workspace-directories-default" class="text-button" type="button">全部恢复默认目录</button><button id="workspace-directories-refresh" class="text-button" type="button" hidden>刷新设置并重新选择</button><button id="workspace-directories-apply" class="primary" type="button">应用成员目录</button></div>
-      </section>
-      <h3>默认受管目录与仓库</h3><p class="quiet">仓库设置仅用于各成员默认目录。请分别应用成员目录与仓库设置。</p>
+      <p class="quiet">仓库初始化用于各成员的默认目录。实际工作目录请在聊天框下方选择。</p>
       <p id="workspace-current" class="workspace-current"></p>
       <details><summary>成员实际目录</summary><ul id="workspace-paths" class="workspace-paths"></ul></details>
       <fieldset id="workspace-fields">
-        <label for="workspace-root">默认目录根路径</label><input id="workspace-root" placeholder="workspaces" autocomplete="off" class="field-control">
+        <label for="workspace-root">默认目录根路径</label><input id="workspace-root" readonly placeholder="workspaces" autocomplete="off" class="field-control">
         <p id="workspace-root-hint" class="quiet">切换目录不搬迁文件，原目录保留。</p>
         <label class="workspace-check"><input id="workspace-repository" type="checkbox">关联仓库 <span class="quiet">可选</span></label>
         <div id="workspace-git-fields" hidden>

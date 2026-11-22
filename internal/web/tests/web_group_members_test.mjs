@@ -45,7 +45,7 @@ test("the human member follows local display name edits, reloads and other tabs"
   assert.equal(ui.el("room-title-count").textContent, "(3)");
 });
 
-test("a Room with no Agents still shows its human, while direct chats keep their existing Agent details", async () => {
+test("a Room with no Agents still shows its human, while direct chats open the profile directly", async () => {
   const api = fixture(); api.members.length = 0;
   const ui = await launch(api);
   assert.equal(ui.el("room-title-count").textContent, "(1)");
@@ -64,4 +64,6 @@ test("a Room with no Agents still shows its human, while direct chats keep their
   assert.equal(dm.el("room-title-count").hidden, true);
   assert.equal(dm.el("members").children.length, 1);
   assert.equal(dm.el("activity-dialog").open, true);
+  assert.equal(dm.el("member-list-view").hidden,true);
+  assert.equal(dm.el("agent-tab-profile").getAttribute("aria-selected"),"true");
 });

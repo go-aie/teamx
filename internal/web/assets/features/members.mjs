@@ -24,7 +24,7 @@ export function createMembers({ env, runtime, notificationsUI, workspaceUI, onbo
     const button = $("toggle-member-list"), label = `${memberListExpanded ? "收起" : "展开"}成员列表`;
     button.setAttribute("aria-expanded", String(memberListExpanded));
     button.setAttribute("aria-label", label); button.title = label;
-    $("members").classList.toggle("members-compact", !memberListExpanded);
+    $("members").classList.toggle("members-compact", !roomsUI.isDirect() && !memberListExpanded);
   }
 
   let nameEditor=null,nameSaving=false,nameEditing=false;
@@ -36,29 +36,21 @@ export function createMembers({ env, runtime, notificationsUI, workspaceUI, onbo
     $(prefix + "-diagnostic-error").textContent = detail || "";
   }
 
-  function renderControlsToggle() {
-    const expanded = !$("agent-controls").hidden, button = $("toggle-agent-controls");
+  function renderMemberProfile() {
+    const member = selectedAgent();
     const modelError = memberModelStatus.state === "error", pending = memberModelStatus.state === "busy";
-    const member = selectedAgent(), runtimeError = runtimeFailed(member), recoveringSession = recovering(member);
-    const name = roomsUI.isDirect() ? "助理设置" : "成员设置";
-    $("agent-settings-label").textContent = name;
-    const label = `${expanded ? "收起" : "展开"}${name}${modelError ? "，查看模型异常" : runtimeError ? "，查看运行异常" : ""}`;
-    button.setAttribute("aria-expanded", String(expanded)); button.setAttribute("aria-label", label);
-    button.title = `${label}${(modelError || pending) && memberModelStatus.detail ? `；${memberModelStatus.detail}` : ""}`;
-    button.dataset.state = modelError || runtimeError ? "error" : pending || recoveringSession ? "busy" : "ready";
-    $("agent-model-alert").textContent = modelError ? "模型异常" : runtimeError ? "运行异常" : pending ? "切换中" : "";
-    $("agent-model-alert").hidden = !$("agent-model-alert").textContent;
-    const quickActions = $("agent-quick-actions");
-    quickActions.hidden = expanded || !member?.execution || !(member.execution.active || member.status === "running" || (member.execution.inbox_recovery || member.execution.input_recovery)) || !!member.execution.paused;
-    if (!quickActions.hidden) renderMemberActions(member, quickActions, true);
-  }
-
-  function setControlsExpanded(expanded) {
-    $("agent-controls").hidden = !expanded; renderControlsToggle();
+    const alert = $("agent-model-alert");
+    alert.textContent = modelError ? "模型异常" : runtimeFailed(member) ? "运行异常" : pending ? "切换中" : "";
+    alert.hidden = !alert.textContent;
+    alert.dataset.state = modelError || runtimeFailed(member) ? "error" : pending ? "busy" : "ready";
+    alert.title = memberModelStatus.detail || "";
+    const actions = $("agent-actions");
+    actions.hidden = !member?.execution;
+    if (!actions.hidden) renderMemberActions(member, actions, "primary");
   }
 
   function renderMemberModelStatus(status) {
-    memberModelStatus = status; renderControlsToggle();
+    memberModelStatus = status; renderMemberProfile();
   }
 
   // Tool views are scoped to their Room/operator/epoch and member generation.
@@ -416,7 +408,7 @@ export function createMembers({ env, runtime, notificationsUI, workspaceUI, onbo
 
   let activityMember = null;
 
-  let agentTab = "activity";
+  let agentTab = "profile";
 
   const activity = createActivityReader((member) => rpc("/v1/member/activity", {
     agent_id: member.agent_id, membership_id: member.membership_id,
@@ -431,7 +423,7 @@ export function createMembers({ env, runtime, notificationsUI, workspaceUI, onbo
     return roomsUI.selectedEntry()?.members?.find(role => role.id === member.agent_id);
   }
 
-  function openMemberActivity(member, opener, tab = state.managed ? "platforms" : "activity", { readingView = null, fromConversation = false, automatic = false } = {}) {
+  function openMemberActivity(member, opener, tab = "profile", { readingView = null, fromConversation = false, automatic = false } = {}) {
     layoutUI.showMemberContent?.();
     notice("notification-next-step", "");
     notificationsUI.invalidateNavigation();
@@ -450,7 +442,7 @@ export function createMembers({ env, runtime, notificationsUI, workspaceUI, onbo
     $("notification-detail").close();
     $("activity-dialog").hidden=false;
     activityMember = { agent_id: current.agent_id, membership_id: current.membership_id };
-    memberModelStatus = {}; setControlsExpanded(false);
+    memberModelStatus = {}; renderMemberProfile();
     layoutUI.expandMembers();
     layoutUI.savePanels(); layoutUI.renderPanels();
     if (!$("activity-dialog").open) $("activity-dialog").show();
@@ -470,14 +462,12 @@ export function createMembers({ env, runtime, notificationsUI, workspaceUI, onbo
 
   function renderActivityNavigation() {
     const button = $("close-activity");
-    const close = roomsUI.isDirect() && !activityReturn?.previous && !compactViewport(window);
-    const direction = close ? "close" : "left", label = close ? "关闭设置" : roomsUI.isDirect() && !activityReturn?.previous ? "返回对话" : "返回";
+    const root = roomsUI.isDirect() && !activityReturn?.previous;
+    const direction = root && !compactViewport(window) ? "close" : "left";
+    const label = root ? compactViewport(window) ? "返回对话" : "关闭设置" : "返回设置";
     button.hidden = false;
     button.setAttribute("aria-label", label); button.title = label;
-    button.classList.toggle("icon-button", close);
-    button.classList.toggle("agent-detail-close", close);
-    button.classList.toggle("text-button", !close);
-    button.classList.toggle("back-button", !close);
+    button.classList.toggle("agent-detail-close", direction === "close");
     if (button.dataset.direction !== direction) {
       button.replaceChildren(createNavigationIcon(document, direction));
       button.dataset.direction = direction;
@@ -491,8 +481,9 @@ export function createMembers({ env, runtime, notificationsUI, workspaceUI, onbo
     notificationsUI.renderContextViews();
     renderActivityNavigation();
     const selected=selectedAgent();
-    const settings = roomsUI.isDirect() && !activityReturn?.previous;
-    $("activity-title").textContent=settings ? "设置" : selected ? agentName(selected) : "成员详情";
+    $("activity-title").textContent = !roomsUI.isDirect() && selected ? `${agentName(selected)} · 设置` : "设置";
+    $("agent-profile-name").textContent = selected ? agentName(selected) : "";
+    if (selected) renderAvatar(document, $("activity-avatar"), {kind:"agent",id:selected.agent_id,name:agentName(selected),direct:roomsUI.isDirect(),defaultAssistant:roomsUI.isDefaultAssistant()});
     $("agent-tabs").hidden = false;
     $("agent-tab-platforms").hidden = !state.managed;
     const member = selectedAgent();
@@ -502,6 +493,7 @@ export function createMembers({ env, runtime, notificationsUI, workspaceUI, onbo
     else if(!nameSaving && $("agent-display-name").value===nameEditor.expected){nameEditor.expected=agentName(member);$("agent-display-name").value=agentName(member);}
     $("agent-name-row").hidden=!state.managed || nameEditing;
     $("agent-name-form").hidden=!state.managed || !nameEditing;
+    $("agent-profile-name").hidden = state.managed && !nameEditing;
     $("agent-name-label").textContent=roomsUI.isDirect() ? "私信名称" : "成员名称";
     $("agent-name-summary").textContent=agentName(member);
     $("edit-agent-name").setAttribute("aria-label",`修改${roomsUI.isDirect() ? "私信" : "成员"}名称`);
@@ -513,8 +505,10 @@ export function createMembers({ env, runtime, notificationsUI, workspaceUI, onbo
     $("agent-status").textContent = member.execution?.active ? "运行中" : statusNames[member.status] || member.status;
     $("agent-status").classList.toggle("running", !!member.execution?.active || recovering(member));
     $("agent-status").classList.toggle("failed", /failed|blocked|unavailable|interrupted/.test(member.status));
-    renderMemberActions(member, $("agent-actions"));
-    renderControlsToggle();
+    $("agent-cooperation-status").textContent = member.execution ? member.execution.paused ? "已暂停" : "已启用" : "未连接";
+    renderMemberActions(member, $("agent-recovery-actions"), "recovery");
+    $("agent-recovery-actions").hidden = !$("agent-recovery-actions").children.length;
+    renderMemberProfile();
     const execution = member.execution;
     const reset = !recovering(member) && (execution?.session_reset_required || member.status === "backend_blocked");
     const budget = execution?.turn_budget;
@@ -543,12 +537,13 @@ export function createMembers({ env, runtime, notificationsUI, workspaceUI, onbo
     const member = selectedAgent();
     if (!$("activity-dialog").open || !member) return;
     if(agentTab==="inbox" && inboxUI.inboxCurrent(inboxUI.inboxView))inboxUI.inboxView.scrollTop=$("inbox-member-view").scrollTop;
-    agentTab = tab === "platforms" && state.managed ? "platforms" : tab === "policy" ? "policy" : tab === "inbox" ? "inbox" : "activity";
-    for (const key of ["platforms", "policy", "inbox", "activity"]) {
+    agentTab = tab === "profile" ? "profile" : tab === "platforms" && state.managed ? "platforms" : tab === "policy" ? "policy" : tab === "inbox" ? "inbox" : "activity";
+    for (const key of ["profile", "platforms", "inbox", "policy", "activity"]) {
       const button = $(`agent-tab-${key}`);
       button.setAttribute("aria-selected", String(agentTab === key));
       button.setAttribute("tabindex", agentTab === key ? "0" : "-1");
     }
+    $("agent-controls").hidden = agentTab !== "profile";
     $("activity-body").hidden = $("activity-footer").hidden = agentTab !== "activity";
     $("platforms-member-view").hidden = agentTab !== "platforms";
     $("inbox-member-view").hidden = agentTab !== "inbox";
@@ -561,25 +556,26 @@ export function createMembers({ env, runtime, notificationsUI, workspaceUI, onbo
     }
     else if (agentTab === "platforms") { activity.close();notificationsUI.renderNotificationPlatforms(); }
     else if (agentTab === "policy") { activity.close(); await policyUI.loadMemberPolicy(true); }
+    else activity.close();
   }
 
-  function renderMemberActions(member, actions, pauseOnly = false) {
+  function renderMemberActions(member, actions, mode) {
     const execution = member.execution;
     const signature = JSON.stringify([member.agent_id, agentName(member), member.membership_id, member.status, execution?.paused, execution?.active,
-      execution?.session_reset_required, execution?.inbox_recovery, execution?.input_recovery, execution?.inbox?.recovery_blocked, state.connected, discussionBusy(), memberBusy.has(member.membership_id), member.unread_count, execution?.agent?.turn?.status, pauseOnly]);
+      execution?.session_reset_required, execution?.inbox_recovery, execution?.input_recovery, execution?.inbox?.recovery_blocked, state.connected, discussionBusy(), memberBusy.has(member.membership_id), member.unread_count, execution?.agent?.turn?.status, mode]);
     if (actions.dataset.signature === signature) return;
     actions.dataset.signature = signature;
     actions.replaceChildren();
     if (!execution) return;
-    const enable = !pauseOnly && !recovering(member) && (execution.paused || execution.session_reset_required || member.status === "backend_blocked" || member.status === "budget_exhausted");
+    const enable = !recovering(member) && (execution.paused || execution.session_reset_required || member.status === "backend_blocked" || member.status === "budget_exhausted");
     const add = (label, action) => {
       const button = document.createElement("button"); button.type = "button"; button.className = "secondary-button button-compact"; button.textContent = label;
       button.setAttribute("aria-label", `${label} ${agentName(member)}`);
       button.disabled = memberBusy.has(member.membership_id) || !state.connected || discussionBusy() || member.status === "checkpoint_failed" || member.status === "rotating" && action !== "pause";
       button.addEventListener("click", () => controlMember(member, action)); actions.append(button);
     };
-    add(enable ? "启用协作" : "暂停", enable ? "run" : "pause");
-    if ((execution.inbox_recovery || execution.input_recovery) && !execution.active && !execution.paused && !execution.inbox?.recovery_blocked && !execution.input_recovery?.blocked && ["completed", "failed", "interrupted"].includes(execution.agent?.turn?.status) && ["inbox_waiting", "inbox_stalled"].includes(member.status)) add("继续读取收件箱", "inbox/continue");
+    if (mode === "primary") add(enable ? "启用协作" : "暂停", enable ? "run" : "pause");
+    if (mode === "recovery" && (execution.inbox_recovery || execution.input_recovery) && !execution.active && !execution.paused && !execution.inbox?.recovery_blocked && !execution.input_recovery?.blocked && ["completed", "failed", "interrupted"].includes(execution.agent?.turn?.status) && ["inbox_waiting", "inbox_stalled"].includes(member.status)) add("继续读取收件箱", "inbox/continue");
   }
 
   function renderExecutionHint() {
@@ -670,10 +666,9 @@ export function createMembers({ env, runtime, notificationsUI, workspaceUI, onbo
   }
 
   function syncDirectDetail() {
-    renderActivityNavigation();
     if (!roomsUI.isDirect() || !state.connected || !layoutUI.membersPanelOpen() || $("notification-detail").open || state.members.length !== 1) return;
     if ($("activity-dialog").open && selectedAgent()?.membership_id === state.members[0].membership_id) return;
-    openMemberActivity(state.members[0], $("room-menu-label"), undefined, { automatic: true });
+    void openMemberActivity(state.members[0], $("room-menu-label"), "profile", {automatic:true});
   }
 
   const showHumanMember = () => !!state.info && !roomsUI.isDirect();
@@ -682,6 +677,8 @@ export function createMembers({ env, runtime, notificationsUI, workspaceUI, onbo
   function renderMembers() {
     renderMemberListToggle();
     syncDirectDetail();
+    $("room-details").hidden = roomsUI.isDirect();
+    $("room-members-heading").hidden = roomsUI.isDirect();
     renderActivityControls();
     renderExecutionHint();
     $("member-count").textContent = participantCount();
@@ -708,7 +705,9 @@ export function createMembers({ env, runtime, notificationsUI, workspaceUI, onbo
       summary.disabled = !state.connected;
       summary.addEventListener("click", () => openMemberActivity(member, summary));
       renderAvatar(document, el.querySelector(".avatar"), {kind:"agent", id:member.agent_id, name:agentName(member), direct:roomsUI.isDirect(), defaultAssistant:roomsUI.isDefaultAssistant()});
-      el.querySelector(".member-profile").textContent = role?.name || member.runner.profile;
+      const profile = el.querySelector(".member-profile"), description = role?.name || member.runner?.profile;
+      profile.textContent = description || "";
+      profile.hidden = roomsUI.isDirect() || !description || description === agentName(member) || description === member.agent_id;
       const status = el.querySelector(".member-status");
       status.textContent = label;
       status.classList.toggle("running", !!running);
@@ -918,7 +917,7 @@ export function createMembers({ env, runtime, notificationsUI, workspaceUI, onbo
     stopRequests.clear();
     activity.close(); $("activity-dialog").close();
     activitySignature = ""; activityMember = null;
-    memberModelStatus = {}; setControlsExpanded(false);
+    memberModelStatus = {}; renderMemberProfile();
   }
 
   function mount() {
@@ -959,19 +958,13 @@ export function createMembers({ env, runtime, notificationsUI, workspaceUI, onbo
 
     document.fonts?.ready.then(layoutMemberPlatforms);
 
-    $("toggle-agent-controls").addEventListener("click", () => {
-      const expanded = $("agent-controls").hidden;
-      setControlsExpanded(expanded);
-      if (expanded && memberModelStatus.state === "error") settingsUI.showMemberModelDetails();
-    });
-
-    for (const key of ["platforms", "policy", "inbox", "activity"]) {
+    for (const key of ["profile", "platforms", "inbox", "policy", "activity"]) {
       const button = $(`agent-tab-${key}`);
       button.addEventListener("click", () => selectAgentTab(key));
       button.addEventListener("keydown", event => {
         if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
         event.preventDefault();
-        const keys = state.managed ? ["platforms", "policy", "inbox", "activity"] : ["policy", "inbox", "activity"];
+        const keys = state.managed ? ["profile", "platforms", "inbox", "policy", "activity"] : ["profile", "inbox", "policy", "activity"];
         const current = keys.indexOf(key);
         const next = event.key === "Home" ? keys[0] : event.key === "End" ? keys.at(-1) : keys[(current + (event.key === "ArrowLeft" ? keys.length - 1 : 1)) % keys.length];
         $(`agent-tab-${next}`).focus(); void selectAgentTab(next);
@@ -995,7 +988,7 @@ export function createMembers({ env, runtime, notificationsUI, workspaceUI, onbo
       if ($("activity-dialog").open) return;
       const back = returningActivity; returningActivity = null; activityReturn = null;
       activityNavigation++;
-      activity.close(); memberToolsView = null; activityMember = null; agentTab = "activity"; activitySignature = "";
+      activity.close(); memberToolsView = null; activityMember = null; agentTab = "profile"; activitySignature = "";
       inboxUI.reset();
       activityScrollMember = ""; activityFollowing = true; activityScrollTop = 0; $("activity-jump-latest").hidden = true;
       activityTimelineContext = ""; activityTimelineRows.clear(); $("activity-timeline").replaceChildren();
@@ -1069,8 +1062,8 @@ export function createMembers({ env, runtime, notificationsUI, workspaceUI, onbo
     loadCLITools,
     renderMembers,
     participantCount,
-    syncDirectDetail,
     openMemberActivity,
+    syncDirectDetail,
     statusNames,
     selectAgentTab,
     renderExecutionHint,

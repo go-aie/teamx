@@ -15,9 +15,10 @@ export function createWorkspace({ env, runtime, notificationsUI, membersUI, room
   let workspaceView = null;
   let workspaceReturn = null;
 
-  const directories = createMemberDirectories({ env, runtime, membersUI, workspaceView: () => workspaceView, busy: () => workspaceFormBusy() || roomsUI.managementBusy() || !!state.catalog?.busy, submit: change => submitWorkspace(false, change), changed:renderWorkspace });
+  const directories = createMemberDirectories({ env, runtime, membersUI, workspaceView: () => workspaceView, isDirect:roomsUI.isDirect, busy: () => workspaceFormBusy() || roomsUI.managementBusy() || !!state.catalog?.busy, submit: change => submitWorkspace(false, change), changed:renderWorkspace });
   const selector = createWorkspaceSelector({env,runtime,directories:directories.composer,
-    closeMenu:() => conversationUI.closeComposerMenu(false),openSettings:openWorkspace});
+    closeMenu:() => conversationUI.closeComposerMenu(false),openSettings:openWorkspace,
+    retry:() => submitWorkspace(true), refreshStatus:refresh, newOperation:resetWorkspacePending});
 
   const workspaceKey = (room, operator) => JSON.stringify(["teamx.workspace", room.room_instance, operator]);
 
@@ -204,7 +205,7 @@ export function createWorkspace({ env, runtime, notificationsUI, membersUI, room
     const ws = workspaceView, data = ws?.data, current = data?.workspace, op = data?.operation;
     $("workspace-control").hidden = !state.managed || !ws;
     $("workspace-trigger").disabled = !ws?.data || !ws.connected;
-    const {label,path} = workspaceDirectoryLabel(current);
+    const {label,path} = workspaceDirectoryLabel(current, data?.members, !roomsUI.isDirect());
     $("workspace-label").textContent = label;
     $("workspace-trigger").title = `工作目录：${path}`;
     const status = ws?.pending ? "提交结果待确认" : op?.status === "running" ? workspaceStages[op.phase] || "正在应用"
@@ -228,9 +229,9 @@ export function createWorkspace({ env, runtime, notificationsUI, membersUI, room
     $("workspace-kind").disabled = repo;
     $("workspace-binding-label").textContent = scion ? "绑定 Scion 连接（必需）" : "绑定 GitLab";
     $("workspace-fields").disabled = !data || !ws.connected || workspaceFormBusy() || roomsUI.managementBusy();
-    $("workspace-root").readOnly = repo || git;
+    $("workspace-root").readOnly = true;
     $("workspace-root-hint").textContent = repo ? "默认仓库目录已固定；指定目录不会被仓库初始化修改。" : git
-      ? "首次关联会在新的受管仓库目录中分别 clone；旧目录文件保留。" : "切换目录不搬迁文件，原目录保留。";
+      ? "首次关联会在新的受管仓库目录中分别 clone；旧目录文件保留。" : "各成员的默认目录由 TeamX 管理；实际工作目录在聊天框下方选择。";
     $("workspace-repository").disabled = repo;
     $("workspace-repo-url").readOnly = repo;
     $("workspace-branch").readOnly = repo;
@@ -276,7 +277,7 @@ export function createWorkspace({ env, runtime, notificationsUI, membersUI, room
   function workspaceTarget() {
     const old = workspaceView.data.workspace;
     const git = $("workspace-repository").checked;
-    const target = { root: old?.repository || !git ? $("workspace-root").value.trim() : old?.root || "" };
+    const target = { root: old?.root || "workspaces" };
     if (old?.member_directories) target.member_directories = { ...old.member_directories };
     if (git) {
       const kind = $("workspace-kind").value || "git";
@@ -318,7 +319,7 @@ export function createWorkspace({ env, runtime, notificationsUI, membersUI, room
 
   async function submitWorkspace(retry = false, directoryChange = null) {
     const ws = workspaceView;
-    if (!ws || ws.sending || !ws.connected || (retry ? $("workspace-retry").disabled : directoryChange ? workspaceFormBusy() || roomsUI.managementBusy() : $("workspace-apply").disabled)) return;
+    if (!ws || ws.sending || !ws.connected || (retry ? !!ws.pending || !!state.catalog?.busy || ws.data?.operation?.status !== "failed" : directoryChange ? workspaceFormBusy() || roomsUI.managementBusy() : $("workspace-apply").disabled)) return;
     let payload;
     try {
       payload = { ...ws.room, service_epoch: state.catalog.service_epoch, caller: { kind: "human", id: ws.operator },
@@ -368,7 +369,6 @@ export function createWorkspace({ env, runtime, notificationsUI, membersUI, room
   function mount() {
     directories.mount();
     selector.mount();
-    $("member-directory-overview").addEventListener("click", openWorkspace);
 
     $("close-workspace").addEventListener("click", () => $("workspace-dialog").close());
 
@@ -395,12 +395,14 @@ export function createWorkspace({ env, runtime, notificationsUI, membersUI, room
 
     $("workspace-refresh").addEventListener("click", async () => { await refresh(); await loadWorkspacePlatforms(); });
 
-    $("workspace-new").addEventListener("click", () => {
-      const ws = workspaceView;
-      if (!ws?.missing || ws.sending) return;
-      ws.pending = null; ws.missing = false; ws.error = "请核对目标和平台，再点击应用；原请求不会自动重发。";
-       saveWorkspacePending(ws); renderWorkspace(); conversationUI.composerState(); roomsUI.renderRooms();
-    });
+    $("workspace-new").addEventListener("click", resetWorkspacePending);
+  }
+
+  function resetWorkspacePending() {
+    const ws = workspaceView;
+    if (!ws?.missing || ws.sending) return;
+    ws.pending = null; ws.missing = false; ws.error = "请核对目标后显式应用；原请求不会自动重发。";
+    saveWorkspacePending(ws); renderWorkspace(); conversationUI.composerState(); roomsUI.renderRooms();
   }
 
   return {

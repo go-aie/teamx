@@ -40,7 +40,7 @@ test("Session recovery shows progress with pause and keeps internal failures in 
   await summary.emit("click");
   assert.equal(ui.el("agent-model-alert").hidden,true);
   assert.equal(ui.el("agent-status").textContent,"正在恢复");
-  assert.equal(ui.el("toggle-agent-controls").dataset.state,"busy");
+  assert.equal(ui.el("agent-status").classList.contains("running"),true);
   assert.equal(ui.el("agent-error").classList.contains("form-error"),false);
   assert.equal(ui.el("agent-diagnostics").hidden,true);
   assert.equal(ui.el("agent-enable-hint").hidden,true);
@@ -1217,10 +1217,11 @@ test("member list and activity details share the right sidebar, with back, colla
   await open();
   assert.equal(panel.open, true); assert.equal(panel.modal, false);
   assert.equal(toggle.attributes["aria-expanded"], "true"); assert.equal(list.hidden, true); assert.equal(list.inert, true);
-  assert.equal(ui.selectedAgent().membership_id, "generation-reviewer"); assert.equal(ui.el("activity-title").textContent, "reviewer");
+  assert.equal(ui.selectedAgent().membership_id, "generation-reviewer"); assert.equal(ui.el("activity-title").textContent, "reviewer · 设置");
   assert.equal(ui.el("activity-member"), undefined);
   await ui.el("close-activity").emit("click");await ui.el("members").children[0].querySelector(".member-summary").emit("click");await ui.el("agent-tab-activity").emit("click");await settle();
   assert.equal(ui.selectedAgent().membership_id, "generation-observer"); assert.equal(reads().at(-1).data.agent_id, "observer");
+  assert.equal(ui.el("activity-title").textContent,"observer · 设置");
   await ui.el("close-activity").emit("click"); await settle();
   assert.equal(panel.open, false); assert.equal(list.hidden, false); assert.equal(list.inert, false);
   const closedReads = reads().length; await ui.refresh(); await settle(); assert.equal(reads().length, closedReads);
@@ -1347,7 +1348,7 @@ test("execution hints open the matching member activity without sending or chang
   const close = async () => { await ui.el("close-activity").emit("click"); await settle(); };
   assert.equal(buttons()[0].textContent, "reviewer 正在处理…");
   await open(buttons()[0]);
-  assert.equal(ui.el("activity-title").textContent, "reviewer");
+  assert.equal(ui.el("activity-title").textContent, "reviewer · 设置");
   assert.equal(ui.selectedAgent()?.membership_id, "generation-reviewer");
   assert.equal(reads().at(-1).data.membership_id, members[0].membership_id);
   assert.equal(ui.el("activity-timeline").children[0].children[1].children[0].textContent, "activity-reviewer");
@@ -1922,7 +1923,7 @@ test("composer menu closes on Escape, independent directory settings and Room sw
   const api = workspaceServer(), ui = await launch(api);
   const menu = ui.el("compose-menu"), trigger = ui.el("compose-more");
   const open = () => trigger.emit("click");
-  assert.equal(ui.el("workspace-label").textContent, "默认目录");
+  assert.equal(ui.el("workspace-label").textContent, "各自默认");
   assert.equal(ui.el("workspace-control").hidden, false);
   await open(); assert.equal(trigger.getAttribute("aria-expanded"), "true");
   await menu.emit("keydown", { key: "Escape" });
@@ -1953,7 +1954,7 @@ test("Workspace allows discussion before explicit Git-only binding; keeps draft/
   assert.equal(ui.el("workspace-repository").disabled, true); assert.equal(ui.el("workspace-repo-url").readOnly, true);
   assert.equal(ui.el("workspace-dialog").open, false);
   assert.match(ui.el("workspace-current").textContent, /workspaces\/repos/);
-  assert.equal(ui.el("workspace-label").textContent, "project");
+  assert.equal(ui.el("workspace-label").textContent, "各自默认");
   assert.equal(ui.el("workspace-control").hidden, false);
   await openWorkspaceSettings(ui); await ui.refresh();
   assert.equal(ui.el("workspace-dialog").open, true); // Completed settings remain available for inspection.
@@ -2040,15 +2041,16 @@ test("Workspace selects an existing connection for initial and supplemental bind
 });
 
 
-test("Workspace plain root, connection choice and suggestions require an explicit application", async () => {
+test("Workspace preserves the managed root and requires explicit repository and connection selection", async () => {
   const api = workspaceServer();
   api.workspaces.get("A").suggestions = { repository: { url: "https://gitlab.invalid/group/project.git", branch: "main" },
     binding: { provider: "gitlab", url: "https://gitlab.invalid", project: "group/project" } };
   const ui = await launch(api); await openWorkspaceSettings(ui);
   assert.equal(ui.el("workspace-repository").checked, false); assert.equal(ui.el("workspace-gitlab").checked, false);
   assert.equal(ui.el("workspace-repo-url").value, "https://gitlab.invalid/group/project.git");
+  assert.equal(ui.el("workspace-root").readOnly,true);
   ui.el("workspace-root").value = "outputs"; await ui.el("workspace-form").emit("submit");
-  assert.deepEqual(api.calls.find(c => c.path === "/v1/workspace/apply").data.target, { root: "outputs" });
+  assert.deepEqual(api.calls.find(c => c.path === "/v1/workspace/apply").data.target, { root: "workspaces" });
   await editWorkspace(ui, true);
   await ui.el("workspace-form").emit("submit");
   const sent = api.calls.filter(c => c.path === "/v1/workspace/apply").at(-1).data;
@@ -3848,53 +3850,37 @@ test("a late automatic rule response cannot replace a new tab context",async()=>
   const card=ui.el("policy-entries").children[0];finish({revision:99,current:[],history:[],effective:[]});await settle();assert.equal(ui.el("policy-entries").children[0],card);
 });
 
-test("direct conversations prefer the exact default, keep the inspector stable, and isolate Room drafts", async () => {
-  const room=makeRoom("Team"),dm={...makeRoom("个人助理","dm"),is_direct:true,team_id:"",agent_role_id:"assistant",members:[{id:"assistant",name:"个人助理"}]};
-  const api=server([room,dm]);api.catalog.default_assistant={status:"completed",room_id:dm.room_id,room_instance:dm.room_instance};
-  const member={agent_id:"assistant",membership_id:"dm-member",status:"paused",runner:{profile:"runtime"},execution:{paused:true}};
-  api.hook=(path,data)=>{
-    if(path==="/v1/member/list")return {members:[{...member,membership_id:data.room_id==="dm" ? "dm-member" : "team-member"}]};
-    if(path.startsWith("/v1/tools/bindings?"))return {catalog:[],bindings:[]};
-    if(path==="/v1/member/activity")return {member};
-  };
-  const ui=await launch(api);await settle();
-  assert.equal(ui.el("room-name").textContent,"个人助理");
-  assert.equal(ui.el("message-input").placeholder,"发送给 个人助理");
-  assert.equal(ui.el("message-input-label").textContent,"发送给 个人助理");
-  assert.equal(directRows(ui).length,1);assert.equal(ui.el("room-list").children.length,2);
-  assert.equal(directRows(ui)[0].children.length,1);
-  assert.equal(ui.el("room-list").children[1].children.length,2);
-  assert.equal(ui.el("activity-dialog").open,true);assert.equal(ui.el("close-activity").hidden,false);
-  assert.equal(ui.el("activity-title").textContent,"设置");
-  assert.equal(ui.el("agent-context-name"),undefined);
-  assert.equal(ui.el("members").children[0].querySelector(".avatar").children[0].getAttribute("class"),"assistant-icon");
-  assert.equal(ui.el("direct-status"),undefined);assert.equal(ui.el("conversation-open-details").hidden,false);
-  assert.equal(ui.el("conversation-open-details").getAttribute("aria-label"),"设置");assert.equal(ui.el("room-title-count").hidden,true);
-  assert.equal(ui.el("conversation-settings").parentElement,ui.el("platforms-member-view"));
-  await ui.el("conversation-open-details").emit("click");
-  assert.equal(ui.el("activity-dialog").open,false);assert.equal(ui.el("conversation-open-details").getAttribute("aria-expanded"),"false");
-  assert.equal(ui.el("conversation-open-details").getAttribute("aria-label"),"设置");
-  await ui.el("conversation-open-details").emit("click");assert.equal(ui.el("activity-dialog").open,true);
-  assert.equal(ui.el("agent-tab-platforms").getAttribute("aria-selected"),"true");
-  ui.el("platforms-member-view").scrollTop=123;
-  const reads=api.calls.filter(call=>call.path.startsWith("/v1/tools/bindings?")).length;
-  await ui.refresh();await settle();
-  assert.equal(ui.el("platforms-member-view").scrollTop,123);
-  assert.equal(api.calls.filter(call=>call.path.startsWith("/v1/tools/bindings?")).length,reads+1);
-  await ui.draft("DM draft");await ui.select("Team");assert.equal(ui.el("activity-dialog").open,false);
-  assert.equal(ui.el("message-input").placeholder,"发送给 Team");
-  assert.equal(ui.el("message-input-label").textContent,"发送给 Team");
-  assert.equal(ui.el("conversation-open-details").getAttribute("aria-label"),"设置");assert.equal(ui.el("room-title-count").hidden,false);
-  assert.equal(ui.el("conversation-settings").parentElement,ui.el("member-sidebar"));
-  assert.equal(ui.el("member-list-view").hidden,false);await ui.draft("Room draft");
-  await ui.select("个人助理");assert.equal(ui.el("message-input").value,"DM draft");
-  assert.equal(ui.el("activity-dialog").hidden,false);assert.equal(ui.el("member-list-view").hidden,true);
-  ui.window.innerWidth=390;await ui.window.emit("resize");assert.equal(ui.el("member-rail").inert,true);
-  await ui.el("conversation-open-details").emit("click");assert.equal(ui.el("activity-dialog").open,true);
-  await ui.el("close-activity").emit("click");await ui.refresh();assert.equal(ui.el("member-rail").inert,true);
-  assert.equal(ui.document.activeElement,ui.el("room-menu-label"));
-  const saved=new Map([["teamx.selected-room",JSON.stringify(room)]]),reloaded=await launch(api,saved);
-  assert.equal(reloaded.el("room-name").textContent,"Team");assert.equal(reloaded.el("activity-dialog").open,false);
+test("direct settings open the profile in one step, close to chat and isolate Room drafts", async () => {
+ const room=makeRoom("Team"),dm={...makeRoom("个人助理","dm"),is_direct:true,members:[{id:"assistant",name:"个人助理"}]};
+ const api=server([room,dm]);api.catalog.default_assistant={status:"completed",room_id:dm.room_id,room_instance:dm.room_instance};
+ const member={agent_id:"assistant",membership_id:"dm-member",agent_name:"个人助理",status:"paused",runner:{profile:"runtime"},execution:{paused:true}};
+ api.hook=(path,data)=>path==="/v1/member/list" ? {members:[{...member,membership_id:data.room_id==="dm" ? "dm-member" : "team-member"}]} : path.startsWith("/v1/tools/bindings?") ? {catalog:[],bindings:[]} : undefined;
+ const ui=await launch(api);await settle();
+ assert.equal(ui.el("room-name").textContent,"个人助理");
+ assert.equal(ui.el("message-input").placeholder,"发送给 个人助理");
+ assert.equal(directRows(ui).length,1);assert.equal(directRows(ui)[0].children.length,1);
+ assert.equal(ui.el("activity-dialog").open,true);assert.equal(ui.el("member-list-view").hidden,true);
+ assert.equal(ui.el("room-members-heading").hidden,true);assert.equal(ui.el("members").classList.contains("members-compact"),false);
+ assert.equal(ui.el("members").children[0].querySelector(".member-profile").hidden,true);
+ assert.equal(ui.el("conversation-settings").parentElement,ui.el("agent-controls"));
+ assert.equal(ui.el("activity-title").textContent,"设置");
+ assert.equal(ui.el("agent-name-summary").textContent,"个人助理");
+ assert.equal(ui.el("agent-tab-profile").getAttribute("aria-selected"),"true");
+ await ui.el("agent-tab-platforms").emit("click");ui.el("platforms-member-view").scrollTop=123;
+ await ui.refresh();await settle();assert.equal(ui.el("platforms-member-view").scrollTop,123);
+ assert.equal(ui.el("agent-tab-platforms").getAttribute("aria-selected"),"true");
+ await ui.el("close-activity").emit("click");await settle();
+ assert.equal(ui.el("activity-dialog").open,false);assert.equal(ui.el("conversation-open-details").getAttribute("aria-expanded"),"false");
+ await ui.el("conversation-open-details").emit("click");
+ assert.equal(ui.el("activity-dialog").open,true);
+ await ui.draft("DM draft");await ui.select("Team");await ui.draft("Room draft");
+ assert.equal(ui.el("activity-dialog").open,false);assert.equal(ui.el("room-title-count").hidden,false);
+ await ui.select("个人助理");assert.equal(ui.el("message-input").value,"DM draft");assert.equal(ui.el("activity-dialog").open,true);
+ ui.window.innerWidth=390;await ui.window.emit("resize");assert.equal(ui.el("member-rail").inert,true);
+ await ui.el("conversation-open-details").emit("click");assert.equal(ui.el("activity-dialog").open,true);
+ await ui.el("close-activity").emit("click");await settle();await ui.refresh();assert.equal(ui.el("member-rail").inert,true);
+ const saved=new Map([["teamx.selected-room",JSON.stringify(room)]]),reloaded=await launch(api,saved);
+ assert.equal(reloaded.el("room-name").textContent,"Team");assert.equal(reloaded.el("activity-dialog").open,false);
 });
 
 test("default delete protection follows identity after rename and clears old unaccepted deletion requests", async()=>{
@@ -3981,6 +3967,7 @@ test("a pending default selects once when ready, while late DM Inbox reads canno
     if(path==="/v1/member/inbox/status")return new Promise(resolve=>{resolveInbox=resolve;});
   };
   await ui.refresh();await settle();assert.equal(ui.el("room-name").textContent,"助理");
+  await ui.el("members").children[0].querySelector(".member-summary").emit("click");
   const opening=ui.el("agent-tab-inbox").emit("click");await settle();assert.ok(resolveInbox);
   room.service=identity(room);room.runtime_status="ready";api.catalog.rooms.push(room);api.history.set(room.room_id,[]);
   await ui.refresh();await ui.select("团队");
@@ -4269,13 +4256,13 @@ test("Inbox stalled range shows its reason and continues through the existing co
   await ui.el("members").children[0].querySelector(".member-summary").emit("click");
   assert.equal(ui.el("agent-status").textContent,"收件箱读取已停止");
   assert.match(ui.el("agent-error").textContent,/#1–#25.*61.*3\/3/);
-  const resume=ui.el("agent-actions").children.find(el=>el.textContent==="继续读取收件箱");
+  const resume=ui.el("agent-recovery-actions").children.find(el=>el.textContent==="继续读取收件箱");
   assert.ok(resume);await resume.emit("click");await settle();
   assert.equal(ui.el("agent-status").textContent,"等待读取恢复");
   assert.equal(api.calls.filter(c=>c.path==="/v1/member/inbox/continue").length,1);
   assert.equal(api.calls.some(c=>c.path==="/v1/send" || c.path==="/v1/member/run"),false);
   member.execution.paused=true;member.status="paused";await ui.refresh();await settle();
-  assert.equal(ui.el("agent-actions").children.some(el=>el.textContent==="继续读取收件箱"),false);
+  assert.equal(ui.el("agent-recovery-actions").children.some(el=>el.textContent==="继续读取收件箱"),false);
 });
 
 test("Unified input recovery reuses continuation controls and honors a blocked recovery", async () => {
@@ -4288,11 +4275,11 @@ test("Unified input recovery reuses continuation controls and honors a blocked r
     : path==="/v1/member/inbox/continue" ? {} : undefined;
   const ui=await launch(api);
   await ui.el("members").children[0].querySelector(".member-summary").emit("click");
-  const resume=ui.el("agent-actions").children.find(el=>el.textContent==="继续读取收件箱");
+  const resume=ui.el("agent-recovery-actions").children.find(el=>el.textContent==="继续读取收件箱");
   assert.ok(resume);await resume.emit("click");await settle();
   assert.equal(api.calls.filter(c=>c.path==="/v1/member/inbox/continue").length,1);
   member.execution.input_recovery.blocked="unknown action outcome";await ui.refresh();await settle();
-  assert.equal(ui.el("agent-actions").children.some(el=>el.textContent==="继续读取收件箱"),false);
+  assert.equal(ui.el("agent-recovery-actions").children.some(el=>el.textContent==="继续读取收件箱"),false);
 });
 
 test("Unified Inbox uses fixed history cursors and distinguishes matching positions in different partitions", async () => {
@@ -4331,13 +4318,15 @@ test("Unified Inbox uses fixed history cursors and distinguishes matching positi
   assert.equal(api.calls.filter(call=>call.path==="/v1/member/inbox").at(-1).data.history_cursor,undefined);
 });
 
-function directoryServer() {
+function directoryServer({direct=false,scheduling="serial"} = {}) {
   const api = workspaceServer();
   const roster = [
     {agent_id:"developer",membership_id:"member-A",name:"Developer",status:"idle",runner:{profile:"runtime"}},
     {agent_id:"reviewer",membership_id:"review-A",name:"Reviewer",status:"idle",runner:{profile:"runtime"}},
   ];
   const ws = api.workspaces.get("A");
+  ws.scheduling = scheduling;
+  if(direct) { roster.splice(1); api.catalog.rooms[0].is_direct=true; }
   ws.members = roster.map(m => ({...m,workspace:`workspaces/${m.membership_id}`,default_directory:`/service/rooms/A/workspaces/${m.membership_id}`,effective_directory:`/service/rooms/A/workspaces/${m.membership_id}`,directory_source:"managed"}));
   api.hook = path => path === "/v1/member/list" ? {members:structuredClone(roster)} : undefined;
   api.workspaceHook = (path, payload) => {
@@ -4359,7 +4348,12 @@ function directoryServer() {
 }
 async function inspectDirectoryMember(ui, index=0) {
   await ui.el("members").children[index].querySelector(".member-summary").emit("click");
-  await ui.el("toggle-agent-controls").emit("click"); await settle();
+  await ui.el("agent-tab-profile").emit("click"); await settle();
+}
+
+async function openComposerDirectory(ui) {
+  if (!ui.el("workspace-selector").open) await ui.el("workspace-trigger").emit("click");
+  await ui.el("workspace-select-browse").emit("click");
 }
 
 test("composer directory selector browses directly and applies one shared directory only on explicit apply", async () => {
@@ -4375,11 +4369,11 @@ test("composer directory selector browses directly and applies one shared direct
   assert.match(ui.el("workspace-select-feedback").textContent,/重置.*私有上下文/);
   assert.match(ui.el("workspace-select-feedback").textContent,/共用同一目录/);
   assert.equal(api.calls.some(c=>c.path==="/v1/workspace/apply"),false);
-  assert.equal(ui.el("workspace-label").textContent,"project");
+  assert.equal(ui.el("workspace-label").textContent,"各自默认");
   await ui.el("workspace-select-apply").emit("click");
   const sent=api.calls.find(c=>c.path==="/v1/workspace/apply").data;
   assert.equal(sent.expected_version,1);assert.deepEqual(sent.target,{...original,member_directories:{"member-A":"/srv/projects/中文 项目","review-A":"/srv/projects/中文 项目"}});
-  assert.equal(ui.el("workspace-selector").open,false);assert.equal(ui.el("workspace-label").textContent,"中文 项目");
+  assert.equal(ui.el("workspace-selector").open,false);assert.equal(ui.el("workspace-label").textContent,"共用：中文 项目");
   assert.match(ui.el("workspace-trigger").title,/\/srv\/projects\/中文 项目/);
   assert.equal(ui.el("message-input").value,"保留未发送的内容");
 });
@@ -4387,7 +4381,7 @@ test("composer directory selector browses directly and applies one shared direct
 test("composer directory search and default selection preserve settings until apply", async () => {
   const api=directoryServer(),ws=api.workspaces.get("A");
   ws.workspace={root:"workspaces",member_directories:{"member-A":"/srv/project","review-A":"/srv/project"}};
-  const ui=await launch(api);assert.equal(ui.el("workspace-label").textContent,"project");
+  const ui=await launch(api);assert.equal(ui.el("workspace-label").textContent,"共用：project");
   await ui.el("workspace-trigger").emit("click");
   assert.equal(ui.el("workspace-select-options").children.length,2);
   ui.el("workspace-select-search").value="PROJECT";await ui.el("workspace-select-search").emit("input");
@@ -4398,9 +4392,9 @@ test("composer directory search and default selection preserve settings until ap
   await ui.el("directory-cancel").emit("click");assert.equal(ui.el("workspace-selector").open,true);
   ui.el("workspace-select-search").value="";await ui.el("workspace-select-search").emit("input");
   await ui.el("workspace-select-options").children[0].emit("click");
-  assert.equal(ui.el("workspace-label").textContent,"project");assert.equal(ws.workspace.member_directories["member-A"],"/srv/project");
+  assert.equal(ui.el("workspace-label").textContent,"共用：project");assert.equal(ws.workspace.member_directories["member-A"],"/srv/project");
   await ui.el("workspace-select-apply").emit("click");
-  assert.deepEqual(ws.workspace,{root:"workspaces"});assert.equal(ui.el("workspace-label").textContent,"默认目录");
+  assert.deepEqual(ws.workspace,{root:"workspaces"});assert.equal(ui.el("workspace-label").textContent,"各自默认");
 });
 
 test("composer directory conflicts keep the draft visible and require refresh before another selection", async () => {
@@ -4419,7 +4413,7 @@ test("composer directory picker late results cannot cross Rooms or publish a dir
   await ui.el("workspace-trigger").emit("click");const browsing=ui.el("workspace-select-browse").emit("click");await settle();
   await ui.select("B");finish({roots:[],path:"/old-room",entries:[],can_select:true});await browsing;
   assert.equal(ui.el("workspace-selector").open,false);assert.equal(ui.el("directory-dialog").open,false);
-  assert.equal(ui.el("workspace-label").textContent,"默认目录");assert.equal(api.calls.some(c=>c.path==="/v1/workspace/apply"),false);
+  assert.equal(ui.el("workspace-label").textContent,"各自默认");assert.equal(api.calls.some(c=>c.path==="/v1/workspace/apply"),false);
 });
 
 test("uncertain composer directory apply stays locked and never automatically replays", async () => {
@@ -4433,12 +4427,20 @@ test("uncertain composer directory apply stays locked and never automatically re
   await ui.el("workspace-select-close").emit("click");await ui.el("workspace-trigger").emit("click");
   assert.equal(ui.el("workspace-select-apply").disabled,true);
   await launch(api,ui.saved);assert.equal(api.calls.filter(c=>c.path==="/v1/workspace/apply").length,1);
+  assert.equal(ui.el("workspace-select-new").hidden,false);
+  await ui.el("workspace-select-new").emit("click");
+  assert.equal(api.calls.filter(c=>c.path==="/v1/workspace/apply").length,1);
+  api.directoryApplyHook=null;
+  await ui.el("workspace-select-apply").emit("click");
+  const writes=api.calls.filter(c=>c.path==="/v1/workspace/apply");
+  assert.equal(writes.length,2);
+  assert.notEqual(writes[0].data.operation_id,writes[1].data.operation_id);
 });
 
 test("directory browsing has a directly editable path, filters hidden folders locally and jumps to its root", async () => {
   const api=directoryServer();
   api.directoryHook=q=>({roots:[{path:"/srv/projects"}],path:q.get("path") || "/srv/projects",parent:q.get("path")==="/srv/projects/visible" ? "/srv/projects" : null,entries:[{name:".private",path:"/srv/projects/.private"},{name:"visible",path:"/srv/projects/visible"}],can_select:true});
-  const ui=await launch(api);await inspectDirectoryMember(ui);await ui.el("member-directory-choose").emit("click");
+  const ui=await launch(api);await openComposerDirectory(ui);
   assert.equal(ui.el("directory-roots-field").hidden,true);
   assert.equal(ui.el("directory-locate").hidden,false);
   assert.match(ui.el("directory-configured").textContent,/当前使用：默认目录/);
@@ -4462,7 +4464,7 @@ test("directory browsing has a directly editable path, filters hidden folders lo
   assert.equal(ui.el("directory-path").value,"/srv/projects");
   await ui.el("directory-cancel").emit("click");
   api.directoryHook=()=>({roots:[{path:"/srv/projects"},{path:"/mnt/shared",unavailable_reason:"directory_permission_denied"}],path:"/srv/projects",entries:[],can_select:true});
-  await ui.el("member-directory-choose").emit("click");
+  await openComposerDirectory(ui);
   assert.equal(ui.el("directory-roots-field").hidden,false);
   assert.equal(ui.el("directory-roots").children[1].disabled,true);
   assert.equal(ui.el("directory-show-hidden").checked,false);
@@ -4473,7 +4475,7 @@ test("an unavailable assigned directory explains its fallback without replacing 
   const api=directoryServer(),ws=api.workspaces.get("A");
   ws.workspace.member_directories={"member-A":"/missing/project"};
   api.directoryHook=()=>({roots:[{path:"/srv/projects"}],path:"/srv/projects",entries:[],can_select:true,current_directory_error:"directory_not_found"});
-  const ui=await launch(api);await inspectDirectoryMember(ui);await ui.el("member-directory-choose").emit("click");
+  const ui=await launch(api);await openComposerDirectory(ui);
   assert.equal(ui.el("directory-configured").title,"/missing/project");
   assert.match(ui.el("directory-configured").textContent,/指定目录.*project/);
   assert.match(ui.el("directory-initial-warning").textContent,/目录不存在.*原设置保留/);
@@ -4487,7 +4489,7 @@ test("selecting the managed default restores its setting and managed children re
   const api=directoryServer(),ws=api.workspaces.get("A"),dir=ws.members[0].default_directory;
   ws.workspace.member_directories={"member-A":"/srv/current","review-A":"/srv/reviewer"};
   api.directoryHook=q=>({roots:[{path:"/srv/projects"}],path:q.get("path") || dir+"/docs",parent:dir,entries:[],directory_source:"managed",can_select:q.get("path")===dir});
-  const ui=await launch(api);await inspectDirectoryMember(ui);await ui.el("member-directory-choose").emit("click");
+  const ui=await launch(api);await openComposerDirectory(ui);
   assert.equal(ui.el("directory-select").disabled,true);
   assert.match(ui.el("directory-status").textContent,/仅供浏览/);
   await ui.el("directory-select").emit("click");assert.equal(ui.el("directory-dialog").open,true);
@@ -4495,11 +4497,11 @@ test("selecting the managed default restores its setting and managed children re
   assert.equal(ui.el("directory-select").textContent,"使用默认目录");
   assert.equal(ui.el("directory-select").disabled,false);
   await ui.el("directory-select").emit("click");
-  assert.match(ui.el("member-directory-path").textContent,/默认目录/);
+  assert.equal(ui.el("workspace-select-options").children[0].getAttribute("aria-pressed"),"true");
   assert.equal(api.calls.some(c=>c.path==="/v1/workspace/apply"),false);
-  await ui.el("member-directory-apply").emit("click");
+  await ui.el("workspace-select-apply").emit("click");
   const sent=api.calls.find(c=>c.path==="/v1/workspace/apply").data;
-  assert.deepEqual(sent.target.member_directories,{"review-A":"/srv/reviewer"});
+  assert.equal(sent.target.member_directories,undefined);
 });
 
 test("member directories show a compact summary with an expandable exact path and visible sharing notice", async () => {
@@ -4519,60 +4521,49 @@ test("member directories show a compact summary with an expandable exact path an
   assert.equal(ui.el("member-directory-details").open,false);
 });
 
-test("member directory buttons browse server paths, cancel without writes, apply only their override and restore default", async () => {
-  const api=directoryServer(),ws=api.workspaces.get("A");
-  ws.workspace={root:"workspaces",repository:{url:"https://gitlab.invalid/group/project.git",kind:"git"},binding:{provider:"gitlab",platform_id:"a".repeat(32)},member_directories:{"review-A":"/srv/reviewer"}};
-  const old=structuredClone(ws.workspace),ui=await launch(api);await inspectDirectoryMember(ui);
-  assert.match(ui.el("member-directory-path").textContent,/默认目录.*\/service\/rooms/);
-  await ui.el("member-directory-choose").emit("click");
-  assert.equal(ui.el("directory-parent").disabled,true);
-  assert.equal(ui.el("directory-entries").children[0].children[1].textContent,"中文 <img onerror=alert(1)>");
-  await ui.el("directory-entries").children[0].emit("click");
-  assert.equal(ui.el("directory-path").value,"/srv/projects/中文 项目");
-  await ui.el("directory-cancel").emit("click");
-  assert.match(ui.el("member-directory-path").textContent,/默认目录/);
-  assert.equal(api.calls.filter(c=>c.path==="/v1/workspace/apply").length,0);
-  await ui.el("member-directory-choose").emit("click");
-  ui.el("directory-path").value="/srv/projects/中文 项目";await ui.el("directory-locate").emit("submit");
-  await ui.el("directory-select").emit("click");
-  await ui.refresh();assert.match(ui.el("member-directory-path").textContent,/指定目录.*中文 项目/);
-  assert.match(ui.el("member-directory-feedback").textContent,/重置.*私有上下文.*工作文件保留/);
-  assert.equal(api.calls.filter(c=>c.path==="/v1/workspace/apply").length,0);
-  await ui.el("member-directory-apply").emit("click");
-  const sent=api.calls.find(c=>c.path==="/v1/workspace/apply").data;
-  assert.deepEqual(sent.target,{...old,member_directories:{...old.member_directories,"member-A":"/srv/projects/中文 项目"}});
-  assert.equal(sent.expected_version,1);assert.equal(sent.platform_version,undefined);
-  await ui.refresh();await settle();await inspectDirectoryMember(ui);
-  assert.equal(ui.el("member-directory-apply").disabled,true);
-  await ui.el("member-directory-default").emit("click");
-  assert.match(ui.el("member-directory-path").textContent,/默认目录/);
-  await ui.el("member-directory-apply").emit("click");
-  assert.deepEqual(ws.workspace.member_directories,{"review-A":"/srv/reviewer"});
+test("member directories remain read only and show saved paths until the composer draft is applied", async () => {
+  const api=directoryServer(),ui=await launch(api);
+  await inspectDirectoryMember(ui);
+  const path=ui.el("member-directory-path").textContent;
+  await openComposerDirectory(ui);await ui.el("directory-select").emit("click");
+  await ui.refresh();
+  assert.equal(ui.el("member-directory-path").textContent,path);
+  assert.equal(ui.el("workspace-select-apply").disabled,false);
+  await ui.el("workspace-select-apply").emit("click");
+  assert.deepEqual(api.workspaces.get("A").workspace.member_directories,{"member-A":"/srv/projects","review-A":"/srv/projects"});
+  await ui.refresh();await settle();
+  await inspectDirectoryMember(ui);
+  assert.match(ui.el("member-directory-path").textContent,/指定目录.*\/srv\/projects/);
+  const html=await readFile(new URL("../assets/index.html",import.meta.url),"utf8");
+  for(const id of ["member-directory-choose","member-directory-default","member-directory-apply","workspace-directories-default","workspace-directories-apply"])
+    assert.equal(html.includes(`id="${id}"`),false,id);
+  assert.match(html,/id="workspace-select-settings"[^>]*>仓库设置/);
 });
 
-test("directory drafts survive polling, reject changed versions and refresh only on explicit action", async () => {
-  const api=directoryServer(),ws=api.workspaces.get("A"),ui=await launch(api);await inspectDirectoryMember(ui);
-  await ui.el("member-directory-choose").emit("click");await ui.el("directory-select").emit("click");
-  await ui.refresh();assert.equal(ui.el("member-directory-apply").disabled,false);
+test("directory drafts survive polling and replace all member paths only after explicit conflict refresh", async () => {
+  const api=directoryServer(),ws=api.workspaces.get("A"),ui=await launch(api);
+  await openComposerDirectory(ui);await ui.el("directory-select").emit("click");
+  await ui.refresh();assert.equal(ui.el("workspace-select-apply").disabled,false);
   ws.workspace_version++;ws.workspace.member_directories={"review-A":"/srv/other-tab"};await ui.refresh();
-  assert.match(ui.el("member-directory-path").textContent,/指定目录.*\/srv\/projects/);
-  assert.match(ui.el("member-directory-feedback").textContent,/配置版本已变化.*草稿已保留/);
-  assert.equal(ui.el("member-directory-apply").disabled,true);
-  await ui.el("member-directory-refresh").emit("click");
-  assert.match(ui.el("member-directory-path").textContent,/默认目录/);
-  await ui.el("member-directory-choose").emit("click");await ui.el("directory-select").emit("click");
-  await ui.el("member-directory-apply").emit("click");
+  assert.match(ui.el("workspace-select-feedback").textContent,/配置版本已变化.*草稿已保留/);
+  assert.equal(ui.el("workspace-select-apply").disabled,true);
+  await ui.el("workspace-select-refresh").emit("click");
+  assert.equal(ui.el("workspace-select-apply").hidden,true);
+  assert.equal(ui.el("workspace-label").textContent,"成员目录不同");
+  await openComposerDirectory(ui);await ui.el("directory-select").emit("click");
+  await ui.el("workspace-select-apply").emit("click");
   const sent=api.calls.find(c=>c.path==="/v1/workspace/apply").data;
-  assert.equal(sent.expected_version,2);assert.equal(sent.target.member_directories["review-A"],"/srv/other-tab");
+  assert.equal(sent.expected_version,2);
+  assert.deepEqual(sent.target.member_directories,{"member-A":"/srv/projects","review-A":"/srv/projects"});
 });
 
 test("directory browser ignores superseded navigation, closed dialogs, changed members and Room responses", async () => {
   const api=directoryServer(),ui=await launch(api);await inspectDirectoryMember(ui);
   let release;api.directoryHook=()=>new Promise(resolve=>{release=resolve;});
-  const first=ui.el("member-directory-choose").emit("click");await settle();
+  const first=openComposerDirectory(ui);await settle();
   const late=()=>release({roots:[],path:"/late",entries:[],can_select:true});
   await ui.el("directory-cancel").emit("click");api.directoryHook=null;
-  await ui.el("member-directory-choose").emit("click");late();await first;
+  await openComposerDirectory(ui);late();await first;
   assert.equal(ui.el("directory-path").value,"/srv/projects");
   api.directoryHook=()=>new Promise(resolve=>{release=resolve;});
   ui.el("directory-path").value="/slow";const slow=ui.el("directory-locate").emit("submit");await settle();
@@ -4580,37 +4571,37 @@ test("directory browser ignores superseded navigation, closed dialogs, changed m
   assert.equal(ui.el("directory-path").value,"/srv/projects/fast");
   await ui.el("directory-cancel").emit("click");
   api.directoryHook=()=>new Promise(resolve=>{release=resolve;});
-  const member=ui.el("member-directory-choose").emit("click");await settle();await inspectDirectoryMember(ui,1);late();await member;
-  assert.equal(ui.el("directory-dialog").open,false);assert.match(ui.el("member-directory-path").textContent,/review-A/);
-  const room=ui.el("member-directory-choose").emit("click");await settle();await ui.select("B");late();await room;
+  const member=openComposerDirectory(ui);await settle();api.workspaces.get("A").members.shift();await ui.refresh();late();await member;
+  assert.equal(ui.el("directory-dialog").open,false);
+  const room=openComposerDirectory(ui);await settle();await ui.select("B");late();await room;
   assert.equal(ui.el("directory-dialog").open,false);
   assert.equal(api.calls.filter(c=>c.path==="/v1/workspace/apply").length,0);
 });
 
-test("room directory overview fixes multiple unavailable overrides in one operation and keeps repository edits separate", async () => {
+test("composer restores multiple unavailable directories without applying repository form drafts", async () => {
   const api=directoryServer(),ws=api.workspaces.get("A");ws.workspace.member_directories={"member-A":"/lost/a","review-A":"/lost/b"};ws.directory_error="directory_not_found";
   const ui=await launch(api);await openWorkspaceSettings(ui);
-  assert.equal(ui.el("workspace-directories").children.length,2);assert.match(ui.el("workspace-directories-feedback").textContent,/不存在/);
   ui.el("workspace-repository").checked=true;await ui.el("workspace-repository").emit("change");ui.el("workspace-repo-url").value="https://gitlab.invalid/group/project.git";
-  await ui.el("workspace-directories-default").emit("click");
-  assert.match(ui.el("workspace-directories-feedback").textContent,/不存在/);
-  await ui.el("workspace-directories-apply").emit("click");
+  await ui.el("close-workspace").emit("click");await ui.el("workspace-trigger").emit("click");
+  assert.match(ui.el("workspace-select-feedback").textContent,/不存在/);
+  await ui.el("workspace-select-options").children[0].emit("click");
+  await ui.el("workspace-select-apply").emit("click");
   const sent=api.calls.find(c=>c.path==="/v1/workspace/apply").data;
   assert.deepEqual(sent.target,{root:"workspaces"});assert.equal(sent.expected_version,1);
 });
 
 test("unavailable roots and directory admission errors preserve repair controls without an unconfirmed operation", async () => {
-  const api=directoryServer(),ui=await launch(api);await inspectDirectoryMember(ui);
+  const api=directoryServer(),ui=await launch(api);
   api.directoryHook=()=>({roots:[],entries:[],path:"",can_select:false,unavailable_reason:"directory_selection_disabled"});
-  await ui.el("member-directory-choose").emit("click");
+  await openComposerDirectory(ui);
   assert.equal(ui.el("directory-select").disabled,true);assert.match(ui.el("directory-status").textContent,/关闭.*恢复默认/);
   await ui.el("directory-cancel").emit("click");api.directoryHook=null;
-  await ui.el("member-directory-choose").emit("click");await ui.el("directory-select").emit("click");
+  await openComposerDirectory(ui);await ui.el("directory-select").emit("click");
   api.directoryApplyHook=path=>{if(path==="/v1/workspace/apply")throw Object.assign(Error("rejected"),{code:"directory_not_found"});};
-  await ui.el("member-directory-apply").emit("click");
-  assert.match(ui.el("member-directory-feedback").textContent,/目录不存在/);
-  assert.equal(ui.el("member-directory-apply").disabled,false);
-  assert.equal(ui.el("member-directory-default").disabled,false);
+  await ui.el("workspace-select-apply").emit("click");
+  assert.match(ui.el("workspace-select-feedback").textContent,/目录不存在/);
+  assert.equal(ui.el("workspace-select-apply").disabled,false);
+  assert.equal(ui.el("workspace-select-options").children[0].disabled,false);
 });
 
 test("an unavailable external directory can be repaired in the selected Room without a live service", async () => {
@@ -4629,10 +4620,10 @@ test("an unavailable external directory can be repaired in the selected Room wit
   assert.match(ui.el("connection").textContent,/可查看历史并修复/);
   assert.ok(ui.el("messages").children.some(el=>el.id==="message-1"));
   assert.equal(api.calls.filter(c=>c.path==="/v1/rooms/open").length,0);
-  await openWorkspaceSettings(ui);
-  assert.equal(ui.el("workspace-directories-default").disabled,false);
-  await ui.el("workspace-directories-default").emit("click");
-  await ui.el("workspace-directories-apply").emit("click");
+  await ui.el("workspace-trigger").emit("click");
+  assert.equal(ui.el("workspace-select-options").children[0].disabled,false);
+  await ui.el("workspace-select-options").children[0].emit("click");
+  await ui.el("workspace-select-apply").emit("click");
   const sent=api.calls.find(c=>c.path==="/v1/workspace/apply").data;
   assert.equal(sent.room_id,"B");assert.equal(sent.room_instance,"instance-B");
   assert.deepEqual(sent.target,{root:"workspaces"});
@@ -4652,26 +4643,73 @@ test("a directory failure discovered while opening keeps the failed Room repaira
 test("initial directory loading preserves path input and an old close event cannot dismiss a reopened picker", async () => {
   const api=directoryServer(),ui=await launch(api);await inspectDirectoryMember(ui);
   let release;api.directoryHook=()=>new Promise(resolve=>{release=resolve;});
-  const opening=ui.el("member-directory-choose").emit("click");await settle();
+  const opening=openComposerDirectory(ui);await settle();
   ui.el("directory-path").focus();ui.el("directory-path").value="/srv/projects/manual";await ui.el("directory-path").emit("input");
   release({roots:[{path:"/srv/projects"}],path:"/srv/projects",entries:[],can_select:true});await opening;
   assert.equal(ui.el("directory-path").value,"/srv/projects/manual");
   await ui.el("directory-cancel").emit("click");api.directoryHook=null;
-  await ui.el("member-directory-choose").emit("click");await ui.el("directory-dialog").emit("close");
+  await openComposerDirectory(ui);await ui.el("directory-dialog").emit("close");
   assert.equal(ui.el("directory-dialog").open,true);
   await ui.el("directory-select").emit("click");
-  assert.match(ui.el("member-directory-path").textContent,/指定目录.*\/srv\/projects/);
+  assert.equal(ui.el("workspace-select-apply").hidden,false);
 });
 
-test("applying one member directory preserves another member's unsubmitted draft as a version conflict", async () => {
-  const api=directoryServer(),ui=await launch(api);await inspectDirectoryMember(ui);
-  await ui.el("member-directory-choose").emit("click");await ui.el("directory-select").emit("click");
-  await inspectDirectoryMember(ui,1);await ui.el("member-directory-choose").emit("click");
-  ui.el("directory-path").value="/srv/projects/review";await ui.el("directory-locate").emit("submit");await ui.el("directory-select").emit("click");
-  await inspectDirectoryMember(ui,0);await ui.el("member-directory-apply").emit("click");await ui.refresh();await settle();
-  await inspectDirectoryMember(ui,1);
-  assert.match(ui.el("member-directory-path").textContent,/指定目录.*\/srv\/projects\/review/);
-  assert.match(ui.el("member-directory-feedback").textContent,/配置版本已变化.*草稿已保留/);
-  const sent=api.calls.find(c=>c.path==="/v1/workspace/apply").data;
-  assert.deepEqual(sent.target.member_directories,{"member-A":"/srv/projects"});
+test("legacy mixed directories remain unchanged until an explicit group selection", async () => {
+  for(const overrides of [{"member-A":"/srv/one"},{"member-A":"/srv/one","review-A":"/srv/two"}]) {
+    const api=directoryServer(),ws=api.workspaces.get("A");ws.workspace.member_directories=structuredClone(overrides);
+    const ui=await launch(api);
+    assert.equal(ui.el("workspace-label").textContent,"成员目录不同");
+    await ui.el("workspace-trigger").emit("click");
+    assert.match(ui.el("workspace-select-scope").textContent,/成员目录不同/);
+    assert.equal(ui.el("workspace-select-apply").hidden,true);
+    assert.ok(ui.el("workspace-select-options").children.every(el=>el.getAttribute("aria-pressed")==="false"));
+    await ui.el("workspace-select-close").emit("click");await ui.refresh();
+    assert.deepEqual(ws.workspace.member_directories,overrides);
+    assert.equal(api.calls.some(c=>c.path==="/v1/workspace/apply"),false);
+    await ui.el("workspace-trigger").emit("click");
+    await ui.el("workspace-select-options").children.find(el=>el.dataset.path==="/srv/one").emit("click");
+    await ui.el("workspace-select-apply").emit("click");
+    assert.deepEqual(ws.workspace.member_directories,{"member-A":"/srv/one","review-A":"/srv/one"});
+    assert.equal(ui.el("workspace-label").textContent,"共用：one");
+  }
+});
+
+test("direct directory selection applies only to the sole agent in the current conversation", async () => {
+  const api=directoryServer({direct:true}),other=structuredClone(api.workspaces.get("B")),ui=await launch(api);
+  assert.equal(ui.el("workspace-label").textContent,"默认目录");
+  await openComposerDirectory(ui);await ui.el("directory-select").emit("click");
+  assert.match(ui.el("workspace-select-scope").textContent,/仅用于当前私信/);
+  assert.doesNotMatch(ui.el("workspace-select-feedback").textContent,/所有成员共用/);
+  await ui.el("workspace-select-apply").emit("click");
+  assert.deepEqual(api.workspaces.get("A").workspace.member_directories,{"member-A":"/srv/projects"});
+  assert.deepEqual(api.workspaces.get("B"),other);
+  assert.equal(ui.el("workspace-label").textContent,"projects");
+});
+
+test("parallel group directories explain the constraint and allow only restoring member defaults", async () => {
+  const api=directoryServer({scheduling:"parallel"}),ws=api.workspaces.get("A");
+  ws.workspace.member_directories={"member-A":"/srv/one","review-A":"/srv/two"};
+  const ui=await launch(api);await ui.el("workspace-trigger").emit("click");
+  assert.equal(ui.el("workspace-select-parallel").hidden,false);
+  assert.match(await readFile(new URL("../assets/index.html",import.meta.url),"utf8"),/共用目录需要串行/);
+  assert.equal(ui.el("workspace-select-browse").disabled,true);
+  assert.ok(ui.el("workspace-select-options").children.slice(1).every(el=>el.disabled));
+  await ui.el("workspace-select-browse").emit("click");
+  assert.equal(ui.el("directory-dialog").open,false);
+  await ui.el("workspace-select-options").children[0].emit("click");
+  await ui.el("workspace-select-apply").emit("click");
+  assert.equal(ws.workspace.member_directories,undefined);
+  assert.equal(ws.scheduling,"parallel");
+});
+
+test("failed directory operations can be retried from the composer using the original receipt", async () => {
+  const api=directoryServer(),ws=api.workspaces.get("A");
+  ws.operation={operation_id:"f".repeat(32),status:"failed",phase:"sessions",target:{root:"workspaces",member_directories:{"member-A":"/srv/one","review-A":"/srv/one"}}};
+  const ui=await launch(api);await ui.el("workspace-trigger").emit("click");
+  assert.equal(ui.el("workspace-select-retry").hidden,false);
+  await ui.el("workspace-select-retry").emit("click");
+  assert.equal(api.calls.filter(c=>c.path==="/v1/workspace/apply").length,0);
+  const retry=api.calls.find(c=>c.path==="/v1/workspace/retry");
+  assert.equal(retry.data.operation_id,"f".repeat(32));
+  assert.equal(retry.data.target,undefined);
 });

@@ -53,9 +53,8 @@
 }
 .avatar .assistant-icon { width:20px; height:20px; }
 .direct-suggestions { display:flex; flex-wrap:wrap; justify-content:center; gap:8px; margin:0 20px 24px; }
-.direct-conversation #member-list-view > .member-rail-header,
-.direct-conversation #member-empty, .direct-conversation #members { display:none; }
-.direct-conversation #member-list-view { display:none; }
+.direct-conversation :is(#member-empty,#members,#room-details,#room-members-heading) { display:none; }
+#direct-settings-loading { margin:16px 0; font-size:var(--font-small); line-height:1.6; }
 @media(max-width:640px) {
   .direct-conversation .member-rail { position:fixed; z-index:20; inset:0; width:100%; background:var(--surface-muted); overflow:auto; }
   .direct-conversation .member-rail .activity-dialog,

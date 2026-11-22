@@ -37,18 +37,17 @@ async function chooseMemberModel(ui, value) {
  await option.emit("click");await settle();
 }
 
-test("member settings start collapsed, retain their state while polling and reset on reopening",async()=>{
+test("member profile opens by default and polling preserves the selected tab",async()=>{
  const api=fixture(),ui=await launch(api);await openMember(ui);
- assert.equal(ui.el("agent-controls").hidden,true);assert.equal(ui.el("toggle-agent-controls").getAttribute("aria-expanded"),"false");
+ assert.equal(ui.el("agent-controls").hidden,false);assert.equal(ui.el("agent-tab-profile").getAttribute("aria-selected"),"true");
  assert.equal(ui.el("agent-status").textContent,"等待消息");assert.equal(ui.el("agent-model-alert").hidden,true);
- await ui.el("toggle-agent-controls").emit("click");assert.equal(ui.el("agent-controls").hidden,false);
- assert.equal(ui.el("toggle-agent-controls").getAttribute("aria-expanded"),"true");
- await ui.refresh();assert.equal(ui.el("agent-controls").hidden,false);
- await ui.el("close-activity").emit("click");await openMember(ui);assert.equal(ui.el("agent-controls").hidden,true);
+ await ui.el("agent-tab-platforms").emit("click");assert.equal(ui.el("agent-controls").hidden,true);
+ await ui.refresh();assert.equal(ui.el("agent-controls").hidden,true);
+ await ui.el("close-activity").emit("click");await openMember(ui);assert.equal(ui.el("agent-controls").hidden,false);
  assert.equal(api.calls.some(c=>c.path==="/v1/models/change"),false);
 });
 
-test("running members can pause beside collapsed settings and runtime failures remain visible",async()=>{
+test("profile contains pause and enable controls and failures retain diagnostics",async()=>{
  const api=fixture(),member={agent_id:"assistant",membership_id:"member-A",status:"running",runner:{profile:"runtime"},execution:{active:true,paused:false}};
  api.hook=(path,body)=>{
   if(path==="/v1/member/list")return {members:[structuredClone(member)]};
@@ -58,19 +57,17 @@ test("running members can pause beside collapsed settings and runtime failures r
   }
  };
  const ui=await launch(api);await openMember(ui);
- assert.equal(ui.el("agent-controls").hidden,true);assert.equal(ui.el("agent-quick-actions").hidden,false);
- assert.equal(ui.el("agent-quick-actions").children[0].textContent,"暂停");
- await ui.el("toggle-agent-controls").emit("click");assert.equal(ui.el("agent-quick-actions").hidden,true);
- await ui.el("toggle-agent-controls").emit("click");assert.equal(ui.el("agent-quick-actions").hidden,false);
- await ui.el("agent-quick-actions").children[0].emit("click");await settle();
+ assert.equal(ui.el("agent-actions").children[0].textContent,"暂停");
+ assert.equal(ui.el("agent-controls").hidden,false);
+ await ui.el("agent-actions").children[0].emit("click");await settle();
  assert.equal(api.calls.filter(c=>c.path==="/v1/member/pause").length,1);
- assert.equal(ui.el("agent-controls").hidden,true);assert.equal(ui.el("agent-quick-actions").hidden,true);
+ assert.equal(ui.el("agent-controls").hidden,false);assert.equal(ui.el("agent-actions").hidden,false);
+ assert.equal(ui.el("agent-actions").children[0].textContent,"启用协作");
  member.execution.error="服务暂不可用";member.status="backend_blocked";await ui.refresh();
- assert.equal(ui.el("agent-model-alert").textContent,"运行异常");assert.equal(ui.el("toggle-agent-controls").dataset.state,"error");
- await ui.el("toggle-agent-controls").emit("click");assert.equal(ui.el("agent-controls").hidden,false);
+ assert.equal(ui.el("agent-model-alert").textContent,"运行异常");
+ await ui.el("agent-tab-profile").emit("click");assert.equal(ui.el("agent-controls").hidden,false);
  assert.match(ui.el("agent-error").textContent,/可查看诊断详情/);
  assert.equal(ui.el("agent-diagnostic-error").textContent,"服务暂不可用");
- assert.equal(ui.el("agent-diagnostics").hidden,false);
 });
 
 test("member model picker names its default and distinguishes applied, pending and unstarted sessions",async()=>{
@@ -267,16 +264,16 @@ test("touch member details expose target, actual model and a retry bound to the 
  api.models.operations=[{id:"failed-selection",status:"failed",committed:true,message:"切换未完成，请重试",members:[{...member,status:"failed",error:"应用失败"}],completed:0,waiting:0,failed:1}];
  api.hook=(path,body)=>path==="/v1/models/operation" ? (assert.equal(body.id,"failed-selection"),api.models.operations[0]) : undefined;
  const ui=await launch(api);await openMember(ui);
- assert.equal(ui.el("agent-controls").hidden,true);assert.equal(ui.el("agent-model-alert").textContent,"模型异常");
+ assert.equal(ui.el("agent-controls").hidden,false);assert.equal(ui.el("agent-model-alert").textContent,"模型异常");
  assert.equal(ui.el("member-model-details").hidden,true);
- await ui.el("toggle-agent-controls").emit("click");assert.equal(ui.el("agent-controls").hidden,false);
+ await ui.el("member-model-progress").emit("click");assert.equal(ui.el("agent-controls").hidden,false);
  assert.equal(ui.el("member-model-progress").getAttribute("aria-expanded"),"true");
  assert.match(ui.el("member-model-target").textContent,/model-B/);assert.match(ui.el("member-model-actual").textContent,/model-A/);
  assert.match(ui.el("member-model-feedback").textContent,/切换未完成/);assert.equal(ui.el("member-model-retry").hidden,false);
  await ui.el("member-model-retry").emit("click");assert.equal(api.calls.find(c=>c.path==="/v1/models/operation").body.action,"retry");
  await ui.el("member-model-progress").emit("click");assert.equal(ui.el("member-model-details").hidden,true);
- await ui.el("toggle-agent-controls").emit("click");assert.equal(ui.el("agent-controls").hidden,true);
- assert.equal(ui.el("toggle-agent-controls").getAttribute("aria-expanded"),"false");
+ await ui.el("agent-tab-platforms").emit("click");assert.equal(ui.el("agent-controls").hidden,true);
+ assert.equal(ui.el("agent-tab-profile").getAttribute("aria-selected"),"false");
  assert.equal(api.calls.filter(c=>c.path==="/v1/models/change").length,0);
 });
 

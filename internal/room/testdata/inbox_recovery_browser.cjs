@@ -4,7 +4,7 @@ const {chromium}=require('playwright'),assert=require('node:assert/strict'),fs=r
  const [endpoint,out,membership]=process.argv.slice(2),browser=await chromium.launch({headless:true}),errors=[],checks=[];
  const context=await browser.newContext({viewport:{width:1440,height:1000}}),page=await context.newPage();
  page.setDefaultTimeout(15000);page.on('pageerror',e=>errors.push(e.message));
- const command=async data=>{const r=await page.request.post(endpoint+'/__inbox_recovery',{data});assert.equal(r.status(),200,await r.text());};
+ const command=async data=>{const r=await page.request.post(endpoint+'/__inbox_recovery',{data,headers:{Origin:endpoint}});assert.equal(r.status(),200,await r.text());};
  const waitState=async predicate=>{let state;for(let i=0;i<150;i++){state=await(await page.request.get(endpoint+'/__inbox_state')).json();if(predicate(state))return state;await new Promise(r=>setTimeout(r,100));}throw new Error('State deadline: '+JSON.stringify(state));};
  try{
   await page.goto(endpoint);await page.locator('#room-list .room-choice').first().click();
@@ -20,14 +20,14 @@ const {chromium}=require('playwright'),assert=require('node:assert/strict'),fs=r
   await page.locator('#close-activity').click();await page.locator('#room-list .room-choice').first().click();
   await page.locator(`#members .member-summary[data-activity-member="${membership}"]`).click();
   await page.locator('#agent-error').filter({hasText:'已停止自动恢复（3/3）'}).waitFor();
-  await page.locator('#agent-quick-actions button').filter({hasText:'继续读取收件箱'}).waitFor();
+  await page.locator('#agent-recovery-actions button').filter({hasText:'继续读取收件箱'}).waitFor();
   await page.locator('#activity-dialog').screenshot({path:path.join(out,'desktop-exhausted.png')});checks.push('three_attempts_stop_with_continue');
   await page.setViewportSize({width:390,height:844});
   await toggleConversationDetails(page);
   await page.locator(`#members .member-summary[data-activity-member="${membership}"]`).click();
   await page.locator('#activity-dialog').screenshot({path:path.join(out,'mobile-exhausted.png')});
   assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1),true);
-  const button=page.locator('#agent-quick-actions button').filter({hasText:'继续读取收件箱'});
+  const button=page.locator('#agent-recovery-actions button').filter({hasText:'继续读取收件箱'});
   await button.waitFor({state:'visible'});
   const color=await button.evaluate(el=>getComputedStyle(el).borderColor);assert.ok(color);
   checks.push('mobile_visible_continue_no_horizontal_overflow');

@@ -436,7 +436,7 @@ export function createFiles({ env, runtime, layoutUI, membersUI, conversationToo
     $("files-body").replaceChildren(); $("files-page").hidden = true;
     layoutUI.closeAuxiliary("files");
     if (focus) returnView?.restore($("room-menu-label")); returnView = null;
-    if (focus) membersUI.syncDirectDetail(); runtime.navigationChanged();
+    runtime.navigationChanged();
   }
   function enter(opener) {
     conversationToolsUI.close(); cancel(); closeOptions(); history = []; directoryViews.clear(); pathEditing = false; focusedPath = ""; sortOrder = "name";

@@ -7,7 +7,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
-	"net/http/httptest"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -25,6 +24,7 @@ func TestInboxRecoveryBrowser(t *testing.T) {
 	if os.Getenv("TEAMX_INBOX_RECOVERY_BROWSER") != "1" {
 		t.Skip("optional local Chromium acceptance")
 	}
+	t.Setenv("USER", humanCaller.ID)
 	out := os.Getenv("TEAMX_INBOX_RECOVERY_OUTPUT")
 	if !filepath.IsAbs(out) {
 		t.Fatal("fresh absolute output required")
@@ -133,7 +133,7 @@ func TestInboxRecoveryBrowser(t *testing.T) {
 	}
 	target := svc.target(selected.MembershipID)
 	waitMember(t, context.Background(), target, selected, func(s MemberStatus) bool { return s.InboxRecovery != nil })
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := browserTestServer(t, m, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/__inbox_state" {
 			status, err := target.Call[MemberStatus](r.Context(), InspectMember{selected})
 			if err != nil {

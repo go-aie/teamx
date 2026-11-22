@@ -216,3 +216,21 @@ func TestExternalWorkspaceOmitsManagedRepositoryGuidanceAndCredentials(t *testin
 		t.Fatal("default guidance changed")
 	}
 }
+
+// The picker must use the Room's frozen execution mode, including while closed.
+func TestWorkspaceDirectoryStatusExposesFrozenScheduling(t *testing.T) {
+	for _, mode := range []schedulingMode{schedulingSerial, schedulingParallel} {
+		t.Run(string(mode), func(t *testing.T) {
+			m, _ := directoryTestManager(t)
+			team := m.teams["takeout-dinner"]
+			team.Scheduling = mode
+			m.teams[team.ID] = team
+			room := managerCreateTeam(t, m, "directory-mode", team.ID)
+			team.Scheduling = schedulingSerial
+			m.teams[team.ID] = team
+			if status := queryWorkspace(t, m, room, ""); status.Scheduling != mode {
+				t.Fatalf("Room scheduling = %q, want %q", status.Scheduling, mode)
+			}
+		})
+	}
+}

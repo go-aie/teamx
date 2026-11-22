@@ -876,7 +876,10 @@ export function createNotifications({ env, membersUI, workspaceUI, runtime, room
   let notificationFocus = null;
 
   function renderContextViews() {
-    $("member-list-view").hidden = roomsUI.isDirect() || $("activity-dialog").open || $("notification-detail").open;
+    const loading = $("direct-settings-loading");
+    loading.hidden = !roomsUI.isDirect() || $("activity-dialog").open || $("notification-detail").open;
+    loading.textContent = state.recovering ? "正在重新连接，设置就绪后会自动显示。" : "正在读取助理设置…";
+    $("member-list-view").hidden = $("activity-dialog").open || $("notification-detail").open;
     $("member-list-view").inert = $("member-list-view").hidden || !layoutUI.membersPanelOpen();
     $("member-list-view").setAttribute("aria-hidden", String($("member-list-view").inert));
   }

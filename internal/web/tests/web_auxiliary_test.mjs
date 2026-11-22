@@ -56,6 +56,7 @@ test("auxiliary switching preserves calendar dates, file filters and live chat p
   await ui.el("conversation-open-details").emit("click");
   assert.equal(ui.el("calendar-page").hidden, true);
   assert.equal(ui.el("activity-dialog").open, true);
+  assert.equal(ui.el("member-list-view").hidden,true);
   assert.equal(ui.el("conversation-open-details").getAttribute("aria-expanded"), "true");
 });
 

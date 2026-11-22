@@ -666,6 +666,7 @@ export async function createApp(overrides = {}) {
     if (result && options.current() && state.messagesReady && state.membersReady && !state.recovering && chatReadable() && (!updateConnection || updateConnection.connected)) {
       state.connected = true; $("connection").textContent = "服务已连接"; $("connection").classList.remove("offline");
       conversationUI.composerState();
+      membersUI.syncDirectDetail();
     }
     return result;
   }, () => active() && chatReadable());

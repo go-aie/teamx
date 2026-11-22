@@ -14,6 +14,7 @@ const fs=require('fs');const assert=require('node:assert/strict');
   await page.goto(ready.endpoint+'/');
   await page.locator('.member-details').filter({hasText:'本会话 2 / 2 · 累计 6'}).waitFor();
   await page.locator('.member-summary').click();
+  await page.locator('#agent-tab-activity').click();
   await page.locator('#activity-budget').filter({hasText:'2 / 2 · 累计 6'}).waitFor();
   assert.equal(await page.locator('#agent-enable-hint').isVisible(),false);
   assert.equal(await page.locator('#agent-actions button').first().innerText(),'暂停');

@@ -1,17 +1,19 @@
 import { compactViewport } from "../client.mjs";
 
 const basename = path => path?.split("/").filter(Boolean).at(-1) || path || "默认目录";
-export function workspaceDirectoryLabel(workspace) {
-  const paths = [...new Set(Object.values(workspace?.member_directories || {}).filter(Boolean))];
-  if (paths.length) return {label:paths.length === 1 ? basename(paths[0]) : "成员指定目录", path:paths.join("\n")};
-  if (workspace?.repository) return {label:basename(workspace.repository.url).replace(/\.git$/, ""), path:workspace.root || workspace.repository.url};
-  if (workspace?.root && workspace.root !== "workspaces") return {label:basename(workspace.root), path:workspace.root};
-  return {label:"默认目录", path:"沿用各成员自己的工作目录"};
+export function workspaceDirectoryLabel(workspace, members = [], group = members.length > 1) {
+  const paths = members.map(member => workspace?.member_directories?.[member.membership_id] || "");
+  const assigned = paths.filter(Boolean);
+  if (!assigned.length) return {mode:"default", label:group ? "各自默认" : "默认目录", path:group ? "各成员使用自己的默认工作目录" : members[0]?.default_directory || members[0]?.workspace || "使用当前助理的默认工作目录"};
+  if (assigned.length === members.length && assigned.every(path => path === assigned[0])) {
+    return {mode:"shared", label:`${group ? "共用：" : ""}${basename(assigned[0])}`, path:assigned[0]};
+  }
+  return {mode:"mixed", label:"成员目录不同", path:members.map((member, i) => `${member.agent_id}：${paths[i] || member.default_directory || member.workspace}`).join("\n")};
 }
 
 // The compact entry edits a directory draft. Applying uses the existing durable
 // Workspace operation, including its identity, version and recovery checks.
-export function createWorkspaceSelector({env, runtime, directories, closeMenu, openSettings}) {
+export function createWorkspaceSelector({env, runtime, directories, closeMenu, openSettings, retry, refreshStatus, newOperation}) {
   const {document, window} = env, {$} = runtime;
   const panel = $("workspace-selector"), trigger = $("workspace-trigger");
   let signature = "", mobile = false;
@@ -38,18 +40,22 @@ export function createWorkspaceSelector({env, runtime, directories, closeMenu, o
     if (!panel.open) return;
     const query = $("workspace-select-search").value.trim().toLocaleLowerCase();
     const selected = data.target?.member_directories || {};
+    const group = data.group;
+    const selection = workspaceDirectoryLabel(data.target, data.members, group);
+    $("workspace-select-scope").textContent = (group ? "适用于本群所有成员。" : "仅用于当前私信。") + (selection.mode === "mixed" ? " 当前成员目录不同，选择并应用后才会统一。" : "");
+    $("workspace-select-parallel").hidden = !data.parallel;
     const paths = [...new Set([...Object.values(data.workspace?.member_directories || {}),...Object.values(selected)].filter(Boolean))];
-    const options = [{path:"",label:"默认目录",description:"沿用各成员自己的工作目录"},
-      ...paths.map(path=>({path,label:basename(path),description:path}))]
+    const options = [{path:"",label:group ? "各自默认" : "默认目录",description:group ? "每个成员使用自己的默认工作目录" : "使用当前助理的默认工作目录"},
+      ...paths.map(path=>({path,label:`${group ? "共用：" : ""}${basename(path)}`,description:path}))]
       .filter(item=>!query || `${item.label}\n${item.description}`.toLocaleLowerCase().includes(query));
-    const key = JSON.stringify([options,selected,data.disabled]);
+    const key = JSON.stringify([options,selected,data.disabled,data.parallel,data.members]);
     if (key !== signature) {
       signature = key;
       $("workspace-select-options").replaceChildren(...options.map(item=>{
         const button = document.createElement("button"); button.type = "button"; button.className = "workspace-choice";
         button.dataset.path = item.path;
         const checked = item.path ? data.members.length > 0 && data.members.every(member=>selected[member.membership_id] === item.path) : !Object.keys(selected).length;
-        button.setAttribute("aria-pressed",String(checked)); button.disabled = data.disabled;
+        button.setAttribute("aria-pressed",String(checked)); button.disabled = data.disabled || !!item.path && data.parallel;
         const icon = document.createElementNS("http://www.w3.org/2000/svg","svg"), path = document.createElementNS("http://www.w3.org/2000/svg","path");
         icon.setAttribute("viewBox","0 0 24 24"); icon.setAttribute("aria-hidden","true");
         path.setAttribute("d",item.path ? "M3 7V5h6l2 2h10v13H3ZM3 10h18" : "m3 10 9-7 9 7M5 9v11h14V9M9 20v-7h6v7"); icon.append(path);
@@ -64,11 +70,16 @@ export function createWorkspaceSelector({env, runtime, directories, closeMenu, o
       }));
     }
     $("workspace-select-empty").hidden = !!options.length;
-    $("workspace-select-browse").disabled = data.disabled;
-    $("workspace-select-browse-label").textContent = $("workspace-select-search").value.trim().startsWith("/") ? "定位此路径…" : "选择其他目录…";
-    $("workspace-select-feedback").textContent = data.feedback + (data.changed && data.members.length > 1 ? " 会话成员将共用同一目录和文件。" : "");
-    $("workspace-select-apply").hidden = !data.changed; $("workspace-select-apply").disabled = data.disabled || !data.changed;
+    $("workspace-select-browse").disabled = data.disabled || data.parallel;
+    $("workspace-select-browse-label").textContent = $("workspace-select-search").value.trim().startsWith("/") ? "定位此路径…" : group ? "选择共用目录…" : "选择其他目录…";
+    $("workspace-select-feedback").textContent = data.feedback + (group && selection.mode === "shared" ? " 所有成员共用同一目录、文件、分支和 Git 暂存区。" : "");
+    $("workspace-select-apply").hidden = !data.changed; $("workspace-select-apply").disabled = data.disabled || !data.changed || data.parallel && selection.mode !== "default";
     $("workspace-select-refresh").hidden = !data.conflict;
+    $("workspace-select-retry").hidden = !data.failed || data.pending;
+    $("workspace-select-retry").disabled = data.retryDisabled;
+    $("workspace-select-status").hidden = !data.failed && !data.pending;
+    $("workspace-select-new").hidden = !data.missing;
+    $("workspace-select-new").disabled = data.sending;
     position();
   }
   function open() {
@@ -98,6 +109,9 @@ export function createWorkspaceSelector({env, runtime, directories, closeMenu, o
     $("workspace-select-browse").addEventListener("click",browse);
     $("workspace-select-apply").addEventListener("click",()=>directories.apply());
     $("workspace-select-refresh").addEventListener("click",()=>directories.refresh());
+    $("workspace-select-retry").addEventListener("click",retry);
+    $("workspace-select-status").addEventListener("click",refreshStatus);
+    $("workspace-select-new").addEventListener("click",newOperation);
     $("workspace-select-settings").addEventListener("click",()=>{close(false);return openSettings();});
     panel.addEventListener("cancel",event=>{event.preventDefault();close();});
     panel.addEventListener("keydown",event=>{if(event.key === "Escape" && !$("directory-dialog").open){event.preventDefault();close();}});

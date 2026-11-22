@@ -196,21 +196,22 @@ test("a rejected Lark account check keeps the paused warning and offers explicit
  assert.equal(calls(api,"/v1/platforms/lark/login").length,0);assert.equal(calls(api,"/v1/tools/bind").length,0);
 });
 
-test("M4.5 platforms are the default Tab followed by policy, Inbox and activity",async()=>{
+test("member tabs start with profile, then platforms, notifications, rules and activity",async()=>{
  const html=await readFile(new URL("../assets/index.html",import.meta.url),"utf8");
  const tabs=html.slice(html.indexOf('id="agent-tabs"'),html.indexOf('id="platforms-member-view"'));
- assert.deepEqual([...tabs.matchAll(/id="agent-tab-([^"]+)"/g)].map(m=>m[1]),["platforms","policy","inbox","activity"]);
+ assert.deepEqual([...tabs.matchAll(/id="agent-tab-([^"]+)"/g)].map(m=>m[1]),["profile","platforms","inbox","policy","activity"]);
  assert.ok(html.indexOf('id="platforms-member-view"')<html.indexOf('id="member-notification-sources"'));
  assert.doesNotMatch(html,/id="agent-tab-tools"|id="tools-member-view"/);
  const inbox=html.slice(html.indexOf('id="inbox-member-view"'),html.indexOf('id="policy-member-view"'));
  assert.doesNotMatch(inbox,/id="member-notification-|role="switch"/);
  const api=fixture(),ui=await launch(api);await ui.el("members").children[0].querySelector(".member-summary").emit("click");await settle();
- assert.equal(ui.el("agent-tab-platforms").attributes["aria-selected"],"true");assert.equal(ui.el("platforms-member-view").hidden,false);assert.equal(ui.el("activity-body").hidden,true);assert.equal(calls(api,"/v1/member/activity").length,0);
- assert.equal(ui.el("member-notification-source-count").textContent,"2");assert.equal(api.tools.bindings.length,0);assert.equal(ui.el("platforms-member-view").hidden,false);
+ assert.equal(ui.el("agent-tab-profile").attributes["aria-selected"],"true");assert.equal(ui.el("agent-controls").hidden,false);assert.equal(ui.el("activity-body").hidden,true);assert.equal(calls(api,"/v1/member/activity").length,0);
+ assert.equal(ui.el("member-notification-source-count").textContent,"2");assert.equal(api.tools.bindings.length,0);assert.equal(ui.el("platforms-member-view").hidden,true);
+ await ui.el("agent-tab-platforms").emit("click");
  await ui.el("member-notification-add-toggle").emit("click");assert.equal(ui.el("member-notification-add-picker").hidden,false);assert.equal(ui.el("member-notification-add-toggle").attributes["aria-expanded"],"true");
- await ui.el("agent-tab-platforms").emit("keydown",{key:"ArrowRight"});await settle();assert.equal(ui.el("agent-tab-policy").attributes["aria-selected"],"true");assert.equal(ui.el("platforms-member-view").hidden,true);
- await ui.el("agent-tab-policy").emit("keydown",{key:"End"});await settle();assert.equal(ui.el("agent-tab-activity").attributes["aria-selected"],"true");
- await ui.el("agent-tab-activity").emit("keydown",{key:"ArrowRight"});await settle();assert.equal(ui.el("agent-tab-platforms").attributes["aria-selected"],"true");
+ await ui.el("agent-tab-platforms").emit("keydown",{key:"ArrowRight"});await settle();assert.equal(ui.el("agent-tab-inbox").attributes["aria-selected"],"true");assert.equal(ui.el("platforms-member-view").hidden,true);
+ await ui.el("agent-tab-inbox").emit("keydown",{key:"End"});await settle();assert.equal(ui.el("agent-tab-activity").attributes["aria-selected"],"true");
+ await ui.el("agent-tab-activity").emit("keydown",{key:"ArrowRight"});await settle();assert.equal(ui.el("agent-tab-profile").attributes["aria-selected"],"true");
 });
 for(const notifications of [false,true])for(const tool of [false,true])test(`M4.5 add existing platform uses defaults with independent choices (${notifications}/${tool})`,async()=>{
  const api=fixture({empty:true}),ui=await launch(api);await openMemberInbox(ui,"member-a");

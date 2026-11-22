@@ -16,39 +16,15 @@ const assert = require('node:assert/strict');
   try {
     await page.goto(endpoint);
     await page.locator('#room-list .room-choice').filter({hasText: 'Workspace directories 验收'}).click();
-    if (f.mode === 'repair') {
-      // The room has no live member service; its catalog-level Workspace UI
-      // must remain usable to repair all saved invalid overrides.
-      await page.waitForFunction(() => document.querySelector('#room-name').textContent === 'Workspace directories 验收' && document.querySelector('#connection').textContent.includes('可查看历史并修复'));
-      await page.locator('#message-1').waitFor({state: 'visible'});
-      assert.equal(await page.locator('#send').isDisabled(), true);
-      await page.screenshot({animations: 'disabled', path: `${f.screenshots}/repair-history.png`});
-      await page.locator('#compose-more').click();
-      await page.locator('#open-workspace').click();
-      await page.locator('#workspace-directories-default').click();
-      await page.locator('#workspace-directories-apply').click();
-    } else {
-      await page.waitForFunction(() => !document.querySelector('#message-input').disabled);
-      await page.locator('#members .member-summary').nth(f.index).click();
-      if (await page.locator('#toggle-agent-controls').getAttribute('aria-expanded') !== 'true') {
-        await page.locator('#toggle-agent-controls').click();
-      }
-      if (f.mode === 'default') {
-        await page.locator('#member-directory-default').click();
-      } else {
-        await page.locator('#member-directory-choose').click();
-        // Navigate to the allowed root, then enter the test folder by button.
-        await page.locator('#directory-path').fill(f.root);
-        await page.locator('#directory-path').press('Enter');
-        await page.waitForFunction(path => document.querySelector('#directory-current').title === path, f.root);
-        await page.locator('#directory-entries button').getByText(f.path.split('/').pop(), {exact: true}).click();
-        await page.waitForFunction(path => document.querySelector('#directory-current').title === path, f.path);
-        await page.screenshot({animations: 'disabled', path: `${f.screenshots}/choose-${f.index}-${requests.length}-${f.path.split('/').pop()}.png`});
-        await page.locator('#directory-select').click();
-      }
-      assert.equal(requests.length, 0, 'draft must not apply until clicked');
-      await page.locator('#member-directory-apply').click();
-    }
+    // Repair must work from the composer even without a live Room service.
+    await page.waitForFunction(() => document.querySelector('#room-name').textContent === 'Workspace directories 验收' && document.querySelector('#connection').textContent.includes('可查看历史并修复'));
+    await page.locator('#message-1').waitFor({state: 'visible'});
+    assert.equal(await page.locator('#send').isDisabled(), true);
+    await page.screenshot({animations: 'disabled', path: `${f.screenshots}/repair-history.png`});
+    await page.locator('#workspace-trigger').click();
+    await page.locator('#workspace-select-options button').filter({hasText: '各自默认'}).click();
+    assert.equal(requests.length, 0, 'draft must not apply until clicked');
+    await page.locator('#workspace-select-apply').click();
     assert.equal(requests.length, 1);
     const query = new URLSearchParams({service_epoch: f.epoch, caller_id: f.caller, operation_id: requests[0].operation_id, ...f.room});
     await page.waitForFunction(async ({query}) => {

@@ -42,16 +42,19 @@ test("Room entry subscribes first, reconciles once, and reuses unchanged global 
   assert.equal(count(api, "/v1/send"), 0);
 });
 
-test("the automatic direct-conversation sidebar shares entry configuration instead of reading it again", async () => {
+test("the direct settings reuse entry configuration while opening the profile", async () => {
   const api = roomFixture(); api.members.splice(1);
   for (const room of api.rooms) room.is_direct = true;
   const ui = await launch(api); api.calls.length = 0;
   await ui.select("S");
   assert.equal(ui.el("activity-dialog").open, true);
+  assert.equal(ui.el("member-list-view").hidden,true);
   assert.equal(count(api, "/v1/platforms"), 0);
   assert.equal(count(api, "/v1/platform/notifications"), 1);
   assert.equal(count(api, "/v1/tools/bindings"), 1);
   assert.equal(count(api, "/v1/member/list"), 1); assert.equal(count(api, "/v1/read"), 1);
+
+  assert.equal(ui.el("agent-tab-profile").getAttribute("aria-selected"),"true");
 });
 
 test("chat and sending wait for Workspace and messages, independently of slow configuration", async () => {
@@ -223,4 +226,29 @@ test("cached Room content stays isolated while a superseded message request sett
   assert.equal(messageText(ui, 99), undefined); assert.equal(messageText(ui, 1), "Message R");
   current.resolve(page("R", 2)); await settle();
   assert.equal(messageText(ui, 2), "Message R"); assert.equal(ui.sources.filter(source => !source.closed).length, 1);
+});
+
+for (const closeWhileLoading of [false,true]) test(`direct settings wait for readiness without a member-list fallback (close=${closeWhileLoading})`, async () => {
+ const api=roomFixture();api.members.splice(1);for(const room of api.rooms)room.is_direct=true;
+ const ui=await launch(api);
+ await ui.el("close-activity").emit("click");await settle();
+ api.deferUpdateHello=true;
+ const pending=deferred();api.roomHook=path=>path==="/v1/member/list" ? pending.promise : undefined;
+ await ui.select("S");await ui.el("conversation-open-details").emit("click");
+ assert.equal(ui.el("activity-dialog").open,false);
+ assert.equal(ui.el("direct-settings-loading").hidden,false);
+ ui.sources.at(-1).emit("hello",{protocol:1,service_epoch:api.epoch,global_versions:api.globalVersions});await settle();
+ assert.equal(ui.el("activity-dialog").open,false);
+ assert.equal(ui.el("direct-settings-loading").hidden,false);
+ if(closeWhileLoading)await ui.el("conversation-open-details").emit("click");
+ pending.resolve({members:structuredClone(api.members)});await settle();
+ assert.equal(ui.el("activity-dialog").open,!closeWhileLoading);
+ if(closeWhileLoading){
+  await ui.el("conversation-open-details").emit("click");
+  assert.equal(ui.el("activity-dialog").open,true);
+ }
+ assert.equal(ui.el("direct-settings-loading").hidden,true);
+ assert.equal(ui.el("agent-tab-profile").getAttribute("aria-selected"),"true");
+ assert.equal(ui.el("activity-title").textContent,"设置");
+ assert.equal(api.calls.some(c=>c.path==="/v1/send" || c.path==="/v1/member/run"),false);
 });

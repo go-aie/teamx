@@ -32,6 +32,7 @@ type workspaceApplyRequest struct {
 
 type workspaceResponse struct {
 	RoomIdentity
+	Scheduling       schedulingMode                   `json:"scheduling"`
 	Workspace        *workspaceConfig                 `json:"workspace"`
 	Suggestions      *workspaceConfig                 `json:"suggestions,omitempty"`
 	Version          uint64                           `json:"workspace_version"`
@@ -53,7 +54,11 @@ func (m *roomManager) workspaceStatus(id RoomIdentity, operationID string) (work
 	if err != nil {
 		return workspaceResponse{}, err
 	}
-	result := workspaceResponse{RoomIdentity: id, Workspace: saved.Workspace, Version: saved.WorkspaceVersion, CredentialStatus: "missing"}
+	mode, err := saved.Scheduling.effective()
+	if err != nil {
+		return workspaceResponse{}, err
+	}
+	result := workspaceResponse{RoomIdentity: id, Scheduling: mode, Workspace: saved.Workspace, Version: saved.WorkspaceVersion, CredentialStatus: "missing"}
 	if _, err := m.normalizeWorkspaceDirectories(saved, *saved.Workspace, true); err != nil {
 		var directory workspaceDirectoryError
 		if errors.As(err, &directory) {
