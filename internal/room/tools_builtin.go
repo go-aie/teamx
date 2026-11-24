@@ -34,6 +34,13 @@ func (h builtinToolHost) Read(ctx context.Context, q platformtools.ReadRequest) 
 	}
 	return json.Marshal(result)
 }
+func (h builtinToolHost) FetchDocument(ctx context.Context, q platformtools.DocumentRequest) (json.RawMessage, error) {
+	result, err := h.manager.readLarkDocument(ctx, h.request, q.URL)
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(result)
+}
 func (h builtinToolHost) Resolve(ctx context.Context, body json.RawMessage) (json.RawMessage, error) {
 	var q actionResolveRequest
 	if err := decodeRequestJSON(string(body), &q); err != nil {

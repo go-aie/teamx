@@ -193,6 +193,7 @@ go test -tags=e2e ./internal/room -run '^TestRealDSHRoom$' -count=1 -timeout=25m
 | 连接引导 | 飞书已有应用的官方页面回传、profile 与用户 OAuth 核验；默认 DM 的真实 Agent 发起、保存连接及 Inbox 自动接续 | 新应用、Lark 网页路径、实体手机扫码及第二真实账号 |
 | 对话群关注与持续规则 | 单账号的账号／群选择、精确群订阅、长期规则保存、暂停后恢复自动接续及真实浏览器设置返回 | 新群消息触发实际业务提醒、真实远端故障及并发自然语言反馈去重；准入阻塞和晚到竞争由本地测试覆盖 |
 | 收件与模型消费 | 指定历史窗口到 Inbox、稳定引用、DSH 摘要和 Room 提问 | 现场新消息触发、长期覆盖与时延、后台身份／钥匙串及跨令牌到期续期 |
+| 文档 URL 读取 | 单账号、指定 wiki 及其对应 docx 直链，经 TeamX tools CLI／HTTP 到真实 lark-cli，核对正文一致 | 其他账号／知识空间及真实缺权样本；缺权和撤销由本地夹具覆盖 |
 | 普通回复、指定单群发送 | 指定真实目标的 user 身份 Agent 闭环、独立正文／作者／目标回读及服务重载后不重发 | 话题回复、其他主动私信、正式 bot Agent 链路及真实多平台同时写入 |
 | 本人投递 | 一次真实 Agent 投递且无 Inbox 回流；历史真实回执在独立进程恢复；Chromium 界面检查 | 真实平台写后超时与并发发送故障；已有故障注入使用隔离测试端 |
 
@@ -214,6 +215,18 @@ go test -tags=e2e ./internal/platform/lark -run '^TestRealLarkAllChatsContinuous
 ```
 
 允许运行 30～1800 秒，报告只保存聚合数量；前台 CLI 持续运行不替代后台部署及跨到期验证。普通回复、群发送和本人投递的复跑分别使用 `platform_lark_reply_dsh_real_test.go`、`platform_lark_send_dsh_real_test.go` 和 `platform_lark_self_send_dsh_real_test.go` 的显式开关与输入合同。新发送须另行指定准确账号、目标、正文及次数；保留 `.local/lark-l4-c/*native-attempt*`、`.local/lark-self-send-s2/native-attempt*`、原消息 ID 和 unknown 回执，不删除防重记录来重试。`TestRealLarkSelfReadOnlyRecovery` 可通过 `TEAMX_LARK_SELF_RECOVERY_SOURCE` 指向成功投递的 rooms root 只读复验，不新增发送。
+
+### 飞书文档只读验证
+
+使用已登录的准确 profile 和允许读取的文档 URL，沿正式 tools CLI／HTTP 入口验证，不创建文档、不授权、不运行真实模型。日志只报告正文大小和完整性，不输出正文：
+
+```sh
+TEAMX_LARK_TEST_BIN=/absolute/lark-cli TEAMX_LARK_TEST_PROFILE=EXPLICIT_PROFILE \
+TEAMX_LARK_TEST_DOC_URL='https://example.feishu.cn/wiki/TOKEN' \
+go test -tags=e2e ./internal/room -run '^TestRealLarkDocumentTool$' -count=1 -v -timeout=90s
+```
+
+Lark 账号另设 `TEAMX_LARK_TEST_BRAND=lark`。wiki 返回不同的原生文档 ID 时，还会读取同一文档的 docx 直链并核对正文一致。本地回归覆盖 `/docx/`、`/wiki/`、URL 校验、引用／警告保留、应用和用户缺权、文档无权访问、输出超限、账号切换及读取中的工具撤销；真实单文档读取不替代真实模型选用工具或完整权限矩阵验收。
 
 ### 飞书图片验证
 

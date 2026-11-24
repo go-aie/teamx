@@ -211,9 +211,23 @@ func runToolsWithClient(ctx context.Context, args []string, stdin io.Reader, std
 }
 
 func toolResponseError(response *http.Response) error {
-	var failure apiError
+	var failure struct {
+		apiError
+		NextAction string          `json:"next_action"`
+		Capability json.RawMessage `json:"capability,omitempty"`
+	}
 	if json.NewDecoder(io.LimitReader(response.Body, 32<<10)).Decode(&failure) == nil && (failure.Error != "" || failure.Code != "") {
 		if failure.Error == "" && failure.Message == "" {
+			if failure.NextAction != "" {
+				diagnostic := map[string]any{"code": failure.Code, "next_action": failure.NextAction, "hint": failure.Hint}
+				if len(failure.Capability) != 0 {
+					diagnostic["capability"] = failure.Capability
+				}
+				data, err := json.Marshal(diagnostic)
+				if err == nil {
+					return fmt.Errorf("platform tool: %s", data)
+				}
+			}
 			return fmt.Errorf("platform tool: %s", failure.Code)
 		}
 		return failure.cliError()

@@ -25,7 +25,7 @@ if a==['whoami','--as','user']:
  print(json.dumps({'profile':'fixture','appId':'cli_fixture','brand':'feishu','identity':'user','available':True,'onBehalfOf':{'openId':'ou_reader'}}));sys.exit()
 if a[:3]==['api','GET','/open-apis/authen/v1/user_info']:
  print(json.dumps({'ok':True,'identity':'user','data':{'open_id':'ou_reader','tenant_key':'tenant','name':'fixture'}}));sys.exit()
-scopes='contact:user.basic_profile:readonly contact:user:search im:chat.members:read im:chat:read im:message im:message.group_msg:get_as_user im:message.p2p_msg:get_as_user im:message.send_as_user im:message:readonly im:resource offline_access'.split()
+scopes='contact:user.basic_profile:readonly contact:user:search docx:document:readonly im:chat.members:read im:chat:read im:message im:message.group_msg:get_as_user im:message.p2p_msg:get_as_user im:message.send_as_user im:message:readonly im:resource offline_access'.split()
 if a==['auth','scopes','--json']:
  if mode=='app-unknown':print('{}');sys.exit(1)
  app=[s for s in scopes if s!='offline_access' and (mode!='app-missing' or s!='im:chat.members:read')]

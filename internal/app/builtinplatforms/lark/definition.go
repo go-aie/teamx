@@ -18,7 +18,7 @@ func Definition() platforms.Definition {
 		Connection: &platforms.Connection{Normalize: registry.Normalize, ValidProfile: func(origin string, p platform.CLIProfile) bool {
 			return lark.ValidProfile(p) && origin == lark.Origin(p.Brand)
 		}},
-		Tool: &platforms.Tool{Bind: BindTool, Definition: tool.Definition{Name: "lark", Description: "飞书内置消息读取与已开放的托管动作；使用入口 --help 查看命令", Provider: "lark", Version: "lark-cli 1.0.99", InternalOnly: true, Skill: "skills/lark/SKILL.md"}},
+		Tool: &platforms.Tool{Bind: BindTool, Definition: tool.Definition{Name: "lark", Description: "飞书消息与文档读取、已开放的托管动作；使用入口 --help 查看命令", Provider: "lark", Version: "lark-cli 1.0.99", InternalOnly: true, Skill: "skills/lark/SKILL.md"}},
 		Sources: []platforms.Source{{ID: lark.MessagesSourceID, New: func() notification.Source {
 			return &lark.SearchSource{}
 		}, Bind: BindRuntime}},

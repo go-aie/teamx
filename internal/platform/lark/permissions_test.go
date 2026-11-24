@@ -27,7 +27,7 @@ func findCapability(t *testing.T, all []Capability, name string) Capability {
 
 func TestPermissionDependenciesAndRequestScopeBoundary(t *testing.T) {
 	all := DefaultScopes()
-	if len(all) != 11 || !slices.IsSorted(all) {
+	if len(all) != 12 || !slices.IsSorted(all) {
 		t.Fatal(all)
 	}
 	used := map[string]bool{}
@@ -105,6 +105,7 @@ func TestPermissionCapabilitiesDegradeOnlyAffectedBranches(t *testing.T) {
 		return PermissionCheck{Application: ScopeCheck{State: "granted"}, User: ScopeCheck{State: "granted"}, Renewal: ScopeCheck{State: "granted"}, AccountFixed: true}
 	}
 	for _, tc := range []struct{ name, scope, branch, state, next string }{
+		{"document", DocumentReadScopes, "document.read", "blocked", "authorize_user"},
 		{"search", PeopleSearchScopes, "people.search", "blocked", "authorize_user"},
 		{"target", SendTargetScopes, "message.send", "blocked", "authorize_user"},
 		{"send", "im:message.send_as_user", "message.reply", "blocked", "authorize_user"},

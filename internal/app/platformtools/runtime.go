@@ -16,12 +16,17 @@ type ReadRequest struct {
 	Cursor    string `json:"cursor,omitempty"`
 }
 
+type DocumentRequest struct {
+	URL string `json:"url"`
+}
+
 // Host is scoped to one authenticated invocation. Action bodies are decoded by
 // the existing action owner, sharing the root CLI's strict DTOs and diagnostics.
 // No server path, Store, manager or mutable registry crosses this boundary.
 type Host interface {
 	Admit(context.Context, bool) (context.Context, func(), error)
 	Read(context.Context, ReadRequest) (json.RawMessage, error)
+	FetchDocument(context.Context, DocumentRequest) (json.RawMessage, error)
 	Resolve(context.Context, json.RawMessage) (json.RawMessage, error)
 	Execute(context.Context, json.RawMessage) (json.RawMessage, error)
 	ActionHelp(entry, operation string) string

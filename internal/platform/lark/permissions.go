@@ -19,10 +19,11 @@ const (
 	SendTargetScopes   = "im:chat.members:read"
 	PeopleSearchScopes = "contact:user:search"
 	ImageUploadScopes  = "im:resource"
+	DocumentReadScopes = "docx:document:readonly"
 )
 
 func DefaultScopes() []string {
-	s := strings.Fields(readerScopes + " " + SendScopes + " " + SendTargetScopes + " " + PeopleSearchScopes + " " + ImageUploadScopes)
+	s := strings.Fields(readerScopes + " " + SendScopes + " " + SendTargetScopes + " " + PeopleSearchScopes + " " + ImageUploadScopes + " " + DocumentReadScopes)
 	slices.Sort(s)
 	return slices.Compact(s)
 }
@@ -40,6 +41,7 @@ func CapabilityDependencies() []CapabilityDependency {
 	return []CapabilityDependency{
 		{Name: "chat.read", Scopes: []string{"im:chat:read"}},
 		{Name: "message.read", Scopes: []string{"im:message:readonly"}},
+		{Name: "document.read", Scopes: strings.Fields(DocumentReadScopes)},
 		{Name: "notification.private", Scopes: []string{"im:message.p2p_msg:get_as_user"}},
 		{Name: "notification.group", Scopes: []string{"im:message.group_msg:get_as_user"}},
 		{Name: "token.renew", Scopes: []string{"offline_access"}},

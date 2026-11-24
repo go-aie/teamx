@@ -13,6 +13,7 @@ import (
 type invocationHost struct {
 	helps              []bool
 	reads              []platformtools.ReadRequest
+	documents          []platformtools.DocumentRequest
 	resolves, executes []string
 	closed             bool
 }
@@ -29,6 +30,13 @@ func (h *invocationHost) Read(ctx context.Context, q platformtools.ReadRequest) 
 	}
 	return json.RawMessage(`{"complete":true}`), nil
 }
+func (h *invocationHost) FetchDocument(ctx context.Context, q platformtools.DocumentRequest) (json.RawMessage, error) {
+	h.documents = append(h.documents, q)
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	return json.RawMessage(`{"complete":true,"data":{"document":{"content":"正文"}}}`), nil
+}
 func (h *invocationHost) Resolve(_ context.Context, q json.RawMessage) (json.RawMessage, error) {
 	h.resolves = append(h.resolves, string(q))
 	return json.RawMessage(`{"target_ref":"original"}`), nil
@@ -40,7 +48,7 @@ func (h *invocationHost) Execute(_ context.Context, q json.RawMessage) (json.Raw
 
 // Exercise the application boundary without HTTP, CLI processes or Room internals.
 func TestToolInvocationHelpAndOwnerCalls(t *testing.T) {
-	for _, args := range [][]string{nil, {"help"}, {"--help"}, {"-h"}, {"read", "--help"}, {"actions", "--help"}, {"actions", "resolve", "--help"}, {"actions", "execute", "-h"}} {
+	for _, args := range [][]string{nil, {"help"}, {"--help"}, {"-h"}, {"read", "--help"}, {"docs", "--help"}, {"docs", "fetch", "--help"}, {"actions", "--help"}, {"actions", "resolve", "--help"}, {"actions", "execute", "-h"}} {
 		h := &invocationHost{}
 		call, err := platformtools.Prepare(context.Background(), "platform-entry", args, BindTool, h)
 		if err != nil {
@@ -48,7 +56,7 @@ func TestToolInvocationHelpAndOwnerCalls(t *testing.T) {
 		}
 		data, err := call.Run()
 		call.Close()
-		if err != nil || !strings.Contains(string(data), "platform-entry") || len(h.helps) != 1 || !h.helps[0] || !h.closed || len(h.reads)+len(h.executes)+len(h.resolves) != 0 {
+		if err != nil || !strings.Contains(string(data), "platform-entry") || len(h.helps) != 1 || !h.helps[0] || !h.closed || len(h.reads)+len(h.executes)+len(h.resolves)+len(h.documents) != 0 {
 			t.Fatal(args, string(data), h, err)
 		}
 	}
@@ -81,7 +89,7 @@ func TestToolInvocationHelpAndOwnerCalls(t *testing.T) {
 	}
 }
 func TestToolInvocationRejectsCommandsAndKeepsCancellation(t *testing.T) {
-	for _, args := range [][]string{{"api", "POST", "/messages"}, {"read", "--object", "ref_native", "--target", "ref_native"}, {"actions", "execute", "unexpected"}, {"actions", "read", "--id", "receipt"}, {"actions", "execute", "--request-file", "/server/path"}} {
+	for _, args := range [][]string{{"api", "POST", "/messages"}, {"read", "--object", "ref_native", "--target", "ref_native"}, {"actions", "execute", "unexpected"}, {"actions", "read", "--id", "receipt"}, {"actions", "execute", "--request-file", "/server/path"}, {"docs"}, {"docs", "update"}, {"docs", "fetch"}, {"docs", "fetch", "--url", "https://example.feishu.cn/docx/Doc", "--profile", "other"}, {"docs", "fetch", "--url", "https://example.feishu.cn/docx/Doc", "extra"}} {
 		h := &invocationHost{}
 		call, err := platformtools.Prepare(context.Background(), "platform-entry", args, BindTool, h)
 		if err != nil {
@@ -89,7 +97,7 @@ func TestToolInvocationRejectsCommandsAndKeepsCancellation(t *testing.T) {
 		}
 		_, err = call.Run()
 		call.Close()
-		if err == nil || len(h.reads)+len(h.resolves)+len(h.executes) != 0 || !h.closed {
+		if err == nil || len(h.reads)+len(h.resolves)+len(h.executes)+len(h.documents) != 0 || !h.closed {
 			t.Fatal(args, h, err)
 		}
 	}
@@ -105,5 +113,19 @@ func TestToolInvocationRejectsCommandsAndKeepsCancellation(t *testing.T) {
 	call.Close()
 	if !errors.Is(err, context.Canceled) || !h.closed {
 		t.Fatal(err, h)
+	}
+}
+
+func TestDocumentToolInvocationUsesURLAndSettles(t *testing.T) {
+	h := &invocationHost{}
+	url := "https://example.feishu.cn/wiki/Node?from=share#share-part"
+	call, err := platformtools.Prepare(t.Context(), "lark-exact-entry", []string{"docs", "fetch", "--url", url}, BindTool, h)
+	if err != nil {
+		t.Fatal(err)
+	}
+	data, err := call.Run()
+	call.Close()
+	if err != nil || len(h.documents) != 1 || h.documents[0].URL != url || len(h.reads)+len(h.resolves)+len(h.executes) != 0 || !h.closed || h.helps[0] || !strings.Contains(string(data), "正文") {
+		t.Fatal(string(data), h, err)
 	}
 }

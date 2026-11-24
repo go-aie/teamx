@@ -134,6 +134,18 @@ func (m *roomManager) serveLarkRead(w http.ResponseWriter, r *http.Request) {
 }
 
 func writeLarkReadError(w http.ResponseWriter, err error) {
+	var document *lark.DocumentError
+	if errors.As(err, &document) {
+		status := http.StatusBadGateway
+		if document.Code == "unsupported_document_url" {
+			status = http.StatusBadRequest
+		} else if document.NextAction == "configure_application" || document.NextAction == "authorize_user" || document.NextAction == "check_document_access" {
+			status = http.StatusForbidden
+		}
+		w.WriteHeader(status)
+		_ = json.NewEncoder(w).Encode(document)
+		return
+	}
 	var remote *lark.Error
 	if errors.As(err, &remote) || errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 		code := lark.ErrorCode(err)

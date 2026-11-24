@@ -88,7 +88,7 @@ func projectToolSelections(selections []toolSelection) []agentToolEntry {
 			if s.Skill != "" {
 				guidance = "read the Skill when workflow guidance is missing. "
 			}
-			v.Workflow = "Managed sends/replies: actions resolve/execute --tool " + s.Name + " --request JSON. Reuse a verified target and valid contract; " + guidance + "Current content/context: tools run " + s.Name + " read. Unknown: actions read --id ORIGINAL_ID, never resend."
+			v.Workflow = "Managed sends/replies: actions resolve/execute --tool " + s.Name + " --request JSON. Reuse a verified target and valid contract; " + guidance + "Current message content/context: tools run " + s.Name + " read. Document URL: tools run " + s.Name + " docs fetch --url URL (no saved refs required). Unknown: actions read --id ORIGINAL_ID, never resend."
 		}
 		result = append(result, v)
 	}

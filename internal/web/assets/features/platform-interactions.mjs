@@ -123,7 +123,7 @@ export function createPlatformInteractions({ env, runtime, conversationUI, setti
       card.link.textContent="补全授权 ↗";
     }
     if (!gitlab && op.permissions) {
-      const labels={"chat.read":"会话读取","message.read":"消息读取","notification.private":"私聊通知","notification.group":"群通知","token.renew":"自动续期","sender.name":"发送者姓名","people.search":"人员搜索","image.upload":"图片上传权限","message.reply":"普通回复","message.send":"指定群发送","message.send_self":"本人投递"};
+      const labels={"chat.read":"会话读取","message.read":"消息读取","document.read":"文档读取","notification.private":"私聊通知","notification.group":"群通知","token.renew":"自动续期","sender.name":"发送者姓名","people.search":"人员搜索","image.upload":"图片上传权限","message.reply":"普通回复","message.send":"指定群发送","message.send_self":"本人投递"};
       const gaps=op.permissions.capabilities.filter(c=>c.state!=="ready");
       card.hint.textContent += gaps.length ? ` 本次检查尚未就绪：${gaps.map(c=>`${labels[c.name] || c.name}（${c.state==="unsupported" ? "当前服务不支持" : c.next_action==="configure_application" ? "需管理员补权" : c.next_action==="authorize_user" ? "需补全授权" : "暂未确认"}）`).join("、")}。` : " 本次账号条件已核验；成员动作与本人证据仍按各自设置检查。";
       const imageUpload=op.permissions.capabilities.find(c=>c.name==="image.upload");

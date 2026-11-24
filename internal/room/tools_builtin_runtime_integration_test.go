@@ -75,20 +75,22 @@ func TestPlatformEntryUsesSelectedRuntimeAndHelpPreservesLazyAccess(t *testing.T
 	}()
 	client, endpoint := toolPipeServer(t, h.m)
 	env := cliToolEnv(endpoint, h.svc, h.members[0])
-	for _, args := range [][]string{{"--help"}, {"read", "--help"}, {"actions", "resolve", "--help"}, {"actions", "execute", "--help"}} {
+	helpArgs := [][]string{{"--help"}, {"read", "--help"}, {"docs", "fetch", "--help"}, {"actions", "resolve", "--help"}, {"actions", "execute", "--help"}}
+	for _, args := range helpArgs {
 		var stdout, stderr bytes.Buffer
 		if err := runToolsWithClient(t.Context(), append([]string{"run", h.c.ToolEntryID}, args...), bytes.NewReader(nil), &stdout, &stderr, env, client); err != nil || !strings.Contains(stdout.String(), h.c.ToolEntryID) {
 			t.Fatal(args, err, stdout.String(), stderr.String())
 		}
 	}
-	if calls.Load() != 4 || h.m.platformCalls.Len() != 0 {
+	helpCalls := int32(len(helpArgs))
+	if calls.Load() != helpCalls || h.m.platformCalls.Len() != 0 {
 		t.Fatal("selected runtime or call settlement bypassed", calls.Load(), h.m.platformCalls.Len())
 	}
 	var stdout, stderr bytes.Buffer
 	if err := runToolsWithClient(t.Context(), []string{"run", h.c.ToolEntryID, "read", "--object", "ref_invalid", "--target", "ref_invalid"}, bytes.NewReader(nil), &stdout, &stderr, env, client); err == nil {
 		t.Fatal("execution skipped account admission")
 	}
-	if calls.Load() != 4 || h.m.platformCalls.Len() != 0 {
+	if calls.Load() != helpCalls || h.m.platformCalls.Len() != 0 {
 		t.Fatal("failed admission reached runtime or leaked call")
 	}
 	// Preserve the other side of the lazy lookup contract: public exact entries
@@ -100,7 +102,7 @@ func TestPlatformEntryUsesSelectedRuntimeAndHelpPreservesLazyAccess(t *testing.T
 	if err := runToolsWithClient(t.Context(), []string{"run", h.c.ToolEntryID, "--help"}, bytes.NewReader(nil), &stdout, &stderr, env, client); err == nil {
 		t.Fatal("public help bypassed connection identity")
 	}
-	if calls.Load() != 4 {
+	if calls.Load() != helpCalls {
 		t.Fatal("failed public lookup entered runtime")
 	}
 	request := toolsRequest{ServiceInfo: h.svc.info, Caller: agentCaller(h.members[0].AgentID, h.members[0].MembershipID), Tool: "lark", platformID: h.c.ID}
@@ -110,7 +112,7 @@ func TestPlatformEntryUsesSelectedRuntimeAndHelpPreservesLazyAccess(t *testing.T
 	}
 	data, err := prepared.Run()
 	prepared.Close()
-	if err != nil || !strings.Contains(string(data), "tools run lark read") || calls.Load() != 5 || h.m.platformCalls.Len() != 0 {
+	if err != nil || !strings.Contains(string(data), "tools run lark read") || calls.Load() != helpCalls+1 || h.m.platformCalls.Len() != 0 {
 		t.Fatal("private help read connection/account state", err, calls.Load())
 	}
 }
