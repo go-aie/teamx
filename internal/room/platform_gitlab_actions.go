@@ -113,7 +113,7 @@ func (m *roomManager) prepareGitlabActionSession(ctx context.Context, id MemberI
 		}
 		return response, err
 	}
-	guardedWrite := func(ctx context.Context, project, iid, discussion, body string) (gitlab.APIResponse, error) {
+	guardedWrite := func(ctx context.Context, objectType, project, iid, discussion, body string) (gitlab.APIResponse, error) {
 		if check(ctx) != nil {
 			return gitlab.APIResponse{}, gitlab.ErrNoteNotSent
 		}
@@ -125,7 +125,7 @@ func (m *roomManager) prepareGitlabActionSession(ctx context.Context, id MemberI
 		if err != nil {
 			return gitlab.APIResponse{}, gitlab.ErrNoteNotSent
 		}
-		response, writeErr := gitlab.NewNoteAPIWithCredential(admission.account.URL, credential, m.platformHTTP)(useCtx, project, iid, discussion, body)
+		response, writeErr := gitlab.NewNoteAPIWithCredential(admission.account.URL, credential, m.platformHTTP)(useCtx, objectType, project, iid, discussion, body)
 		_ = release() // preserve the known write outcome even when authorization changed
 		return response, writeErr
 	}
@@ -214,7 +214,7 @@ func (m *roomManager) prepareGitlabActionSession(ctx context.Context, id MemberI
 			return gitlab.APIResponse{}, gitlab.ErrNoteNotSent
 		}
 		// q.Input stays frozen; only the native body argument contains Markdown.
-		return gitlab.NewImageNoteAPIWithCredential(admission.account.URL, credential, m.platformHTTP)(useCtx, q.Target.Containers[0].ID.Value, gitlabActionIID(q), q.Target.Discussion.Value, body)
+		return gitlab.NewImageNoteAPIWithCredential(admission.account.URL, credential, m.platformHTTP)(useCtx, q.Target.Object.Type, q.Target.Containers[0].ID.Value, gitlabActionIID(q), q.Target.Discussion.Value, body)
 	}
 	caps.Actions, err = gitlab.ImageReferenceActions(guardedRead, guardedWrite, write, upload, source, checkImages, admission.account.Username, executionInput)
 	if err != nil {

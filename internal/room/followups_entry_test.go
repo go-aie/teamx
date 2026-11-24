@@ -214,7 +214,7 @@ func TestReferenceEntryMissingSchemaIsNotRecreated(t *testing.T) {
 }
 
 func TestReferenceEntryRegisteredActionsRespectNativeType(t *testing.T) {
-	for _, kind := range []string{"MergeRequest", "Issue"} {
+	for _, kind := range []string{"MergeRequest", "Issue", "WorkItem", "Commit"} {
 		t.Run(kind, func(t *testing.T) {
 			h := newInboxHarness(t, InboxLimits{})
 			source := referenceTestSource("capabilities")
@@ -247,7 +247,7 @@ func TestReferenceEntryRegisteredActionsRespectNativeType(t *testing.T) {
 				t.Fatal(err)
 			}
 			want := 0
-			if kind == "MergeRequest" {
+			if kind == "MergeRequest" || kind == "Issue" {
 				want = 1
 			}
 			if len(detail.Actions) != want {

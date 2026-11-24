@@ -121,7 +121,8 @@ func validReferenceSpec(spec platform.ActionSpec, q referenceActionRequest, t pl
 	if t.Discussion.Valid() {
 		kind = "discussion"
 	}
-	if t.Message.Valid() {
+	// A discussion reply may retain a specific comment as its focus.
+	if t.Message.Valid() && q.Operation != platform.OperationDiscussionReply {
 		kind = "message"
 	}
 	if (len(spec.ObjectTypes) > 0 && !slices.Contains(spec.ObjectTypes, t.Object.Type)) || spec.Operation != q.Operation || spec.TargetKind != kind || !json.Valid(spec.InputSchema) || spec.Retry.MaxAttempts < 1 || spec.Retry.MaxAttempts > 2 {

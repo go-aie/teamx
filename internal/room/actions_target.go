@@ -27,7 +27,7 @@ func (q *actionResolveRequest) UnmarshalJSON(data []byte) error {
 		var d *requestDiagnostic
 		if errors.As(err, &d) && strings.HasPrefix(d.Field, "locator") {
 			copy := *d
-			copy.Hint = "Use locator:{url:FULL_GITLAB_MR_OR_DISCUSSION_URL}, locator:{target_ref:REF}, locator:{self:true}, locator:{query:{object_type:chat,text:NAME}}, or a returned candidates[i].locator unchanged; select the exact tool entry."
+			copy.Hint = "Use locator:{url:FULL_GITLAB_ISSUE_MR_WORK_ITEM_OR_COMMENT_URL}, locator:{target_ref:REF}, locator:{self:true}, locator:{query:{object_type:chat,text:NAME}}, or a returned candidates[i].locator unchanged; select the exact tool entry."
 			return &copy
 		}
 		return err

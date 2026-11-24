@@ -37,12 +37,13 @@ func gitlabURLFixture(t *testing.T) *gitlabImageFixture {
 	}
 	base := &managedActionFixture{m: m, room: room, svc: svc, connection: connection, member: members[0], id: id, req: apiRequest{ServiceInfo: svc.info, Caller: agentCallerIdentity(id)}, action: referenceActionRequest{ID: "url-action", Operation: platform.OperationObjectComment, PolicyToken: policy.PolicyToken}}
 	f := configureGitlabImageFixture(t, base)
-	installGitlabURLFixtureReads(t, m)
+	installGitlabURLFixtureReads(t, f)
 	return f
 }
 
-func installGitlabURLFixtureReads(t *testing.T, m *roomManager) {
+func installGitlabURLFixtureReads(t *testing.T, f *gitlabImageFixture) {
 	t.Helper()
+	m := f.m
 	underlying := m.platformHTTP
 	m.platformHTTP = workspaceHTTPFunc(func(r *http.Request) (*http.Response, error) {
 		if r.Method == http.MethodGet && (r.URL.Path == "/api/v4/projects/g/p" || strings.HasSuffix(r.URL.Path, "/discussions")) {
@@ -51,7 +52,7 @@ func installGitlabURLFixtureReads(t *testing.T, m *roomManager) {
 			}
 			data := `{"id":123,"path_with_namespace":"g/p"}`
 			if strings.HasSuffix(r.URL.Path, "/discussions") {
-				data = `[{"id":"thread","individual_note":false,"notes":[` + managedActionNote + `]}]`
+				data = `[{"id":"thread","individual_note":false,"notes":[` + strings.ReplaceAll(managedActionNote, "MergeRequest", f.objectType) + `]}]`
 			}
 			return &http.Response{StatusCode: 200, Header: http.Header{}, Body: io.NopCloser(strings.NewReader(data)), Request: r}, nil
 		}
@@ -81,96 +82,102 @@ func resolveGitlabURLCLI(t *testing.T, f *gitlabImageFixture, raw string) (agent
 }
 
 func TestGitlabActionURLManagedCLI(t *testing.T) {
-	for _, mode := range []string{"text", "single", "caption", "note-reply", "discussion-reply"} {
-		t.Run(mode, func(t *testing.T) {
-			f := gitlabURLFixture(t)
-			before := historyTree(t, f.svc.store.dir)
-			files, err := filepath.Glob(filepath.Join(f.svc.store.actionRoot(f.id), "targets", "*.json"))
-			if err != nil || len(files) != 0 {
-				t.Fatal("fixture already has targets", files, err)
-			}
-			raw := gitlabLocatorWeb
-			if mode == "note-reply" {
-				raw += "#note_99"
-			}
-			if mode == "discussion-reply" {
-				raw += "#discussion_thread"
-			}
-			target, err := resolveGitlabURLCLI(t, f, raw)
-			if err != nil || target.TargetRef == "" || !target.Resolution.Complete || target.Resolution.Target == nil || target.Resolution.Target.MRIID.Value != "42" {
-				t.Fatal(target, err)
-			}
-			f.action.TargetRef = target.TargetRef
-			if strings.HasSuffix(mode, "reply") {
-				f.action.Operation = platform.OperationDiscussionReply
-			}
-			body, images := "", f.refs[:1]
-			if mode == "text" {
-				body, images = "exact reply", nil
-			}
-			if mode == "caption" {
-				body, images = "准确说明\n第二行", f.refs[:2]
-			}
-			f.setInput(t, body, images)
-			again, err := resolveGitlabURLCLI(t, f, raw)
-			if err != nil || again.TargetRef != target.TargetRef || f.posts.Load() != 0 || f.uploads.Load() != 0 {
-				t.Fatal(again, err)
-			}
-			f.svc.store.mu.Lock()
-			saved, err := f.svc.store.loadActionTargetLocked(f.id, target.TargetRef)
-			f.svc.store.mu.Unlock()
-			if err != nil || saved.Target.Message.Valid() || saved.Access.Receiver != saved.Access.Account || saved.Resolution.DiscussionVerified != strings.HasSuffix(mode, "reply") {
-				t.Fatal(saved, err)
-			}
-			var result agentGitlabReceipt
-			if err := f.executeCLI(t, &result); err != nil || !result.Result.Verified || result.Status != "succeeded" || f.posts.Load() != 1 || f.uploads.Load() != int32(len(images)) {
-				t.Fatal(result, err, f.posts.Load(), f.uploads.Load())
-			}
-			// Reopening durable storage and same-ID recovery need neither locator
-			// nor credentials/remote reads, and must not re-upload or re-post.
-			f.m.platformHTTP = workspaceHTTPFunc(func(*http.Request) (*http.Response, error) {
-				t.Error("receipt recovery touched GitLab")
-				return nil, fmt.Errorf("unexpected request")
+	for _, route := range []string{"merge_requests", "issues", "work_items"} {
+		for _, mode := range []string{"text", "single", "caption", "note-reply", "discussion-reply"} {
+			t.Run(route+"/"+mode, func(t *testing.T) {
+				f := gitlabURLFixture(t)
+				f.route = route
+				if route != "merge_requests" {
+					f.objectType = "Issue"
+				}
+				before := historyTree(t, f.svc.store.dir)
+				files, err := filepath.Glob(filepath.Join(f.svc.store.actionRoot(f.id), "targets", "*.json"))
+				if err != nil || len(files) != 0 {
+					t.Fatal("fixture already has targets", files, err)
+				}
+				raw := strings.Replace(gitlabLocatorWeb, "merge_requests", route, 1)
+				if mode == "note-reply" {
+					raw += "#note_99"
+				}
+				if mode == "discussion-reply" {
+					raw += "#discussion_thread"
+				}
+				target, err := resolveGitlabURLCLI(t, f, raw)
+				if err != nil || target.TargetRef == "" || !target.Resolution.Complete || target.Resolution.Target == nil || target.Resolution.Target.IID.Value != "42" || len(target.Actions) != 1 {
+					t.Fatal(target, err)
+				}
+				f.action.TargetRef = target.TargetRef
+				if strings.HasSuffix(mode, "reply") {
+					f.action.Operation = platform.OperationDiscussionReply
+				}
+				body, images := "", f.refs[:1]
+				if mode == "text" {
+					body, images = "exact reply", nil
+				}
+				if mode == "caption" {
+					body, images = "准确说明\n第二行", f.refs[:2]
+				}
+				f.setInput(t, body, images)
+				again, err := resolveGitlabURLCLI(t, f, raw)
+				if err != nil || again.TargetRef != target.TargetRef || f.posts.Load() != 0 || f.uploads.Load() != 0 {
+					t.Fatal(again, err)
+				}
+				f.svc.store.mu.Lock()
+				saved, err := f.svc.store.loadActionTargetLocked(f.id, target.TargetRef)
+				f.svc.store.mu.Unlock()
+				if err != nil || saved.Target.Message.Valid() != (mode == "note-reply") || saved.Access.Receiver != saved.Access.Account || saved.Resolution.DiscussionVerified != strings.HasSuffix(mode, "reply") {
+					t.Fatal(saved, err)
+				}
+				var result agentGitlabReceipt
+				if err := f.executeCLI(t, &result); err != nil || !result.Result.Verified || result.Status != "succeeded" || f.posts.Load() != 1 || f.uploads.Load() != int32(len(images)) {
+					t.Fatal(result, err, f.posts.Load(), f.uploads.Load())
+				}
+				// Reopening durable storage and same-ID recovery need neither locator
+				// nor credentials/remote reads, and must not re-upload or re-post.
+				f.m.platformHTTP = workspaceHTTPFunc(func(*http.Request) (*http.Response, error) {
+					t.Error("receipt recovery touched GitLab")
+					return nil, fmt.Errorf("unexpected request")
+				})
+				if err := f.executeCLI(t, &result); err != nil || result.Status != "succeeded" {
+					t.Fatal(result, err)
+				}
+				var detail actionQueryRecord
+				if err := f.cli([]string{"actions", "read", "--id", f.action.ID}, &detail); err != nil || detail.Detail == nil {
+					t.Fatal(detail, err)
+				}
+				after := historyTree(t, f.svc.store.dir)
+				for path, hash := range before {
+					if !strings.Contains(path, "/actions/") && after[path] != hash {
+						t.Error("changed non-action state", path)
+					}
+				}
+				for path := range after {
+					if _, ok := before[path]; !ok && !strings.Contains(path, "/actions/") {
+						t.Error("created non-action state", path)
+					}
+				}
+				assertActionCallsSettled(t, f.m)
+				closeService(t, f.svc)
+				reopened, err := OpenStore(f.svc.store.dir, f.id.RoomID)
+				if err != nil {
+					t.Fatal(err)
+				}
+				defer reopened.Close()
+				loaded, err := reopened.loadActionTargetLocked(f.id, target.TargetRef)
+				if err != nil || !reflect.DeepEqual(saved, loaded) {
+					t.Fatal(loaded, err)
+				}
+				receipts, err := reopened.queryActions(f.id, f.action.ID, "", "")
+				if err != nil || len(receipts) != 1 || receipts[0].Status != "succeeded" {
+					t.Fatal(receipts, err)
+				}
 			})
-			if err := f.executeCLI(t, &result); err != nil || result.Status != "succeeded" {
-				t.Fatal(result, err)
-			}
-			var detail actionQueryRecord
-			if err := f.cli([]string{"actions", "read", "--id", f.action.ID}, &detail); err != nil || detail.Detail == nil {
-				t.Fatal(detail, err)
-			}
-			after := historyTree(t, f.svc.store.dir)
-			for path, hash := range before {
-				if !strings.Contains(path, "/actions/") && after[path] != hash {
-					t.Error("changed non-action state", path)
-				}
-			}
-			for path := range after {
-				if _, ok := before[path]; !ok && !strings.Contains(path, "/actions/") {
-					t.Error("created non-action state", path)
-				}
-			}
-			assertActionCallsSettled(t, f.m)
-			closeService(t, f.svc)
-			reopened, err := OpenStore(f.svc.store.dir, f.id.RoomID)
-			if err != nil {
-				t.Fatal(err)
-			}
-			defer reopened.Close()
-			loaded, err := reopened.loadActionTargetLocked(f.id, target.TargetRef)
-			if err != nil || !reflect.DeepEqual(saved, loaded) {
-				t.Fatal(loaded, err)
-			}
-			receipts, err := reopened.queryActions(f.id, f.action.ID, "", "")
-			if err != nil || len(receipts) != 1 || receipts[0].Status != "succeeded" {
-				t.Fatal(receipts, err)
-			}
-		})
+		}
 	}
 }
 
 func TestGitlabActionURLFailureAndCommitGuard(t *testing.T) {
-	for _, mode := range []string{"instance", "anchor", "permission", "cancel", "turn", "credential", "commit-binding", "commit-credential", "commit-turn"} {
+	for _, mode := range []string{"instance", "anchor", "permission", "missing-note", "system-note", "cancel", "turn", "credential", "commit-binding", "commit-credential", "commit-turn"} {
 		t.Run(mode, func(t *testing.T) {
 			f := gitlabURLFixture(t)
 			advanceTurn := func() error {
@@ -209,6 +216,13 @@ func TestGitlabActionURLFailureAndCommitGuard(t *testing.T) {
 			}
 			transport := f.m.platformHTTP
 			f.m.platformHTTP = workspaceHTTPFunc(func(r *http.Request) (*http.Response, error) {
+				if strings.HasSuffix(r.URL.Path, "/discussions") && (mode == "missing-note" || mode == "system-note") {
+					data := `[]`
+					if mode == "system-note" {
+						data = `[{"id":"thread","individual_note":true,"notes":[` + strings.Replace(managedActionNote, `"system":false`, `"system":true`, 1) + `]}]`
+					}
+					return &http.Response{StatusCode: 200, Header: http.Header{}, Body: io.NopCloser(strings.NewReader(data)), Request: r}, nil
+				}
 				if mode == "permission" {
 					return &http.Response{StatusCode: 403, Header: http.Header{}, Body: io.NopCloser(strings.NewReader("")), Request: r}, nil
 				}
@@ -269,9 +283,17 @@ func TestGitlabActionURLFailureAndCommitGuard(t *testing.T) {
 			if mode == "anchor" {
 				raw += "#not-supported"
 			}
+			if mode == "missing-note" || mode == "system-note" {
+				raw += "#note_99"
+			}
 			got, err := resolveGitlabURLCLI(t, f, raw)
 			if err == nil && (got.TargetRef != "" || got.Resolution.Status == platform.ResolutionResolved || got.Resolution.ReasonCode == "") {
 				t.Fatal(got, err)
+			}
+			if mode == "missing-note" || mode == "system-note" {
+				if err != nil || got.Resolution.Status != platform.ResolutionPartial || len(got.Actions) != 0 {
+					t.Fatal("partial comment lookup exposed an executable action", got, err)
+				}
 			}
 			files, _ := filepath.Glob(filepath.Join(f.svc.store.actionRoot(f.id), "targets", "*.json"))
 			if len(files) != 0 || f.posts.Load() != 0 || f.uploads.Load() != 0 {

@@ -154,7 +154,7 @@ type agentSendReceipt struct {
 	PossibleDuplicate bool                      `json:"possible_duplicate,omitempty"`
 }
 
-// GitLab projection is local to verified MR comments/replies. It does not adopt
+// GitLab projection is local to verified project comments/replies. It does not adopt
 // Lark self/group grants, and never projects policy repair feedback away.
 func isGitlabComment(op platform.Operation) bool {
 	return op == platform.OperationObjectComment || op == platform.OperationDiscussionReply
@@ -162,7 +162,7 @@ func isGitlabComment(op platform.Operation) bool {
 
 type agentGitlabTarget struct {
 	agentNativeTarget
-	MRIID platform.ExternalID `json:"mr_iid,omitzero"`
+	IID platform.ExternalID `json:"iid,omitzero"`
 }
 type agentGitlabResolution struct {
 	Status       platform.ResolutionStatus `json:"status"`
@@ -193,13 +193,16 @@ type agentGitlabTargetView struct {
 
 func projectGitlabActionTarget(v actionTargetView) any {
 	r := v.Resolution
-	if r.Target == nil || r.Target.Object.Type != "MergeRequest" || r.Target.IdentityScope != r.Account.IdentityScope || r.Target.Message.Valid() || len(r.Candidates) > 0 {
+	if r.Target == nil || (r.Target.Object.Type != "MergeRequest" && r.Target.Object.Type != "Issue") || r.Target.IdentityScope != r.Account.IdentityScope || len(r.Candidates) > 0 {
+		return v
+	}
+	if r.Status != platform.ResolutionResolved || !r.Complete {
 		return v
 	}
 	target := &agentGitlabTarget{agentNativeTarget: *projectNativeTarget(r.Target)}
 	for _, alias := range r.Aliases {
 		if alias.Object.ID.Namespace == "gitlab:rest:iid" {
-			target.MRIID = alias.Object.ID
+			target.IID = alias.Object.ID
 		}
 	}
 	actions := make([]agentGitlabCapability, 0, len(v.Actions))
@@ -230,7 +233,7 @@ type agentGitlabReceipt struct {
 
 func projectGitlabActionReceipt(r referenceActionReceipt, q referenceActionRequest) any {
 	a := r.Result
-	if r.Policy != nil || a == nil || !isGitlabComment(q.Operation) || a.Target.Provider != "gitlab" || a.Target.Object.Type != "MergeRequest" || a.Target.IdentityScope != a.Account.IdentityScope || (r.Status != "succeeded" && r.Status != "unknown" && r.Status != "not_applied") {
+	if r.Policy != nil || a == nil || !isGitlabComment(q.Operation) || a.Target.Provider != "gitlab" || (a.Target.Object.Type != "MergeRequest" && a.Target.Object.Type != "Issue") || a.Target.IdentityScope != a.Account.IdentityScope || (r.Status != "succeeded" && r.Status != "unknown" && r.Status != "not_applied") {
 		return r
 	}
 	return agentGitlabReceipt{r.ID, r.Status, r.Attempts, r.TargetRef, q.Operation, q.Input, agentSendResult{projectNativeTarget(&a.Target), a.Account, r.Status == "succeeded" && a.Status == "succeeded", a.ResultID, a.ReasonCode, a.Message, a.URL}, r.UnitVersion, r.PossibleDuplicate}

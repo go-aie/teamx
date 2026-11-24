@@ -35,7 +35,7 @@ func runToolsCLI(ctx context.Context, args []string, stdin io.Reader, stdout, st
 
 func runToolsWithClient(ctx context.Context, args []string, stdin io.Reader, stdout, stderr io.Writer, env func(string) string, httpClient *http.Client) error {
 	if len(args) == 0 || args[0] == "--help" || args[0] == "-h" {
-		_, err := fmt.Fprintln(stdout, "Usage: teamx tools list | teamx tools run <tool> [args...] | teamx tools skill <tool> [--topic managed-send]\nReuse a known exact entry; list discovers bound tools and their availability/capabilities. For GitLab managed MR comments/replies, read tools skill ENTRY --topic managed-send directly when guidance is needed. Omit --topic for the complete declared Skill, including development/review/merge. Local tools may have no platform account, Skill or Workspace requirement. Use tools run ENTRY --help when usage is missing. Never switch accounts after a failure or bypass the member binding.")
+		_, err := fmt.Fprintln(stdout, "Usage: teamx tools list | teamx tools run <tool> [args...] | teamx tools skill <tool> [--topic managed-send]\nReuse a known exact entry; list discovers bound tools and their availability/capabilities. For GitLab managed project issue/MR/work item comments/replies, read tools skill ENTRY --topic managed-send directly when guidance is needed. Omit --topic for the complete declared Skill, including development/review/merge. Local tools may have no platform account, Skill or Workspace requirement. Use tools run ENTRY --help when usage is missing. Never switch accounts after a failure or bypass the member binding.")
 		return err
 	}
 	var skillTopic string

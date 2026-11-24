@@ -18,7 +18,22 @@ import (
 
 // Native action inputs are derived exclusively from the stored target and its
 // verified aliases. No CLI protocol or caller-supplied native IDs are involved.
-type referenceAction struct{ projectID, mrID, mrIID, discussionID, accountID, body string }
+type referenceAction struct {
+	objectType, projectID, objectID, objectIID, discussionID, noteID, accountID, body string
+}
+
+// Project work items use the Issues REST identity and endpoints. Keep this
+// mapping local to GitLab; URL spellings never become native object types.
+func actionResource(objectType string) string {
+	switch objectType {
+	case "MergeRequest":
+		return "merge_requests"
+	case "Issue":
+		return "issues"
+	}
+	return ""
+}
+
 type referenceNote struct {
 	ID           int64  `json:"id"`
 	Body         string `json:"body"`
@@ -61,7 +76,7 @@ func actionInput(q platform.TargetActionRequest, a platform.AccessContext) (refe
 }
 func actionNativeTarget(q platform.TargetActionRequest, a platform.AccessContext) (referenceAction, error) {
 	t := q.Target
-	if !a.Valid() || !t.Valid() || a.Account != a.Receiver || t.IdentityScope != a.Account.IdentityScope || t.Provider != "gitlab" || !validOrigin(t.Instance) || t.Tenant != (platform.ExternalID{}) || len(t.Containers) != 1 || t.Containers[0].Type != "Project" || !positiveREST(t.Containers[0].ID, "id") || t.Object.Type != "MergeRequest" || !positiveREST(t.Object.ID, "id") || t.Message.Valid() || !positiveREST(a.Account.ID, "id") {
+	if !a.Valid() || !t.Valid() || a.Account != a.Receiver || t.IdentityScope != a.Account.IdentityScope || t.Provider != "gitlab" || !validOrigin(t.Instance) || t.Tenant != (platform.ExternalID{}) || len(t.Containers) != 1 || t.Containers[0].Type != "Project" || !positiveREST(t.Containers[0].ID, "id") || actionResource(t.Object.Type) == "" || !positiveREST(t.Object.ID, "id") || (t.Message.Valid() && (!positiveREST(t.Message, "id") || !t.Discussion.Valid())) || !positiveREST(a.Account.ID, "id") {
 		return referenceAction{}, platform.ErrReference
 	}
 	iid := ""
@@ -81,13 +96,13 @@ func actionNativeTarget(q platform.TargetActionRequest, a platform.AccessContext
 	if iid == "" || (q.Operation == platform.OperationDiscussionReply) != t.Discussion.Valid() || (q.Operation != platform.OperationDiscussionReply && q.Operation != platform.OperationObjectComment) || (t.Discussion.Valid() && (t.Discussion.Namespace != "gitlab:rest:discussion" || !validActionDiscussion(t.Discussion.Value))) {
 		return referenceAction{}, platform.ErrReference
 	}
-	return referenceAction{t.Containers[0].ID.Value, t.Object.ID.Value, iid, t.Discussion.Value, a.Account.ID.Value, ""}, nil
+	return referenceAction{objectType: t.Object.Type, projectID: t.Containers[0].ID.Value, objectID: t.Object.ID.Value, objectIID: iid, discussionID: t.Discussion.Value, noteID: t.Message.Value, accountID: a.Account.ID.Value}, nil
 }
-func (q referenceAction) mrPath() string {
-	return "/projects/" + q.projectID + "/merge_requests/" + q.mrIID
+func (q referenceAction) objectPath() string {
+	return "/projects/" + q.projectID + "/" + actionResource(q.objectType) + "/" + q.objectIID
 }
 func (q referenceAction) discussionPath() string {
-	return q.mrPath() + "/discussions/" + url.PathEscape(q.discussionID)
+	return q.objectPath() + "/discussions/" + url.PathEscape(q.discussionID)
 }
 func actionGet(ctx context.Context, read ReadAPI, path string, out any) error {
 	if err := ctx.Err(); err != nil {
@@ -115,14 +130,6 @@ func inspectAction(ctx context.Context, read ReadAPI, q referenceAction, target 
 		return r, platform.ErrReference
 	}
 	r.AccountLabel = user.Username
-	var mr referenceObject
-	if err := actionGet(ctx, read, q.mrPath(), &mr); err != nil {
-		return r, err
-	}
-	if strconv.FormatInt(mr.ID, 10) != q.mrID || strconv.FormatInt(mr.IID, 10) != q.mrIID || strconv.FormatInt(mr.ProjectID, 10) != q.projectID || len(mr.WebURL) > 4096 || !objectURLMatches(target.Instance, mr.WebURL, "merge_requests", mr.IID) {
-		return r, platform.ErrReference
-	}
-	r.URL = mr.WebURL
 	var project struct {
 		ID   int64  `json:"id"`
 		Path string `json:"path_with_namespace"`
@@ -134,24 +141,40 @@ func inspectAction(ctx context.Context, read ReadAPI, q referenceAction, target 
 		return r, platform.ErrReference
 	}
 	r.ContainerLabel = project.Path
+	var object referenceObject
+	if err := actionGet(ctx, read, q.objectPath(), &object); err != nil {
+		return r, err
+	}
+	if strconv.FormatInt(object.ID, 10) != q.objectID || strconv.FormatInt(object.IID, 10) != q.objectIID || strconv.FormatInt(object.ProjectID, 10) != q.projectID || !actionObjectURLMatches(target.Instance, object.WebURL, project.Path, q.objectType, q.objectIID) {
+		return r, platform.ErrReference
+	}
+	r.URL = object.WebURL
 	if q.discussionID != "" {
 		var d actionDiscussion
 		if err := actionGet(ctx, read, q.discussionPath(), &d); err != nil {
 			return r, err
 		}
-		if d.ID != q.discussionID || d.Individual || len(d.Notes) == 0 {
+		if d.ID != q.discussionID || len(d.Notes) == 0 || len(d.Notes) > 500 {
 			return r, platform.ErrReference
 		}
+		found := q.noteID == ""
 		for _, n := range d.Notes {
-			if n.ID <= 0 || strconv.FormatInt(n.NoteableID, 10) != q.mrID || n.NoteableType != "MergeRequest" || (n.NoteableIID != 0 && strconv.FormatInt(n.NoteableIID, 10) != q.mrIID) {
+			if !actionNoteBelongs(n, q) || n.System {
 				return r, platform.ErrReference
 			}
+			found = found || strconv.FormatInt(n.ID, 10) == q.noteID
+		}
+		if !found {
+			return r, platform.ErrReference
 		}
 	}
 	return r, nil
 }
+func actionNoteBelongs(n referenceNote, q referenceAction) bool {
+	return n.ID > 0 && strconv.FormatInt(n.NoteableID, 10) == q.objectID && n.NoteableType == q.objectType && (n.NoteableIID == 0 || strconv.FormatInt(n.NoteableIID, 10) == q.objectIID)
+}
 func validActionNote(n referenceNote, q referenceAction, username string) bool {
-	return n.ID > 0 && !n.System && n.Body == q.body && strconv.FormatInt(n.NoteableID, 10) == q.mrID && n.NoteableType == "MergeRequest" && strconv.FormatInt(n.Author.ID, 10) == q.accountID && n.Author.Username == username && (n.NoteableIID == 0 || strconv.FormatInt(n.NoteableIID, 10) == q.mrIID)
+	return actionNoteBelongs(n, q) && !n.System && n.Body == q.body && strconv.FormatInt(n.Author.ID, 10) == q.accountID && n.Author.Username == username
 }
 
 // ReferenceActions only describes capabilities until Inspect/Execute is called.
@@ -167,7 +190,7 @@ func ReferenceActions(read ReadAPI, write NoteAPI, username string) map[platform
 			retry = platform.RetryPolicy{MaxAttempts: 1}
 		}
 		actions[op] = platform.ActionCapability{
-			Spec: platform.ActionSpec{Operation: op, TargetKind: kind, ObjectTypes: []string{"MergeRequest"}, InputSchema: json.RawMessage(`{"type":"object","required":["body"],"properties":{"body":{"type":"string","minLength":1,"maxLength":4096}},"additionalProperties":false}`), Retry: retry},
+			Spec: platform.ActionSpec{Operation: op, TargetKind: kind, ObjectTypes: []string{"MergeRequest", "Issue"}, InputSchema: json.RawMessage(`{"type":"object","required":["body"],"properties":{"body":{"type":"string","minLength":1,"maxLength":4096}},"additionalProperties":false}`), Retry: retry},
 			Inspect: func(ctx context.Context, q platform.TargetActionRequest, a platform.AccessContext) (platform.TargetActionInspection, error) {
 				if q.Operation != op {
 					return platform.TargetActionInspection{}, platform.ErrReference
@@ -195,7 +218,7 @@ func ReferenceActions(read ReadAPI, write NoteAPI, username string) map[platform
 				if err != nil || write == nil || ctx.Err() != nil {
 					return r, nil
 				}
-				response, err := write(ctx, input.projectID, input.mrIID, input.discussionID, input.body)
+				response, err := write(ctx, input.objectType, input.projectID, input.objectIID, input.discussionID, input.body)
 				if err != nil {
 					r.Status, r.Message = "unknown", "remote result unconfirmed"
 					if errors.Is(err, ErrNoteNotSent) {
@@ -248,7 +271,7 @@ func ReferenceActions(read ReadAPI, write NoteAPI, username string) map[platform
 
 // ResolveStoredActionTarget is only registered on the managed session for an
 // already saved followup target. It does not enable standalone URL/native-ID
-// locators. Native aliases are service-owned and rechecked against the MR.
+// locators. Native aliases are service-owned and rechecked against the object.
 func ResolveStoredActionTarget(ctx context.Context, l platform.TargetLocator, a platform.AccessContext, read ReadAPI, username string) (platform.TargetResolution, error) {
 	r := platform.TargetResolution{Status: platform.ResolutionUnsupported, Account: a.Account, CheckedAt: time.Now().UTC()}
 	if l.Candidate == nil || l.Source != nil || l.URL != "" {
@@ -272,6 +295,7 @@ func ResolveStoredActionTarget(ctx context.Context, l platform.TargetLocator, a 
 	r.Aliases = q.Aliases
 	r.ObjectVerified = true
 	r.DiscussionVerified = q.Target.Discussion.Valid()
+	r.MessageVerified = q.Target.Message.Valid()
 	r.Complete = true
 	r.URL = inspected.URL
 	return r, nil

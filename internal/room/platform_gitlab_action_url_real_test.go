@@ -145,7 +145,7 @@ func TestRealGitlabActionURLReadOnly(t *testing.T) {
 	results := []agentGitlabTargetView{}
 	for _, raw := range []string{q.MRURL, q.MRURL + "#note_" + note, q.MRURL + "#discussion_" + q.DiscussionID} {
 		view, err := resolveGitlabURLCLI(t, f, raw)
-		if err != nil || view.TargetRef == "" || view.Resolution.Status != platform.ResolutionResolved || view.Resolution.Target == nil || view.Resolution.Target.Object.ID.Value != fmt.Sprint(q.MRID) || view.Resolution.Target.MRIID.Value != fmt.Sprint(q.MRIID) || view.Resolution.Account.ID.Value != fmt.Sprint(q.UserID) {
+		if err != nil || view.TargetRef == "" || view.Resolution.Status != platform.ResolutionResolved || view.Resolution.Target == nil || view.Resolution.Target.Object.ID.Value != fmt.Sprint(q.MRID) || view.Resolution.Target.IID.Value != fmt.Sprint(q.MRIID) || view.Resolution.Account.ID.Value != fmt.Sprint(q.UserID) {
 			t.Fatal(view, err)
 		}
 		if strings.Contains(raw, "#") && view.Resolution.Target.Discussion.Value != q.DiscussionID {
@@ -153,8 +153,8 @@ func TestRealGitlabActionURLReadOnly(t *testing.T) {
 		}
 		results = append(results, view)
 	}
-	if results[1].TargetRef != results[2].TargetRef {
-		t.Fatal("note and discussion URL produced different targets")
+	if results[1].TargetRef == results[2].TargetRef || results[1].Resolution.Target.Message.Value != note || results[2].Resolution.Target.Message.Valid() || results[1].Resolution.Target.Discussion != results[2].Resolution.Target.Discussion {
+		t.Fatal("note focus was lost or mapped to a different discussion")
 	}
 	if err := m.waitPlatformCalls(context.Background(), nil); err != nil {
 		t.Fatal(err)

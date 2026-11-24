@@ -48,7 +48,7 @@ func TestReferenceActionNativeHTTP(t *testing.T) {
 		if discussion {
 			name = "discussion"
 		}
-		for _, mode := range []string{"ok", "wrong-account", "wrong-username", "wrong-mr", "wrong-iid", "wrong-project", "wrong-url", "wrong-project-label", "wrong-discussion", "individual", "wrong-note-object", "missing-note", "wrong-returned-author", "wrong-returned-body", "wrong-returned-id", "wrong-returned-iid", "system-note", "post-401", "post-403", "post-404", "post-408", "post-429", "post-502", "post-invalid", "post-oversize", "read-invalid"} {
+		for _, mode := range []string{"ok", "wrong-account", "wrong-username", "wrong-mr", "wrong-iid", "wrong-project", "wrong-url", "wrong-url-path", "wrong-project-label", "wrong-discussion", "wrong-note-object", "missing-note", "wrong-returned-author", "wrong-returned-body", "wrong-returned-id", "wrong-returned-iid", "system-note", "post-401", "post-403", "post-404", "post-408", "post-429", "post-502", "post-invalid", "post-oversize", "read-invalid"} {
 			t.Run(name+"/"+mode, func(t *testing.T) {
 				posts := 0
 				var origin string
@@ -121,12 +121,12 @@ func TestReferenceActionNativeHTTP(t *testing.T) {
 							data = strings.Replace(data, "123", "124", 1)
 						case mode == "wrong-url" && strings.HasSuffix(r.URL.Path, "/42"):
 							data = strings.Replace(data, origin, "https://foreign.invalid", 1)
+						case mode == "wrong-url-path" && strings.HasSuffix(r.URL.Path, "/42"):
+							data = strings.Replace(data, "/g/p/", "/g/other/", 1)
 						case mode == "wrong-project-label" && r.URL.Path == "/api/v4/projects/123":
 							data = `{"id":124,"path_with_namespace":"g/p"}`
 						case mode == "wrong-discussion" && strings.HasSuffix(r.URL.Path, "/thread"):
 							data = strings.Replace(data, `"thread"`, `"other"`, 1)
-						case mode == "individual" && strings.HasSuffix(r.URL.Path, "/thread"):
-							data = strings.Replace(data, `"individual_note":false`, `"individual_note":true`, 1)
 						case mode == "wrong-note-object" && strings.HasSuffix(r.URL.Path, "/thread"):
 							data = strings.Replace(data, "9001", "9002", 1)
 						case mode == "missing-note" && posts > 0 && strings.HasSuffix(r.URL.Path, "/thread"):
@@ -143,7 +143,7 @@ func TestReferenceActionNativeHTTP(t *testing.T) {
 				caps := ReferenceActions(NewReadAPI(origin, platform.NewSecret("fixture-secret"), server.Client().Transport), NewNoteAPI(origin, platform.NewSecret("fixture-secret"), server.Client().Transport), "bot")
 				cap := caps[q.Operation]
 				result, err := cap.Execute(context.Background(), q, a)
-				before := mode == "wrong-account" || mode == "wrong-username" || mode == "wrong-mr" || mode == "wrong-iid" || mode == "wrong-project" || mode == "wrong-url" || mode == "wrong-project-label" || mode == "read-invalid" || (discussion && (mode == "wrong-discussion" || mode == "individual" || mode == "wrong-note-object"))
+				before := mode == "wrong-account" || mode == "wrong-username" || mode == "wrong-mr" || mode == "wrong-iid" || mode == "wrong-project" || mode == "wrong-url" || mode == "wrong-url-path" || mode == "wrong-project-label" || mode == "read-invalid" || (discussion && (mode == "wrong-discussion" || mode == "wrong-note-object"))
 				want := "succeeded"
 				count := 1
 				retry := "never"
@@ -230,7 +230,7 @@ func TestReferenceActionInvalidEvidenceNeverQueries(t *testing.T) {
 }
 
 func TestReferenceActionWriteBoundary(t *testing.T) {
-	for _, mode := range []string{"redirect", "transport", "cancelled", "invalid-origin", "invalid-project", "invalid-thread", "redaction", "oversize", "invalid-json"} {
+	for _, mode := range []string{"redirect", "transport", "cancelled", "invalid-origin", "invalid-type", "invalid-project", "invalid-thread", "redaction", "oversize", "invalid-json"} {
 		t.Run(mode, func(t *testing.T) {
 			calls := 0
 			secret := "fixture-secret"
@@ -261,13 +261,15 @@ func TestReferenceActionWriteBoundary(t *testing.T) {
 			origin = server.URL
 			ctx, cancel := context.WithCancel(context.Background())
 			defer cancel()
-			project, thread := "123", ""
+			objectType, project, thread := "MergeRequest", "123", ""
 			var transport http.RoundTripper = server.Client().Transport
 			switch mode {
 			case "cancelled":
 				cancel()
 			case "invalid-origin":
 				origin = "https://user:pass@example.com"
+			case "invalid-type":
+				objectType = "issues/../merge_requests"
 			case "invalid-project":
 				project = "123/../456"
 			case "invalid-thread":
@@ -275,7 +277,7 @@ func TestReferenceActionWriteBoundary(t *testing.T) {
 			case "transport":
 				transport = roundTripFunc(func(*http.Request) (*http.Response, error) { calls++; return nil, errors.New(secret + " RAW ERROR") })
 			}
-			got, err := NewNoteAPI(origin, platform.NewSecret(secret), transport)(ctx, project, "42", thread, "exact reply")
+			got, err := NewNoteAPI(origin, platform.NewSecret(secret), transport)(ctx, objectType, project, "42", thread, "exact reply")
 			if mode == "redaction" {
 				if err != nil || strings.Contains(string(got.Data), secret) || !strings.Contains(string(got.Data), "[REDACTED]") {
 					t.Fatal(got, err)

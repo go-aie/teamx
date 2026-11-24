@@ -185,7 +185,7 @@ func TestImageCommentNativeHTTP(t *testing.T) {
 					if mode == "dispatch" {
 						return APIResponse{}, ErrNoteNotSent
 					}
-					return NewImageNoteAPIWithCredential(origin, credential, server.Client().Transport)(ctx, "123", "42", q.Target.Discussion.Value, markdown)
+					return NewImageNoteAPIWithCredential(origin, credential, server.Client().Transport)(ctx, q.Target.Object.Type, "123", "42", q.Target.Discussion.Value, markdown)
 				}
 				actions, err := ImageReferenceActions(read, nil, write, NewImageUploadAPIWithCredential(origin, credential, server.Client().Transport), source, func(ctx context.Context) error { return ctx.Err() }, "bot", string(q.Input))
 				if err != nil {

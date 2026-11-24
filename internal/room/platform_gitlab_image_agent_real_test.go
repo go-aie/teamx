@@ -144,7 +144,7 @@ func testGitlabImagesRealAgent(t *testing.T, urlMode bool) {
 			base.action = referenceActionRequest{followupCommand: followupCommand{TurnNumber: 1}, TargetRef: targets[1], ID: "fixture-bootstrap", Operation: platform.OperationDiscussionReply, PolicyToken: policy.PolicyToken}
 			f := configureGitlabImageFixture(t, base)
 			if urlMode {
-				installGitlabURLFixtureReads(t, m)
+				installGitlabURLFixtureReads(t, f)
 			}
 			f.server.Close()
 			objectRef, threadRef := targets[0], targets[1]

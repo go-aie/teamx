@@ -18,10 +18,10 @@ import (
 // ErrNoteNotSent means admission was revoked before invoking the write transport.
 var ErrNoteNotSent = errors.New("note stopped before sending")
 
-// NoteAPI is deliberately limited to one MR note or one native thread reply.
+// NoteAPI is deliberately limited to one project issue/MR note or one native thread reply.
 // It is only injected into registered action capabilities, never notification GET
 // or an Agent-facing arbitrary method/URL entry point.
-type NoteAPI func(ctx context.Context, projectID, mrIID, discussionID, body string) (APIResponse, error)
+type NoteAPI func(ctx context.Context, objectType, projectID, iid, discussionID, body string) (APIResponse, error)
 type noteError struct {
 	message               string
 	retryable, notApplied bool
@@ -47,16 +47,16 @@ func NewImageNoteAPIWithCredential(origin string, credential platform.AccessCred
 func newNoteAPIWithCredential(origin string, credential platform.AccessCredential, transport http.RoundTripper, bodyLimit int) NoteAPI {
 	secret := credential.Token
 	client := boundedHTTPClient(transport)
-	return func(ctx context.Context, projectID, mrIID, discussionID, body string) (APIResponse, error) {
+	return func(ctx context.Context, objectType, projectID, iid, discussionID, body string) (APIResponse, error) {
 		before := func() (APIResponse, error) {
 			return APIResponse{}, &noteError{message: "request stopped before sending", notApplied: true}
 		}
-		if ctx.Err() != nil || !validOrigin(origin) || !validToken(secret.Reveal()) || !positiveREST(platform.ExternalID{Namespace: "gitlab:rest:id", Value: projectID}, "id") || !positiveREST(platform.ExternalID{Namespace: "gitlab:rest:iid", Value: mrIID}, "iid") || !actionTextLimit(body, bodyLimit) || !validActionDiscussion(discussionID) {
+		if actionResource(objectType) == "" || ctx.Err() != nil || !validOrigin(origin) || !validToken(secret.Reveal()) || !positiveREST(platform.ExternalID{Namespace: "gitlab:rest:id", Value: projectID}, "id") || !positiveREST(platform.ExternalID{Namespace: "gitlab:rest:iid", Value: iid}, "iid") || !actionTextLimit(body, bodyLimit) || !validActionDiscussion(discussionID) {
 			return before()
 		}
 		ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 		defer cancel()
-		path := "/projects/" + projectID + "/merge_requests/" + mrIID
+		path := "/projects/" + projectID + "/" + actionResource(objectType) + "/" + iid
 		if discussionID != "" {
 			path += "/discussions/" + url.PathEscape(discussionID)
 		}

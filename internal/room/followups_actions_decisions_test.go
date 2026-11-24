@@ -86,11 +86,17 @@ func TestReferenceActionSpecValidation(t *testing.T) {
 	source, access, _ := gitlabReferenceFixture()
 	target := platform.TargetIdentity{IdentityScope: access.Account.IdentityScope, Object: platform.NativeIdentity{Type: source.Reference.Object.Type, ID: source.Reference.Object.ID}}
 	target.Discussion = platform.ExternalID{Namespace: "gitlab:rest:discussion", Value: "thread"}
-	for _, mode := range []string{"valid", "wrong-kind", "reply-retry", "unknown-retry", "wrong-operation", "invalid-schema"} {
+	for _, mode := range []string{"valid", "comment-focus", "message-without-thread", "wrong-kind", "reply-retry", "unknown-retry", "wrong-operation", "invalid-schema"} {
 		t.Run(mode, func(t *testing.T) {
+			selected := target
 			_, q := referenceDecisionRequest()
 			spec := platform.ActionSpec{Operation: q.Operation, TargetKind: "discussion", InputSchema: []byte(`{"type":"object"}`), Retry: platform.RetryPolicy{MaxAttempts: 1}}
 			switch mode {
+			case "comment-focus", "message-without-thread":
+				selected.Message = platform.ExternalID{Namespace: "gitlab:rest:id", Value: "99"}
+				if mode == "message-without-thread" {
+					selected.Discussion = platform.ExternalID{}
+				}
 			case "wrong-kind":
 				spec.TargetKind = "object"
 			case "reply-retry":
@@ -102,7 +108,7 @@ func TestReferenceActionSpecValidation(t *testing.T) {
 			case "invalid-schema":
 				spec.InputSchema = []byte(`{`)
 			}
-			if got := validReferenceSpec(spec, q, target); got != (mode == "valid") {
+			if got := validReferenceSpec(spec, q, selected); got != (mode == "valid" || mode == "comment-focus") {
 				t.Fatal(mode, got)
 			}
 		})

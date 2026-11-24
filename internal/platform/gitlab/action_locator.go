@@ -15,7 +15,7 @@ import (
 )
 
 type actionURL struct {
-	project, iid, note, discussion, web string
+	project, objectType, iid, note, discussion, web string
 }
 
 type locatorDiscussion struct {
@@ -29,22 +29,60 @@ type locatorDiscussion struct {
 func parseActionURL(raw, origin string) (actionURL, error) {
 	var result actionURL
 	bad := func() (actionURL, error) {
-		return result, referenceError("unsupported_url", "需要完整 HTTPS MR 链接及准确 note_／discussion_ 锚点；不支持查询参数、额外路径或含糊编码")
+		return result, referenceError("unsupported_url", "需要完整 HTTPS issue／MR／work item 链接；评论使用 note_／discussion_ 锚点或 /notes/ID，不接受含糊编码或未知定位参数")
 	}
 	if len(raw) > 4096 || !utf8.ValidString(raw) || strings.ContainsAny(raw, "\\") || strings.IndexFunc(raw, func(r rune) bool { return unicode.IsControl(r) || unicode.IsSpace(r) }) >= 0 {
 		return bad()
 	}
 	u, err := url.Parse(raw)
-	if err != nil || u.Scheme != "https" || u.Hostname() == "" || u.Opaque != "" || u.User != nil || u.RawQuery != "" || u.ForceQuery || !validOrigin(origin) {
+	if err != nil || u.Scheme != "https" || u.Hostname() == "" || u.Opaque != "" || u.User != nil || !validOrigin(origin) {
 		return bad()
 	}
 	if !strings.EqualFold(u.Scheme+"://"+u.Host, origin) {
 		return result, referenceError("instance_mismatch", "链接实例与选定账号不符；请选择该实例的准确账号入口")
 	}
+	// Presentation/tracking parameters carry no target identity. Reject unknown
+	// parameters rather than silently discarding a possible target selector.
+	query, err := url.ParseQuery(u.RawQuery)
+	if err != nil {
+		return bad()
+	}
+	for key := range query {
+		switch key {
+		case "view", "tab", "sort", "diff_id", "start_sha", "commit_id", "w", "utm_source", "utm_medium", "utm_campaign", "utm_term", "utm_content":
+		default:
+			return bad()
+		}
+	}
 	path := strings.TrimSuffix(u.EscapedPath(), "/")
 	parts := strings.Split(path, "/")
-	if len(parts) < 6 || parts[0] != "" || parts[len(parts)-3] != "-" || parts[len(parts)-2] != "merge_requests" {
+	// Accept a copied note path as well as native note/discussion anchors.
+	if len(parts) >= 3 && parts[len(parts)-2] == "notes" {
+		result.note = parts[len(parts)-1]
+		if !positiveREST(restString(result.note, "id"), "id") {
+			return bad()
+		}
+		parts = parts[:len(parts)-2]
+	} else if len(parts) >= 2 && (parts[len(parts)-1] == "diffs" || parts[len(parts)-1] == "commits") {
+		parts = parts[:len(parts)-1]
+		if len(parts) < 3 || parts[len(parts)-2] != "merge_requests" {
+			return bad()
+		}
+	}
+	if len(parts) < 6 || parts[0] != "" || parts[len(parts)-3] != "-" {
 		return bad()
+	}
+	resource := parts[len(parts)-2]
+	switch resource {
+	case "merge_requests":
+		result.objectType = "MergeRequest"
+	case "issues", "work_items":
+		result.objectType = "Issue"
+	default:
+		return bad()
+	}
+	if parts[1] == "groups" {
+		return result, referenceError("unsupported_scope", "当前托管评论支持项目级 issue／MR／work item；群组级 work item 需要单独的原生 API 能力，并非账号权限错误")
 	}
 	result.iid = parts[len(parts)-1]
 	if !positiveREST(platform.ExternalID{Namespace: "gitlab:rest:iid", Value: result.iid}, "iid") {
@@ -60,7 +98,7 @@ func parseActionURL(raw, origin string) (actionURL, error) {
 		project[i], encoded[i] = decoded, url.PathEscape(decoded)
 	}
 	result.project = strings.Join(project, "/")
-	result.web = strings.ToLower(u.Scheme+"://"+u.Host) + "/" + strings.Join(encoded, "/") + "/-/merge_requests/" + result.iid
+	result.web = strings.ToLower(u.Scheme+"://"+u.Host) + "/" + strings.Join(encoded, "/") + "/-/" + resource + "/" + result.iid
 	if strings.Contains(raw, "#") {
 		// Anchors are native IDs, not URL-encoded paths or display strings.
 		if u.RawFragment != "" || strings.Contains(u.Fragment, "%") {
@@ -68,11 +106,18 @@ func parseActionURL(raw, origin string) (actionURL, error) {
 		}
 		switch {
 		case strings.HasPrefix(u.Fragment, "note_"):
-			result.note = strings.TrimPrefix(u.Fragment, "note_")
+			note := strings.TrimPrefix(u.Fragment, "note_")
+			if result.note != "" && result.note != note {
+				return bad()
+			}
+			result.note = note
 			if !positiveREST(restString(result.note, "id"), "id") {
 				return bad()
 			}
 		case strings.HasPrefix(u.Fragment, "discussion_"):
+			if result.note != "" {
+				return bad()
+			}
 			result.discussion = strings.TrimPrefix(u.Fragment, "discussion_")
 			if !locatorDiscussionID(result.discussion) {
 				return bad()
@@ -82,6 +127,18 @@ func parseActionURL(raw, origin string) (actionURL, error) {
 		}
 	}
 	return result, nil
+}
+
+// Match the complete project path and verified object type, accepting only the
+// issue/work_item UI alias. An IID alone never identifies an object.
+func actionObjectURLMatches(origin, raw, project, objectType, iid string) bool {
+	parsed, err := parseActionURL(raw, origin)
+	if err != nil || parsed.project != project || parsed.objectType != objectType || parsed.iid != iid || parsed.note != "" || parsed.discussion != "" {
+		return false
+	}
+	actual, _ := url.Parse(raw)
+	canonical, _ := url.Parse(parsed.web)
+	return actual.RawQuery == "" && !actual.ForceQuery && !strings.Contains(raw, "#") && strings.TrimSuffix(actual.Path, "/") == canonical.Path
 }
 
 func restString(value, kind string) platform.ExternalID {
@@ -100,10 +157,13 @@ func ResolveActionURL(ctx context.Context, l platform.TargetLocator, a platform.
 		r.ReasonCode, r.Reason = referenceFailure("目标解析", err)
 		r.Status = platform.ResolutionUnavailable
 		switch r.ReasonCode {
-		case "unsupported_url", "unsupported":
+		case "unsupported_url", "unsupported", "unsupported_scope":
 			r.Status = platform.ResolutionUnsupported
 		case "instance_mismatch", "identity_conflict", "account_mismatch":
 			r.Status = platform.ResolutionMismatch
+		}
+		if r.ObjectVerified && r.Status != platform.ResolutionMismatch {
+			r.Status = platform.ResolutionPartial
 		}
 		var q *queryError
 		if errors.Is(err, platform.ErrCredential) {
@@ -122,7 +182,7 @@ func ResolveActionURL(ctx context.Context, l platform.TargetLocator, a platform.
 		return r, nil
 	}
 	if l.URL == "" || l.Source != nil || l.Candidate != nil || l.Query != nil || l.Self || l.TargetRef != "" {
-		return fail(referenceError("unsupported", "GitLab 独立定位仅接受完整 MR／讨论 URL"))
+		return fail(referenceError("unsupported", "GitLab 独立定位仅接受完整 issue／MR／work item／评论 URL"))
 	}
 	if !a.Valid() || a.Account != a.Receiver || a.Account.Provider != "gitlab" || !positiveREST(a.Account.ID, "id") {
 		return fail(referenceError("account_mismatch", "当前绑定账号证据无效"))
@@ -173,23 +233,28 @@ func ResolveActionURL(ctx context.Context, l platform.TargetLocator, a platform.
 	if project.ID <= 0 || project.Path != locator.project {
 		return fail(referenceError("identity_conflict", "项目路径与 API 返回不符；不接受迁移后的其他目标"))
 	}
-	base := "/projects/" + strconv.FormatInt(project.ID, 10) + "/merge_requests/" + locator.iid
-	var mr referenceObject
-	if _, err := get(base, nil, &mr); err != nil {
+	base := "/projects/" + strconv.FormatInt(project.ID, 10) + "/" + actionResource(locator.objectType) + "/" + locator.iid
+	var object referenceObject
+	if _, err := get(base, nil, &object); err != nil {
 		return fail(err)
 	}
-	verified, err := parseActionURL(mr.WebURL, a.Account.Instance)
-	if err != nil || mr.ID <= 0 || mr.ProjectID != project.ID || strconv.FormatInt(mr.IID, 10) != locator.iid || verified.project != locator.project || verified.iid != locator.iid || verified.note != "" || verified.discussion != "" {
-		return fail(referenceError("identity_conflict", "MR 原生身份或完整网页路径与链接不符"))
+	if object.ID <= 0 || object.ProjectID != project.ID || strconv.FormatInt(object.IID, 10) != locator.iid || !actionObjectURLMatches(a.Account.Instance, object.WebURL, locator.project, locator.objectType, locator.iid) {
+		return fail(referenceError("identity_conflict", "对象原生身份或完整网页路径与链接不符"))
 	}
-	target := platform.TargetIdentity{IdentityScope: a.Account.IdentityScope, Containers: []platform.NativeIdentity{{Type: "Project", ID: restID(project.ID, "id")}}, Object: platform.NativeIdentity{Type: "MergeRequest", ID: restID(mr.ID, "id")}}
+	target := platform.TargetIdentity{IdentityScope: a.Account.IdentityScope, Containers: []platform.NativeIdentity{{Type: "Project", ID: restID(project.ID, "id")}}, Object: platform.NativeIdentity{Type: locator.objectType, ID: restID(object.ID, "id")}}
+	// Retain proven object evidence on a failed comment lookup, without saving
+	// an executable ref or downgrading the requested reply to an object comment.
+	r.Target, r.ObjectVerified, r.URL = &target, true, object.WebURL
+	alias := target
+	alias.Object.ID = restID(object.IID, "iid")
+	r.Aliases = []platform.TargetIdentity{alias}
 	validate := func(d locatorDiscussion, seen map[string]bool, notes map[int64]bool) error {
 		if !locatorDiscussionID(d.ID) || d.Individual == nil || seen[d.ID] || len(d.Notes) == 0 || len(d.Notes) > 500 {
 			return referenceError("incomplete", "讨论响应缺失、重复或超过限制")
 		}
 		seen[d.ID] = true
 		for _, n := range d.Notes {
-			if n.ID <= 0 || notes[n.ID] || len(notes) >= 500 || n.NoteableID != mr.ID || n.NoteableType != "MergeRequest" || n.NoteableIID != 0 && n.NoteableIID != mr.IID {
+			if n.ID <= 0 || notes[n.ID] || len(notes) >= 500 || n.NoteableID != object.ID || n.NoteableType != locator.objectType || n.NoteableIID != 0 && n.NoteableIID != object.IID {
 				return referenceError("incomplete", "note 映射冲突或超过 500 条限制")
 			}
 			notes[n.ID] = true
@@ -205,8 +270,13 @@ func ResolveActionURL(ctx context.Context, l platform.TargetLocator, a platform.
 		if err := validate(d, seen, notes); err != nil {
 			return fail(err)
 		}
-		if d.ID != locator.discussion || *d.Individual {
-			return fail(referenceError("unsupported", "链接未指向该 MR 中可回复的准确讨论"))
+		if d.ID != locator.discussion {
+			return fail(referenceError("identity_conflict", "讨论原生身份与链接不符"))
+		}
+		for _, n := range d.Notes {
+			if n.System {
+				return fail(referenceError("not_replyable", "系统记录不能作为回复目标"))
+			}
 		}
 		target.Discussion = restString(d.ID, "discussion")
 	} else if locator.note != "" {
@@ -237,9 +307,12 @@ func ResolveActionURL(ctx context.Context, l platform.TargetLocator, a platform.
 				return fail(err)
 			}
 			if match != nil {
-				if *match.Individual {
-					return fail(referenceError("unsupported", "该 note 是独立普通评论，不能作为讨论回复；如需普通评论请明确使用无锚点 MR 链接"))
+				for _, n := range match.Notes {
+					if n.ID == note && n.System {
+						return fail(referenceError("not_replyable", "系统记录不能作为回复目标"))
+					}
 				}
+				target.Message = restString(locator.note, "id")
 				target.Discussion = restString(match.ID, "discussion")
 				break
 			}
@@ -248,9 +321,10 @@ func ResolveActionURL(ctx context.Context, l platform.TargetLocator, a platform.
 			}
 		}
 	}
-	alias := target
-	alias.Object.ID = restID(mr.IID, "iid")
+	alias = target
+	alias.Object.ID = restID(object.IID, "iid")
 	r.Status, r.Target, r.Aliases = platform.ResolutionResolved, &target, []platform.TargetIdentity{alias}
-	r.ObjectVerified, r.DiscussionVerified, r.Complete, r.URL = true, target.Discussion.Valid(), true, locator.web
+	r.ObjectVerified, r.DiscussionVerified, r.Complete, r.URL = true, target.Discussion.Valid(), true, object.WebURL
+	r.MessageVerified = target.Message.Valid()
 	return r, nil
 }

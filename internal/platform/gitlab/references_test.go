@@ -139,7 +139,7 @@ func TestReferenceNativeHTTPIdentityLayers(t *testing.T) {
 					if calls != 0 {
 						t.Fatal("native source made remote request")
 					}
-				} else if !result.MessageVerified || result.DiscussionVerified == (mode == "individual") {
+				} else if !result.MessageVerified || !result.DiscussionVerified {
 					t.Fatal(result)
 				}
 			}

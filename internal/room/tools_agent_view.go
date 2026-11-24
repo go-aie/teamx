@@ -79,7 +79,7 @@ func projectToolSelections(selections []toolSelection) []agentToolEntry {
 			} else if s.Skill != "" {
 				guidance = "Read the declared Skill when workflow guidance is missing. "
 			}
-			v.Workflow = "Managed MR comments/replies: actions resolve/execute --tool " + s.Name + " --request JSON. Reuse a verified target and valid contract; a full MR/thread URL needs no native ID lookup or Workspace. " + guidance + "Execute once, report the receipt; unknown: actions read --id ORIGINAL_ID, never resend. Native CLI: tools run " + s.Name + " ... ."
+			v.Workflow = "Managed project issue/MR/work item comments/replies: actions resolve/execute --tool " + s.Name + " --request JSON. Reuse a verified target and valid contract; a full project issue/MR/work item/comment URL needs no native ID lookup or Workspace. " + guidance + "Execute once, report the receipt; unknown: actions read --id ORIGINAL_ID, never resend. Native CLI: tools run " + s.Name + " ... ."
 		case "lark":
 			// Lark already had a compact view; retain all readiness and repair
 			// evidence, and only advertise guidance actually declared by the tool.

@@ -56,16 +56,21 @@ func locatorRead(t *testing.T, hook func(string, url.Values) (string, http.Heade
 }
 
 func TestGitlabActionURLShapes(t *testing.T) {
-	for _, raw := range []string{locatorWeb, strings.Replace(locatorWeb, "gitlab.example", "GITLAB.EXAMPLE", 1) + "/", locatorWeb + "#note_99", locatorWeb + "#discussion_full-native-id", locatorOrigin + "/group/%E9%A1%B9%E7%9B%AE/-/merge_requests/1"} {
+	for _, raw := range []string{locatorWeb, strings.Replace(locatorWeb, "gitlab.example", "GITLAB.EXAMPLE", 1) + "/", locatorWeb + "#note_99", locatorWeb + "#discussion_full-native-id", locatorOrigin + "/group/%E9%A1%B9%E7%9B%AE/-/merge_requests/1", locatorWeb + "?", locatorWeb + "?view=parallel#note_99", locatorWeb + "/diffs#note_99", locatorWeb + "/commits#note_99", locatorWeb + "/notes/99", locatorWeb + "/notes/99#note_99", locatorWeb + "?utm_source=email#note_99"} {
 		if _, err := parseActionURL(raw, locatorOrigin); err != nil {
 			t.Errorf("rejected %q: %v", raw, err)
 		}
 	}
 	for _, raw := range []string{
-		strings.Replace(locatorWeb, "https:", "http:", 1), strings.Replace(locatorWeb, "gitlab.example", "user@gitlab.example", 1), locatorWeb + "?", locatorWeb + "?view=x", locatorWeb + "/diffs", locatorWeb + "//", locatorWeb + "#", locatorWeb + "#other", locatorWeb + "#note_0", locatorWeb + "#note_099", locatorWeb + "#note_%39%39", locatorWeb + "#discussion_", locatorWeb + "#discussion_..", locatorWeb + "#discussion_a%2fb", locatorWeb + "#discussion_a%25b", locatorWeb + "\n", strings.Replace(locatorWeb, "/42", "/042", 1), strings.Replace(locatorWeb, "/42", "/9223372036854775808", 1), strings.Replace(locatorWeb, "group/sub", "group/../sub", 1), strings.Replace(locatorWeb, "group/sub", "group/%2e/sub", 1), strings.Replace(locatorWeb, "group/sub", "group%2Fsub", 1), strings.Replace(locatorWeb, "group/sub", "group%252Fsub", 1), strings.Replace(locatorWeb, "group/sub", "group//sub", 1), strings.Replace(locatorWeb, "group/sub", "group\\sub", 1), strings.Replace(locatorWeb, "group/sub", "group/%00sub", 1), strings.Replace(locatorWeb, "group/sub", "group/%FFsub", 1), strings.Repeat("x", 4097),
+		strings.Replace(locatorWeb, "https:", "http:", 1), strings.Replace(locatorWeb, "gitlab.example", "user@gitlab.example", 1), locatorWeb + "//", locatorWeb + "#", locatorWeb + "#other", locatorWeb + "#note_0", locatorWeb + "#note_099", locatorWeb + "#note_%39%39", locatorWeb + "#discussion_", locatorWeb + "#discussion_..", locatorWeb + "#discussion_a%2fb", locatorWeb + "#discussion_a%25b", locatorWeb + "\n", strings.Replace(locatorWeb, "/42", "/042", 1), strings.Replace(locatorWeb, "/42", "/9223372036854775808", 1), strings.Replace(locatorWeb, "group/sub", "group/../sub", 1), strings.Replace(locatorWeb, "group/sub", "group/%2e/sub", 1), strings.Replace(locatorWeb, "group/sub", "group%2Fsub", 1), strings.Replace(locatorWeb, "group/sub", "group%252Fsub", 1), strings.Replace(locatorWeb, "group/sub", "group//sub", 1), strings.Replace(locatorWeb, "group/sub", "group\\sub", 1), strings.Replace(locatorWeb, "group/sub", "group/%00sub", 1), strings.Replace(locatorWeb, "group/sub", "group/%FFsub", 1), strings.Repeat("x", 4097),
 	} {
 		if _, err := parseActionURL(raw, locatorOrigin); err == nil {
 			t.Errorf("accepted %q", raw)
+		}
+	}
+	for _, suffix := range []string{"?note_id=99", "?redirect=https://other.example", "?view=%ZZ", "/notes/99#note_100", "/notes/99#discussion_thread", "/notes/0", "/diffs/notes/99", "/notes/99/extra"} {
+		if _, err := parseActionURL(locatorWeb+suffix, locatorOrigin); err == nil {
+			t.Errorf("accepted ambiguous locator %q", suffix)
 		}
 	}
 }
@@ -79,7 +84,7 @@ func TestGitlabResolveActionURL(t *testing.T) {
 				return "", nil, nil
 			})
 			r, err := ResolveActionURL(t.Context(), platform.TargetLocator{URL: locatorWeb + anchor}, locatorAccess(), read, "user101")
-			if err != nil || r.Status != platform.ResolutionResolved || !r.Complete || r.Target == nil || r.Target.Object.ID != restID(9001, "id") || r.Target.Message.Valid() || r.Target.Discussion.Valid() != (anchor != "") || len(r.Aliases) != 1 || r.Aliases[0].Object.ID != restID(42, "iid") || len(calls) != 3+btoi(anchor != "") {
+			if err != nil || r.Status != platform.ResolutionResolved || !r.Complete || r.Target == nil || r.Target.Object.ID != restID(9001, "id") || r.Target.Message.Valid() != (anchor == "#note_99") || r.Target.Discussion.Valid() != (anchor != "") || len(r.Aliases) != 1 || r.Aliases[0].Object.ID != restID(42, "iid") || len(calls) != 3+btoi(anchor != "") {
 				t.Fatal(r, err, calls)
 			}
 		})
@@ -94,7 +99,7 @@ func btoi(b bool) int {
 }
 
 func TestGitlabResolveActionURLRejectsEvidence(t *testing.T) {
-	for _, mode := range []string{"instance", "anchor", "user", "username", "project", "mr-project", "mr-iid", "mr-url", "thread-id", "thread-owner", "individual", "duplicate", "missing", "bad-page", "missing-boundary", "budget", "oversize", "bad-json", "403", "404", "429", "redirect", "deadline"} {
+	for _, mode := range []string{"instance", "anchor", "user", "username", "project", "mr-project", "mr-iid", "mr-url", "thread-id", "thread-owner", "system", "duplicate", "missing", "bad-page", "missing-boundary", "budget", "oversize", "bad-json", "403", "404", "429", "redirect", "deadline"} {
 		t.Run(mode, func(t *testing.T) {
 			raw := locatorWeb + "#note_99"
 			if mode == "instance" {
@@ -145,8 +150,8 @@ func TestGitlabResolveActionURLRejectsEvidence(t *testing.T) {
 						return strings.Replace(locatorThread, "680f5bcbb2f1d20b8beff17953e04503799e674f", "different", 1), nil, nil
 					case "thread-owner":
 						return `[` + strings.Replace(locatorThread, `"noteable_id":9001`, `"noteable_id":9002`, 1) + `]`, nil, nil
-					case "individual":
-						return `[` + strings.Replace(locatorThread, `"individual_note":false`, `"individual_note":true`, 1) + `]`, nil, nil
+					case "system":
+						return `[` + strings.Replace(locatorThread, `"noteable_id":9001`, `"system":true,"noteable_id":9001`, 1) + `]`, nil, nil
 					case "duplicate":
 						return `[` + locatorThread + `,` + locatorThread + `]`, nil, nil
 					case "missing":
@@ -173,7 +178,7 @@ func TestGitlabResolveActionURLRejectsEvidence(t *testing.T) {
 				return "", nil, nil
 			})
 			r, err := ResolveActionURL(t.Context(), platform.TargetLocator{URL: raw}, locatorAccess(), read, "user101")
-			if err != nil || r.Status == platform.ResolutionResolved || r.Target != nil || r.Complete || r.ReasonCode == "" || calls > 13 {
+			if err != nil || r.Status == platform.ResolutionResolved || r.Complete || r.ReasonCode == "" || calls > 13 {
 				t.Fatal(r, err, calls)
 			}
 			if (mode == "instance" || mode == "anchor") && calls != 0 {

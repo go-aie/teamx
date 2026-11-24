@@ -25,15 +25,16 @@ import (
 
 type gitlabImageFixture struct {
 	*managedActionFixture
-	server   *httptest.Server
-	cli      func([]string, any) error
-	refs     []gitlab.ImageRef
-	pixels   [][]byte
-	requests sync.WaitGroup
-	uploads  atomic.Int32
-	mode     string
-	body     string
-	hook     func(*http.Request)
+	server            *httptest.Server
+	cli               func([]string, any) error
+	refs              []gitlab.ImageRef
+	pixels            [][]byte
+	requests          sync.WaitGroup
+	uploads           atomic.Int32
+	mode              string
+	objectType, route string
+	body              string
+	hook              func(*http.Request)
 }
 
 func gitlabImageActionFixture(t *testing.T, discussion bool) *gitlabImageFixture {
@@ -43,7 +44,7 @@ func gitlabImageActionFixture(t *testing.T, discussion bool) *gitlabImageFixture
 
 func configureGitlabImageFixture(t *testing.T, fixture *managedActionFixture) *gitlabImageFixture {
 	t.Helper()
-	f := &gitlabImageFixture{managedActionFixture: fixture}
+	f := &gitlabImageFixture{managedActionFixture: fixture, objectType: "MergeRequest", route: "merge_requests"}
 	f.server = httptest.NewServer(fixtureHTTPHandler(f.m))
 	t.Cleanup(f.server.Close)
 	f.cli = contractCLI(t, f.server.URL, f.svc, f.id)
@@ -65,7 +66,7 @@ func configureGitlabImageFixture(t *testing.T, fixture *managedActionFixture) *g
 		f.refs = append(f.refs, gitlab.ImageRef{MessageSeq: receipt.Seq, AttachmentID: imageID})
 		f.pixels = append(f.pixels, data)
 	}
-	posted, err := f.svc.room.Call[PostReceipt](context.Background(), PostMessage{RoomIdentity: f.id.RoomIdentity, Caller: Caller{Author: Author{Kind: "human", ID: humanOperator()}}, ClientMessageID: "image-authority", Text: "把指定原图和说明一起评论到这个 MR；如果目标是讨论，回复该准确讨论"})
+	posted, err := f.svc.room.Call[PostReceipt](context.Background(), PostMessage{RoomIdentity: f.id.RoomIdentity, Caller: Caller{Author: Author{Kind: "human", ID: humanOperator()}}, ClientMessageID: "image-authority", Text: "把指定原图和说明一起评论到指定 GitLab 对象；如果链接指向评论或讨论，回复该准确目标"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -76,7 +77,7 @@ func configureGitlabImageFixture(t *testing.T, fixture *managedActionFixture) *g
 	if err = f.svc.store.SaveAgent(AgentSnapshot{Version: formatVersion, MemberIdentity: f.id, TurnNumber: 1, LastOfferedUnreadSeq: posted.Seq, LastOfferedInboxSeq: prior.LastOfferedInboxSeq, Turn: &TurnRecord{Number: 1, Status: "running", SnapshotSeq: posted.Seq, OfferedUnreadSeq: posted.Seq, InboxSnapshotSeq: prior.LastOfferedInboxSeq}}); err != nil {
 		t.Fatal(err)
 	}
-	f.action.Authority = referenceActionAuthority{RoomSeq: posted.Seq, Reason: "直接 Room 人类指令要求向准确 MR 或讨论发送选定完整图文"}
+	f.action.Authority = referenceActionAuthority{RoomSeq: posted.Seq, Reason: "直接 Room 人类指令要求向准确 GitLab 对象或讨论发送选定完整图文"}
 	// Bootstrap through the existing saved-followup resolver; this is business
 	// target setup, not a new URL/native-ID entry or an execution prerequisite.
 	if f.action.TargetRef != "" {
@@ -136,15 +137,33 @@ func configureGitlabImageFixture(t *testing.T, fixture *managedActionFixture) *g
 			var value map[string]any
 			_ = json.Unmarshal([]byte(managedActionNote), &value)
 			value["body"] = f.body
+			value["noteable_type"] = f.objectType
 			value["id"] = 98 + f.posts.Load()
 			data, _ := json.Marshal(value)
 			return string(data)
 		}
+		resource := "merge_requests"
+		if f.objectType == "Issue" {
+			resource = "issues"
+		}
+		base := "/api/v4/projects/123/" + resource + "/42"
+		if r.Method == "GET" && f.objectType == "Issue" {
+			switch r.URL.Path {
+			case base:
+				_ = json.NewEncoder(w).Encode(map[string]any{"id": 9001, "iid": 42, "project_id": 123, "web_url": "https://gitlab.invalid/g/p/-/" + f.route + "/42"})
+				return
+			case base + "/discussions/thread":
+				if f.posts.Load() == 0 {
+					io.WriteString(w, `{"id":"thread","individual_note":false,"notes":[`+strings.ReplaceAll(managedActionNote, "MergeRequest", f.objectType)+`]}`)
+					return
+				}
+			}
+		}
 		if r.Method == "POST" {
 			f.posts.Add(1)
-			want := "/api/v4/projects/123/merge_requests/42/notes"
+			want := base + "/notes"
 			if f.action.Operation == platform.OperationDiscussionReply {
-				want = "/api/v4/projects/123/merge_requests/42/discussions/thread/notes"
+				want = base + "/discussions/thread/notes"
 			}
 			if r.URL.Path != want {
 				t.Error("wrong thread", r.URL.Path)
@@ -222,7 +241,7 @@ func TestGitlabImagesManagedCLI(t *testing.T) {
 				if err := f.cli([]string{"actions", "resolve", "--request", resolve}, &target); err != nil {
 					t.Fatal(err)
 				}
-				if target.Resolution.Target == nil || target.Resolution.Target.MRIID.Value != "42" || f.uploads.Load() != 0 || target.TargetRef != f.action.TargetRef {
+				if target.Resolution.Target == nil || target.Resolution.Target.IID.Value != "42" || f.uploads.Load() != 0 || target.TargetRef != f.action.TargetRef {
 					t.Fatal(target)
 				}
 				for _, cap := range target.Actions {

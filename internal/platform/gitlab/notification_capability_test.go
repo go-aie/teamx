@@ -56,3 +56,20 @@ func TestOwnGitlabNotificationScope(t *testing.T) {
 		}
 	}
 }
+
+func TestOwnIssueCommentMatchesManagedReceipt(t *testing.T) {
+	q, a := actionFixture("https://gitlab.example.com", true)
+	q.Target.Object.Type, q.Aliases[0].Object.Type = "Issue", "Issue"
+	q.Target.Message, q.Aliases[0].Message = restID(98, "id"), restID(98, "id")
+	state := EventsState{Binding: platform.ProjectBinding{URL: a.Account.Instance, Project: "g/p"}, ProjectID: 123, UserID: 13}
+	event := Event{Kind: "note", Author: EventAuthor{ID: 13}, NoteID: 99, NoteableType: "Issue", NoteableID: 9001, NoteableIID: 42}
+	caps := NotificationCapabilities()
+	v := caps.Project(EventsMessage(state, EventsInboxEntry{Event: event}))
+	if !v.ContextOnly || !caps.MatchAction(v, q, a) {
+		t.Fatal("issue reply was not matched to its own account/object", v)
+	}
+	q.Target.Object.Type = "MergeRequest"
+	if caps.MatchAction(v, q, a) {
+		t.Fatal("issue and MR identities were confused")
+	}
+}

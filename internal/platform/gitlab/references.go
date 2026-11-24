@@ -20,11 +20,8 @@ type referenceObject struct {
 	WebURL    string `json:"web_url"`
 }
 type referenceDiscussion struct {
-	ID         string `json:"id"`
-	Individual bool   `json:"individual_note"`
-	Notes      []struct {
-		ID int64 `json:"id"`
-	} `json:"notes"`
+	ID    string          `json:"id"`
+	Notes []referenceNote `json:"notes"`
 }
 type referenceLookup struct {
 	object   referenceObject
@@ -34,7 +31,7 @@ type referenceLookup struct {
 }
 type referenceMapping struct {
 	discussion platform.ExternalID
-	individual bool
+	system     bool
 }
 type resolutionFailure struct{ code, reason string }
 
@@ -298,7 +295,7 @@ func ResolveTargets(ctx context.Context, locators []platform.TargetLocator, acce
 							valid = false
 							break
 						}
-						lookup.notes[id] = referenceMapping{platform.ExternalID{Namespace: "gitlab:rest:discussion", Value: d.ID}, d.Individual}
+						lookup.notes[id] = referenceMapping{platform.ExternalID{Namespace: "gitlab:rest:discussion", Value: d.ID}, n.System}
 					}
 				}
 				if !valid {
@@ -355,7 +352,7 @@ func ResolveTargets(ctx context.Context, locators []platform.TargetLocator, acce
 			default:
 				target.Message = note
 				r.MessageVerified = true
-				if !mapping.individual {
+				if !mapping.system {
 					target.Discussion = mapping.discussion
 					r.DiscussionVerified = true
 				}

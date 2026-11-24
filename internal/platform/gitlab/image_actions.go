@@ -173,7 +173,7 @@ func validateImageComment(m PreparedImageComment, input ImageActionInput) error 
 	return nil
 }
 
-// ImageReferenceActions is the managed MR comment/reply implementation. Plain
+// ImageReferenceActions is the managed project comment/reply implementation. Plain
 // text retains ReferenceActions' authorization and retry policy.
 // Empty executionInput means discovery only; no source preparation or upload.
 func ImageReferenceActions(read ReadAPI, plainWrite NoteAPI, write ImageNoteAPI, upload ImageUploadAPI, source ImageSource, check func(context.Context) error, username, executionInput string) (map[platform.Operation]platform.ActionCapability, error) {
@@ -299,7 +299,7 @@ func ImageReferenceActions(read ReadAPI, plainWrite NoteAPI, write ImageNoteAPI,
 				return r, nil
 			}
 			var saved referenceNote
-			if actionGet(ctx, read, native.mrPath()+"/notes/"+r.ResultID.Value, &saved) != nil || saved.ID != note.ID || !validActionNote(saved, native, inspected.AccountLabel) {
+			if actionGet(ctx, read, native.objectPath()+"/notes/"+r.ResultID.Value, &saved) != nil || saved.ID != note.ID || !validActionNote(saved, native, inspected.AccountLabel) {
 				return r, nil
 			}
 			if native.discussionID != "" {
