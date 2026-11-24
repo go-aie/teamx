@@ -3,36 +3,114 @@ package dsh
 import (
 	"context"
 	"errors"
-	"fmt"
+	"github.com/go-aie/teamx/agent"
 	"io"
-	"os/exec"
+	"os"
+	"path/filepath"
 	"strings"
-	"syscall"
-	"time"
+	"sync"
 	"unicode"
 )
 
-// ACP may advertise the adapter's version rather than the installed CLI's.
-// Query the same configured launcher, with bounded output and no shell.
-func installedVersion(ctx context.Context, opts Options) (string, error) {
+// ACP may advertise the adapter version. Version queries use the same
+// execution selection and ownership contract as ACP, including partial starts.
+func queryVersion(ctx context.Context, opts Options) (string, agent.Execution, error) {
 	ctx, cancel := context.WithTimeout(ctx, opts.Limits.HandshakeTimeout)
 	defer cancel()
 	args := append(append([]string(nil), opts.BinaryArgs...), "--version")
-	cmd := exec.CommandContext(ctx, opts.BinaryPath, args...)
-	cmd.Dir, cmd.Env = opts.Workspace, environment(opts)
+	p, err := selectedExecution(opts).Start(ctx, executionRequest(opts, args), func(error) {})
+	if p == nil {
+		return "", nil, err
+	}
+	if err != nil {
+		return "", p, err
+	}
+	_ = p.Stdin().Close()
 	output := &versionOutput{}
-	cmd.Stdout, cmd.Stderr = output, io.Discard
-	cmd.WaitDelay = time.Second
-	ownProcess(cmd)
-	cmd.Cancel = func() error { return signalPID(-cmd.Process.Pid, syscall.SIGKILL) }
-	if err := cmd.Run(); err != nil {
-		return "", fmt.Errorf("DSH version query failed: %w", err)
+	read := make(chan error, 1)
+	go func() { _, err := io.Copy(output, p.Stdout()); read <- err }()
+	select {
+	case err = <-read:
+	case <-ctx.Done():
+		err = ctx.Err()
+	}
+	stopped := make(chan struct{})
+	go func() { p.Stop(opts.Limits.CancelTimeout); close(stopped) }()
+	cleanup, stop := context.WithTimeout(context.Background(), opts.Limits.CleanupTimeout)
+	defer stop()
+	select {
+	case <-stopped:
+		// Stop closes stdout even if an exited process left it inherited.
+		if ctx.Err() != nil {
+			return "", nil, ctx.Err()
+		}
+		if err != nil {
+			return "", nil, err
+		}
+		if err := p.Result(); err != nil {
+			return "", nil, err
+		}
+	case <-cleanup.Done():
+		// The caller retains this exact handle and its state-directory lock.
+		return "", p, errors.Join(ErrCleanupPending, cleanup.Err(), err)
 	}
 	version := strings.TrimSpace(string(output.data))
 	if output.overflow || version == "" || strings.IndexFunc(version, unicode.IsSpace) >= 0 {
-		return "", errors.New("DSH --version must return one nonempty version string")
+		return "", nil, errors.New("DSH --version must return one nonempty version string")
 	}
-	return version, nil
+	return version, nil, nil
+}
+
+var pendingRuntimeInspections = struct {
+	sync.Mutex
+	owners map[string]int
+}{owners: map[string]int{}}
+
+func installedVersion(ctx context.Context, opts Options) (string, error) {
+	key := opts.ExecutionBinding.UserID + "\x00" + opts.ExecutionBinding.SpaceID + "\x00" + opts.BinaryPath
+	pendingRuntimeInspections.Lock()
+	pending := pendingRuntimeInspections.owners[key] != 0
+	pendingRuntimeInspections.Unlock()
+	if pending {
+		return "", errors.Join(ErrCleanupPending, errors.New("runtime inspection cleanup is pending for this space"))
+	}
+
+	// Inspection has no business Session/lock. Own a separate private scratch
+	// root until every acquired resource settles, even after the caller leaves.
+	root, err := os.MkdirTemp("", "teamx-runtime-inspection-*")
+	if err != nil {
+		return "", err
+	}
+	opts.Workspace, opts.StateDir = filepath.Join(root, "workspace"), filepath.Join(root, "state")
+	for _, dir := range []string{opts.Workspace, filepath.Join(opts.StateDir, "home"), filepath.Join(opts.StateDir, "agents")} {
+		if err := os.MkdirAll(dir, 0700); err != nil {
+			os.RemoveAll(root)
+			return "", err
+		}
+	}
+	opts.ExecutionBinding.Probe = true
+	version, owned, err := queryVersion(ctx, opts)
+	cleanup := func() {
+		if owned != nil {
+			owned.Stop(opts.Limits.CancelTimeout)
+			pendingRuntimeInspections.Lock()
+			pendingRuntimeInspections.owners[key]--
+			if pendingRuntimeInspections.owners[key] == 0 {
+				delete(pendingRuntimeInspections.owners, key)
+			}
+			pendingRuntimeInspections.Unlock()
+		}
+		_ = os.RemoveAll(root)
+	}
+	if owned != nil {
+		pendingRuntimeInspections.Lock()
+		pendingRuntimeInspections.owners[key]++
+		pendingRuntimeInspections.Unlock()
+		go cleanup()
+	} else {
+		cleanup()
+	}
+	return version, err
 }
 
 type versionOutput struct {

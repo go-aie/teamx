@@ -36,6 +36,10 @@ func (s modelSessionSnapshot) clone() modelSessionSnapshot {
 	s.Profile.ToolEnv = cloneStringMap(s.Profile.ToolEnv)
 	s.Runtime.BinaryArgs = append([]string(nil), s.Runtime.BinaryArgs...)
 	s.Runtime.ScriptSHA256 = append([]string(nil), s.Runtime.ScriptSHA256...)
+	if s.Runtime.Execution != nil {
+		execution := *s.Runtime.Execution
+		s.Runtime.Execution = &execution
+	}
 	return s
 }
 func cloneStringMap(input map[string]string) map[string]string {
@@ -236,7 +240,7 @@ func newModelSessionSnapshot(catalog modelCatalog, ref memberModelReference, gen
 // Model snapshots and validation receipts still describe the DSH provider.
 // Keep their runtime identity interpretation out of model application control.
 func (c *modelController) checkTargetRuntime(ctx context.Context, target modelSessionSnapshot) error {
-	actual, err := c.inspect(ctx, dsh.Options{BinaryPath: target.Profile.BinaryPath, BinaryArgs: target.Profile.BinaryArgs, Artifact: target.Profile.Artifact})
+	actual, err := c.inspect(ctx, dsh.Options{Execution: c.service.launcher.Execution, ExecutionBinding: c.service.launcher.ExecutionBinding, BinaryPath: target.Profile.BinaryPath, BinaryArgs: target.Profile.BinaryArgs, Artifact: target.Profile.Artifact})
 	if err != nil {
 		return err
 	}

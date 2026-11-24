@@ -28,7 +28,7 @@ func TestCalendarManagedRecurringPauseRecoveryAndPublication(t *testing.T) {
 	if err != nil || !members.Members[0].Execution.Paused || members.Members[0].Execution.SessionTurns.Total != 0 {
 		t.Fatal("calendar recovery enabled a paused Agent", members, err)
 	}
-	stale := managerHTTP(f.manager, "/v1/calendar/update", apiRequest{ServiceInfo: oldInfo, Caller: humanCaller, Calendar: json.RawMessage(`{"action":"cancel","operation_id":"stale","task_id":"` + a.ID + `","expected_version":1}`)})
+	stale := f.request("/v1/calendar/update", apiRequest{ServiceInfo: oldInfo, Caller: humanCaller, Calendar: json.RawMessage(`{"action":"cancel","operation_id":"stale","task_id":"` + a.ID + `","expected_version":1}`)})
 	if stale.Code == http.StatusOK {
 		t.Fatal("old service epoch mutated recovered calendar")
 	}

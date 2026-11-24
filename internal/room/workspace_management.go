@@ -31,6 +31,7 @@ type workspaceApplyRequest struct {
 }
 
 type workspaceResponse struct {
+	ManagedRepositories bool `json:"managed_repositories"`
 	RoomIdentity
 	Scheduling       schedulingMode                   `json:"scheduling"`
 	Workspace        *workspaceConfig                 `json:"workspace"`
@@ -58,7 +59,7 @@ func (m *roomManager) workspaceStatus(id RoomIdentity, operationID string) (work
 	if err != nil {
 		return workspaceResponse{}, err
 	}
-	result := workspaceResponse{RoomIdentity: id, Scheduling: mode, Workspace: saved.Workspace, Version: saved.WorkspaceVersion, CredentialStatus: "missing"}
+	result := workspaceResponse{ManagedRepositories: !m.config.hostTools.restricted, RoomIdentity: id, Scheduling: mode, Workspace: saved.Workspace, Version: saved.WorkspaceVersion, CredentialStatus: "missing"}
 	if _, err := m.normalizeWorkspaceDirectories(saved, *saved.Workspace, true); err != nil {
 		var directory workspaceDirectoryError
 		if errors.As(err, &directory) {
@@ -68,7 +69,7 @@ func (m *roomManager) workspaceStatus(id RoomIdentity, operationID string) (work
 		}
 	}
 	// Suggestions are display-only; they never alter this Room's saved config.
-	if team, ok := m.teams[saved.TeamID]; ok && team.Workspace != nil {
+	if team, ok := m.teams[saved.TeamID]; ok && team.Workspace != nil && !m.config.hostTools.restricted {
 		suggestion, err := normalizeWorkspace(*team.Workspace, true)
 		if err == nil {
 			result.Suggestions = &suggestion
@@ -190,6 +191,9 @@ func (m *roomManager) serveWorkspace(w http.ResponseWriter, r *http.Request) {
 // Called under the catalog mutex. Identity is checked before receiving a new
 // credential into storage; duplicate requests never overwrite its first value.
 func (m *roomManager) startWorkspaceApply(req workspaceApplyRequest) (workspaceOperation, error) {
+	if err := m.config.hostTools.checkRepository(&req.Target); err != nil {
+		return workspaceOperation{}, err
+	}
 	checkedAt := time.Now()
 	if m.closing {
 		return workspaceOperation{}, ErrClosing
@@ -343,6 +347,11 @@ func (m *roomManager) startWorkspaceApply(req workspaceApplyRequest) (workspaceO
 	for _, member := range saved.Members {
 		op.Members = append(op.Members, workspaceMemberPathRecord{member.AgentID, member.MembershipID, workspaceMemberPath(target, member.MembershipID)})
 	}
+	if m.config.directoryClaims != nil {
+		if err := m.config.directoryClaims.reserve(m.config.access.space.SpaceID, op.RoomIdentity, op.Target.MemberDirectories); err != nil {
+			return workspaceOperation{}, err
+		}
+	}
 	if err := m.saveWorkspaceOperationLocked(op); err != nil {
 		return workspaceOperation{}, err
 	}
@@ -360,6 +369,9 @@ func (m *roomManager) retryWorkspace(id RoomIdentity, operationID string) (works
 		}
 		if op.RoomIdentity != id {
 			return workspaceOperation{}, ErrIdentity
+		}
+		if err := m.config.hostTools.checkRepository(&op.Target); err != nil {
+			return workspaceOperation{}, err
 		}
 		if op.Status != "failed" {
 			return cloneWorkspaceOperation(op), nil
@@ -453,6 +465,11 @@ func (m *roomManager) runWorkspace(op workspaceOperation, rt *roomRuntime) {
 		m.notifications.EnsureRoomLocked(op.RoomIdentity)
 		m.mu.Unlock()
 	}()
+	if err := m.config.hostTools.checkRepository(&op.Target); err != nil {
+		runErr = err
+		code = "capability_unavailable"
+		return
+	}
 	queryCtx, queryCancel := context.WithTimeout(context.Background(), serviceShutdownTimeout)
 	runErr = m.stopRoomGrants(queryCtx, op.RoomIdentity)
 	if runErr == nil {

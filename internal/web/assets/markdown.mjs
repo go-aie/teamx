@@ -1,3 +1,4 @@
+import { spaceURL } from "./space-context.mjs";
 import { Marked, Renderer, Tokenizer } from "./vendor/marked.mjs";
 import { createImageToolIcon, createNavigationIcon } from "./icons.mjs";
 import { mentionRanges, memberMentionRanges } from "./client.mjs";
@@ -42,7 +43,7 @@ export function notificationOptions(info, operator, source, locator) {
       attachmentURL(href) {
         if (!/^lark-image:img_[A-Za-z0-9_-]{1,252}$/.test(href)) return null;
         const query = new URLSearchParams({ room_id: info.room_id, room_instance: info.room_instance, service_epoch: info.service_epoch, caller_id: operator, ...locator, path: href });
-        return `/v1/platform/attachments?${query}`;
+        return spaceURL(`/v1/platform/attachments?${query}`);
       },
     };
   }
@@ -63,7 +64,7 @@ export function notificationOptions(info, operator, source, locator) {
         const parts = path.slice(prefix.length).split("/");
         if (parts.length !== 2 || !/^[a-f0-9]{32}$/.test(parts[0]) || !parts[1] || [".", ".."].includes(parts[1]) || /[\\\u0000-\u001f\u007f]/.test(parts[1])) return null;
         const query = new URLSearchParams({ room_id: info.room_id, room_instance: info.room_instance, service_epoch: info.service_epoch, caller_id: operator, ...locator, path: url.href });
-        return `/v1/platform/attachments?${query}`;
+        return spaceURL(`/v1/platform/attachments?${query}`);
       } catch { return null; }
     },
   };

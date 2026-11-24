@@ -153,13 +153,6 @@ func newModelController(ctx context.Context, m *roomManager, c startupConfig, pr
 	}
 	return control, nil
 }
-func (c *modelController) stop() {
-	c.manager.mu.Lock()
-	c.manager.closing = true
-	c.cancel()
-	c.manager.mu.Unlock()
-	c.workers.Wait()
-}
 func (c *modelController) persist(op *modelChangeOperation) error {
 	err := (&snapshotWriter{ops: defaultSnapshotOps()}).save(filepath.Join(c.dir, op.ID+".json"), op, maxRoomsFileBytes)
 	c.manager.updates.mark(uiUpdate{Topic: "models"})

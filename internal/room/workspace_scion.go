@@ -14,6 +14,9 @@ import (
 // member tools, while retaining the Workspace operation's PID/settlement tracker.
 func (m *roomManager) scionWorkspaceExecute(owner RoomIdentity, w workspaceConfig, run platform.Execute) platform.Execute {
 	return func(ctx context.Context, dir string, _ map[string]string, _ string, args ...string) (out []byte, err error) {
+		if m.config.hostTools.restricted {
+			return nil, hostToolUnavailable("managed_repository")
+		}
 		m.mu.Lock()
 		resolved, err := m.resolveWorkspacePlatformLocked(owner, w)
 		if err != nil {

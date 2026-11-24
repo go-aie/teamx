@@ -200,7 +200,7 @@ func TestComputerRealAgentSessionCapabilities(t *testing.T) {
 			t.Error(err)
 		}
 	}()
-	c, err := newComputerController(context.Background(), startupConfig{path: settings.path}, settings, svc.info, "isolated-agent-acceptance", access.operator, func(MemberIdentity) (bool, error) { return true, nil })
+	c, err := newComputerController(context.Background(), startupConfig{path: settings.path}, settings, svc.info, "isolated-agent-acceptance", access.space.OwnerUserID, func(MemberIdentity) (bool, error) { return true, nil })
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -258,7 +258,7 @@ func TestComputerRealAgentSessionCapabilities(t *testing.T) {
 	}
 	post := func(text string) {
 		t.Helper()
-		_, err := svc.room.Call[PostReceipt](context.Background(), PostMessage{RoomIdentity: state.RoomIdentity, Caller: Caller{Author: Author{Kind: "human", ID: access.operator}}, ClientMessageID: newComputerID(), Text: text})
+		_, err := svc.room.Call[PostReceipt](context.Background(), PostMessage{RoomIdentity: state.RoomIdentity, Caller: Caller{Author: Author{Kind: "human", ID: access.space.OwnerUserID}}, ClientMessageID: newComputerID(), Text: text})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -275,7 +275,7 @@ func TestComputerRealAgentSessionCapabilities(t *testing.T) {
 	post("从未启用 Computer。请检查可用工具列表，若没有 Computer 工具，直接私有回复 COMPUTER_DISABLED_OK。")
 
 	for _, id := range ids {
-		if _, err := svc.control(context.Background(), apiRequest{ServiceInfo: svc.info, Caller: Caller{Author: Author{Kind: "human", ID: access.operator}}, AgentID: id.AgentID, MembershipID: id.MembershipID}, "run"); err != nil {
+		if _, err := svc.control(context.Background(), apiRequest{ServiceInfo: svc.info, Caller: Caller{Author: Author{Kind: "human", ID: access.space.OwnerUserID}}, AgentID: id.AgentID, MembershipID: id.MembershipID}, "run"); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -441,7 +441,7 @@ func TestComputerRealAgentSessionCapabilities(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	c, err = newComputerController(context.Background(), loaded, settings, svc.info, "isolated-agent-acceptance", access.operator, func(MemberIdentity) (bool, error) { return true, nil })
+	c, err = newComputerController(context.Background(), loaded, settings, svc.info, "isolated-agent-acceptance", access.space.OwnerUserID, func(MemberIdentity) (bool, error) { return true, nil })
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -54,7 +54,8 @@ func TestDirectConversationRealAgentMentions(t *testing.T) {
 		t.Fatal(err)
 	}
 	access, _, _ := accessFixture(t)
-	access.disabled, access.operator = true, humanCaller.ID
+	access.disabled = true
+	bindFixtureAccessSubject(access, humanCaller.ID)
 	var svc *service
 	server := httptest.NewUnstartedServer(access.wrap(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		svc.ServeHTTP(w, r)
@@ -153,7 +154,7 @@ func TestDirectConversationRealAgentMentions(t *testing.T) {
 		}
 		row["status"] = "passed"
 		for _, message := range messages {
-			if newHumanMentionMatcher(access.operator).matches(message.Text) || strings.HasPrefix(strings.TrimSpace(message.Text), "@") {
+			if newHumanMentionMatcher(access.space.OwnerUserID).matches(message.Text) || strings.HasPrefix(strings.TrimSpace(message.Text), "@") {
 				row["status"] = "failed"
 				t.Error("unexpected mention in real direct-conversation publication", scenario.name, message.Text)
 			}

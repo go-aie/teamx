@@ -73,3 +73,18 @@ func TestHelpDoesNotInspectArgumentsAfterSeparator(t *testing.T) {
 		t.Fatal("business value classified as help")
 	}
 }
+
+func TestProcessUsesBoundEnvironmentForDependenciesAndFiltering(t *testing.T) {
+	dir := t.TempDir()
+	executable := filepath.Join(dir, "bound-tool")
+	if err := os.WriteFile(executable, []byte("#!/bin/sh\nprintf '%s|%s' \"$TEAMX_GLAB_BIN\" \"${PRIVATE_SPACE_SECRET-unset}\"\n"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("TEAMX_BOUND_DEPENDENCY", filepath.Join(dir, "missing-host-dependency"))
+	definition := Definition{Executable: executable, Dependencies: []ExecutableDependency{{Name: "missing-native", OverrideEnvironment: "TEAMX_BOUND_DEPENDENCY"}}, ProcessEnvironment: []string{"TEAMX_BOUND_DEPENDENCY=" + executable, "TEAMX_GLAB_BIN=/space/glab", "PRIVATE_SPACE_SECRET=never-delegate"}}
+	var output, diagnostic bytes.Buffer
+	process := Process{Definition: definition, Output: &output, Error: &diagnostic}
+	if result := process.Run(t.Context(), nil); result != 0 || output.String() != "/space/glab|unset" {
+		t.Fatalf("bound environment/filtering: exit=%d output=%q error=%s", result, output.String(), diagnostic.String())
+	}
+}

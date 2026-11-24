@@ -28,7 +28,7 @@
 
 ## 验证
 
-完整命令、退出码、日志哈希与最终源码摘要见 [persistence-writer-validation.json](persistence-writer-validation.json)，本地日志在 `.local/architecture-persistence/`。所有专项均为本地组件／集成证据，故障由受控 I/O seam 或 owner 操作返回值注入；不冒充真实文件系统事故或线上恢复。
+完整命令、退出码、日志哈希与最终源码摘要见 persistence-writer-validation.json（本地验收文件 `persistence-writer-validation.json`），本地日志在 `.local/architecture-persistence/`。所有专项均为本地组件／集成证据，故障由受控 I/O seam 或 owner 操作返回值注入；不冒充真实文件系统事故或线上恢复。
 
 | 检查 | 本轮结果 |
 | --- | --- |

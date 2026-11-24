@@ -205,6 +205,7 @@ export function createWorkspace({ env, runtime, notificationsUI, membersUI, room
     const ws = workspaceView, data = ws?.data, current = data?.workspace, op = data?.operation;
     $("workspace-control").hidden = !state.managed || !ws;
     $("workspace-trigger").disabled = !ws?.data || !ws.connected;
+    $("workspace-select-settings").hidden = data?.managed_repositories === false;
     const {label,path} = workspaceDirectoryLabel(current, data?.members, !roomsUI.isDirect());
     $("workspace-label").textContent = label;
     $("workspace-trigger").title = `工作目录：${path}`;
@@ -222,23 +223,25 @@ export function createWorkspace({ env, runtime, notificationsUI, membersUI, room
     $("workspace-paths").replaceChildren(...(data?.members || []).map(member => {
       const item = document.createElement("li"); item.textContent = `${resolveAgentName(state.members, member.agent_id, member.membership_id)} · ${member.directory_source === "external" ? "指定目录" : "默认目录"}：${member.effective_directory || member.workspace}（默认：${member.default_directory || member.workspace}）`; return item;
     }));
+    const repositories = data?.managed_repositories !== false;
+    $("workspace-repository-option").hidden = !repositories;
     const repo = !!current?.repository, binding = !!current?.binding;
     const scion = $("workspace-kind").value === "scion";
     if (scion) $("workspace-gitlab").checked = true;
-    const git = $("workspace-repository").checked, gitlab = git && $("workspace-gitlab").checked;
+    const git = repositories && $("workspace-repository").checked, gitlab = git && $("workspace-gitlab").checked;
     $("workspace-kind").disabled = repo;
     $("workspace-binding-label").textContent = scion ? "绑定 Scion 连接（必需）" : "绑定 GitLab";
     $("workspace-fields").disabled = !data || !ws.connected || workspaceFormBusy() || roomsUI.managementBusy();
     $("workspace-root").readOnly = true;
     $("workspace-root-hint").textContent = repo ? "默认仓库目录已固定；指定目录不会被仓库初始化修改。" : git
       ? "首次关联会在新的受管仓库目录中分别 clone；旧目录文件保留。" : "各成员的默认目录由 TeamX 管理；实际工作目录在聊天框下方选择。";
-    $("workspace-repository").disabled = repo;
+    $("workspace-repository").disabled = repo || !repositories;
     $("workspace-repo-url").readOnly = repo;
     $("workspace-branch").readOnly = repo;
     $("workspace-gitlab").disabled = binding || scion;
     $("workspace-git-fields").hidden = !git;
     $("workspace-gitlab-fields").hidden = !gitlab;
-    $("workspace-git-auth-hint").hidden = gitlab;
+    $("workspace-git-auth-hint").hidden = gitlab || !repositories;
     $("workspace-repo-url").required = git;
     $("workspace-repo-url").disabled = !git;
     $("workspace-connection").disabled = !gitlab;

@@ -46,7 +46,7 @@
 
 **首族已完成；稳定数十秒净收益与全仓预算尚未证明。** 本轮保留这套只读原生协议夹具与完整覆盖，不扩散到通知／self-send／reply／图片族，不进入 F3 的恢复矩阵收缩。进一步迁移应根据剩余实际进程成本选择完整族；不为获得更好数字继续反复测量或把单项微实验当作扩散 gate。
 
-生成的选择范围、逐项结果、成本分段与源码摘要见[机器证据](lark-configuration-cli-evidence.json)。临时日志在 `/tmp/teamx-compiled-lark/`，不作为永久执行 gate。
+生成的选择范围、逐项结果、成本分段与源码摘要见机器证据（本地验收文件 `lark-configuration-cli-evidence.json`）。临时日志在 `/tmp/teamx-compiled-lark/`，不作为永久执行 gate。
 
 本轮没有运行完整核心、全仓 integration、全仓 race 或真实平台／模型／浏览器。F3–F5 与其他 CLI 族不自动扩展；全仓预算仍待统一验收。
 

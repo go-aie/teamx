@@ -79,6 +79,7 @@ func deliverPlatform(t *testing.T, s *inputSession, stream, id string) platformI
 	return v
 }
 func TestPlatformReadSharedTransportExactSourcesAndRecovery(t *testing.T) {
+	parallelFixtureTest(t)
 	h, p, svc, id := platformReaderFixture(t)
 	a1 := storedGitLab(id, "a1", "events", "7", "42", "A first")
 	a1.Source.Reference.Object.ID = platform.ExternalID{Namespace: "gitlab:rest:id", Value: "142"}
@@ -184,6 +185,7 @@ type shortInputWriter struct{}
 
 func (shortInputWriter) Write(b []byte) (int, error) { return len(b) / 2, nil }
 func TestPlatformReadOutputFailureBusyTerminalAndCrossEntry(t *testing.T) {
+	parallelFixtureTest(t)
 	for _, failure := range []string{"short", "flush", "http-short", "http-flush"} {
 		t.Run(failure, func(t *testing.T) {
 			h, p, svc, id := platformReaderFixture(t)
@@ -252,6 +254,7 @@ func TestPlatformReadOutputFailureBusyTerminalAndCrossEntry(t *testing.T) {
 	}
 }
 func TestPlatformReadAbortPartialAssociationAndRevocation(t *testing.T) {
+	parallelFixtureTest(t)
 	h, p, svc, id := platformReaderFixture(t)
 	receivePlatform(t, p, storedGitLab(id, "a1", "events", "7", "42", "A first"))
 	receivePlatform(t, p, storedGitLab(id, "a2", "events", "7", "42", "A second"))
@@ -320,6 +323,7 @@ func TestPlatformReadAbortPartialAssociationAndRevocation(t *testing.T) {
 }
 
 func TestPlatformReadSourceReleaseAndRoomOnlyRecovery(t *testing.T) {
+	parallelFixtureTest(t)
 	h, p, svc, id := platformReaderFixture(t)
 	a1 := storedGitLab(id, "a1", "events", "7", "42", "alpha-first")
 	a1.Source.Reference.Object.ID = platform.ExternalID{Namespace: "gitlab:rest:id", Value: "142"}
@@ -389,6 +393,7 @@ func TestPlatformReadSourceReleaseAndRoomOnlyRecovery(t *testing.T) {
 	}
 }
 func TestPlatformReadNewFormatCLIAndPlatformOnlyTurn(t *testing.T) {
+	parallelFixtureTest(t)
 	h, p, svc, id := platformReaderFixture(t)
 	receivePlatform(t, p, storedGitLab(id, "a", "events", "7", "42", "unique-command"))
 	s := startPlatformReader(t, h, p, svc, 1)
@@ -429,6 +434,7 @@ func TestPlatformReadNewFormatCLIAndPlatformOnlyTurn(t *testing.T) {
 }
 
 func TestPlatformReadImagesSharedBudgetReplayAndReopen(t *testing.T) {
+	parallelFixtureTest(t)
 	h, p, svc, id := platformReaderFixture(t)
 	base := "/uploads/524bb5cf042cd0bb3ef9a7a117a744b7/"
 	a := storedGitLab(id, "a", "events", "7", "42", "image-alpha ![first]("+base+"one.png)")
@@ -497,6 +503,7 @@ func (p *platformInputStorage) repositoryOwner() inputstream.Member {
 }
 
 func TestPlatformReadLocalAdmissionBlocksOnlyItsStream(t *testing.T) {
+	parallelFixtureTest(t)
 	h, p, svc, id := platformReaderFixture(t)
 	blocked := storedLark(id, "direct", "oc_direct", "待核验私聊", "omt_thread", "unverified-direct")
 	receivePlatform(t, p, blocked)
@@ -530,6 +537,7 @@ func TestPlatformReadLocalAdmissionBlocksOnlyItsStream(t *testing.T) {
 }
 
 func TestPlatformReadPartialSourceFailureRepairsOnlyMissingLink(t *testing.T) {
+	parallelFixtureTest(t)
 	h, p, svc, id := platformReaderFixture(t)
 	for i := 1; i <= 2; i++ {
 		item := storedGitLab(id, fmt.Sprint("a", i), "events", "7", "42", fmt.Sprint("partial-alpha-", i))
@@ -578,6 +586,7 @@ func TestPlatformReadPartialSourceFailureRepairsOnlyMissingLink(t *testing.T) {
 	}
 }
 func TestPlatformReadConcurrentEntriesShareOperationLease(t *testing.T) {
+	parallelFixtureTest(t)
 	h, p, svc, id := platformReaderFixture(t)
 	receivePlatform(t, p, storedGitLab(id, "a", "events", "7", "42", "concurrent-source"))
 	s := startPlatformReader(t, h, p, svc, 1)
@@ -602,6 +611,7 @@ func TestPlatformReadConcurrentEntriesShareOperationLease(t *testing.T) {
 }
 
 func TestPlatformReadCannotBypassCoordinatorThroughLegacyEntry(t *testing.T) {
+	parallelFixtureTest(t)
 	h, p, svc, id := platformReaderFixture(t)
 	receivePlatform(t, p, storedGitLab(id, "a", "events", "7", "42", "single-authority"))
 	s := startPlatformReader(t, h, p, svc, 1)

@@ -1,0 +1,12 @@
+{
+  "srt": {
+    "version": "0.0.83",
+    "source_commit": "0bbebed0aa9a8e628dc4df8bc30293550a1988eb",
+    "source_url": "https://github.com/anthropics/sandbox-runtime/tree/0bbebed0aa9a8e628dc4df8bc30293550a1988eb",
+    "url": "https://registry.npmjs.org/@anthropic-ai/sandbox-runtime/-/sandbox-runtime-0.0.83.tgz",
+    "sha256": "1be860bd2617d21bf67585dd10f92f781b2af5f5f27299f49badf63fe9848c85"
+  },
+  "base_image": "node:22-bookworm-slim@sha256:170fab707454b1350981adcdc2f536ec21f24d06d7f008e8d40064afeacb8a94",
+  "node_lock": "packaging/dependencies.lock.json",
+  "dsh_lock": "packaging/dsh/package-lock.json"
+}

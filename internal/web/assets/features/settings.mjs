@@ -14,7 +14,7 @@ export function createSettings({ env, runtime, connectionsUI, conversationUI, ro
   const access = createAccessSettings({env, runtime});
   const computer = createComputerSettings({env, runtime});
   const settingsTabs = ["general", "models", "platforms", "computer", "security"];
-  const availableSettingsTabs = () => state.managed ? settingsTabs : ["general", "computer", "security"];
+  const availableSettingsTabs = () => (state.managed ? settingsTabs : ["general", "computer", "security"]).filter(tab=>!state.deploymentManaged || tab!=="security" && tab!=="computer");
   const systemTime = createSystemTime();
 
   const timeInputs = new Map(["lark-backfill-start", "gitlab-backfill-start", "onboarding-backfill-start", "policy-expires"].map(id => [id, createTimeInput(systemTime)]));
@@ -116,6 +116,8 @@ export function createSettings({ env, runtime, connectionsUI, conversationUI, ro
     $("computer-settings").hidden = settingsTab !== "computer";
     $("settings-tab-models").hidden = !state.managed;
     $("settings-tab-platforms").hidden = !state.managed;
+    $("settings-tab-security").hidden = !!state.deploymentManaged;
+    $("settings-tab-computer").hidden = !!state.deploymentManaged;
     $("settings-navigation").setAttribute("aria-orientation", compactViewport(window) ? "horizontal" : "vertical");
     const closeLabel = compactViewport(window) ? "返回" : "关闭设置";
     $("close-settings").setAttribute("aria-label", closeLabel);

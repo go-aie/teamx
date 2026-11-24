@@ -2,6 +2,7 @@ package room
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -47,9 +48,11 @@ type toolFrame struct {
 	Code   int    `json:"code,omitempty"`
 }
 type toolStream struct {
-	mu     sync.Mutex
-	w      http.ResponseWriter
-	cancel context.CancelFunc
+	mu        sync.Mutex
+	w         http.ResponseWriter
+	cancel    context.CancelFunc
+	limited   bool
+	remaining int
 }
 type toolStreamWriter struct {
 	stream *toolStream
@@ -61,6 +64,13 @@ func (w toolStreamWriter) Write(data []byte) (int, error) {
 	defer w.stream.mu.Unlock()
 	// Bound each frame while preserving arbitrary bytes (JSON base64).
 	size := len(data)
+	if w.stream.limited {
+		if size > w.stream.remaining {
+			w.stream.cancel()
+			return 0, errors.New("tool output exceeded limit; remote result unconfirmed")
+		}
+		w.stream.remaining -= size
+	}
 	for len(data) > 0 {
 		n := min(len(data), 32<<10)
 		if err := json.NewEncoder(w.stream.w).Encode(toolFrame{Stream: w.name, Data: data[:n]}); err != nil {
@@ -119,6 +129,11 @@ func (m *roomManager) serveTools(w http.ResponseWriter, r *http.Request) {
 			}
 			_, d, err := m.resolveToolBindingLocked(f, req)
 			if err == nil {
+				if m.config.hostTools.restricted && d.Provider == "gitlab" && (req.Topic == "" || req.Topic == "managed-send") {
+					w.Header().Set("Content-Type", "text/markdown; charset=utf-8")
+					_, _ = io.WriteString(w, strings.ReplaceAll(sharedGitLabSkill, "ENTRY", req.Tool))
+					return
+				}
 				data, err := entrySkillTopic(d, req.Tool, req.Topic)
 				if err == nil {
 					w.Header().Set("Content-Type", "text/markdown; charset=utf-8")
@@ -351,6 +366,18 @@ func (m *roomManager) serveToolRun(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer m.finishPlatformCall(call)
+	var toolInput io.Reader = reader
+	if m.config.hostTools.restricted {
+		// Shared platform calls are bounded, non-interactive requests. Receive
+		// the complete input before a CLI can dispatch a remote write.
+		_ = controller.SetReadDeadline(time.Now().Add(30 * time.Second))
+		body, readErr := io.ReadAll(io.LimitReader(reader, (1<<20)+1))
+		if readErr != nil || len(body) > 1<<20 {
+			writeAPIError(w, invalidField("stdin", "tool input exceeds 1 MiB or could not be read"))
+			return
+		}
+		toolInput = bytes.NewReader(body)
+	}
 	if call.account.Authorization.CredentialID != "" {
 		useCtx, credential, finish, err := m.acquireGitLabAccess(ctx, req.RoomIdentity, call.account, call.secret, maxGitLabTokenUse)
 		if err != nil {
@@ -375,8 +402,8 @@ func (m *roomManager) serveToolRun(w http.ResponseWriter, r *http.Request) {
 	}
 	defer input.Close()
 	defer feed.Close()
-	go func() { _, _ = io.Copy(feed, reader); _ = feed.Close() }()
-	stream := &toolStream{w: w, cancel: call.Cancel}
+	go func() { _, _ = io.Copy(feed, toolInput); _ = feed.Close() }()
+	stream := &toolStream{w: w, cancel: call.Cancel, limited: m.config.hostTools.restricted, remaining: 16 << 20}
 	process.Input = input
 	process.Output = toolStreamWriter{stream, "stdout"}
 	process.Error = toolStreamWriter{stream, "stderr"}

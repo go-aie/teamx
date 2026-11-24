@@ -41,7 +41,7 @@
 - 模型实际收到的完整目录输出含换行为 **2,383 → 2,073 B，减少 310 B（约 13.0%）**；帮助输出相同。未测算总 token、缓存成本或可靠性提升；小样本只证明这两个场景未增加发现调用且仍可正确使用入口。
 - 首次尝试原打包运行目录时 ACP 初始化 EOF，尚未进入模型任务。既有[后端记录](agent-collaboration-boundaries.zh.md)已记录该目录的原生依赖缺失；随后复用临时目录中依赖完整、版本和文件哈希固定的相同打包版本通过验收。未改原 node_modules、日常配置、运行服务或既有 Session。
 
-脱敏计量、运行版本和原始证据校验值见 [agent-tool-discovery-evidence.json](agent-tool-discovery-evidence.json)。原始报告、目录和会话保存在该文件所列的私有临时路径，不把模型思考或凭据提交到仓库。外部平台请求与写入均为零。
+脱敏计量、运行版本和原始证据校验值见 agent-tool-discovery-evidence.json（本地验收文件 `agent-tool-discovery-evidence.json`）。原始报告、目录和会话保存在该文件所列的私有临时路径，不把模型思考或凭据提交到仓库。外部平台请求与写入均为零。
 
 验证命令：
 

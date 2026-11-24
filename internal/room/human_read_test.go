@@ -45,6 +45,7 @@ func humanReadOpen(t *testing.T, h *humanReadStore, s *Store, latest uint64) hum
 }
 
 func TestHumanReadUnionGapsCountsAndNoop(t *testing.T) {
+	parallelFixtureTest(t)
 	s, room, h := humanReadFixture(t, 100)
 	room.Messages[0].Author = Author{Kind: "human", ID: "owner"}
 	room.Messages[1].Text = "普通消息"
@@ -88,6 +89,7 @@ func TestHumanReadUnionGapsCountsAndNoop(t *testing.T) {
 }
 
 func TestHumanReadOpenedAndMentionsMergeIndependently(t *testing.T) {
+	parallelFixtureTest(t)
 	s, room, h := humanReadFixture(t, 100)
 	for i := range room.Messages {
 		room.Messages[i].Text = "普通消息"
@@ -141,6 +143,7 @@ func TestHumanReadOpenedAndMentionsMergeIndependently(t *testing.T) {
 }
 
 func TestHumanReadOpeningUsesSubmittedSnapshot(t *testing.T) {
+	parallelFixtureTest(t)
 	s, room, h := humanReadFixture(t, 101)
 	for i := range room.Messages {
 		room.Messages[i].Text = "普通消息"
@@ -164,6 +167,7 @@ func TestHumanReadOpeningUsesSubmittedSnapshot(t *testing.T) {
 }
 
 func TestHumanReadLegacyProjectionAndFirstSave(t *testing.T) {
+	parallelFixtureTest(t)
 	s, room, h := humanReadFixture(t, 6)
 	room.Messages[1].Text = "普通消息"
 	room.Messages[2].Author = Author{Kind: "human", ID: "owner"}
@@ -209,6 +213,7 @@ func TestHumanReadLegacyProjectionAndFirstSave(t *testing.T) {
 }
 
 func TestHumanReadInvalidLegacyFileIsNeverConverted(t *testing.T) {
+	parallelFixtureTest(t)
 	for _, kind := range []string{"duplicate", "null", "future", "observed", "identity", "opened-field", "mention-field"} {
 		t.Run(kind, func(t *testing.T) {
 			s, room, h := humanReadFixture(t, 3)
@@ -251,6 +256,7 @@ func TestHumanReadInvalidLegacyFileIsNeverConverted(t *testing.T) {
 }
 
 func TestHumanReadClearRestartAndObservationBounds(t *testing.T) {
+	parallelFixtureTest(t)
 	s, room, h := humanReadFixture(t, 6)
 	humanReadConfirm(t, h, s, 6, 1, 5)
 	for _, tc := range []struct {
@@ -292,6 +298,7 @@ func TestHumanReadClearRestartAndObservationBounds(t *testing.T) {
 }
 
 func TestHumanReadBoundedHistory(t *testing.T) {
+	parallelFixtureTest(t)
 	s, room, h := humanReadFixture(t, maxMessages)
 	humanReadOpen(t, h, s, room.LatestSeq)
 	for start := uint64(1); start <= maxMessages; start += 100 {
@@ -335,6 +342,7 @@ func (f humanReadFailFile) Close() error {
 }
 
 func TestHumanReadCommitFailuresAndBoundedRecovery(t *testing.T) {
+	parallelFixtureTest(t)
 	for _, at := range []string{"create", "write", "sync", "close", "rename-before", "rename-after", "directory"} {
 		t.Run(at, func(t *testing.T) {
 			s, room, h := humanReadFixture(t, 5)
@@ -430,6 +438,7 @@ func TestHumanReadCommitFailuresAndBoundedRecovery(t *testing.T) {
 }
 
 func TestHumanReadInvalidFilesAndOrphan(t *testing.T) {
+	parallelFixtureTest(t)
 	for _, which := range []string{"json", "version", "room", "instance", "operator", "zero", "duplicate", "order", "future", "observed", "revision", "null", "oversized", "too-many", "opened", "legacy-field"} {
 		t.Run(which, func(t *testing.T) {
 			s, room, h := humanReadFixture(t, 3)
@@ -502,6 +511,7 @@ func TestHumanReadInvalidFilesAndOrphan(t *testing.T) {
 }
 
 func TestHumanReadMentionParity(t *testing.T) {
+	parallelFixtureTest(t)
 	data, err := os.ReadFile("testdata/human_mentions.json")
 	if err != nil {
 		t.Fatal(err)
@@ -522,6 +532,7 @@ func TestHumanReadMentionParity(t *testing.T) {
 }
 
 func TestHumanReadFileCannotBecomeWorkspace(t *testing.T) {
+	parallelFixtureTest(t)
 	for _, root := range []string{"human-read.json", "Human-Read.json/sub", "local/../human-read.json/sub"} {
 		if _, err := normalizeWorkspace(workspaceConfig{Root: root}, false); !errors.Is(err, ErrRequest) {
 			t.Fatalf("reading file accepted as workspace: %q, %v", root, err)
@@ -530,6 +541,7 @@ func TestHumanReadFileCannotBecomeWorkspace(t *testing.T) {
 }
 
 func TestHumanReadAgentProgressRemainsIndependent(t *testing.T) {
+	parallelFixtureTest(t)
 	room := historyRoom(3, "ordinary reply")
 	harness := newRoomHarness(t, room, nil)
 	h := newHumanReadStore(harness.store.dir, room, "owner")
@@ -548,6 +560,7 @@ func TestHumanReadAgentProgressRemainsIndependent(t *testing.T) {
 }
 
 func TestHumanReadFirstReplacementAndCorruptRecovery(t *testing.T) {
+	parallelFixtureTest(t)
 	for _, corrupt := range []bool{false, true} {
 		t.Run(map[bool]string{false: "missing-first-file", true: "corrupt-replacement"}[corrupt], func(t *testing.T) {
 			s, room, h := humanReadFixture(t, 3)

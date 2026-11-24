@@ -12,7 +12,7 @@ func browserTestServer(t *testing.T, owner http.Handler, handlers ...http.Handle
 	t.Helper()
 	access, _, _ := accessFixture(t)
 	access.disabled = true
-	access.operator = humanOperator()
+	bindFixtureAccessSubject(access, humanOperator())
 	switch host := owner.(type) {
 	case *service:
 		host.access = access

@@ -63,7 +63,7 @@ go test -tags=e2e ./... -run '^$'
 git diff --check
 ```
 
-前端回归 782 项；其他命令、真实链路结果及各层验收边界汇总于[机器记录](room-image-attachments-acceptance-evidence.json)。原始报告、截图、隔离 Room 和 DSH 状态保留于本地 `.local/room-images-real-*`，不将凭据、会话 token 或 Base64 图片写入文档。e2e 全仓命令仅编译；没有全跑全仓 integration／race。
+前端回归 782 项；其他命令、真实链路结果及各层验收边界汇总于机器记录（本地验收文件 `room-image-attachments-acceptance-evidence.json`）。原始报告、截图、隔离 Room 和 DSH 状态保留于本地 `.local/room-images-real-*`，不将凭据、会话 token 或 Base64 图片写入文档。e2e 全仓命令仅编译；没有全跑全仓 integration／race。
 
 ## 用户真机验收
 

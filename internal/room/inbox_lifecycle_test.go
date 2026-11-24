@@ -29,6 +29,7 @@ func maintainTestInbox(t *testing.T, h *inboxHarness, now time.Time, skip bool, 
 	return inboxCall[InboxStatus](t, h, MaintainInbox{MemberIdentity: h.id, Policy: notification.ExpiryPolicy{AfterDays: 3, SkipExpired: skip}, Now: now, Pending: p})
 }
 func TestInboxLifecycleSkipAndResumeMixedOrder(t *testing.T) {
+	parallelFixtureTest(t)
 	h := newInboxHarness(t, InboxLimits{})
 	initReferenceTest(t, h)
 	now := time.Now().UTC()
@@ -74,6 +75,7 @@ func TestInboxLifecycleSkipAndResumeMixedOrder(t *testing.T) {
 	}
 }
 func TestInboxLifecycleKeepOldUntilConsumedAndAcknowledged(t *testing.T) {
+	parallelFixtureTest(t)
 	h := newInboxHarness(t, InboxLimits{})
 	initReferenceTest(t, h)
 	now := time.Now().UTC()
@@ -98,6 +100,7 @@ func TestInboxLifecycleKeepOldUntilConsumedAndAcknowledged(t *testing.T) {
 	}
 }
 func TestInboxLifecycleActiveTurnBatchAndSweepBound(t *testing.T) {
+	parallelFixtureTest(t)
 	// This scenario persists 130 entries with fsync before exercising the sweep.
 	h := newInboxHarnessWithTimeout(t, InboxLimits{}, 30*time.Second)
 	initReferenceTest(t, h)
@@ -132,6 +135,7 @@ func TestInboxLifecycleActiveTurnBatchAndSweepBound(t *testing.T) {
 	h.reload(t, true)
 }
 func TestInboxLifecycleSkipCheckpointFailureAndReopen(t *testing.T) {
+	parallelFixtureTest(t)
 	for _, unknown := range []bool{false, true} {
 		t.Run(map[bool]string{false: "before", true: "after"}[unknown], func(t *testing.T) {
 			h := newInboxHarness(t, InboxLimits{})
@@ -166,6 +170,7 @@ func TestInboxLifecycleSkipCheckpointFailureAndReopen(t *testing.T) {
 	}
 }
 func TestInboxLifecycleStartupSettings(t *testing.T) {
+	parallelFixtureTest(t)
 	for _, test := range []struct {
 		name, body string
 		args       []string
@@ -214,6 +219,7 @@ func TestInboxLifecycleStartupSettings(t *testing.T) {
 }
 
 func TestInboxLifecycleSkippedImageCannotBecomeModelInput(t *testing.T) {
+	parallelFixtureTest(t)
 	h := newInboxHarness(t, InboxLimits{})
 	now := time.Now().UTC()
 	for _, n := range []int{1, 2, 3} {

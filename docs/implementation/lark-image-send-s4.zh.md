@@ -12,7 +12,7 @@
 
 初次图片预检准确报 `image_upload_application_scopes_missing`，原文字能力仍 ready。用户在[原应用权限页](https://open.feishu.cn/app/cli_a954531d70f99cdb/auth)开通用户身份 `im:resource`，随后完成原账号的最小 scope 用户授权。重新核验账号和目标后，`TestRealLarkImageSendPreflight` 通过。未修改其他成员绑定或日常订阅。
 
-[准确样本](lark-image-send-acceptance/input.json)固定账号、目标、说明、原图 SHA256 和外部持久调用目录，不含凭据。两张 320×200 PNG 为非业务测试图：[红底一条白柱](lark-image-send-acceptance/image-1.png)、[蓝底两条白柱](lark-image-send-acceptance/image-2.png)。它们通过实际 HTTP 上传并发布到隔离 Room，由 Agent 从正式读取／History 选择源引用。
+准确样本（本地验收文件 `input.json`）固定账号、目标、说明、原图 SHA256 和外部持久调用目录，不含凭据。两张 320×200 PNG 为非业务测试图：红底一条白柱（本地验收文件 `image-1.png`）、蓝底两条白柱（本地验收文件 `image-2.png`）。它们通过实际 HTTP 上传并发布到隔离 Room，由 Agent 从正式读取／History 选择源引用。
 
 | 入口和目标 | 单图，无文字 | 双图，无文字 | 说明＋双图 | 成功样本数／上传数 |
 | --- | --- | --- | --- | --- |
@@ -35,7 +35,7 @@ TeamX 图片发送验收
 
 修复后仍核验完整内容：尺寸须与源图字节解码结果一致，镜像须与正文逐行逐节点相同；文字仅允许空 style，额外文字、缺图、换序、不同尺寸、非空样式及其他字段均拒绝。发送 payload 不引入这些读取元数据。新的单元和托管夹具包含真实返回格式及对应拒绝用例。
 
-`TestRealLarkImageSendReadback` 独立重读旧远端 ID，核实原用户、自聊、准确上传 key、源图尺寸及镜像，平台写入为零。旧账本仍为 unknown、Attempts=1，未改写为 succeeded，未重放旧动作；[原消息核实证据](lark-image-send-native-readback-evidence.json)保留这一事实。新的正常双图 succeeded 回执来自用户批准的额外任务。
+`TestRealLarkImageSendReadback` 独立重读旧远端 ID，核实原用户、自聊、准确上传 key、源图尺寸及镜像，平台写入为零。旧账本仍为 unknown、Attempts=1，未改写为 succeeded，未重放旧动作；原消息核实证据（本地验收文件 `lark-image-send-native-readback-evidence.json`）保留这一事实。新的正常双图 succeeded 回执来自用户批准的额外任务。
 
 另外两类失败也完整保留：
 
@@ -54,7 +54,7 @@ TeamX 图片发送验收
 
 `TestRealLarkImageSendBackflow` 在另一 Go 包中只读六条实际成功消息，并交给生产来源分类：本人自聊排除，群内本人图文为 context_only，不能形成自动处理回路。此项验证未更改日常订阅，也不代表测量了飞书搜索索引延迟或长期轮询。
 
-原始私有证据在 `.local/lark-image-send/real-20261121-04/` 和 `real-20261121-07/`，包含各次失败报告、DSH 记录、完整动作与独立回读。[公开验收摘要](lark-image-send-s4-evidence.json)仅保留不含凭据的必要结果。原生调用目录 `/tmp/teamx-lark-image-send-dispatches-20261121` 位于 Room 之外，必须保留；不能删除标记绕过重复写入保护。
+原始私有证据在 `.local/lark-image-send/real-20261121-04/` 和 `real-20261121-07/`，包含各次失败报告、DSH 记录、完整动作与独立回读。公开验收摘要（本地验收文件 `lark-image-send-s4-evidence.json`）仅保留不含凭据的必要结果。原生调用目录 `/tmp/teamx-lark-image-send-dispatches-20261121` 位于 Room 之外，必须保留；不能删除标记绕过重复写入保护。
 
 原生进程守卫逐项核验账号、目标、原图摘要、冻结输入、uuid 和完整 payload；只有写前落账且 Attempts=1 才允许上传，每次上传／消息 POST 前都排他创建并 fsync 标记。原生响应原样转交，不伪造平台回执。七项离线守卫检查包含真实子进程转交和重复调用拦截。
 

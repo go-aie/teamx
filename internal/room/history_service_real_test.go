@@ -110,7 +110,7 @@ func TestHistoryProductionServiceRealDSH(t *testing.T) {
 				return nil
 			}}
 			task := "First formally read this Room task. Use history_list metadata to find the saved GitLab MR !42 stream, then history_read with limit=1. Read its image and follow only returned read cursors until the original decision. Report the complete pixel code and original decision marker privately. Do not formally consume platform notifications, post or act on saved requests."
-			if _, err := svc.room.Call[PostReceipt](t.Context(), PostMessage{RoomIdentity: id.RoomIdentity, Caller: Caller{Author: Author{Kind: "human", ID: access.operator}}, ClientMessageID: "task", Text: task}); err != nil {
+			if _, err := svc.room.Call[PostReceipt](t.Context(), PostMessage{RoomIdentity: id.RoomIdentity, Caller: Caller{Author: Author{Kind: "human", ID: access.space.OwnerUserID}}, ClientMessageID: "task", Text: task}); err != nil {
 				t.Fatal(err)
 			}
 			if _, err := svc.control(t.Context(), apiRequest{AgentID: id.AgentID, MembershipID: id.MembershipID}, "run"); err != nil {

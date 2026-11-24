@@ -40,7 +40,7 @@ func TestRoomAttachmentMaterialsServiceAssembly(t *testing.T) {
 				m.mu.Unlock()
 				handler = m
 			}
-			server := httptest.NewServer(handler)
+			server := httptest.NewServer(fixtureHTTPHandler(handler))
 			defer server.Close()
 			pixels := attachmentTestPNG(t, true)
 			imageID := attachmentTestID(1)

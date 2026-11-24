@@ -13,6 +13,9 @@ import (
 // Private Git helper, independent of the agent tools catalog and glab. It never
 // prints a token except as the password answer on Git's private askpass pipe.
 func runWorkspaceGitCLI(ctx context.Context, args []string, stdout, stderr io.Writer, env func(string) string) error {
+	if env("TEAMX_TOOL_CONTRACT") == sharedToolsContract {
+		return hostToolUnavailable("managed_repository")
+	}
 	if len(args) > 0 && (args[0] == "--help" || args[0] == "-h") {
 		return writeOutput(stdout, []byte("Usage: teamx workspace-git fetch|push|ls-remote [refs] [--prune|--tags|--dry-run|--force-with-lease|--delete|--heads]\nThe service uses the current member Workspace and bound repository. OAuth requires write_repository; each command is bounded to 5 minutes.\n"))
 	}

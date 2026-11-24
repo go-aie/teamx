@@ -22,6 +22,7 @@ import (
 // requests. Single-room membership persists a profile name; managed creation
 // freezes the team runtime and roles in its Room configuration.
 type dshProfile struct {
+	environment  []string // ephemeral; never persisted in Room configuration
 	modelError   string
 	managedModel bool
 	BinaryPath   string            `json:"binary_path"`
@@ -37,7 +38,7 @@ func (p dshProfile) checkCredentials() error {
 	if p.modelError != "" {
 		return errors.New(p.modelError)
 	}
-	if !p.managedModel && os.Getenv(p.Model.APIKeyEnv) == "" {
+	if !p.managedModel && environmentValue(p.environment, p.Model.APIKeyEnv) == "" {
 		return fmt.Errorf("DSH credential environment %q is empty; export it before starting TeamX or set it in config.toml [env] (serve does not load .env)", p.Model.APIKeyEnv)
 	}
 	return nil
@@ -90,14 +91,18 @@ type dshComponent interface {
 }
 
 type dshBackend struct {
-	factory        agent.Factory
-	checkWorkspace func() error
-	isDirect       bool // Immutable type of the owning TeamX conversation.
-	inputService   *service
-	models         *modelExecution
-	model          *modelSessionSnapshot
-	credentials    *modelCredentials
-	access         *serverAccess
+	execution          agent.ExecutionFactory
+	executionResources *executionResources
+	environment        []string
+	ownerUserID        string
+	factory            agent.Factory
+	checkWorkspace     func() error
+	isDirect           bool // Immutable type of the owning TeamX conversation.
+	inputService       *service
+	models             *modelExecution
+	model              *modelSessionSnapshot
+	credentials        *modelCredentials
+	access             *serverAccess
 	// Nil only for explicit CLI compatibility or isolated adapter tests.
 	inboxMCP        *service
 	store           *Store
@@ -133,7 +138,9 @@ func (b dshBackend) CheckRun() error {
 	if b.open != nil { // Offline adapters supply their own component.
 		return nil
 	}
-	return b.profile.checkCredentials()
+	profile := b.profile
+	profile.environment = b.environment
+	return profile.checkCredentials()
 }
 
 func dshStateDir(path string) string { return path + ".dsh" }
@@ -170,10 +177,22 @@ func readSessionReference(path string, identity MemberIdentity) (sessionReferenc
 }
 
 func (b dshBackend) OpenSession(ctx context.Context, opts SessionOptions) (Session, error) {
-	s := &dshSession{backend: b, opts: opts}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	space := ""
+	if b.access != nil {
+		space = b.access.space.SpaceID
+	}
+	release, err := b.executionResources.acquireSession(b.ownerUserID, space)
+	if err != nil {
+		return nil, err
+	}
+	s := &dshSession{backend: b, opts: opts, releaseResources: release}
 	host := &sessionHost{dshSession: s}
 	runtime, err := b.selectedFactory().OpenSession(ctx, host, b.recover)
 	if runtime == nil {
+		release()
 		if !host.prepared {
 			return nil, err
 		}
@@ -216,9 +235,9 @@ func (b dshBackend) componentOptions(opts SessionOptions, ref sessionReference) 
 	if b.inputService != nil {
 		toolEnv["TEAMX_INPUT_CONTRACT"] = inputstream.Contract
 	}
-	operator := humanOperator()
+	operator := b.ownerUserID
 	if b.access != nil {
-		operator = b.access.operator
+		operator = b.access.space.OwnerUserID
 	}
 	guide := dshAgentGuide
 	if b.inputService != nil {
@@ -251,8 +270,12 @@ func (b dshBackend) componentOptions(opts SessionOptions, ref sessionReference) 
 		instructions += "\n\nSession context: explicitly rotated; private context has been reset."
 	}
 
-	component := dsh.Options{BinaryPath: p.BinaryPath, BinaryArgs: p.BinaryArgs, Artifact: p.Artifact, Workspace: p.Workspace,
-		StateDir: filepath.Join(filepath.Dir(opts.StatePath), ref.Directory), Instructions: instructions, Model: p.Model.Clone(), ToolEnv: toolEnv, Limits: dsh.Limits{TextBytes: 64 << 10, TurnTimeout: b.turnTimeout}}
+	space := ""
+	if b.access != nil {
+		space = b.access.space.SpaceID
+	}
+	component := dsh.Options{Execution: b.execution, ExecutionBinding: agent.ExecutionBinding{UserID: operator, SpaceID: space, MemberIdentity: opts.MemberIdentity, Generation: ref.Directory}, BinaryPath: p.BinaryPath, BinaryArgs: p.BinaryArgs, Artifact: p.Artifact, Workspace: p.Workspace,
+		StateDir: filepath.Join(filepath.Dir(opts.StatePath), ref.Directory), Instructions: instructions, Model: p.Model.Clone(), Environment: b.environment, ToolEnv: toolEnv, Limits: dsh.Limits{TextBytes: 64 << 10, TurnTimeout: b.turnTimeout}}
 	component.InputBridge = b.inputService != nil
 	if b.store.observe != nil {
 		component.ObserveActivity = func() { b.store.changed("activity", opts.MemberIdentity) }
@@ -322,6 +345,7 @@ func dshNotification(input UnreadChanged) string {
 }
 
 type dshSession struct {
+	releaseResources   func()
 	computerCapability computerCapability
 	computerGeneration string
 	computerTurn       uint64
@@ -401,6 +425,9 @@ func (s *dshSession) Close(ctx context.Context) error {
 	remote := s.backend.computerMembers().settleScope(ctx, s.opts.MemberIdentity, computer.Scope{Session: s.computerGeneration}, false)
 	if remote != nil {
 		return &pendingBackendClose{errors.Join(local, remote)}
+	}
+	if backendCleanupSettled(local) && s.releaseResources != nil {
+		s.releaseResources()
 	}
 	return local
 }

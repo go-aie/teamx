@@ -1,9 +1,11 @@
 package room
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"net/http"
+	"net/http/httptest"
 	"testing"
 	"time"
 
@@ -26,14 +28,47 @@ func newCalendarManagedFixture(t *testing.T) *calendarManagedFixture {
 	t.Setenv("USER", humanCaller.ID)
 	f := &calendarManagedFixture{t: t, root: t.TempDir(), entered: make(chan MemberIdentity, 8)}
 	access, _, _ := accessFixture(t)
+	access.disabled = true
+	bindFixtureAccessSubject(access, humanCaller.ID)
 	f.manager = f.newManager(access)
 	ensureAssistant(t, f.manager)
-	f.rooms = []roomSummary{assistantSummary(t, f.manager), createDirectConversation(t, f.manager, directSelection("calendar-other"))}
+	w := f.request("/v1/rooms/create", roomCreateRequest{ServiceEpoch: f.manager.epoch, Caller: humanCaller, roomSelection: directSelection("calendar-other")})
+	var other roomSummary
+	if w.Code != http.StatusOK || json.Unmarshal(w.Body.Bytes(), &other) != nil || !other.IsDirect || other.AgentRoleID != assistantRoleID || other.TeamID != "" || other.Status != "ready" {
+		t.Fatal(w.Code, w.Body.String())
+	}
+	f.rooms = []roomSummary{assistantSummary(t, f.manager), other}
 	for _, room := range f.rooms {
-		s := openRoomOK(t, f.manager, room, "calendar-open-"+room.RoomID)
+		w := f.request("/v1/rooms/open", roomOpenRequest{ServiceEpoch: f.manager.epoch, Caller: humanCaller, RoomIdentity: room.RoomIdentity, OpenID: "calendar-open-" + room.RoomID})
+		if w.Code != http.StatusOK {
+			t.Fatal(w.Code, w.Body.String())
+		}
+		if op := awaitLatestOpen(t, f.manager); op.Status != "completed" {
+			t.Fatal(op)
+		}
+		f.manager.mu.Lock()
+		s := f.manager.runtimes[room.RoomIdentity].service
+		f.manager.mu.Unlock()
 		f.agentControl(s, "pause")
 	}
 	return f
+}
+
+// Keep the calendar lifecycle fixture on the real local access boundary,
+// including the configured Space and human subject after manager restart.
+func (f *calendarManagedFixture) request(path string, body any) *httptest.ResponseRecorder {
+	f.t.Helper()
+	data, err := json.Marshal(body)
+	if err != nil {
+		f.t.Fatal(err)
+	}
+	access := f.manager.config.access
+	r := httptest.NewRequest(http.MethodPost, access.internal+path, bytes.NewReader(data))
+	r.RemoteAddr = "127.0.0.1:12345"
+	r.Header.Set("Origin", access.internal)
+	w := httptest.NewRecorder()
+	access.wrap(f.manager).ServeHTTP(w, r)
+	return w
 }
 
 func (f *calendarManagedFixture) newManager(access *serverAccess) *roomManager {
@@ -93,7 +128,7 @@ func (f *calendarManagedFixture) agentControl(s *service, action string) {
 func (f *calendarManagedFixture) update(index int, request calendar.Request) *calendar.Task {
 	f.t.Helper()
 	raw, _ := json.Marshal(request)
-	w := managerHTTP(f.manager, "/v1/calendar/update", apiRequest{ServiceInfo: f.service(index).info, Caller: humanCaller, Calendar: raw})
+	w := f.request("/v1/calendar/update", apiRequest{ServiceInfo: f.service(index).info, Caller: humanCaller, Calendar: raw})
 	var result calendar.Result
 	if w.Code != http.StatusOK || json.Unmarshal(w.Body.Bytes(), &result) != nil || result.Task == nil {
 		f.t.Fatal(w.Code, w.Body.String())

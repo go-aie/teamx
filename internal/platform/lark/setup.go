@@ -11,6 +11,7 @@ import (
 	"os"
 	"reflect"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/go-aie/teamx/internal/platform"
@@ -19,11 +20,25 @@ import (
 // Config init, login and logout all rewrite the CLI's shared configuration.
 // A per-profile gate alone would let different profiles lose each other's writes.
 var configurationGate = make(chan struct{}, 1)
+var scopedConfigurationGates sync.Map
+
+func (f *ClientFactory) configurationGate() chan struct{} {
+	if f != nil && f.storage != nil {
+		gate, _ := scopedConfigurationGates.LoadOrStore(f.storage.root, make(chan struct{}, 1))
+		return gate.(chan struct{})
+	}
+	return configurationGate
+}
 
 func lockConfiguration(ctx context.Context) (func(), error) {
+	return (*ClientFactory)(nil).lockConfiguration(ctx)
+}
+
+func (f *ClientFactory) lockConfiguration(ctx context.Context) (func(), error) {
+	gate := f.configurationGate()
 	select {
-	case configurationGate <- struct{}{}:
-		return func() { <-configurationGate }, nil
+	case gate <- struct{}{}:
+		return func() { <-gate }, nil
 	case <-ctx.Done():
 		return nil, ctx.Err()
 	}
@@ -78,6 +93,10 @@ func validAppID(id string) bool { return strings.HasPrefix(id, "cli_") && namePa
 // accepts a caller-selected profile to overwrite. Lark remains an explicit
 // fallback until its official page has the same real acceptance as Feishu.
 func ConfigureApplication(ctx context.Context, executable, brand string, ready func(SetupProgress)) (SetupResult, error) {
+	return (*ClientFactory)(nil).ConfigureApplication(ctx, executable, brand, ready)
+}
+
+func (f *ClientFactory) ConfigureApplication(ctx context.Context, executable, brand string, ready func(SetupProgress)) (SetupResult, error) {
 	var result SetupResult
 	if Origin(brand) == "" {
 		return result, failure("invalid_profile")
@@ -86,19 +105,32 @@ func ConfigureApplication(ctx context.Context, executable, brand string, ready f
 		return result, failure("setup_brand_unverified")
 	}
 	// Reject duplicate setup rather than enqueue another remote registration.
+	gate := f.configurationGate()
 	select {
-	case configurationGate <- struct{}{}:
-		defer func() { <-configurationGate }()
+	case gate <- struct{}{}:
+		defer func() { <-gate }()
 	default:
 		return result, failure("configuration_busy")
 	}
 	ctx, cancel := context.WithTimeout(ctx, 10*time.Minute)
 	defer cancel()
-	discovery, err := Discover(ctx, executable, brand)
+	discovery, err := f.Discover(ctx, executable, brand)
 	if err != nil {
 		return result, err
 	}
-	c, err := New(platform.CLIProfile{Version: 1, Executable: discovery.Executable, Profile: "setup", Brand: brand, CLIVersion: CLIVersion})
+	var nonce [12]byte
+	if _, err := rand.Read(nonce[:]); err != nil {
+		return result, failure("query_failed")
+	}
+	name := "teamx-" + brand + "-" + hex.EncodeToString(nonce[:])
+	profile := platform.CLIProfile{Version: 1, Executable: discovery.Executable, Profile: "setup", Brand: brand, CLIVersion: CLIVersion}
+	if f != nil && f.storage != nil {
+		profile.Profile = name
+		if err := f.storage.provision(profile); err != nil {
+			return result, err
+		}
+	}
+	c, err := f.New(profile)
 	if err != nil {
 		return result, err
 	}
@@ -110,11 +142,6 @@ func ConfigureApplication(ctx context.Context, executable, brand string, ready f
 	if len(before) >= 128 {
 		return result, failure("configuration_capacity")
 	}
-	var nonce [12]byte
-	if _, err := rand.Read(nonce[:]); err != nil {
-		return result, failure("query_failed")
-	}
-	name := "teamx-" + brand + "-" + hex.EncodeToString(nonce[:])
 	for _, item := range before {
 		if item.Name == name || item.AppID == name {
 			return result, failure("profile_conflict")

@@ -120,6 +120,7 @@ func mustInboxCall(t *testing.T, a *serverAccess, token string, turn int, cursor
 }
 
 func TestMCPInboxFixedPaginationRetriesAndBusinessFailure(t *testing.T) {
+	parallelFixtureTest(t)
 	h, svc, a, token := mcpInboxFixture(t)
 	for n := 1; n <= 3; n++ {
 		receiveReference(t, h, fmt.Sprint(n), referenceTestSource(fmt.Sprint(n)))
@@ -178,6 +179,7 @@ func TestMCPInboxFixedPaginationRetriesAndBusinessFailure(t *testing.T) {
 }
 
 func TestMCPInboxShortOutputConcurrencyAndReceiptReuse(t *testing.T) {
+	parallelFixtureTest(t)
 	h, svc, a, token := mcpInboxFixture(t)
 	receiveReference(t, h, "one", referenceTestSource("one"))
 	receiveReference(t, h, "two", referenceTestSource("two"))
@@ -210,6 +212,7 @@ func TestMCPInboxShortOutputConcurrencyAndReceiptReuse(t *testing.T) {
 }
 
 func TestMCPInboxConfirmFailureKeepsReceiptAndBlocksNewPages(t *testing.T) {
+	parallelFixtureTest(t)
 	h, svc, a, token := mcpInboxFixture(t)
 	for _, key := range []string{"one", "two"} {
 		receiveReference(t, h, key, referenceTestSource(key))
@@ -251,6 +254,7 @@ func TestMCPInboxConfirmFailureKeepsReceiptAndBlocksNewPages(t *testing.T) {
 }
 
 func TestMCPInboxArgumentsEmptyAndIdentity(t *testing.T) {
+	parallelFixtureTest(t)
 	h, _, a, token := mcpInboxFixture(t)
 	roomCall[PostReceipt](t, h.roomHarness, h.roomHarness.post(humanCaller, "room-only", "room input"))
 	inboxRoomRunning(t, h, 1, 1)
@@ -269,6 +273,7 @@ func TestMCPInboxArgumentsEmptyAndIdentity(t *testing.T) {
 }
 
 func TestMCPInboxTurnImageBudgetAndDeduplication(t *testing.T) {
+	parallelFixtureTest(t)
 	for _, textOnly := range []bool{false, true} {
 		t.Run(fmt.Sprint(textOnly), func(t *testing.T) {
 			h, svc, a, token := mcpInboxFixture(t)
@@ -314,6 +319,7 @@ func TestMCPInboxTurnImageBudgetAndDeduplication(t *testing.T) {
 }
 
 func TestMCPInboxCloseCancelsAndDrainsBeforeCLIReentry(t *testing.T) {
+	parallelFixtureTest(t)
 	h, svc, a, token := mcpInboxFixture(t)
 	receiveReference(t, h, "one", referenceTestSource("one"))
 	inboxRunning(t, h, 1, 1)
@@ -350,6 +356,7 @@ func TestMCPInboxCloseCancelsAndDrainsBeforeCLIReentry(t *testing.T) {
 }
 
 func TestMCPInboxDSHInjectsAndRevokesOnNewResumeAndFailedOpen(t *testing.T) {
+	parallelFixtureTest(t)
 	h := newInboxHarness(t, InboxLimits{})
 	svc := referenceTestService(h)
 	svc.info.ServiceEpoch = "epoch-test"
@@ -398,6 +405,7 @@ func TestMCPInboxDSHInjectsAndRevokesOnNewResumeAndFailedOpen(t *testing.T) {
 }
 
 func TestMCPInboxExcludedPageStillConfirmsAndInternalEventLinks(t *testing.T) {
+	parallelFixtureTest(t)
 	h, svc, a, token := mcpInboxFixture(t)
 	h.store.notificationAdapters = contractNotificationCapabilities
 	source := contractSource("quiet", "quiet")
@@ -424,6 +432,7 @@ func TestMCPInboxExcludedPageStillConfirmsAndInternalEventLinks(t *testing.T) {
 }
 
 func TestMCPInboxUnconfirmedRestartReissuesOnlyOnNewRunningTurn(t *testing.T) {
+	parallelFixtureTest(t)
 	h, svc, a, token := mcpInboxFixture(t)
 	receiveReference(t, h, "one", referenceTestSource("one"))
 	inboxRunning(t, h, 1, 1)
@@ -469,6 +478,7 @@ func TestMCPInboxUnconfirmedRestartReissuesOnlyOnNewRunningTurn(t *testing.T) {
 }
 
 func TestMCPInboxCachedOutputRejectsRetiredAuthority(t *testing.T) {
+	parallelFixtureTest(t)
 	for _, change := range []string{"credential", "generation", "membership", "service epoch"} {
 		t.Run(change, func(t *testing.T) {
 			h := mcpProbeInbox(t)
@@ -509,6 +519,7 @@ func TestMCPInboxCachedOutputRejectsRetiredAuthority(t *testing.T) {
 }
 
 func TestMCPInboxUncertainConfirmationFreezesWithoutNewPage(t *testing.T) {
+	parallelFixtureTest(t)
 	h, svc, a, token := mcpInboxFixture(t)
 	receiveReference(t, h, "one", referenceTestSource("one"))
 	receiveReference(t, h, "two", referenceTestSource("two"))
@@ -541,6 +552,7 @@ func TestMCPInboxUncertainConfirmationFreezesWithoutNewPage(t *testing.T) {
 }
 
 func TestMCPInboxImageFailureAndByteBudgetsPreserveText(t *testing.T) {
+	parallelFixtureTest(t)
 	h, svc, a, token := mcpInboxFixture(t)
 	svc.imageMaterials = imageMaterialConfig{TotalBytes: 8, ImageBytes: 8}
 	var calls int
@@ -576,6 +588,7 @@ func TestMCPInboxImageFailureAndByteBudgetsPreserveText(t *testing.T) {
 }
 
 func TestMCPInboxProductionDefaultAndExplicitCLIFallback(t *testing.T) {
+	parallelFixtureTest(t)
 	h, svc, access, _ := mcpInboxFixture(t)
 	svc.access = access
 	opts := adapterOptions(h.store, h.id)

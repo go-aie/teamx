@@ -22,6 +22,9 @@ func requireGitlabRepositoryScope(a registry.Account) error {
 // Derive both directory and remote from the saved Workspace, never agent input.
 func (m *roomManager) prepareWorkspaceGitLocked(ctx context.Context, req toolsRequest) (tool.Process, *platformCall, context.Context, error) {
 	var p tool.Process
+	if m.config.hostTools.restricted {
+		return p, nil, nil, hostToolUnavailable("managed_repository")
+	}
 	if err := m.checkToolMemberLocked(ctx, req); err != nil {
 		return p, nil, nil, err
 	}

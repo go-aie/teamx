@@ -1,3 +1,4 @@
+import { spaceURL } from "../space-context.mjs";
 import { assessPassword } from "../password-policy.mjs";
 
 // Service-wide access controls. Credentials live only in forms, never storage.
@@ -248,7 +249,7 @@ export function createAccessSettings({env, runtime}) {
     $("access-confirm-close").addEventListener("click", cancel);
     $("access-confirm-dialog").addEventListener("cancel", event => {event.preventDefault(); cancel();});
     $("access-confirm-dialog").addEventListener("close", () => {if (!$("access-confirm-dialog").open && pending && !saving) cancel();});
-    $("access-settings-login").addEventListener("click", () => {clear();window.location.assign("/access");});
+    $("access-settings-login").addEventListener("click", () => {clear();window.location.assign(spaceURL("/access"));});
     window.addEventListener("pagehide", clear);
   }
   return {mount, load, clear, get saving(){return busy();}};

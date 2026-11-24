@@ -129,7 +129,7 @@ func TestCloseProtocolFailureStillReapsAndReleases(t *testing.T) {
 		t.Fatalf("lost close error: %v", err)
 	}
 	select {
-	case <-s.process.waitDone:
+	case <-s.process.(*process).waitDone:
 	default:
 		t.Fatal("close returned before Wait")
 	}

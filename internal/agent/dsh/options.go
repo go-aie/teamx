@@ -61,6 +61,8 @@ func CleanupSettled(err error) bool {
 type Artifact = agent.Artifact
 
 type Options struct {
+	Execution        agent.ExecutionFactory `json:"-"`
+	ExecutionBinding agent.ExecutionBinding `json:"-"`
 	// InputBridge binds each framework tool invocation to an immutable Room turn.
 	InputBridge      bool
 	CapabilityDigest string
@@ -77,8 +79,9 @@ type Options struct {
 	Model        ModelConfig
 	// Credential is an immutable per-process binding. Nil retains the legacy
 	// environment path; an explicitly empty binding never falls back to it.
-	Credential *Credential `json:"-"`
-	ToolEnv    map[string]string
+	Credential  *Credential `json:"-"`
+	Environment []string    `json:"-"` // nil inherits the host; never part of persisted Session identity
+	ToolEnv     map[string]string
 	// ExecutionToken is ephemeral and never materialized or included in recovery identity.
 	ExecutionToken string `json:"-"`
 	// MCPServers are ephemeral ACP declarations. Headers never enter backend files.
@@ -100,6 +103,14 @@ type Credential struct {
 func (o Options) credential() string {
 	if o.Credential != nil {
 		return o.Credential.Value
+	}
+	if o.Environment != nil {
+		for _, entry := range o.Environment {
+			if name, value, ok := strings.Cut(entry, "="); ok && name == o.Model.APIKeyEnv {
+				return value
+			}
+		}
+		return ""
 	}
 	return os.Getenv(o.Model.APIKeyEnv)
 }
@@ -328,6 +339,11 @@ func CheckToolEnv(env map[string]string, credential string) error {
 }
 
 func validate(opts Options) (Options, error) {
+	var routeErr error
+	opts, routeErr = routeEndpoints(opts)
+	if routeErr != nil {
+		return opts, routeErr
+	}
 	if err := checkMCP(opts.MCPServers); err != nil {
 		return opts, err
 	}
@@ -408,6 +424,7 @@ func validate(opts Options) (Options, error) {
 	// Retain our own copies; callers may reuse their configuration after Open.
 	opts.BinaryArgs = append([]string(nil), opts.BinaryArgs...)
 	opts.Model = opts.Model.Clone()
+	opts.Environment = slices.Clone(opts.Environment)
 	if opts.Credential != nil {
 		value := *opts.Credential
 		opts.Credential = &value
@@ -422,7 +439,11 @@ func validate(opts Options) (Options, error) {
 
 func environment(opts Options) []string {
 	env := map[string]string{}
-	for _, item := range os.Environ() {
+	inherited := opts.Environment
+	if inherited == nil {
+		inherited = os.Environ()
+	}
+	for _, item := range inherited {
 		name, value, _ := strings.Cut(item, "=")
 		if opts.probe != nil && !probeAmbientEnv(name) {
 			continue

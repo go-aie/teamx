@@ -177,7 +177,7 @@ func TestUIUpdatesHTTPMessageReadAndReconnect(t *testing.T) {
 			}
 			frames := updateFrames(resp.Body)
 			hello := nextUpdateFrame(t, frames)
-			if hello.event != "hello" || hello.data["protocol"] != float64(1) || hello.data["service_epoch"] != epoch || hello.data["installation_id"] != a.installationID {
+			if hello.event != "hello" || hello.data["protocol"] != float64(1) || hello.data["service_epoch"] != epoch || hello.data["installation_id"] != a.installationID || hello.data["space_id"] != a.space.SpaceID {
 				t.Fatal(hello)
 			}
 			versions, ok := hello.data["global_versions"].(map[string]any)
@@ -189,7 +189,7 @@ func TestUIUpdatesHTTPMessageReadAndReconnect(t *testing.T) {
 					t.Fatal("reuse version must be an opaque string", topic, versions)
 				}
 			}
-			body := apiRequest{ServiceInfo: svc.info, Caller: Caller{Author: Author{Kind: "human", ID: a.operator}}, ClientMessageID: "once", Text: "never in the SSE frame"}
+			body := apiRequest{ServiceInfo: svc.info, Caller: Caller{Author: Author{Kind: "human", ID: a.space.OwnerUserID}}, ClientMessageID: "once", Text: "never in the SSE frame"}
 			sent := updateRequest(t, server.URL, "POST", "/v1/send", cookie, body)
 			if sent.StatusCode != 200 {
 				b, _ := io.ReadAll(sent.Body)
@@ -498,8 +498,8 @@ func TestUIUpdatesRegistrationBeforeHelloAndShortRequestSlots(t *testing.T) {
 	if len(svc.requests) != 0 {
 		t.Fatal("stream retained an ordinary request slot")
 	}
-	post := PostMessage{RoomIdentity: svc.info.RoomIdentity, Caller: Caller{Author: Author{Kind: "human", ID: a.operator}}, ClientMessageID: "during-hello", Text: "saved while hello blocked"}
-	fast := updateSub(t, svc.updates, 100, a.operator, svc.info)
+	post := PostMessage{RoomIdentity: svc.info.RoomIdentity, Caller: Caller{Author: Author{Kind: "human", ID: a.space.OwnerUserID}}, ClientMessageID: "during-hello", Text: "saved while hello blocked"}
+	fast := updateSub(t, svc.updates, 100, a.space.OwnerUserID, svc.info)
 	if _, err := svc.room.Call[PostReceipt](ctx, post); err != nil {
 		t.Fatal(err)
 	}
@@ -661,6 +661,10 @@ func TestUIUpdatesSessionRevocationIsolation(t *testing.T) {
 		r := httptest.NewRequest("GET", a.internal+"/v1/updates", nil)
 		r.AddCookie(cookie)
 		r = r.WithContext(context.WithValue(r.Context(), accessContextKey{}, a))
+		r, err := a.bindSpaceRequest(r, a.subject())
+		if err != nil {
+			t.Fatal(err)
+		}
 		l, err := a.watchUIUpdates(r)
 		if err != nil {
 			t.Fatal(err)

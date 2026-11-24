@@ -10,6 +10,7 @@ import (
 	"github.com/go-aie/teamx/internal/inputstream"
 	"io"
 	"net/http"
+	"net/url"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -19,6 +20,7 @@ import (
 )
 
 type cliClient struct {
+	executionProxy *url.URL
 	endpoint       string
 	http           *http.Client
 	token          string
@@ -30,7 +32,7 @@ type cliClient struct {
 func isRoomToolEnv(entry string) bool {
 	name, _, _ := strings.Cut(entry, "=")
 	switch name {
-	case "TEAMX_ADMIN_TOKEN", "TEAMX_ADMIN_TOKEN_FILE", "TEAMX_EXECUTION_TOKEN", "TEAMX_EXECUTION_AUTH", "TEAMX_SESSION", "TEAMX_SESSION_COOKIE", "TEAMX_ENDPOINT", "TEAMX_ROOM_ID", "TEAMX_ROOM_INSTANCE", "TEAMX_SERVICE_EPOCH", "TEAMX_AGENT_ID", "TEAMX_MEMBERSHIP_ID":
+	case "TEAMX_TOOL_CONTRACT", "TEAMX_ADMIN_TOKEN", "TEAMX_ADMIN_TOKEN_FILE", "TEAMX_EXECUTION_TOKEN", "TEAMX_EXECUTION_AUTH", "TEAMX_SESSION", "TEAMX_SESSION_COOKIE", "TEAMX_ENDPOINT", "TEAMX_ROOM_ID", "TEAMX_ROOM_INSTANCE", "TEAMX_SERVICE_EPOCH", "TEAMX_AGENT_ID", "TEAMX_MEMBERSHIP_ID":
 		return true
 	default:
 		return false
@@ -419,6 +421,9 @@ func RunWithCatalog(args []string, stdout, stderr io.Writer, catalog *platforms.
 		case "upgrade":
 			return fmt.Errorf("请使用 teamx service upgrade；参数和示例见 teamx service upgrade --help")
 		case "access":
+			if len(args) > 1 && args[1] == "users" {
+				return runUserManagement(args[2:], stdout, stderr)
+			}
 			if len(args) > 1 && args[1] == "init" {
 				return runAccessInit(args[2:], stdout, stderr)
 			}

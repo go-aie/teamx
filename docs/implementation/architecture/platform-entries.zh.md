@@ -46,7 +46,7 @@
 
 ## 验证
 
-完整命令、退出码及日志摘要哈希见 [platform-entries-validation.json](platform-entries-validation.json)，本地日志位于 `.local/architecture-platform-entries/`。本轮全仓回归加 `-failfast`，保留原 3／8 分钟上限；遇到已有失败后未覆盖的后续 Room 测试不计为通过。
+完整命令、退出码及日志摘要哈希见 platform-entries-validation.json（本地验收文件 `platform-entries-validation.json`），本地日志位于 `.local/architecture-platform-entries/`。本轮全仓回归加 `-failfast`，保留原 3／8 分钟上限；遇到已有失败后未覆盖的后续 Room 测试不计为通过。
 
 | 检查 | 结果 |
 | --- | --- |

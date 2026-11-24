@@ -21,7 +21,7 @@ func TestAccessAttachmentUploadStreamsHumanBody(t *testing.T) {
 		w.WriteHeader(http.StatusNoContent)
 	}))
 	cookie := accessLogin(t, h, admin)
-	path := "/v1/attachments/upload?caller_id=" + url.QueryEscape(a.operator)
+	path := "/v1/attachments/upload?caller_id=" + url.QueryEscape(a.space.OwnerUserID)
 	for _, login := range []string{"admin", "cookie", "disabled"} {
 		t.Run(login, func(t *testing.T) {
 			token, session := admin, cookie
@@ -46,7 +46,7 @@ func TestAccessAttachmentUploadStreamsHumanBody(t *testing.T) {
 	if calls != 3 {
 		t.Fatal(calls)
 	}
-	for _, query := range []string{"", "?caller_id=forged", "?caller_id=", "?caller_id=" + url.QueryEscape(a.operator) + "&caller_id=" + url.QueryEscape(a.operator)} {
+	for _, query := range []string{"", "?caller_id=forged", "?caller_id=", "?caller_id=" + url.QueryEscape(a.space.OwnerUserID) + "&caller_id=" + url.QueryEscape(a.space.OwnerUserID)} {
 		if w := accessRequest(h, "POST", "/v1/attachments/upload"+query, admin, a.internal, body, nil); w.Code != 403 {
 			t.Fatal(query, w.Code)
 		}

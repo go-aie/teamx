@@ -23,7 +23,7 @@
 
 实际 Chromium 149.0.7827.55 使用**模拟 HTTP API**，在 1440、390、320 像素宽度完成浏览器检查：原生文件输入触发与多次追加、实际 CSP 下 blob 预览、文字多图／纯图片发送、共享放大预览、引用／复制摘要、回执丢失后刷新原请求重试、草稿状态恢复、取消事件保留草稿、失败原 ID 重试、切换会话后的迟到上传、逆序完成、菜单键盘操作、工作目录焦点返回及无横向溢出。
 
-浏览器使用实际 File、FormData、ClipboardEvent、DOM、EventSource 和页面刷新；粘贴及取消由事件夹具驱动。模拟服务没有执行 TeamX 附件持久化或模型调用。浏览器证据见[机器记录](room-image-attachments-client-evidence.json)；截图保存在本地 `.local/room-image-ui/`，可运行脚本重新生成。
+浏览器使用实际 File、FormData、ClipboardEvent、DOM、EventSource 和页面刷新；粘贴及取消由事件夹具驱动。模拟服务没有执行 TeamX 附件持久化或模型调用。浏览器证据见机器记录（本地验收文件 `room-image-attachments-client-evidence.json`）；截图保存在本地 `.local/room-image-ui/`，可运行脚本重新生成。
 
 781 项前端检查、48 项浏览器断言及以下检查均通过：
 

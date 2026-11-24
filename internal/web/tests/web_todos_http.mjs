@@ -1,7 +1,10 @@
 import assert from "node:assert/strict";
 import { launch, settle, openMemberInbox, openNotification } from "./web_app_harness.mjs";
 import { request } from "../assets/client.mjs";
-const call = (path, body) => request(process.env.TEAMX_WEB_ENDPOINT + path, body);
+const endpoint = process.env.TEAMX_WEB_ENDPOINT;
+// Node fetch does not supply the browser's Origin on JSON mutations.
+const browserFetch = (url, options) => fetch(url, {...options, headers:{...options.headers, Origin:endpoint}});
+const call = (path, body) => request(endpoint + path, body, browserFetch);
 const mutations = [];
 const inflight = new Set();
 const ui = await launch({ request: (path, body) => {

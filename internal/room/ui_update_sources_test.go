@@ -65,7 +65,7 @@ func TestUIUpdateSourcesSharedReadingAcrossHTTPClients(t *testing.T) {
 	for _, managed := range []bool{false, true} {
 		t.Run(fmt.Sprint(managed), func(t *testing.T) {
 			svc, _, a, server, cookie, _ := updateHTTPService(t, managed)
-			sub := updateSub(t, svc.updates, 6, a.operator, svc.info)
+			sub := updateSub(t, svc.updates, 6, a.space.OwnerUserID, svc.info)
 			otherOperator := updateSub(t, svc.updates, 7, "other", svc.info)
 			_, err := svc.room.Call[PostReceipt](context.Background(), PostMessage{RoomIdentity: svc.info.RoomIdentity,
 				Caller: Caller{Author: Author{Kind: "human", ID: "peer"}}, ClientMessageID: "peer-message", Text: "new message"})
@@ -81,14 +81,14 @@ func TestUIUpdateSourcesSharedReadingAcrossHTTPClients(t *testing.T) {
 			otherOperator.take()
 			seq := uint64(1)
 			resp := updateRequest(t, server.URL, "POST", "/v1/human-read/confirm", cookie,
-				humanReadRequest{ServiceInfo: svc.info, Caller: Caller{Author: Author{Kind: "human", ID: a.operator}}, SnapshotSeq: &seq, OpenedThrough: &seq})
+				humanReadRequest{ServiceInfo: svc.info, Caller: Caller{Author: Author{Kind: "human", ID: a.space.OwnerUserID}}, SnapshotSeq: &seq, OpenedThrough: &seq})
 			var state humanReadState
 			if err := json.NewDecoder(resp.Body).Decode(&state); err != nil || resp.StatusCode != 200 || state.OpenedThrough != 1 {
 				t.Fatal(state, err, resp.Status)
 			}
 			resp.Body.Close()
 			for _, u := range sourceTopics(t, sub, "human_read", "catalog") {
-				if u.Operator != a.operator {
+				if u.Operator != a.space.OwnerUserID {
 					t.Fatal("missing operator routing", u)
 				}
 			}
@@ -96,7 +96,7 @@ func TestUIUpdateSourcesSharedReadingAcrossHTTPClients(t *testing.T) {
 			// A second client reads the installed receipt. Ordinary reads and duplicate
 			// confirmations must not create a read -> invalidate feedback loop.
 			for _, path := range []string{"/v1/human-read/state", "/v1/human-read/confirm"} {
-				req := humanReadRequest{ServiceInfo: svc.info, Caller: Caller{Author: Author{Kind: "human", ID: a.operator}}}
+				req := humanReadRequest{ServiceInfo: svc.info, Caller: Caller{Author: Author{Kind: "human", ID: a.space.OwnerUserID}}}
 				if path == "/v1/human-read/confirm" {
 					req.SnapshotSeq, req.OpenedThrough = &seq, &seq
 				}

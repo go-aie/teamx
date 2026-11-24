@@ -32,11 +32,14 @@ type InboxInput struct {
 // Launch contains only the effective, per-session execution binding. It is
 // ephemeral: credentials, tokens and MCP headers must never be persisted.
 type Launch struct {
+	Execution                                     ExecutionFactory `json:"-"`
+	ExecutionBinding                              ExecutionBinding `json:"-"`
 	BinaryPath, Workspace, StateDir, Instructions string
 	BinaryArgs                                    []string
 	Artifact                                      Artifact
 	Model                                         ModelConfig
 	Credential                                    *Credential `json:"-"`
+	Environment                                   []string    `json:"-"` // immutable process environment; nil inherits the host
 	ToolEnv                                       map[string]string
 	ExecutionToken                                string          `json:"-"`
 	MCPServers                                    []MCPHTTPServer `json:"-"`
@@ -63,12 +66,13 @@ type MCPHeader struct {
 }
 
 type RuntimeIdentity struct {
-	BinaryPath   string   `json:"binary_path"`
-	BinarySHA256 string   `json:"binary_sha256"`
-	BinaryArgs   []string `json:"binary_args,omitempty"`
-	ScriptSHA256 []string `json:"script_sha256,omitempty"`
-	Version      string   `json:"version"`
-	Agent        Artifact `json:"agent,omitzero"`
+	Execution    *ExecutionIdentity `json:"execution,omitempty"`
+	BinaryPath   string             `json:"binary_path"`
+	BinarySHA256 string             `json:"binary_sha256"`
+	BinaryArgs   []string           `json:"binary_args,omitempty"`
+	ScriptSHA256 []string           `json:"script_sha256,omitempty"`
+	Version      string             `json:"version"`
+	Agent        Artifact           `json:"agent,omitzero"`
 }
 
 type Component interface {

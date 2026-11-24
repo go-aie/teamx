@@ -66,11 +66,29 @@ type toolBindingChange struct {
 }
 
 func (m *roomManager) toolDefinitions() []tool.Definition {
+	if m.config.hostTools.restricted {
+		definitions := m.config.hostTools.catalog(m.platformCatalog).Tools(func(name, override string) string {
+			return tool.ResolveExecutable(name, environmentValue(m.config.environment, override))
+		})
+		for i := range definitions {
+			definitions[i].ProcessEnvironment = m.config.environment
+			if definitions[i].Provider == "gitlab" {
+				definitions[i].Description = "GitLab API via the existing CLI; repositories and local-file input unavailable"
+			}
+		}
+		return definitions
+	}
 	if m.toolCatalog != nil {
 		return m.toolCatalog
 	}
 	if m.platformCatalog != nil {
-		return m.platformCatalog.Tools(func(name, override string) string { return tool.ResolveExecutable(name, os.Getenv(override)) })
+		definitions := m.platformCatalog.Tools(func(name, override string) string {
+			return tool.ResolveExecutable(name, environmentValue(m.config.environment, override))
+		})
+		for i := range definitions {
+			definitions[i].ProcessEnvironment = m.config.environment
+		}
+		return definitions
 	}
 	return []tool.Definition{}
 }
@@ -460,9 +478,22 @@ func (m *roomManager) prepareToolLocked(ctx context.Context, req toolsRequest) (
 		return p, nil, nil, err
 	}
 	p.Definition = admission.definition
+	if m.config.hostTools.restricted {
+		// Built-in Lark never reaches Process. The existing wrapper limits native
+		// glab to API requests with an explicit selected host and project.
+		if definition.Provider != "gitlab" {
+			m.finishPlatformCallLocked(call)
+			return p, nil, nil, hostToolUnavailable("external_tools")
+		}
+		p.Definition.Environment = cloneToolEnv(p.Definition.Environment)
+		p.Definition.Environment["TEAMX_GITLAB_API_ONLY"] = "api_only"
+	}
 	p.Values = map[string]string{}
 	if admission.account.PlatformID != "" {
 		p.Values = map[string]string{"instance": admission.account.URL, "token": admission.secret.Reveal()}
+	}
+	if m.config.hostTools.restricted {
+		p.Values["api_only"] = "1"
 	}
 	prepared := false
 	defer func() {
@@ -503,6 +534,9 @@ func (m *roomManager) prepareToolLocked(ctx context.Context, req toolsRequest) (
 		return p, nil, nil, err
 	}
 	for _, member := range saved.Members {
+		if m.config.hostTools.restricted {
+			break // use the private process directory; never inspect a repository
+		}
 		if member.AgentID == req.Caller.ID && member.MembershipID == req.Caller.MembershipID && member.Workspace != "" {
 			resolved := resolveMemberWorkspace(m.roomDir(req.RoomID), *saved.Workspace, member)
 			dir := resolved.Directory

@@ -44,7 +44,7 @@ func gitlabImageActionFixture(t *testing.T, discussion bool) *gitlabImageFixture
 func configureGitlabImageFixture(t *testing.T, fixture *managedActionFixture) *gitlabImageFixture {
 	t.Helper()
 	f := &gitlabImageFixture{managedActionFixture: fixture}
-	f.server = httptest.NewServer(f.m)
+	f.server = httptest.NewServer(fixtureHTTPHandler(f.m))
 	t.Cleanup(f.server.Close)
 	f.cli = contractCLI(t, f.server.URL, f.svc, f.id)
 	for i := range 4 {

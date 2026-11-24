@@ -36,6 +36,7 @@ func inboxRoomRunning(t *testing.T, h *inboxHarness, turn, seq uint64) {
 }
 
 func TestInboxConsumptionRemovalJoinsReconciliation(t *testing.T) {
+	parallelFixtureTest(t)
 	svc, err := startService(t.TempDir(), "inbox-removal", serviceConfig{endpoint: "http://127.0.0.1:1", cliPath: "unused", dshProfiles: map[string]dshProfile{"runtime": {}}}, func(*service, RoomSnapshot) error { return nil })
 	if err != nil {
 		t.Fatal(err)
@@ -103,6 +104,7 @@ func confirmInboxPage(t *testing.T, h *inboxHarness, page InboxBatchPage) InboxS
 }
 
 func TestInboxConsumptionLinkBeforeAckAndResume(t *testing.T) {
+	parallelFixtureTest(t)
 	h := newInboxHarness(t, InboxLimits{})
 	initReferenceTest(t, h)
 	for i := 1; i <= 3; i++ {
@@ -180,6 +182,7 @@ type inboxBrokenWriter struct{}
 func (inboxBrokenWriter) Write(p []byte) (int, error) { return len(p) / 2, io.ErrClosedPipe }
 
 func TestInboxConsumptionCLIOutputAndIdentity(t *testing.T) {
+	parallelFixtureTest(t)
 	svc, err := startService(t.TempDir(), "inbox-cli", serviceConfig{}, func(*service, RoomSnapshot) error { return nil })
 	if err != nil {
 		t.Fatal(err)
@@ -280,6 +283,7 @@ func TestInboxConsumptionCLIOutputAndIdentity(t *testing.T) {
 }
 
 func TestInboxEmptySnapshotDoesNotCreateConsumption(t *testing.T) {
+	parallelFixtureTest(t)
 	h := newInboxHarness(t, InboxLimits{})
 	post := roomCall[PostReceipt](t, h.roomHarness, h.post(humanCaller, "room-only", "Tools configured"))
 	inboxRoomRunning(t, h, 1, post.Seq)
@@ -294,6 +298,7 @@ func TestInboxEmptySnapshotDoesNotCreateConsumption(t *testing.T) {
 }
 
 func TestInboxConsumptionInterruptedAssociation(t *testing.T) {
+	parallelFixtureTest(t)
 	h := newInboxHarness(t, InboxLimits{})
 	initReferenceTest(t, h)
 	for i := 1; i <= 2; i++ {
@@ -333,6 +338,7 @@ func TestInboxConsumptionInterruptedAssociation(t *testing.T) {
 }
 
 func TestInboxConsumptionUnknownCommitAndMissingCursor(t *testing.T) {
+	parallelFixtureTest(t)
 	h := newInboxHarness(t, InboxLimits{})
 	inboxCall[InboxReceipt](t, h, h.receive("1"))
 	inboxRunning(t, h, 1, 1)
@@ -374,6 +380,7 @@ func TestInboxConsumptionUnknownCommitAndMissingCursor(t *testing.T) {
 }
 
 func TestInboxSchedulingIndependentPauseBudgetAndFairness(t *testing.T) {
+	parallelFixtureTest(t)
 	for _, mixed := range []bool{false, true} {
 		t.Run(fmt.Sprintf("mixed=%v", mixed), func(t *testing.T) { testInboxSchedulingIndependentPauseBudgetAndFairness(t, mixed) })
 	}

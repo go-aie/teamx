@@ -80,9 +80,9 @@ func options(l agent.Launch) component.Options {
 	if l.Credential != nil {
 		credential = &component.Credential{Ref: l.Credential.Ref, Value: l.Credential.Value}
 	}
-	return component.Options{BinaryPath: l.BinaryPath, BinaryArgs: l.BinaryArgs, Artifact: l.Artifact,
+	return component.Options{Execution: l.Execution, ExecutionBinding: l.ExecutionBinding, BinaryPath: l.BinaryPath, BinaryArgs: l.BinaryArgs, Artifact: l.Artifact,
 		Workspace: l.Workspace, StateDir: l.StateDir, Instructions: l.Instructions,
-		Model: component.ModelConfig(l.Model), Credential: credential, ToolEnv: l.ToolEnv,
+		Model: component.ModelConfig(l.Model), Credential: credential, Environment: l.Environment, ToolEnv: l.ToolEnv,
 		ExecutionToken: l.ExecutionToken, MCPServers: l.MCPServers, InputBridge: l.InputBridge, CapabilityDigest: l.CapabilityDigest,
 		ObserveActivity: l.ObserveActivity, Limits: component.Limits{TextBytes: l.TextBytes, TurnTimeout: l.TurnTimeout}}
 }

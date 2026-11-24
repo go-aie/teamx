@@ -47,9 +47,30 @@ type settledBackendClose struct{ error }
 
 func (e *settledBackendClose) Unwrap() error { return e.error }
 func backendCleanupSettled(err error) bool {
-	var closed *settledBackendClose
-	var pending *pendingBackendClose
-	return err == nil || !errors.As(err, &pending) && errors.As(err, &closed)
+	if err == nil {
+		return true
+	}
+	switch e := err.(type) {
+	case *pendingBackendClose:
+		return false
+	case *settledBackendClose:
+		return true
+	case interface{ Unwrap() []error }:
+		children := e.Unwrap()
+		if len(children) == 0 {
+			return false
+		}
+		for _, child := range children {
+			if !backendCleanupSettled(child) {
+				return false
+			}
+		}
+		return true
+	case interface{ Unwrap() error }:
+		return e.Unwrap() != nil && backendCleanupSettled(e.Unwrap())
+	default:
+		return false
+	}
 }
 
 func recoverableBackendFailure(backend Backend, err error) bool {

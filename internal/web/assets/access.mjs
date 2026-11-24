@@ -1,9 +1,10 @@
+import { spaceURL, spaceStorage, mountSpacePicker } from "./space-context.mjs";
 import { randomUUID } from "./random-id.mjs";
 import { fillModelParameters, readModelParameters, syncModelProtocol, modelDraftFields, snapshotModelFields, restoreModelFields, setModelKeyVisible } from "./model-form.mjs";
 const $ = id => document.getElementById(id);
 function returnToApp() {
   const hash=location.hash || "";
-  location.replace("/" + (hash.startsWith("#platform-connection=") || hash==="#platform-settings" ? hash : ""));
+  location.replace(spaceURL("/") + (hash.startsWith("#platform-connection=") || hash==="#platform-settings" ? hash : ""));
 }
 let version = 0, requestID, polling = false, configuredKey = false, active = true;
 let setupRead = 0, submitting = false;
@@ -11,7 +12,7 @@ let operator, draftKey, draftReady=false, loginEnabled=true;
 let lastSetupError;
 const setupFields = {protocol:"protocol",base_url:"base-url",model_id:"model-id",api_key:"api-key",input_modalities:"input-modalities",context_window:"context-window",max_tokens:"max-tokens",reasoning_effort:"reasoning-effort","compat.supports_developer_role":"developer-role"};
 const advancedFields = new Set(["input-modalities", "context-window", "max-tokens", "reasoning-effort", "developer-role"]);
-let storage; try { storage=sessionStorage; } catch {}
+let storage; try { storage=spaceStorage(sessionStorage); } catch {}
 function saveDraft() {
   if (!draftKey || !draftReady) return;
   try { storage?.setItem(draftKey,JSON.stringify({version,request_id:requestID,fields:snapshotModelFields($)})); } catch {}
@@ -24,7 +25,7 @@ function restoreDraft(versionKnown = true) {
   if (typeof draft.request_id === "string") requestID=draft.request_id;
 }
 async function request(path, data) {
-  const response = await fetch(path, {method: data ? "POST" : "GET", cache: "no-store", credentials: "same-origin", headers: data ? {"Content-Type":"application/json"} : {}, body: data ? JSON.stringify(data) : undefined});
+  const response = await fetch(spaceURL(path), {method: data ? "POST" : "GET", cache: "no-store", credentials: "same-origin", headers: data ? {"Content-Type":"application/json"} : {}, body: data ? JSON.stringify(data) : undefined});
   const result = await response.json();
   if (!response.ok) {const error = new Error(response.status === 401 ? "访问令牌无效或登录已到期，请重新输入。" : response.status === 429 ? "尝试过于频繁，请稍后重试。" : result.message || "请求未完成，请稍后重试。"); error.status = response.status; error.field = result.field; error.code = result.code; throw error; }
   return result;
@@ -123,6 +124,7 @@ async function showSession() {
     const session=await request("/v1/access/session");
     if (generation !== setupRead) return;
     operator=session.operator;
+    await mountSpacePicker();
     loginEnabled=session.login_enabled !== false;
     const nextKey=JSON.stringify(["teamx.setup-draft",session.installation_id || location.origin,operator]);
     if (draftKey !== nextKey) { requestID=undefined; draftReady=false; }
@@ -133,6 +135,17 @@ async function showSession() {
     document.title = "TeamX · 登录";
     const entering = $("login").hidden;
     $("login").hidden=false; $("logout").hidden=true; $("model").hidden=true; $("api-key").value="";
+    try {
+      const method=await request("/v1/access/method");
+      if (generation !== setupRead) return;
+      const sso=method.method === "external" || method.provider === "opencsg";
+      $("sso-login-form").hidden=!sso; $("login-form").hidden=sso;
+      $("sso-login-submit").textContent=method.provider === "opencsg" ? "使用 OpenCSG 登录" : "使用账号登录";
+      if (sso) {
+        if (location.search === "?sso=failed") { $("login-feedback").textContent="OpenCSG 登录未完成或当前账号未获准使用，请重试或联系部署管理员。"; $("login-feedback").hidden=false; }
+        return;
+      }
+    } catch { /* Retain the existing token flow on older personal servers. */ }
     if (entering || !document.activeElement || document.activeElement === document.body) $("token").focus({preventScroll:true});
     return;
   }
@@ -178,7 +191,7 @@ async function poll() {
         if (reconcileSetup(state)) return;
       } catch (error) {
         if (generation !== setupRead) continue;
-        if (error.status === 401) {location.replace("/access"); return;}
+        if (error.status === 401) {location.replace(spaceURL("/access")); return;}
         showSetupProgress("unknown");
       }
     }
@@ -270,7 +283,7 @@ $("model-form").addEventListener("submit", async event => {
     void poll();
   } finally { data.api_key = ""; submitting=false; $("check-setup-operation").disabled=false; }
 });
-$("logout").addEventListener("click", async () => {$("api-key").value = ""; try {await request("/v1/access/logout", {}); location.replace("/access");} catch(error) {feedback(error.message);} });
+$("logout").addEventListener("click", async () => {$("api-key").value = ""; try {await request("/v1/access/logout", {}); location.replace(spaceURL("/access"));} catch(error) {feedback(error.message);} });
 addEventListener("pagehide", () => {saveDraft();active = false; $("api-key").value = ""; setModelKeyVisible($, false); $("token").value = ""; hideToken();});
 function resume() { if (!document.hidden && navigator.onLine !== false) {active=true;void showSession().catch(error=>feedback(error.message));} }
 addEventListener("pageshow",resume); addEventListener("online",resume);

@@ -4,7 +4,6 @@ package room
 
 import (
 	"context"
-	"net/http/httptest"
 	"os"
 	"os/exec"
 	"testing"
@@ -21,9 +20,8 @@ func TestPolicyManagementHTTP(t *testing.T) {
 	m.teams = map[string]teamDefinition{"sample": testTeamDefinition(t)}
 	m.publishRoomsCatalogLocked()
 	m.factory = controlledActivationFactory(nil, nil)
-	server := httptest.NewUnstartedServer(m)
-	m.config.endpoint = "http://" + server.Listener.Addr().String()
-	server.Start()
+	server := browserTestServer(t, m)
+	m.config.endpoint = server.URL
 	defer server.Close()
 	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
 	defer cancel()

@@ -86,7 +86,7 @@ func runWebUpdatesNotificationScopeBrowser(t *testing.T, longWindow bool) {
 	// Both authenticated sessions belong to the configured operator, as two
 	// devices would. Each receives its own server-side session and queue.
 	access, token, _ := accessFixture(t)
-	access.operator = humanCaller.ID
+	bindFixtureAccessSubject(access, humanCaller.ID)
 	m.config.access = access
 	var steps atomic.Uint64
 	// The successful atomic rename precedes directory fsync and Actor state

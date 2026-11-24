@@ -23,7 +23,7 @@ func testService(t *testing.T) (*service, cliClient) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	server := httptest.NewServer(svc)
+	server := httptest.NewServer(fixtureHTTPHandler(svc))
 	t.Cleanup(func() {
 		server.Close()
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)

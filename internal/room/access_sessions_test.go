@@ -228,12 +228,12 @@ func TestAccessSessionsAreBoundToInstallationAndOwner(t *testing.T) {
 			} else {
 				c.Access.OperatorID = "owner_" + strings.Repeat("b", 32)
 			}
-			if _, err := newServerAccess(c, a.internal); err != nil {
-				t.Fatal(err)
+			if _, err := newServerAccess(c, a.internal); err == nil {
+				t.Fatal("registered installation or owner changed without repair")
 			}
 			_, handler := restartAccess(t, a)
-			if w := accessRequest(handler, "GET", "/v1/ui", "", "", "", cookie); w.Code != 401 {
-				t.Fatal("identity change resurrected an old cookie", w.Code)
+			if w := accessRequest(handler, "GET", "/v1/ui", "", "", "", cookie); w.Code != 200 {
+				t.Fatal("rejected identity change modified the original login", w.Code)
 			}
 		})
 	}

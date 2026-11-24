@@ -72,6 +72,7 @@ func readInputStream(t *testing.T, s *inputSession, call, stream string, limit i
 	return v
 }
 func TestInputToolsMinimalContract(t *testing.T) {
+	parallelFixtureTest(t)
 	h := newInputMCPHTTP(true)
 	if len(h.server.ListTools()) != 2 {
 		t.Fatal("input tool count")
@@ -138,6 +139,7 @@ func TestInputToolsMinimalContract(t *testing.T) {
 	}
 }
 func TestInputCallsReceiptReplayAndRoomSnapshot(t *testing.T) {
+	parallelFixtureTest(t)
 	h, s := unifiedReaderFixture(t, 45)
 	ref := roomStreamRef(s.storage.id)
 	first := readInputStream(t, s, "call-a", ref, 10, false)
@@ -176,6 +178,7 @@ func TestInputCallsReceiptReplayAndRoomSnapshot(t *testing.T) {
 	}
 }
 func TestInputPlatformRemainingQuotaAndCrossStream(t *testing.T) {
+	parallelFixtureTest(t)
 	h, s := unifiedReaderFixture(t, 0)
 	s.service.referenceResolver = referenceTestResolver
 	for i := 0; i < 29; i++ {
@@ -221,6 +224,7 @@ func TestInputPlatformRemainingQuotaAndCrossStream(t *testing.T) {
 	}
 }
 func TestInputDirectoryFirstPageContinuationAndRefresh(t *testing.T) {
+	parallelFixtureTest(t)
 	h, s := unifiedReaderFixture(t, 1)
 	for i := 0; i < 26; i++ {
 		receivePlatform(t, s.storage, storedGitLab(s.storage.id, fmt.Sprint(i), "events", "7", fmt.Sprint(100+i), fmt.Sprint(i)))
@@ -307,6 +311,7 @@ func simpleMCPRequest(t *testing.T, a *serverAccess, token, call, tool string, a
 	return nil
 }
 func TestInputMCPWaitsForFrameworkReceipt(t *testing.T) {
+	parallelFixtureTest(t)
 	h, s := unifiedReaderFixture(t, 2)
 	a, _, _ := accessFixture(t)
 	token, revoke, err := a.issueInputBinding(s)
@@ -346,6 +351,7 @@ func TestInputMCPWaitsForFrameworkReceipt(t *testing.T) {
 	}
 }
 func TestInputCLIRejectsOldFlags(t *testing.T) {
+	parallelFixtureTest(t)
 	for _, args := range [][]string{{"inbox", "stats"}, {"inbox", "preview"}, {"inbox", "read", "--stream", "x", "--turn", "1"}, {"inbox", "read", "--stream", "x", "--read-id", "id"}, {"inbox", "list", "--query", "x"}, {"inbox", "list", "--cursor", "x", "--limit", "1"}} {
 		if err := runInputCLI(context.Background(), args, io.Discard, func(context.Context, string, []byte) error { t.Fatal("accepted", args); return nil }); err == nil {
 			t.Fatal(args)
@@ -354,6 +360,7 @@ func TestInputCLIRejectsOldFlags(t *testing.T) {
 }
 
 func TestInputNormalBodyAndContextReplay(t *testing.T) {
+	parallelFixtureTest(t)
 	h, s := unifiedReaderFixture(t, 2)
 	c, err := s.catalog(h.ctx)
 	if err != nil {
@@ -394,6 +401,7 @@ func TestInputNormalBodyAndContextReplay(t *testing.T) {
 }
 
 func TestInputReceiptRequiresFinalBodyProof(t *testing.T) {
+	parallelFixtureTest(t)
 	h, s := unifiedReaderFixture(t, 2)
 	result, _, release, err := s.readStream(h.ctx, "shell/one", []byte(fmt.Sprintf(`{"stream_ref":%q,"limit":1}`, roomStreamRef(s.storage.id))))
 	if release != nil {
@@ -429,6 +437,7 @@ func TestInputReceiptRequiresFinalBodyProof(t *testing.T) {
 }
 
 func TestInputMCPRejectsDuplicateArgumentsBeforeBinding(t *testing.T) {
+	parallelFixtureTest(t)
 	h, s := unifiedReaderFixture(t, 1)
 	a, _, _ := accessFixture(t)
 	token, revoke, err := a.issueInputBinding(s)

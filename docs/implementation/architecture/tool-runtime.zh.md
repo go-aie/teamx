@@ -2,7 +2,7 @@
 
 日期：2026-11-21。对应[第二阶段 P2t](../../GORDIS-PLUGIN-AND-SELECTIVE-BUILD-PLAN.zh.md#94-p2np2t补通知和工具的完整运行边界)，也是 R6a.2 中飞书 help／read／actions 一个完整调用族；其他调用族及整条 R6 仍未完成。
 
-实施基准为 HEAD `fc9ae9d0a8ad09599cc9fd851c448fec2e84e431` 加 P1a／P1b／P2n 与既有工作树。没有提交、改变日常服务、迁移存储或新增根模块依赖。逐项命令、源码哈希、原始日志位置及限制见[验证证据](tool-runtime-validation.json)。
+实施基准为 HEAD `fc9ae9d0a8ad09599cc9fd851c448fec2e84e431` 加 P1a／P1b／P2n 与既有工作树。没有提交、改变日常服务、迁移存储或新增根模块依赖。逐项命令、源码哈希、原始日志位置及限制见验证证据（本地验收文件 `tool-runtime-validation.json`）。
 
 ## 接入与原 owner
 

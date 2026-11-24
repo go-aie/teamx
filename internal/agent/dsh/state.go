@@ -12,19 +12,23 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+
+	"github.com/go-aie/teamx/agent"
 )
 
 type reference struct {
-	Version      int             `json:"version"`
-	Artifact     Artifact        `json:"artifact"`
-	BinaryPath   string          `json:"binaryPath"`
-	BinaryArgs   []string        `json:"binaryArgs,omitempty"`
-	BinarySHA256 string          `json:"binarySHA256"`
-	AgentInfo    json.RawMessage `json:"agentInfo"`
-	Workspace    string          `json:"workspace"`
-	SessionID    string          `json:"sessionId"`
-	ConfigSHA256 string          `json:"configSHA256,omitempty"`
-	Stopped      bool            `json:"stopped,omitempty"`
+	Execution    *agent.ExecutionIdentity `json:"execution,omitempty"`
+	ScriptSHA256 []string                 `json:"scriptSHA256,omitempty"`
+	Version      int                      `json:"version"`
+	Artifact     Artifact                 `json:"artifact"`
+	BinaryPath   string                   `json:"binaryPath"`
+	BinaryArgs   []string                 `json:"binaryArgs,omitempty"`
+	BinarySHA256 string                   `json:"binarySHA256"`
+	AgentInfo    json.RawMessage          `json:"agentInfo"`
+	Workspace    string                   `json:"workspace"`
+	SessionID    string                   `json:"sessionId"`
+	ConfigSHA256 string                   `json:"configSHA256,omitempty"`
+	Stopped      bool                     `json:"stopped,omitempty"`
 }
 
 func runtimeArtifact(info json.RawMessage) (Artifact, error) {
@@ -130,6 +134,10 @@ func configDigest(opts Options) string {
 // CheckResumeConfig verifies original-session compatibility without launching or consuming evidence.
 func CheckResumeConfig(opts Options) error {
 	var err error
+	opts, err = routeEndpoints(opts)
+	if err != nil {
+		return err
+	}
 	opts.BinaryPath, err = filepath.EvalSymlinks(opts.BinaryPath)
 	if err != nil {
 		return err
@@ -160,6 +168,16 @@ func CheckResumeConfig(opts Options) error {
 }
 func checkResumeConfig(opts *Options, ref reference) error {
 	dir := opts.StateDir
+	scripts, err := scriptDigests(opts.BinaryArgs)
+	if err != nil {
+		return err
+	}
+	if (len(ref.ScriptSHA256) > 0 || ref.Execution != nil) && !slices.Equal(scripts, ref.ScriptSHA256) {
+		return errors.Join(ErrRecoveryUnsupported, errors.New("DSH script bytes changed"))
+	}
+	if err := checkExecutionIdentity(*opts, ref.Execution); err != nil {
+		return err
+	}
 	hash, err := executableDigest(opts.BinaryPath)
 	if err != nil {
 		return err
@@ -265,6 +283,11 @@ func prepare(opts *Options, resume bool) (*os.File, reference, error) {
 		}
 	}
 	if opts.InputBridge {
+		if directory := filepath.Dir(InputBindingPath(dir, opts.Execution)); directory != dir {
+			if err := os.Mkdir(directory, 0700); err != nil {
+				return nil, ref, err
+			}
+		}
 		if err := os.WriteFile(filepath.Join(dir, "input_bridge.mjs"), inputBridgePlugin, 0600); err != nil {
 			return nil, ref, err
 		}
@@ -285,7 +308,7 @@ func profile(opts Options) []map[string]any {
 	if opts.InputBridge {
 		patches = append(patches,
 			map[string]any{"id": "acp", "inject": []string{"acpAppStartup", "teamxInputBridgeReady"}, "config": map[string]any{"provider": provider(opts.Model), "model": opts.Model.ModelID}},
-			map[string]any{"insert": []map[string]any{{"id": "teamx-input-bridge", "name": filepath.Join(opts.StateDir, "input_bridge.mjs"), "config": map[string]any{"bindingPath": filepath.Join(opts.StateDir, "input-execution.json")}}}},
+			map[string]any{"insert": []map[string]any{{"id": "teamx-input-bridge", "name": filepath.Join(opts.StateDir, "input_bridge.mjs"), "config": inputBridgeConfig(opts)}}},
 		)
 	}
 	if opts.probe != nil {
@@ -344,6 +367,14 @@ func profile(opts Options) []map[string]any {
 			provider(opts.Model): route,
 		}}},
 	)
+}
+
+func inputBridgeConfig(opts Options) map[string]any {
+	c := map[string]any{"bindingPath": InputBindingPath(opts.StateDir, opts.Execution)}
+	if _, ok := opts.Execution.(agent.EndpointRouter); ok {
+		c["executionProxy"] = true
+	}
+	return c
 }
 
 func provider(model ModelConfig) string {

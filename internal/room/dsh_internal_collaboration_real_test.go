@@ -84,7 +84,8 @@ func TestDSHInternalCollaborationReal(t *testing.T) {
 	}
 	audit := &policyRealAudit{Calls: map[string]int{}}
 	access, _, _ := accessFixture(t)
-	access.disabled, access.operator = true, humanCaller.ID
+	access.disabled = true
+	bindFixtureAccessSubject(access, humanCaller.ID)
 	var svc *service
 	server := httptest.NewUnstartedServer(access.wrap(audit.serve(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { svc.ServeHTTP(w, r) }))))
 	endpoint := "http://" + server.Listener.Addr().String()

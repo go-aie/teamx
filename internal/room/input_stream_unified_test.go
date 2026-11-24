@@ -57,6 +57,7 @@ func appendInputEvent(t *testing.T, h *roomHarness, name, target string) PostRec
 }
 
 func TestUnifiedEventTimestampRoundTrip(t *testing.T) {
+	parallelFixtureTest(t)
 	for name, created := range map[string]time.Time{
 		"monotonic":  time.Now(),
 		"fixed_zone": time.Date(2026, 11, 22, 22, 9, 2, 0, time.FixedZone("event-zone", 8*60*60)),
@@ -98,6 +99,7 @@ func deliverRoom(t *testing.T, s *inputSession, q inputstream.ReadRequest) platf
 	return v
 }
 func TestUnifiedRoomTimelineNativeLogAndPagination(t *testing.T) {
+	parallelFixtureTest(t)
 	h, s := unifiedReaderFixture(t, 230)
 	id := s.storage.id
 	// Same shared log, independent cursors. Formal pages use the one coordinator.
@@ -160,6 +162,7 @@ func TestUnifiedRoomTimelineNativeLogAndPagination(t *testing.T) {
 	}
 }
 func TestUnifiedEventsAudienceHintsDedupAndNativeProofRecovery(t *testing.T) {
+	parallelFixtureTest(t)
 	h, s := unifiedReaderFixture(t, 1)
 	id := s.storage.id
 	a := appendInputEvent(t, h, "a", id.MembershipID)
@@ -233,6 +236,7 @@ func TestUnifiedEventsAudienceHintsDedupAndNativeProofRecovery(t *testing.T) {
 	}
 }
 func TestUnifiedRoomLogFaultsAndClearReopen(t *testing.T) {
+	parallelFixtureTest(t)
 	for _, boundary := range []string{"segment_sync", "before_root", "after_root"} {
 		t.Run(boundary, func(t *testing.T) {
 			state := historyRoom(1, "retained evidence")
@@ -311,6 +315,7 @@ func TestUnifiedRoomLogFaultsAndClearReopen(t *testing.T) {
 }
 
 func TestUnifiedRoomReopenSettlesUnpublishedBytesBeforeWrites(t *testing.T) {
+	parallelFixtureTest(t)
 	state := historyRoom(2, "saved evidence")
 	state.InputLog = &roomLogRoot{Version: 1}
 	h := newRoomHarness(t, state, nil)
@@ -348,6 +353,7 @@ func TestUnifiedRoomReopenSettlesUnpublishedBytesBeforeWrites(t *testing.T) {
 	}
 }
 func TestUnifiedNativeGuidanceAndDiscoveryReadOrder(t *testing.T) {
+	parallelFixtureTest(t)
 	h, s := unifiedReaderFixture(t, 1)
 	appendInputEvent(t, h, "target", s.storage.id.MembershipID)
 	q := fmt.Sprintf(`{"turn_number":1,"within":%q}`, roomStreamRef(s.storage.id))

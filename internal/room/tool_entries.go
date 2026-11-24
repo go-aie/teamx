@@ -3,7 +3,6 @@ package room
 import (
 	"context"
 	"errors"
-	"runtime"
 	"slices"
 	"strings"
 
@@ -74,7 +73,7 @@ func (m *roomManager) toolAvailability(file registry.Snapshot, p registry.Record
 	// GitLab's HTTP adapters do not depend on its external CLI.
 	if d.Provider == "gitlab" || d.Provider == "lark" && available {
 		s.Capabilities = append(s.Capabilities, "read")
-		if d.Provider == "lark" && runtime.GOOS != "darwin" {
+		if d.Provider == "lark" && !m.larkClients.SupportsPin() {
 			s.ActionDisabledReason = "Account-pinned actions are unavailable on this server."
 			return
 		}
@@ -150,6 +149,9 @@ func (m *roomManager) withToolEntry(ctx context.Context, req toolsRequest) (cont
 	}
 	// Workspace Git retains its independent repository admission contract.
 	if req.Tool == "workspace-git" {
+		if m.config.hostTools.restricted {
+			return ctx, hostToolUnavailable("managed_repository")
+		}
 		return ctx, nil
 	}
 	if err := m.checkToolEntryLocked(req); err != nil {

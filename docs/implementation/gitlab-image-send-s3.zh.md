@@ -46,7 +46,7 @@ Playwright Chromium 核对实际 Go 服务和真实 GitLab 图片代理：桌面
 - 真实平台发现讨论回复使用 `DiscussionNote`。采集器现将该原生类型按评论解码，保留真实目标类型；不再漏掉讨论回复回流，没有增加新的发送操作。
 - GitLab Skill、根帮助和[用户文档](../gitlab.zh.md#发送图文评论)同步当前可用状态；未增加发送 UI、上传工具、功能开关或媒体状态机。
 
-详细结果及调用成本见[验收摘要](gitlab-image-send-real-evidence.json)。发送两条任务合计 10 次模型工具调用、9 条 CLI 子命令，其中 resolve／execute 共 4 次、发现 2 次、回执查询 1 次、本地报告 2 次；帮助、格式错误、History、policy、事项读取均为 0。目标及原图发布属于独立前置条件，当前 turn／policy 由正常运行时提供；没有把未知状态的读取算作免费。
+详细结果及调用成本见验收摘要（本地验收文件 `gitlab-image-send-real-evidence.json`）。发送两条任务合计 10 次模型工具调用、9 条 CLI 子命令，其中 resolve／execute 共 4 次、发现 2 次、回执查询 1 次、本地报告 2 次；帮助、格式错误、History、policy、事项读取均为 0。目标及原图发布属于独立前置条件，当前 turn／policy 由正常运行时提供；没有把未知状态的读取算作免费。
 
 通过的回流样本为 5 次工具调用、1 条 CLI 子命令，业务动作 0；包含 History 和事项查询的实际成本，不扣除模型主动读取。没有已交付的旧图文基线，不作性能提升结论。
 

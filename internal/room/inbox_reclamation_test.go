@@ -31,6 +31,7 @@ func settleReclaimTurn(t *testing.T, h *inboxHarness) {
 }
 
 func TestInboxReclaimCapacityAndSequence(t *testing.T) {
+	parallelFixtureTest(t)
 	limits := DefaultInboxLimits()
 	limits.Entries = 2
 	h := newInboxHarness(t, limits)
@@ -84,6 +85,7 @@ func TestInboxReclaimCapacityAndSequence(t *testing.T) {
 }
 
 func TestInboxReclaimInterruptedCommitRecovery(t *testing.T) {
+	parallelFixtureTest(t)
 	for _, phase := range []string{"before_replace", "replace_not_done", "replace_done", "boundary_sync", "partial_delete", "delete_sync"} {
 		t.Run(phase, func(t *testing.T) {
 			h := newInboxHarness(t, InboxLimits{})
@@ -166,6 +168,7 @@ func TestInboxReclaimInterruptedCommitRecovery(t *testing.T) {
 }
 
 func TestInboxSequenceCheckpointInterruptedAfterEntry(t *testing.T) {
+	parallelFixtureTest(t)
 	h := newInboxHarness(t, InboxLimits{})
 	real := h.store.ops.createTemp
 	writes := 0
@@ -185,6 +188,7 @@ func TestInboxSequenceCheckpointInterruptedAfterEntry(t *testing.T) {
 }
 
 func TestInboxReclaimMissingHeaderAfterEmptyingIsCorruption(t *testing.T) {
+	parallelFixtureTest(t)
 	h := newInboxHarness(t, InboxLimits{})
 	inboxCall[InboxReceipt](t, h, h.receive("one"))
 	inboxCall[InboxStatus](t, h, ReclaimInbox{h.id, 1})
@@ -198,6 +202,7 @@ func TestInboxReclaimMissingHeaderAfterEmptyingIsCorruption(t *testing.T) {
 }
 
 func TestInboxReclaimRetainedCorruptionAndLegacyHeader(t *testing.T) {
+	parallelFixtureTest(t)
 	for _, corruption := range []string{"missing_first", "missing_last", "bad_body", "legacy_header"} {
 		t.Run(corruption, func(t *testing.T) {
 			h := newInboxHarness(t, InboxLimits{})
@@ -251,6 +256,7 @@ func TestInboxReclaimRetainedCorruptionAndLegacyHeader(t *testing.T) {
 }
 
 func TestInboxReclaimProtectsTurnAndOutstandingBatch(t *testing.T) {
+	parallelFixtureTest(t)
 	h := newInboxHarness(t, InboxLimits{})
 	for _, key := range []string{"one", "two"} {
 		inboxCall[InboxReceipt](t, h, h.receive(key))
@@ -277,6 +283,7 @@ func TestInboxReclaimProtectsTurnAndOutstandingBatch(t *testing.T) {
 }
 
 func TestInboxReclaimSkippedPrefixBatchRecovery(t *testing.T) {
+	parallelFixtureTest(t)
 	h := newInboxHarness(t, InboxLimits{})
 	for _, key := range []string{"one", "two", "three", "four"} {
 		inboxCall[InboxReceipt](t, h, h.receive(key))
@@ -309,6 +316,7 @@ func TestInboxReclaimSkippedPrefixBatchRecovery(t *testing.T) {
 }
 
 func TestInboxReclaimPreservesFollowupsPolicyAndActions(t *testing.T) {
+	parallelFixtureTest(t)
 	for _, outcome := range []string{"succeeded", "unknown"} {
 		t.Run(outcome, func(t *testing.T) {
 			f := referenceExecuteTest(t, "discussion")
@@ -393,6 +401,7 @@ func TestInboxReclaimPreservesFollowupsPolicyAndActions(t *testing.T) {
 }
 
 func TestInboxReclaimLegacyContextOnlySource(t *testing.T) {
+	parallelFixtureTest(t)
 	h := newInboxHarness(t, InboxLimits{})
 	initReferenceTest(t, h)
 	inboxCall[InboxReceipt](t, h, ReceiveInbox{MemberIdentity: h.id, Item: ownLarkItem("own", "om_own", true)})
@@ -422,6 +431,7 @@ func TestInboxReclaimLegacyContextOnlySource(t *testing.T) {
 }
 
 func TestInboxReclaimSerializesReadsAndStaleTurn(t *testing.T) {
+	parallelFixtureTest(t)
 	h := newInboxHarness(t, InboxLimits{})
 	inboxCall[InboxReceipt](t, h, h.receive("one"))
 	real := h.store.ops.remove
@@ -448,6 +458,7 @@ func TestInboxReclaimSerializesReadsAndStaleTurn(t *testing.T) {
 }
 
 func TestInboxExpiredAPIError(t *testing.T) {
+	parallelFixtureTest(t)
 	w := httptest.NewRecorder()
 	writeAPIError(w, ErrInboxExpired)
 	var failure apiError

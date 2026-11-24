@@ -155,7 +155,7 @@ func (m *roomManager) serveLarkAuth(w http.ResponseWriter, r *http.Request) {
 		}
 		ctx, cancel := context.WithTimeout(r.Context(), 35*time.Second)
 		defer cancel()
-		result, err := lark.Discover(ctx, req.Executable, req.Brand)
+		result, err := m.larkClients.Discover(ctx, req.Executable, req.Brand)
 		if err != nil {
 			writeLarkReadError(w, err)
 			return
@@ -429,9 +429,9 @@ func (m *roomManager) runLarkAuth(ctx context.Context, s *larkAuthSession, actio
 	var login lark.LoginResult
 	var err error
 	if action == "logout" {
-		err = lark.Logout(ctx, s.profile)
+		err = m.larkClients.Logout(ctx, s.profile)
 	} else {
-		loginFn := lark.Login
+		loginFn := m.larkClients.Login
 		login, err = loginFn(ctx, s.profile, func(link, qr string) {
 			m.mu.Lock()
 			defer m.mu.Unlock()

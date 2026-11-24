@@ -8,6 +8,7 @@
   <link rel="icon" type="image/svg+xml" href="/ui/brand-mark.svg">
   <link rel="stylesheet" href="/ui/style.css">
   <script type="module" src="/ui/app.js"></script>
+  <link rel="stylesheet" href="/ui/styles/spaces.css">
 </head>
 <body>
   <main id="workspace" class="workspace">
@@ -715,7 +716,7 @@
       <fieldset id="workspace-fields">
         <label for="workspace-root">默认目录根路径</label><input id="workspace-root" readonly placeholder="workspaces" autocomplete="off" class="field-control">
         <p id="workspace-root-hint" class="quiet">切换目录不搬迁文件，原目录保留。</p>
-        <label class="workspace-check"><input id="workspace-repository" type="checkbox">关联仓库 <span class="quiet">可选</span></label>
+        <label id="workspace-repository-option" class="workspace-check"><input id="workspace-repository" type="checkbox">关联仓库 <span class="quiet">可选</span></label>
         <div id="workspace-git-fields" hidden>
           <label for="workspace-kind">仓库类型</label><select id="workspace-kind" class="field-control"><option value="git">Git</option><option value="scion">Scion</option></select>
           <label for="workspace-repo-url">仓库 HTTPS URL</label><input id="workspace-repo-url" type="url" placeholder="https://git.example.com/group/project.git" autocomplete="off" class="field-control">
@@ -1035,7 +1036,7 @@
               <p id="connection-setup-copy-status" class="quiet" role="status" aria-live="polite"></p>
               <p class="quiet">完成配置后，点击「重新检测」继续。</p>
             </details>
-            <label for="connection-executable">CLI 可执行文件路径</label><input id="connection-executable" placeholder="自动检测 lark-cli，可填写绝对路径" aria-describedby="connection-cli-hint platforms-feedback" spellcheck="false" class="field-control">
+            <label id="connection-executable-label" for="connection-executable">CLI 可执行文件路径</label><input id="connection-executable" placeholder="自动检测 lark-cli，可填写绝对路径" aria-describedby="connection-cli-hint platforms-feedback" spellcheck="false" class="field-control">
             <p id="connection-cli-hint" class="quiet">使用 TeamX 服务所在机器及运行用户的 lark-cli 1.0.99。登录凭据由 CLI 管理。</p>
             <button id="connection-detect" class="secondary-button" type="button">重新检测</button>
           </details>

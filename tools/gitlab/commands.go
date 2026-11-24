@@ -82,6 +82,9 @@ func (a *app) options(path, action string, args []string) (options, bool, error)
 			var r io.Reader = a.in
 			var file *os.File
 			if o.bodyFile != "-" {
+				if a.shared {
+					return o, false, errors.New("shared API tools accept --file - only; use stdin")
+				}
 				file, err = os.Open(o.bodyFile)
 				if err != nil {
 					return o, false, errors.New("cannot open body file")

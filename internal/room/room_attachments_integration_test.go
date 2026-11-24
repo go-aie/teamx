@@ -92,7 +92,7 @@ func TestRoomAttachmentsHTTPLifecycle(t *testing.T) {
 					manager.mu.Unlock()
 					handler = manager
 				}
-				server := httptest.NewServer(handler)
+				server := httptest.NewServer(fixtureHTTPHandler(handler))
 				defer server.Close()
 				data := attachmentTestPNG(t, true)
 				if len(data) <= 128<<10 {
@@ -187,7 +187,7 @@ func TestRoomAttachmentsHTTPLifecycle(t *testing.T) {
 				} else {
 					handler = svc
 				}
-				server = httptest.NewServer(handler)
+				server = httptest.NewServer(fixtureHTTPHandler(handler))
 				defer server.Close()
 				status, b, _ = roomAttachmentHTTP(t, server, "GET", "/v1/attachments/content?"+attachmentQuery(before, id)+"&seq=1", "", nil)
 				if status != 403 {
@@ -237,7 +237,7 @@ func TestRoomAttachmentsHTTPRejectsForgedDescriptorsAndLifecycle(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer closeService(t, svc)
-	server := httptest.NewServer(svc)
+	server := httptest.NewServer(fixtureHTTPHandler(svc))
 	defer server.Close()
 	caller := Caller{Author: Author{"human", humanOperator()}}
 	status, b, _ := roomAttachmentHTTP(t, server, "GET", "/v1/info", "", nil)
@@ -271,7 +271,7 @@ func TestRoomAttachmentsHTTPDraftExpiryAndStoredPreview(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer closeService(t, svc)
-	server := httptest.NewServer(svc)
+	server := httptest.NewServer(fixtureHTTPHandler(svc))
 	defer server.Close()
 	data := attachmentTestPNG(t, false)
 	status, b := attachmentUploadHTTP(t, server, svc.info, attachmentTestID(1), data, false)

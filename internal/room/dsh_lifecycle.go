@@ -181,6 +181,11 @@ func (b dshBackend) settledOpenFailure(opts SessionOptions, err error) bool {
 }
 func (s *service) memberBackend(runner RunnerConfig) dshBackend {
 	backend := newSessionBackend(s.store)
+	backend.executionResources = s.executionResources
+	backend.execution = s.execution
+	if s.humanRead != nil {
+		backend.ownerUserID = s.humanRead.operator
+	}
 	backend.checkWorkspace = func() error {
 		if s.checkWorkspace != nil {
 			return s.checkWorkspace(runner.Profile)
@@ -189,6 +194,7 @@ func (s *service) memberBackend(runner RunnerConfig) dshBackend {
 	}
 	backend.isDirect, backend.access, backend.settings = s.isDirect, s.access, s.settings
 	backend.profile, backend.turnTimeout = s.dshProfiles[runner.Profile], s.dshTurnTimeout
+	backend.environment = s.environment
 	backend.prepare, backend.recoveryContext = s.prepareRoomMaterials, s.prepareDSHRecoveryContext
 
 	if s.unifiedInputs {

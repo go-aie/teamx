@@ -133,6 +133,9 @@ func (m *roomManager) canonicalWorkspaceDirectory(dir string, frozen bool) (stri
 	}
 	roots := m.workspaceRoots
 	if roots == nil {
+		if m.config.hostTools.restricted {
+			return "", directoryError("directory_not_allowed")
+		}
 		home, err := os.UserHomeDir()
 		if err != nil || !validDirectoryPath(home) || filepath.Dir(home) == home {
 			return "", directoryError("directory_unavailable")
@@ -149,6 +152,14 @@ func (m *roomManager) canonicalWorkspaceDirectory(dir string, frozen bool) (stri
 	}
 	if !allowed {
 		return "", directoryError("directory_not_allowed")
+	}
+	if m.config.directoryClaims != nil {
+		if m.config.access == nil {
+			return "", ErrIdentity
+		}
+		if err := m.config.directoryClaims.check(m.config.access.space.SpaceID, map[string]string{"directory": real}); err != nil {
+			return "", err
+		}
 	}
 	protected := append([]string{m.store.dir, m.teamsDir}, m.workspaceProtected...)
 	for _, root := range protected {
@@ -196,6 +207,11 @@ func absoluteDirectoriesOverlap(a, b string) bool { return pathWithin(a, b) || p
 // The catalog and unsettled operations are the reservation index. Rebuilding
 // from these authoritative records also catches conflicts after restart.
 func (m *roomManager) checkWorkspaceDirectoryClaimsLocked(owner RoomIdentity, mode schedulingMode, target workspaceConfig) error {
+	if m.config.directoryClaims != nil {
+		if err := m.config.directoryClaims.check(m.config.access.space.SpaceID, target.MemberDirectories); err != nil {
+			return err
+		}
+	}
 	effective, err := mode.effective()
 	if err != nil {
 		return err
@@ -253,6 +269,9 @@ func (m *roomManager) checkWorkspaceDirectoryClaimsLocked(owner RoomIdentity, mo
 }
 
 func (m *roomManager) validateEffectiveWorkspace(saved managedRoomConfig) error {
+	if err := m.config.hostTools.checkRepository(saved.Workspace); err != nil {
+		return err
+	}
 	if saved.Workspace == nil {
 		return ErrInvalid
 	}

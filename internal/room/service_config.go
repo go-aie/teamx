@@ -2,6 +2,7 @@ package room
 
 import (
 	"context"
+	"github.com/go-aie/teamx/agent"
 	"github.com/go-aie/teamx/internal/app/platforms"
 	"github.com/go-aie/teamx/internal/platform/notification"
 	"io"
@@ -13,8 +14,14 @@ import (
 // Configuration belongs to service assembly. DSH launch/model parameters stay
 // concrete until an actual second backend defines its own configuration.
 type serviceConfig struct {
-	platformCatalog *platforms.Catalog
-	calendars       *CalendarService
+	hostTools          hostToolPolicy
+	execution          agent.ExecutionFactory
+	executionResources *executionResources
+	directoryClaims    *spaceDirectoryClaims
+	environment        []string
+	ownerUserID        string // Explicit owner for non-HTTP component assembly; servers resolve the registered Space owner.
+	platformCatalog    *platforms.Catalog
+	calendars          *CalendarService
 
 	workspaceProtected   []string
 	checkWorkspace       func(string) error

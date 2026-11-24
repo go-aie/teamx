@@ -14,6 +14,8 @@ import (
 	"sync"
 	"syscall"
 	"time"
+
+	"github.com/go-aie/teamx/agent"
 )
 
 type processIdentity struct {
@@ -37,9 +39,28 @@ type process struct {
 	stderrText                      bytes.Buffer
 	stderrTruncated                 bool
 	forced                          bool
+	stopOnce                        sync.Once
+	stopDone                        chan struct{}
+	supervised                      bool
+	baseline                        map[int]processIdentity
+	relayExecutables                []string
+	relays                          map[int]processIdentity
 }
 
 func startProcess(opts Options, observationFailed func(error)) (*process, error) {
+	return startCommand(executionRequest(opts, append(append([]string(nil), opts.BinaryArgs...), "--profile", "acp")), opts.inspect, observationFailed)
+}
+
+func startCommand(request agent.ExecutionRequest, inspect func() (map[int]processIdentity, error), observationFailed func(error)) (*process, error) {
+	if observationFailed == nil {
+		observationFailed = func(error) {}
+	}
+	if inspect == nil {
+		inspect = processTable
+	}
+	if _, err := inspect(); err != nil {
+		return nil, err
+	}
 	childIn, in, err := os.Pipe()
 	if err != nil {
 		return nil, err
@@ -57,9 +78,9 @@ func startProcess(opts Options, observationFailed func(error)) (*process, error)
 		}
 		return nil, err
 	}
-	args := append(append([]string(nil), opts.BinaryArgs...), "--profile", "acp")
-	cmd := exec.Command(opts.BinaryPath, args...)
-	cmd.Dir, cmd.Env = opts.Workspace, environment(opts)
+	cmd := exec.Command(request.BinaryPath, request.Args...)
+	cmd.Dir, cmd.Env = request.Workspace, request.Environment
+	cmd.ExtraFiles = request.Files
 	cmd.Stdin, cmd.Stdout, cmd.Stderr = childIn, childOut, childErr
 	ownProcess(cmd)
 	err = cmd.Start()
@@ -73,7 +94,8 @@ func startProcess(opts Options, observationFailed func(error)) (*process, error)
 		return nil, err
 	}
 	ctx, cancel := context.WithCancel(context.Background())
-	p := &process{cmd: cmd, in: in, out: out, stderr: stderr, waitDone: make(chan struct{}), stderrDone: make(chan struct{}), watchDone: make(chan struct{}), watchCancel: cancel, owned: map[int]processIdentity{}, inspect: opts.inspect}
+	p := &process{cmd: cmd, in: in, out: out, stderr: stderr, waitDone: make(chan struct{}), stderrDone: make(chan struct{}), watchDone: make(chan struct{}), watchCancel: cancel, owned: map[int]processIdentity{}, stopDone: make(chan struct{}), inspect: inspect, supervised: request.Supervised}
+	p.relayExecutables = append([]string(nil), request.RelayExecutables...)
 	// Observe before Wait can reap the root and make its PID reusable.
 	_, initialObservationErr := p.snapshot()
 	go func() { _ = cmd.Wait(); close(p.waitDone) }() // The only Wait for this child.
@@ -83,7 +105,7 @@ func startProcess(opts Options, observationFailed func(error)) (*process, error)
 		ticker := time.NewTicker(100 * time.Millisecond)
 		defer ticker.Stop()
 		for {
-			if _, err := p.snapshot(); err != nil {
+			if err := p.Check(); err != nil {
 				observationFailed(err)
 			}
 			select {
@@ -251,7 +273,18 @@ func (p *process) waitToolsStopped(ctx context.Context) error {
 		if _, ok := live[p.cmd.Process.Pid]; !ok {
 			return errors.New("DSH process exited during cancellation settlement")
 		}
-		if len(live) == 1 {
+		p.mu.Lock()
+		baseline := maps.Clone(p.baseline)
+		relays := maps.Clone(p.relays)
+		p.mu.Unlock()
+		if len(baseline) == 0 {
+			baseline = map[int]processIdentity{}
+			baseline[p.cmd.Process.Pid] = live[p.cmd.Process.Pid]
+		}
+		if !sameProcessesPresent(baseline, live) {
+			return errors.New("execution infrastructure exited during cancellation")
+		}
+		if len(withoutRelayChildren(live, relays)) == len(baseline) {
 			return nil
 		}
 		select {
@@ -291,6 +324,12 @@ func (p *process) stop(grace time.Duration) {
 					<-p.stderrDone
 					return
 				default:
+					if time.Now().After(deadline) {
+						_ = p.cmd.Process.Kill()
+						p.mu.Lock()
+						p.forced = true
+						p.mu.Unlock()
+					}
 				}
 			}
 			if remaining := time.Until(deadline); remaining > 0 {

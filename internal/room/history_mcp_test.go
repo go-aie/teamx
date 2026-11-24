@@ -52,6 +52,7 @@ func historyMCPCall(t *testing.T, a *serverAccess, token, call, tool string, arg
 }
 
 func TestHistoryMCPModesSchemasAndNoConsumption(t *testing.T) {
+	parallelFixtureTest(t)
 	for _, mode := range []string{"http", "cli"} {
 		t.Run(mode, func(t *testing.T) {
 			h, s := unifiedReaderFixture(t, 3)
@@ -132,6 +133,7 @@ func TestHistoryMCPModesSchemasAndNoConsumption(t *testing.T) {
 }
 
 func TestHistoryMCPImagePositionsDedupAndIndependentBudget(t *testing.T) {
+	parallelFixtureTest(t)
 	h, s := unifiedReaderFixture(t, 0)
 	s.images = true
 	a, token, _ := historyAccess(t, s)
@@ -201,6 +203,7 @@ func mustJSON(t *testing.T, v any) []byte {
 }
 
 func TestHistoryMCPMissingImagesKeepText(t *testing.T) {
+	parallelFixtureTest(t)
 	for _, kind := range []string{"text-only", "unavailable"} {
 		t.Run(kind, func(t *testing.T) {
 			_, s := unifiedReaderFixture(t, 0)
@@ -225,6 +228,7 @@ func TestHistoryMCPMissingImagesKeepText(t *testing.T) {
 }
 
 func TestHistoryMCPRevokeAndCloseWaitForOutput(t *testing.T) {
+	parallelFixtureTest(t)
 	h, s, _, shared := sharedReaders(t)
 	receiveSharedFixture(t, s, "one", "42")
 	receiveSharedFixture(t, s, "two", "42")
@@ -269,6 +273,7 @@ func TestHistoryMCPRevokeAndCloseWaitForOutput(t *testing.T) {
 }
 
 func TestHistoryMCPShortOutputRetryAndTurnClose(t *testing.T) {
+	parallelFixtureTest(t)
 	h, s := unifiedReaderFixture(t, 2)
 	a, token, _ := historyAccess(t, s)
 	args := map[string]any{"stream_ref": roomStreamRef(s.storage.id), "limit": 1}
@@ -289,6 +294,7 @@ func TestHistoryMCPShortOutputRetryAndTurnClose(t *testing.T) {
 }
 
 func TestHistoryMCPRevocationDuringPreparationRejectsPixels(t *testing.T) {
+	parallelFixtureTest(t)
 	h, s, _, _ := sharedReaders(t)
 	item := historyImageItem(s, "shared-image", "![image](/uploads/524bb5cf042cd0bb3ef9a7a117a744b7/image.png)")
 	item.Route.Target = notification.Target{Mode: "shared_inbox", InboxID: sharedProjectInbox}
@@ -323,6 +329,7 @@ func TestHistoryMCPRevocationDuringPreparationRejectsPixels(t *testing.T) {
 }
 
 func TestHistoryMCPCancelDownloadReleasesPinsAndCache(t *testing.T) {
+	parallelFixtureTest(t)
 	h, s := unifiedReaderFixture(t, 0)
 	s.images = true
 	ref := receiveHistoryItem(t, s, historyImageItem(s, "cancel-image", "![image](/uploads/524bb5cf042cd0bb3ef9a7a117a744b7/image.png)"))
@@ -352,6 +359,7 @@ func TestHistoryMCPCancelDownloadReleasesPinsAndCache(t *testing.T) {
 }
 
 func TestHistoryMCPLarkImagesAndCursorReplayChargeSharedAllowance(t *testing.T) {
+	parallelFixtureTest(t)
 	h, s := unifiedReaderFixture(t, 0)
 	s.images = true
 	ref := receiveHistoryItem(t, s, storedLark(s.storage.id, "older", "oc_saved", "Saved chat", "omt", "older ![image](lark-image:img_saved)"))
@@ -401,6 +409,7 @@ func TestHistoryMCPLarkImagesAndCursorReplayChargeSharedAllowance(t *testing.T) 
 }
 
 func TestHistoryMCPServiceImageLimitAppliesAcrossQueries(t *testing.T) {
+	parallelFixtureTest(t)
 	_, s := unifiedReaderFixture(t, 0)
 	s.images = true
 	s.service.imageMaterials = imageMaterialConfig{MaxImages: 1}
@@ -420,6 +429,7 @@ func TestHistoryMCPServiceImageLimitAppliesAcrossQueries(t *testing.T) {
 }
 
 func TestHistoryMCPStorageFailureHidesPrivatePaths(t *testing.T) {
+	parallelFixtureTest(t)
 	h, s := unifiedReaderFixture(t, 0)
 	ref := receiveHistoryItem(t, s, historyImageItem(s, "missing-record", "retained fact"))
 	files, err := filepath.Glob(filepath.Join(h.store.dir, "inboxes", s.storage.id.MembershipID, "gitlab", "records", "*"))

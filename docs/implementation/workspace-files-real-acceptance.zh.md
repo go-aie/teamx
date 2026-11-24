@@ -4,7 +4,7 @@
 
 ## 环境与入口
 
-后端基于 `c25cb6f7178220545176d4804a715e4874cef3e9` 加当前工作区的 F1–F3 及既有改动构建，实际二进制 SHA-256、模型探测与启动器摘要见[验证数据](workspace-files/real-acceptance-evidence.json)。本次为 macOS arm64、Go 1.27.1、Node 26.7.0、Chromium 147.0.7727.15；模型为 `deepseek-v4.1-flash-1017`。
+后端基于 `c25cb6f7178220545176d4804a715e4874cef3e9` 加当前工作区的 F1–F3 及既有改动构建，实际二进制 SHA-256、模型探测与启动器摘要见验证数据（本地验收文件 `real-acceptance-evidence.json`）。本次为 macOS arm64、Go 1.27.1、Node 26.7.0、Chromium 147.0.7727.15；模型为 `deepseek-v4.1-flash-1017`。
 
 DSH 使用现有配置中的源码启动器 `apps/cli/lib/bin.js`，版本 `0.2.1-alpha.1`，源码 HEAD 为 `5badb15009ae1756c3afe0ae0cef1faafc290ccc`，跟踪代码干净；ACP 身份为 `deepseek-harness-acp 0.0.1`。这不代表发布包启动器验收。只复制选中模型和凭据到隔离 home，不复制平台连接。
 
@@ -26,7 +26,7 @@ DSH 使用现有配置中的源码启动器 `apps/cli/lib/bin.js`，版本 `0.2.
 
 整个模型任务共两次 human 请求、两次 Agent 执行、两条 Agent 交付，没有为查看或重启多发消息。目录切换测试等待操作完成、Active 服务以及会话列表中匹配的新运行时 epoch 就绪，再重开页面；仅观察操作完成不足以证明页面已经采用新身份。
 
-截图：[修改后桌面预览](workspace-files/real-desktop.png)、[展开阅读](workspace-files/real-expanded.png)、[窄桌面](workspace-files/real-narrow.png)、[手机尺寸](workspace-files/real-mobile.png)、[来源变化](workspace-files/real-source-changed.png)、[清空后直接浏览](workspace-files/real-after-clear.png)。
+截图：修改后桌面预览（本地验收文件 `real-desktop.png`）、展开阅读（本地验收文件 `real-expanded.png`）、窄桌面（本地验收文件 `real-narrow.png`）、手机尺寸（本地验收文件 `real-mobile.png`）、来源变化（本地验收文件 `real-source-changed.png`）、清空后直接浏览（本地验收文件 `real-after-clear.png`）。
 
 ## 回归结果
 

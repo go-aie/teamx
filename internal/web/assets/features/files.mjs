@@ -1,3 +1,4 @@
+import { spaceURL } from "../space-context.mjs";
 import { markdownHTML, openImagePreview } from "../markdown.mjs";
 import { workspaceHeadingID } from "../workspace-file-path.mjs";
 import { captureReturnView } from "../view-return.mjs";
@@ -205,7 +206,7 @@ export function createFiles({ env, runtime, layoutUI, membersUI, conversationToo
     $("files-preview-mode").setAttribute("aria-pressed",String(!sourceMode));
     const download = $("files-download");
     download.hidden = !source || !preview?.download_available;
-    if (!download.hidden) { const q = query(preview.path); q.set("download","true"); download.href = "/v1/workspace/files/content?"+q; download.download = preview.name; }
+    if (!download.hidden) { const q = query(preview.path); q.set("download","true"); download.href = spaceURL("/v1/workspace/files/content?"+q); download.download = preview.name; }
     else download.removeAttribute("href");
     $("files-source-toggle").setAttribute("aria-pressed", String(sourceMode));
     $("files-refresh").disabled = !state.managed || !state.info;

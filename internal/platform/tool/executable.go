@@ -4,6 +4,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 )
 
 // Checked again for each discovery and execution; repairing a server install
@@ -21,7 +22,8 @@ type ExecutableDependency struct{ Name, OverrideEnvironment string }
 func DependenciesAvailable(d Definition) bool {
 	self, _ := exec.LookPath(d.Executable)
 	for _, dep := range d.Dependencies {
-		if !ExecutableAvailable(resolveExecutable(dep.Name, os.Getenv(dep.OverrideEnvironment), self)) {
+		override, _ := dEnvironment(d, dep.OverrideEnvironment)
+		if !ExecutableAvailable(resolveExecutable(dep.Name, override, self)) {
 			return false
 		}
 	}
@@ -46,4 +48,16 @@ func resolveExecutable(name, override, self string) string {
 		}
 	}
 	return name
+}
+
+func dEnvironment(d Definition, key string) (string, bool) {
+	if d.ProcessEnvironment == nil {
+		return os.LookupEnv(key)
+	}
+	for _, entry := range d.ProcessEnvironment {
+		if name, value, ok := strings.Cut(entry, "="); ok && name == key {
+			return value, true
+		}
+	}
+	return "", false
 }

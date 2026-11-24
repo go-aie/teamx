@@ -2,8 +2,22 @@
 
 这里保存已实施阶段和被替代方案的历史记录。阶段性验收记录已去重，仍需维护的验证方法和未完成项保存在对应模块说明；保留方案只用于追溯设计。当前使用方法见[项目说明](../../README.md)、[Server 架构](../server.zh.md)、[通知手册](../notifications.zh.md)和[飞书说明](../lark.zh.md)；待实施方案继续保留在 `docs/`。
 
+本目录只提交可维护的实施说明。验收日志、截图及 JSON 报告保留在本地，不纳入版本控制；复验入口与结论记录在对应 Markdown 中。
+
 | 记录 | 范围 |
 | --- | --- |
+| [空间归档、结清与恢复](spaces-archive-restore-s2b.zh.md) | 空间 S2b：原 owner 结清、超时保留、新运行对象恢复及独立后台运行 |
+| [平台工具与私有 CLI 上下文](platform-tools-admission.zh.md) | 空间 S3b.2a：工具准入、托管 Git 禁用与 Linux 飞书私有凭据上下文；真实飞书验收门槛保留 |
+| [独立 SRT 隔离检查](srt-independent-isolation.zh.md) | 空间 S3a.1：文件、网络与监督条件的独立实测；DSH 接入见执行记录 |
+| [SRT 与 DSH 隔离检查](srt-dsh-isolation.zh.md) | SRT 包装 DSH 的原始兼容性证据与边界 |
+| [OpenCSG SSO 与用户生命周期](opencsg-auth-preflight.zh.md) | 空间 S4a 代码及本地闭环：认证／持久登记、会话、owner 授权与本机 CLI 撤权结清；真实 SSO／Linux 组合验收及生产门槛仍保留 |
+| [空间执行隔离路线验证](space-execution-isolation.zh.md) | 空间 S3a 历史探针：DSH／文件／Shell／CLI、UID／容器及取消恢复证据保留；每空间业务 worker 路线已被替代，下一步 S3a.1 验证 SRT |
+| [空间与执行资源准入](space-resource-admission.zh.md) | 空间 S3b 部分实现：共享核心中的空间／占有 Session 额度及结清释放保留；SRT 接入、工具链／硬资源与组合验收仍未完成 |
+| [Agent 执行环境接入与恢复](agent-execution.zh.md) | 空间 S3b.1 完成：原生／SRT 执行合同、非 root 真实 DSH 的 MCP／CLI 回调、取消／故障／重启恢复／轮换及资源结清；多用户仍关闭 |
+| [共享服务与真实模型增量验收](shared-service-acceptance.zh.md) | 空间 S3b.3 增量通过：同服务双空间、真实模型 MCP／CLI、A 归档时 B 继续执行、原 Session 恢复及结清；正式出口仍等待 S3b.2a 真实飞书验收 |
+| [多空间创建、切换与独立运行](spaces-create-switch-s2a.zh.md) | 空间 S2a：创建／改名／切换、私有运行时与凭据、目录占用、后台恢复、双真实 DSH 与双 AIO 验收；归档／重开留 S2b |
+| [默认空间与正式身份](space-identity-s1a.zh.md) | 空间 S1a：可恢复 User／Space 登记、原地归属、统一默认空间授权、浏览器与执行身份；运行时装配见 S1b |
+| [默认空间运行时与部署装配](space-runtime-s1b.zh.md) | 空间 S1b：实际个人组合、默认 SpaceRuntime、配置与资源归属、原关闭权威、超时保留及原 Session 恢复；S1 完成；创建／切换见 S2a |
 | [测试改造最终验收](test-suite-final-validation.zh.md) | F5：固定快照完整 integration／race、身份与时序夹具修正、成本分布及停止决策；CLI／Space 失败与未达预算保留 |
 | [Workspace 夹具隔离](workspace-fixture-isolation.zh.md) | F4：私有 Git／HOME 环境、真实准备与重启边界、四槽并行和局部成本对照 |
 | [动作 ledger 恢复分工](action-ledger-recovery.zh.md) | 测试 F3：四类真实落盘故障改由新组件重读，保留文本／图片真实进程恢复；回执与身份补强、健康修复和局部收益判断 |

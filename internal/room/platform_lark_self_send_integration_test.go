@@ -27,7 +27,7 @@ func TestLarkSelfSendManagedCapability(t *testing.T) {
 	if err := h.svc.store.SaveAgent(AgentSnapshot{Version: formatVersion, MemberIdentity: id, TurnNumber: 1, LastOfferedUnreadSeq: post.Seq, Turn: &TurnRecord{Number: 1, Status: "running", SnapshotSeq: post.Seq, OfferedUnreadSeq: post.Seq}}); err != nil {
 		t.Fatal(err)
 	}
-	server := httptest.NewServer(h.m)
+	server := httptest.NewServer(fixtureHTTPHandler(h.m))
 	defer server.Close()
 	cli := contractCLI(t, server.URL, h.svc, id, h.c.ToolEntryID)
 	resolve := func() actionTargetView {

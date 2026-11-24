@@ -330,7 +330,7 @@ func serveSetupRequired(ctx context.Context, listener net.Listener, config start
 		}))}
 	defer server.Close()
 	done := make(chan error, 1)
-	go func() { done <- server.Serve(listener) }()
+	go func() { done <- serveRuntimeHTTP(server, listener) }()
 	if err := ready(struct {
 		Endpoint string `json:"endpoint"`
 		Status   string `json:"status"`
@@ -341,7 +341,7 @@ func serveSetupRequired(ctx context.Context, listener net.Listener, config start
 	if access != nil && access.disabled {
 		fmt.Fprintf(stderr, "打开 %s/access 配置并验证模型；当前仅本机访问，无需登录。\n", internalAccessEndpoint(listener.Addr().String()))
 	} else {
-		fmt.Fprintf(stderr, "打开 %s/access 登录并验证模型。管理 token 文件：%s\n", internalAccessEndpoint(listener.Addr().String()), adminTokenPath(config))
+		fmt.Fprintf(stderr, "打开 %s/access 登录并验证模型。管理 token 文件：%s\n", internalAccessEndpoint(listener.Addr().String()), adminTokenPath(access.config))
 	}
 	select {
 	case <-ctx.Done():
@@ -354,7 +354,7 @@ func serveSetupRequired(ctx context.Context, listener net.Listener, config start
 	}
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), serviceShutdownTimeout)
 	defer cancel()
-	return errors.Join(err, server.Shutdown(shutdownCtx))
+	return errors.Join(err, shutdownRuntimeHTTP(server, listener, shutdownCtx))
 }
 
 func setupBlockedMessage(err error) string {

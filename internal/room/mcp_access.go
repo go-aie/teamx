@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"io"
 	"net/http"
+	"net/url"
 	"strings"
 	"sync"
 
@@ -14,6 +15,8 @@ import (
 
 type inputMCPBinding struct {
 	*inputSession
+	Subject userSubject
+	SpaceContext
 	ctx    context.Context
 	active sync.WaitGroup // Admission and deletion serialize under serverAccess.mu.
 }
@@ -60,6 +63,11 @@ func (a *serverAccess) issueMCPExecution(binding executionBinding, store *Store,
 }
 
 func (a *serverAccess) issueMCP(binding executionBinding, store *Store, generation string, inbox *mcpInboxSession) (string, func(), error) {
+	var err error
+	binding, err = a.bindExecution(binding)
+	if err != nil {
+		return "", nil, err
+	}
 	if store == nil || generation == "" || binding.ServiceEpoch == "" || binding.Caller.Kind != "agent" {
 		return "", nil, ErrIdentity
 	}
@@ -107,6 +115,16 @@ func (a *serverAccess) serveMCP(w http.ResponseWriter, r *http.Request) {
 	a.mu.Unlock()
 	if input != nil {
 		defer input.active.Done()
+		if input.SpaceContext != a.space {
+			accessError(w, 403, "identity_mismatch")
+			return
+		}
+		var err error
+		r, err = a.bindSpaceRequest(r, input.Subject)
+		if err != nil {
+			accessError(w, 403, "identity_mismatch")
+			return
+		}
 		ctx, cancel := context.WithCancel(r.Context())
 		stop := context.AfterFunc(input.ctx, cancel)
 		defer stop()
@@ -150,13 +168,23 @@ func (a *serverAccess) serveMCP(w http.ResponseWriter, r *http.Request) {
 		r.Body = io.NopCloser(strings.NewReader(string(data)))
 		ctx = context.WithValue(r.Context(), inputSessionKey{}, input.inputSession)
 		ctx = context.WithValue(ctx, inputCallKey{}, call)
-		ctx = context.WithValue(ctx, computerMCPKey{}, computerMCPContext{service:input.service,id:input.storage.id,generation:input.execution.Generation,turn:input.execution.Turn,images:input.images,call:call})
+		ctx = context.WithValue(ctx, computerMCPKey{}, computerMCPContext{service: input.service, id: input.storage.id, generation: input.execution.Generation, turn: input.execution.Turn, images: input.images, call: call})
 		h := a.inputMCPFor(input.service.inboxMode == "cli")
-		h.ServeHTTP(w, r.WithContext(ctx))
+		h.ServeHTTP(w, a.localMCPRequest(r.WithContext(ctx)))
 		return
 	}
 	if e == nil {
 		accessError(w, 401, "unauthorized")
+		return
+	}
+	if e.identity.SpaceContext != a.space {
+		accessError(w, 403, "identity_mismatch")
+		return
+	}
+	var scopeErr error
+	r, scopeErr = a.bindSpaceRequest(r, e.identity.Subject)
+	if scopeErr != nil {
+		accessError(w, 403, "identity_mismatch")
 		return
 	}
 	if err := e.validate(); err != nil {
@@ -174,18 +202,43 @@ func (a *serverAccess) serveMCP(w http.ResponseWriter, r *http.Request) {
 	ctx = context.WithValue(ctx, mcpIdentityKey{}, e.identity)
 	ctx = context.WithValue(ctx, mcpExecutionKey{}, e)
 	if e.inbox != nil {
-		id:=MemberIdentity{RoomIdentity:e.identity.RoomIdentity,AgentID:e.identity.Caller.ID,MembershipID:e.identity.Caller.MembershipID}
-		ctx=context.WithValue(ctx,computerMCPKey{},computerMCPContext{service:e.inbox.service,id:id,generation:e.identity.Generation,call:r.Header.Get("X-Teamx-Call")})
+		id := MemberIdentity{RoomIdentity: e.identity.RoomIdentity, AgentID: e.identity.Caller.ID, MembershipID: e.identity.Caller.MembershipID}
+		ctx = context.WithValue(ctx, computerMCPKey{}, computerMCPContext{service: e.inbox.service, id: id, generation: e.identity.Generation, call: r.Header.Get("X-Teamx-Call")})
 	}
 	if e.inbox != nil && e.inbox.service.unifiedInputs {
 		h := a.inputMCPFor(e.inbox.service.inboxMode == "cli")
-		h.ServeHTTP(w, r.WithContext(ctx))
+		h.ServeHTTP(w, a.localMCPRequest(r.WithContext(ctx)))
 		return
 	}
-	a.mcp.ServeHTTP(w, r.WithContext(ctx))
+	a.mcp.ServeHTTP(w, a.localMCPRequest(r.WithContext(ctx)))
+}
+
+// Origin admission and the scoped MCP credential have already been checked.
+// Normalize only this authenticated transport alias for the SDK's additional
+// localhost guard; ordinary browser and remote hosts keep its protection.
+func (a *serverAccess) localMCPRequest(r *http.Request) *http.Request {
+	a = a.authority()
+	if a.executionOrigin == "" || "http://"+r.Host != a.executionOrigin {
+		return r
+	}
+	u, err := url.Parse(a.internal)
+	if err != nil {
+		return r
+	}
+	r = r.Clone(r.Context())
+	r.Host = u.Host
+	return r
 }
 
 func (a *serverAccess) issueInputBinding(s *inputSession) (string, func(), error) {
+	if _, err := a.authorizeSpace(a.subject(), a.space.SpaceID); err != nil {
+		return "", nil, err
+	}
+	// Unhosted component fixtures have no access boundary. A configured server
+	// always supplies one, and cannot mint for a different Space runtime.
+	if s.service == nil || s.service.access != nil && s.service.access != a {
+		return "", nil, ErrIdentity
+	}
 	if err := s.check(context.Background()); err != nil {
 		return "", nil, err
 	}
@@ -199,7 +252,7 @@ func (a *serverAccess) issueInputBinding(s *inputSession) (string, func(), error
 		a.inputBindings = map[[32]byte]*inputMCPBinding{}
 	}
 	ctx, cancel := context.WithCancel(context.Background())
-	binding := &inputMCPBinding{inputSession: s, ctx: ctx}
+	binding := &inputMCPBinding{inputSession: s, Subject: a.subject(), SpaceContext: a.space, ctx: ctx}
 	a.inputBindings[key] = binding
 	a.mu.Unlock()
 	return token, sync.OnceFunc(func() {

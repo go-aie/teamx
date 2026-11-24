@@ -45,7 +45,7 @@
 | `go vet ./...` | 通过，2.654 秒 |
 | 完整核心＋本地集成 | 1,933 项顶层通过、9 项跳过，22 包通过；墙钟 948.975 秒（15 分 49 秒），八分钟预算未达；本批 19 项全部通过 |
 
-race 选择包含全部 Inbox recovery、连接通知、默认助理连接、Room 日历递归、受管日历、日历持久报告／取消／未知提交及 `internal/calendar.TestRecurring*`。精确命令、选择、逐项结果、样本和源码摘要见[机器可读证据](timer-assembly-evidence.json)。源码已核对为相同版本；单并发不是与正常并发的性能对照。
+race 选择包含全部 Inbox recovery、连接通知、默认助理连接、Room 日历递归、受管日历、日历持久报告／取消／未知提交及 `internal/calendar.TestRecurring*`。精确命令、选择、逐项结果、样本和源码摘要见机器可读证据（本地验收文件 `timer-assembly-evidence.json`）。源码已核对为相同版本；单并发不是与正常并发的性能对照。
 
 完整集成使用一次 `go test -json -count=1 -tags=integration -timeout=16m ./... -run '.'`，包含核心；沿用上一批显式诊断上限，没有修改 Makefile 的三分钟／八分钟预算。未单独重测全仓核心、运行全仓 race 或执行真实模型／平台／浏览器；第五批及以后未实施。
 

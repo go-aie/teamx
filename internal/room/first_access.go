@@ -20,12 +20,41 @@ type firstAccessRecord struct {
 // Caller owns the home lock. Persist the identity reservation before creating
 // credentials, so an interrupted first start always resumes the same identity.
 func prepareFirstAccess(c startupConfig) error {
+	if err := checkDeploymentRoot(c); err != nil {
+		return err
+	}
+	if c.Deployment.Mode == "multi-user" {
+		if c.Deployment.Authentication.Provider == "" || len(c.Deployment.Authentication.AllowedSubjects) == 0 {
+			return errors.New("multi-user access requires an authentication provider and subject admission")
+		}
+		if err := makeDurableDir(filepath.Dir(adminTokenPath(c))); err != nil {
+			return err
+		}
+		if _, err := os.Lstat(adminTokenPath(c)); errors.Is(err, os.ErrNotExist) {
+			token, err := randomAccessToken()
+			if err != nil {
+				return err
+			}
+			if err := installMissing(adminTokenPath(c), []byte(token+"\n")); err != nil {
+				return err
+			}
+		}
+		_, err := readAdminToken(adminTokenPath(c))
+		return err
+	}
 	if c.Access.OperatorID != "" {
 		if c.Access.LoginEnabled != nil && !*c.Access.LoginEnabled {
 			return validateRemoteAccess(c, false)
 		}
 		_, err := readAdminToken(adminTokenPath(c))
 		return err
+	}
+	// Once a User/Space reservation exists, missing access configuration is
+	// damage. Do not let first-use initialization mint a replacement owner.
+	for _, name := range []string{"personal-space-registration.json", "users.json", "spaces.json"} {
+		if _, err := os.Lstat(filepath.Join(filepath.Dir(c.path), name)); !errors.Is(err, os.ErrNotExist) {
+			return errors.New("registered personal identity requires restoring access configuration; repair required")
+		}
 	}
 	path := filepath.Join(filepath.Dir(c.path), "first-access.json")
 	var record firstAccessRecord

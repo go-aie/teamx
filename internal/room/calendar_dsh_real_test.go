@@ -70,7 +70,7 @@ func testCalendarRealDSH(t *testing.T, recurring bool) {
 	}
 	access, _, _ := accessFixture(t)
 	access.disabled = true
-	access.operator = humanCaller.ID
+	bindFixtureAccessSubject(access, humanCaller.ID)
 	var svc *service
 	var traceMu sync.Mutex
 	var calls []calendarAcceptanceCall

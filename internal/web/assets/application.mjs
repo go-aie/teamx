@@ -1,3 +1,4 @@
+import { spaceURL, spaceStorage } from "./space-context.mjs";
 import { createBrowserLifecycle } from "./features/browser-lifecycle.mjs";
 import { createBrowserNavigation } from "./features/browser-navigation.mjs";
 import { request, sameService, compactViewport } from "./client.mjs";
@@ -33,7 +34,7 @@ function browserEnvironment(overrides) {
   const env = { request, renderMessageBody };
   Object.defineProperties(env, Object.getOwnPropertyDescriptors(overrides));
   for (const key of ["document", "window", "sessionStorage", "localStorage", "fetch", "Option", "requestAnimationFrame", "performance", "setTimeout", "clearTimeout", "EventSource", "ResizeObserver", "MutationObserver"]) {
-    if (!(key in env)) Object.defineProperty(env, key, { get: () => globalThis[key] });
+    if (!(key in env)) Object.defineProperty(env, key, { get: () => key === "sessionStorage" || key === "localStorage" ? spaceStorage(globalThis[key]) : key === "fetch" ? (path,options) => globalThis.fetch(spaceURL(path),options) : globalThis[key] });
   }
   return env;
 }

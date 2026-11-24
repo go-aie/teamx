@@ -5,6 +5,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"github.com/go-aie/teamx/agent"
 	"io"
 	"os"
 	"path/filepath"
@@ -17,11 +18,15 @@ import (
 
 // Startup settings stay outside Room snapshots. Only the resolved runtime is frozen.
 type startupConfig struct {
-	installationID string // Deployment identity; never part of user configuration.
-	path           string
-	source         []byte
-	file           os.FileInfo
-	Server         struct {
+	execution        agent.ExecutionFactory // selected at deployment assembly, never decoded from Space settings
+	executionBinding agent.ExecutionBinding
+	spaceID          string // Runtime-only Computer namespace; empty preserves legacy identity.
+	singleRoomDir    string // Resolved explicit single-Room root; not a TOML option.
+	installationID   string // Deployment identity; never part of user configuration.
+	path             string
+	source           []byte
+	file             os.FileInfo
+	Server           struct {
 		WorkspaceRoots       *[]string           `toml:"workspace_roots"`
 		TimeZone             *string             `toml:"time_zone"`
 		PublicBaseURL        string              `toml:"public_base_url"`
@@ -41,11 +46,20 @@ type startupConfig struct {
 		InboxMode            string              `toml:"inbox_mode"` // Empty/http: MCP; cli: explicit compatibility fallback.
 		LegacyAgentMCPFile   *string             `toml:"agent_mcp_file"`
 	} `toml:"server"`
-	Access   accessConfig      `toml:"access"`
-	Runtime  *teamRuntime      `toml:"runtime"`
-	Models   *modelCatalog     `toml:"models"`
-	Env      map[string]string `toml:"env"`
-	Computer computerConfig    `toml:"computer"`
+	Access     accessConfig      `toml:"access"`
+	Runtime    *teamRuntime      `toml:"runtime"`
+	Models     *modelCatalog     `toml:"models"`
+	Env        map[string]string `toml:"env"`
+	Computer   computerConfig    `toml:"computer"`
+	Deployment struct {
+		Mode           string             `toml:"mode"`
+		Authentication externalAuthConfig `toml:"authentication"`
+		Execution      struct {
+			Kind     string `toml:"kind"`
+			Manifest string `toml:"manifest"`
+		} `toml:"execution"`
+		Resources executionResourceLimits `toml:"resources"`
+	} `toml:"deployment"`
 }
 
 var configEnvName = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
@@ -100,6 +114,9 @@ func readStartupConfig(name string, required, validateRuntime bool) (startupConf
 		return startupConfig{}, fmt.Errorf("%w: server.max_turns was removed; use server.session_max_turns: cumulative hard stop is now per-session rotation", ErrRequest)
 	}
 	config.path = path
+	if err := config.Deployment.Resources.validate(); err != nil {
+		return startupConfig{}, err
+	}
 	config.Computer = defaultComputerConfig(config.Computer)
 	if err := config.Computer.validate(); err != nil {
 		return startupConfig{}, err
@@ -178,26 +195,28 @@ func configPath(base, name string) string {
 	return filepath.Join(base, name)
 }
 
-// The service loads env once before starting workers; caller restores it after shutdown.
-// An explicitly exported value, including an empty value, always wins.
-func applyStartupEnv(values map[string]string) (func(), error) {
-	var added []string
-	cleanup := func() {
-		for _, key := range added {
-			_ = os.Unsetenv(key)
-		}
-	}
+// Explicit exports, including empty values, retain precedence over config.
+// The result belongs to one Space and is never installed in the host process.
+func startupEnvironment(values map[string]string) []string {
+	result := append([]string{}, os.Environ()...)
 	for key, value := range values {
-		if _, exists := os.LookupEnv(key); exists {
-			continue
+		if _, exists := os.LookupEnv(key); !exists {
+			result = append(result, key+"="+value)
 		}
-		if err := os.Setenv(key, value); err != nil {
-			cleanup()
-			return nil, errors.New("cannot apply config environment")
-		}
-		added = append(added, key)
 	}
-	return cleanup, nil
+	return result
+}
+
+func environmentValue(environment []string, key string) string {
+	if environment == nil {
+		return os.Getenv(key)
+	}
+	for _, entry := range environment {
+		if name, value, ok := strings.Cut(entry, "="); ok && name == key {
+			return value
+		}
+	}
+	return ""
 }
 
 func applyStartupSettings(flags *flag.FlagSet, explicit map[string]bool, startup startupConfig) error {

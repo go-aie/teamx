@@ -58,4 +58,4 @@
 
 随后 Room 范围 integration vet 发现同一图片测试文件的既有 `ImageRef` 使用位置字段字面量。已改为相同数值的 `MessageSeq`／`AttachmentID` 命名字段，该 bad-id 分支的定向 race 与最终 integration vet 均通过；这项语法修正不计提速。默认及最终 e2e 编译也通过，只证明标签接线，不代表浏览器或平台验收。
 
-验证结果与源码摘要见[机器证据](action-ledger-recovery-evidence.json)。本轮仅交付这一恢复切片，不自动扩展其他 ledger／provider 族；F4、F5、完整核心／integration／全仓 race 及真实平台、模型、浏览器仍待各自验收。
+验证结果与源码摘要见机器证据（本地验收文件 `action-ledger-recovery-evidence.json`）。本轮仅交付这一恢复切片，不自动扩展其他 ledger／provider 族；F4、F5、完整核心／integration／全仓 race 及真实平台、模型、浏览器仍待各自验收。

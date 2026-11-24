@@ -90,7 +90,7 @@ func (m *roomManager) workspaceFilesConfigSnapshot(r *http.Request) (workspaceFi
 	if err != nil || saved.Workspace == nil {
 		return workspaceFileSnapshot{}, fileError("workspace_source_unavailable")
 	}
-	policy := &roomManager{store: m.store, teamsDir: m.teamsDir, workspaceProtected: slices.Clone(m.workspaceProtected)}
+	policy := &roomManager{config: m.config, store: m.store, teamsDir: m.teamsDir, workspaceProtected: slices.Clone(m.workspaceProtected)}
 	if m.workspaceRoots != nil {
 		roots := slices.Clone(*m.workspaceRoots)
 		policy.workspaceRoots = &roots

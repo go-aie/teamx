@@ -50,7 +50,7 @@ Codex 接入仍需独立确认后端选择／配置、ACP 适配、取消及结�
 
 ## 验证
 
-完整命令、结果、日志摘要和源码哈希记录在 [backend-lifecycle-validation.json](backend-lifecycle-validation.json)。本地原始日志与隔离真实运行保存在 `.local/architecture-backend/`。
+完整命令、结果、日志摘要和源码哈希记录在 backend-lifecycle-validation.json（本地验收文件 `backend-lifecycle-validation.json`）。本地原始日志与隔离真实运行保存在 `.local/architecture-backend/`。
 
 | 检查 | 结果 |
 | --- | --- |

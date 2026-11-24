@@ -1,6 +1,6 @@
 # 私信重复任务与工作日交付记录
 
-2026-11-19，对应[会话日历方案](../../CONVERSATION-CALENDAR-AND-SCHEDULED-TASKS-PLAN.zh.md) C2。规则与真实 DSH／浏览器记录见 [recurrence-evidence.json](recurrence-evidence.json)，界面见[浏览器截图](recurrence-browser.png)。C1／C1.5 的执行、发布和逐回合身份机制继续复用。
+2026-11-19，对应[会话日历方案](../../CONVERSATION-CALENDAR-AND-SCHEDULED-TASKS-PLAN.zh.md) C2。规则与真实 DSH／浏览器记录见 recurrence-evidence.json（本地验收文件 `recurrence-evidence.json`），界面见浏览器截图（本地验收文件 `recurrence-browser.png`）。C1／C1.5 的执行、发布和逐回合身份机制继续复用。
 
 ## 交付行为
 

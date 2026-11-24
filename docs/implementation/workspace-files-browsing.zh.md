@@ -37,7 +37,7 @@ go test -tags=e2e ./internal/room \
   -count=1 -v
 ```
 
-截图：[桌面](workspace-files/desktop-preview.png)、[窄桌面](workspace-files/narrow-preview.png)、[手机尺寸](workspace-files/mobile-preview.png)。测试结果与环境见 [验证数据](workspace-files/evidence.json)。操作方法见 [Workspace 使用指南](../workspace.zh.md#查看工作区文件)，HTTP 合同见 [技术参考](../reference/workspace.zh.md#文件只读接口)。
+截图：桌面（本地验收文件 `desktop-preview.png`）、窄桌面（本地验收文件 `narrow-preview.png`）、手机尺寸（本地验收文件 `mobile-preview.png`）。测试结果与环境见 验证数据（本地验收文件 `evidence.json`）。操作方法见 [Workspace 使用指南](../workspace.zh.md#查看工作区文件)，HTTP 合同见 [技术参考](../reference/workspace.zh.md#文件只读接口)。
 
 ## 后续边界
 

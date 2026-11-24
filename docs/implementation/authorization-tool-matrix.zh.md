@@ -25,7 +25,7 @@
 
 ## 验证与计时
 
-环境：2026-11-20，macOS ARM64、Go 1.27.1，当前 HEAD `e098afda95bed073fe127b8e02602661a124ecaa` 加已有工作树。本次只改测试与实施文档，保留既有图片 UI 和第一批改动。精确选择、源码摘要、逐项 wait／held 和结果见[机器可读证据](authorization-tool-matrix-evidence.json)。
+环境：2026-11-20，macOS ARM64、Go 1.27.1，当前 HEAD `e098afda95bed073fe127b8e02602661a124ecaa` 加已有工作树。本次只改测试与实施文档，保留既有图片 UI 和第一批改动。精确选择、源码摘要、逐项 wait／held 和结果见机器可读证据（本地验收文件 `authorization-tool-matrix-evidence.json`）。
 
 | 检查 | 结果 | 命令墙钟／包执行（秒） |
 | --- | --- | ---: |

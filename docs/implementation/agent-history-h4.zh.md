@@ -13,7 +13,7 @@
 
 ## 生产默认路径证据
 
-[可复核摘要](agent-history-h4-evidence.json)记录本次工具集合、调用数及权威状态。完整提示、答案、工具 trace 和图片块保存在 `.local/history-service-real-20261119-h4-01/report.json`；恢复记录在 `.local/history-recovery-real-20261119-h4-01/report.json`。
+可复核摘要（本地验收文件 `agent-history-h4-evidence.json`）记录本次工具集合、调用数及权威状态。完整提示、答案、工具 trace 和图片块保存在 `.local/history-service-real-20261119-h4-01/report.json`；恢复记录在 `.local/history-recovery-real-20261119-h4-01/report.json`。
 
 新增 `TestHistoryProductionServiceRealDSH` 使用普通 `newService`、成员注册、实际调度器和生产 DSH backend，使用正常执行凭证与默认工具注册。没有显式安装 History transport，也没有替换 backend 的 Open。HTTP／CLI 两种模式各一个新服务、新成员和新 Session，以真实 `deepseek-v4.1-flash-1017`、DSH／ACP 验证：
 

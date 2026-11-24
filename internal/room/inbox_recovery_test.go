@@ -30,6 +30,7 @@ func stalledInboxAgent(t *testing.T, h *inboxHarness, b Backend, clock *atomic.I
 }
 
 func TestInboxRecoveryHistoricalStallDrainsPagesWithoutChat(t *testing.T) {
+	parallelFixtureTest(t)
 	// The deadline also covers 61 durable seed writes before recovery starts.
 	h, _, access, token := mcpInboxFixtureWithTimeout(t, 30*time.Second)
 	for n := 1; n <= 61; n++ {
@@ -88,6 +89,7 @@ func TestInboxRecoveryHistoricalStallDrainsPagesWithoutChat(t *testing.T) {
 }
 
 func TestInboxRecoveryBackoffExhaustionAndExplicitContinue(t *testing.T) {
+	parallelFixtureTest(t)
 	synctest.Test(t, func(t *testing.T) {
 		h := newInboxHarness(t, InboxLimits{})
 		for n := 1; n <= 26; n++ {
@@ -174,6 +176,7 @@ func TestInboxRecoveryBackoffExhaustionAndExplicitContinue(t *testing.T) {
 }
 
 func TestInboxRecoveryPauseCancelFaultAndBudgetGates(t *testing.T) {
+	parallelFixtureTest(t)
 	now := time.Date(2026, 11, 20, 0, 0, 0, 0, time.UTC)
 	m := &MemberAgent{state: AgentSnapshot{TurnNumber: 1, LastOfferedInboxSeq: 25,
 		Turn: &TurnRecord{Number: 1, Status: "completed", InboxSnapshotSeq: 25}}, now: func() time.Time { return now }}
@@ -234,6 +237,7 @@ func TestInboxRecoveryPauseCancelFaultAndBudgetGates(t *testing.T) {
 }
 
 func TestInboxRecoveryConfirmedReadThenBusinessFailureDoesNotStall(t *testing.T) {
+	parallelFixtureTest(t)
 	now := time.Date(2026, 11, 20, 0, 0, 0, 0, time.UTC)
 	m := &MemberAgent{state: AgentSnapshot{TurnNumber: 1, LastOfferedInboxSeq: 25,
 		Turn: &TurnRecord{Number: 1, Status: "completed", InboxSnapshotSeq: 25}}, now: func() time.Time { return now }}
@@ -247,6 +251,7 @@ func TestInboxRecoveryConfirmedReadThenBusinessFailureDoesNotStall(t *testing.T)
 }
 
 func TestInboxRecoverySurvivesAutomaticSessionRotation(t *testing.T) {
+	parallelFixtureTest(t)
 	h := newInboxHarness(t, InboxLimits{})
 	for n := 1; n <= 25; n++ {
 		inboxCall[InboxReceipt](t, h, h.receive(fmt.Sprint(n)))
@@ -300,6 +305,7 @@ func TestInboxRecoverySurvivesAutomaticSessionRotation(t *testing.T) {
 }
 
 func TestInboxRecoveryUnknownActionBlocksAutomaticAndManualReading(t *testing.T) {
+	parallelFixtureTest(t)
 	f := referenceExecuteTest(t, "discussion")
 	f.result = func(int) platform.TargetActionResult { return f.outcome("unknown", "never") }
 	if _, err := f.run(); err != nil {
@@ -334,6 +340,7 @@ func TestInboxRecoveryUnknownActionBlocksAutomaticAndManualReading(t *testing.T)
 }
 
 func TestInboxRecoveryCancellationNeedsExplicitContinue(t *testing.T) {
+	parallelFixtureTest(t)
 	synctest.Test(t, func(t *testing.T) {
 		h := newInboxHarness(t, InboxLimits{})
 		for n := 1; n <= 25; n++ {

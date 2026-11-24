@@ -47,12 +47,17 @@ func environmentAccessCurrent(r *http.Request) bool {
 	if !ok {
 		return true
 	} // In-process handlers; production is access-wrapped.
+	if a.revoked.Load() {
+		return false
+	}
+	spaceAccess := a
+	a = a.authority()
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	if header := r.Header.Get("Authorization"); header != "" {
 		token, found := strings.CutPrefix(header, "Bearer ")
 		hash := sha256.Sum256([]byte(token))
-		return found && !a.disabled && subtle.ConstantTimeCompare(hash[:], a.admin[:]) == 1
+		return a.users == nil && found && !a.disabled && subtle.ConstantTimeCompare(hash[:], a.admin[:]) == 1
 	}
 	if a.disabled {
 		return true
@@ -62,7 +67,7 @@ func environmentAccessCurrent(r *http.Request) bool {
 		return false
 	}
 	s, exists := a.sessions[sha256.Sum256([]byte(cookie.Value))]
-	return exists && a.now().Before(s.expires)
+	return exists && s.Subject.UserID == spaceAccess.space.OwnerUserID && a.authorizeSubject(s.Subject) == nil && a.now().Before(s.expires)
 }
 
 func environmentError(w http.ResponseWriter, code int) {

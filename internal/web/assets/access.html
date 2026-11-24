@@ -1,9 +1,10 @@
 <!doctype html>
 <html lang="zh-CN">
-<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>TeamX · 登录</title><link rel="icon" type="image/svg+xml" href="/ui/brand-mark.svg"><link rel="stylesheet" href="/ui/access.css"><script type="module" src="/ui/access.mjs"></script></head>
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>TeamX · 登录</title><link rel="icon" type="image/svg+xml" href="/ui/brand-mark.svg"><link rel="stylesheet" href="/ui/access.css"><script type="module" src="/ui/access.mjs"></script><link rel="stylesheet" href="/ui/styles/spaces.css"></head>
 <body><main>
 <a class="brand" href="/" aria-label="TeamX 首页"><img class="brand-mark" src="/ui/brand-mark.svg" width="48" height="50" alt=""><span>TeamX</span></a>
 <section id="login" aria-label="登录 TeamX">
+<form id="sso-login-form" method="post" action="/v1/access/sso/login" hidden><button id="sso-login-submit" type="submit">使用 OpenCSG 登录</button></form>
 <form id="login-form" method="post" action="/v1/access/login" autocomplete="on">
 <input id="login-username" class="password-username" name="username" type="text" value="TeamX" autocomplete="username" readonly tabindex="-1" aria-hidden="true">
 <label for="token">访问令牌</label>
@@ -12,9 +13,10 @@
 <button id="toggle-token" type="button" aria-label="显示访问令牌" aria-pressed="false" title="显示访问令牌"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12Z"/><circle cx="12" cy="12" r="3"/><path class="eye-slash" d="m3 3 18 18"/></svg></button>
 </div>
 <p id="token-help" class="field-hint">由部署管理员提供。</p>
-<p id="login-feedback" class="login-error" role="alert" aria-live="polite" hidden></p>
 <button id="login-submit" type="submit">登录</button>
-</form></section>
+</form>
+<p id="login-feedback" class="login-error" role="alert" aria-live="polite" hidden></p>
+</section>
 <section id="model" aria-labelledby="setup-title" hidden>
   <h1 id="setup-title">设置模型</h1>
   <div id="setup-editor">

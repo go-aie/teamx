@@ -1,3 +1,4 @@
+import { spaceURL } from "../space-context.mjs";
 import { createSettingsIcon } from "../icons.mjs";
 import { renderAvatar } from "../avatars.mjs";
 
@@ -57,8 +58,10 @@ export function createUserMenu({ env, runtime, conversationUI, roomsUI, membersU
   async function loadSession() {
     // This probe must not redirect installations that have no access gate.
     try {
-      const response = await fetch("/v1/access/session", { cache: "no-store" });
+      const response = await fetch(spaceURL("/v1/access/session"), { cache: "no-store" });
       const session = response.ok ? await response.json() : null;
+      state.deploymentManaged = session?.deployment_managed === true;
+      if ($("profile-security")) $("profile-security").hidden=state.deploymentManaged;
       const enabled = response.ok && session?.login_enabled !== false;
       $("access-logout").hidden = !enabled;
       $("profile-logout").hidden = !enabled;
@@ -124,7 +127,7 @@ export function createUserMenu({ env, runtime, conversationUI, roomsUI, membersU
       $("profile-logout").disabled = true; $("profile-feedback").hidden = true;
       try {
         await request("/v1/access/logout", {});
-        window.location.assign("/access");
+        window.location.assign(spaceURL("/access"));
       } catch {
         $("user-menu-feedback").textContent = "退出失败，请重试。";
         $("user-menu-feedback").hidden = false;

@@ -94,7 +94,7 @@ func Probe(ctx context.Context, launcher Options) (result ProbeResult, err error
 	default:
 		return result, &ProbeError{"admission", "busy"}
 	}
-	opts := Options{BinaryPath: launcher.BinaryPath, BinaryArgs: append([]string(nil), launcher.BinaryArgs...), Model: launcher.Model.Clone(), Credential: launcher.Credential}
+	opts := Options{Execution: launcher.Execution, ExecutionBinding: launcher.ExecutionBinding, BinaryPath: launcher.BinaryPath, BinaryArgs: append([]string(nil), launcher.BinaryArgs...), Model: launcher.Model.Clone(), Credential: launcher.Credential}
 	if err := CheckConfig(opts); err != nil {
 		return result, &ProbeError{"fields", "invalid"}
 	}
@@ -111,6 +111,7 @@ func Probe(ctx context.Context, launcher Options) (result ProbeResult, err error
 	if err != nil {
 		return result, &ProbeError{"local", "private_directory"}
 	}
+	opts.ExecutionBinding.Probe = true
 	opts.Workspace, opts.StateDir = filepath.Join(root, "workspace"), filepath.Join(root, "state")
 	if err := os.Mkdir(opts.Workspace, 0700); err != nil {
 		_ = os.RemoveAll(root)

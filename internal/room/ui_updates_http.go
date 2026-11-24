@@ -17,6 +17,7 @@ const uiUpdateMergeWindow = 100 * time.Millisecond
 // Leases let session installation revoke streams immediately without calling a
 // network writer under the authentication lock. Heartbeats recheck as a fallback.
 type uiUpdateAccessLease struct {
+	spaceID   string
 	session   uiUpdateSession
 	operator  string
 	expires   time.Time
@@ -27,12 +28,17 @@ type uiUpdateAccessLease struct {
 func (a *serverAccess) watchUIUpdates(r *http.Request) (*uiUpdateAccessLease, error) {
 	// EventSource uses the existing browser session. Neither execution tokens
 	// nor caller-supplied operator IDs grant a browser subscription.
-	if a == nil || r.Context().Value(accessContextKey{}) != a || r.Header.Get("Authorization") != "" {
+	if a == nil || !a.ownsRequest(r) || r.Context().Value(accessContextKey{}) != a || r.Header.Get("Authorization") != "" {
 		return nil, ErrIdentity
 	}
+	spaceAccess := a
+	a = a.authority()
 	a.mu.Lock()
 	defer a.mu.Unlock()
-	l := &uiUpdateAccessLease{session: uiUpdateSession{access: a}, operator: a.operator, anonymous: a.disabled, done: make(chan struct{})}
+	if spaceAccess.revoked.Load() {
+		return nil, ErrIdentity
+	}
+	l := &uiUpdateAccessLease{spaceID: requestSpaceID(r), session: uiUpdateSession{access: a}, operator: requestOperator(r), anonymous: a.disabled, done: make(chan struct{})}
 	if !a.disabled {
 		cookie, err := r.Cookie(a.cookieName())
 		if err != nil {
@@ -40,7 +46,7 @@ func (a *serverAccess) watchUIUpdates(r *http.Request) (*uiUpdateAccessLease, er
 		}
 		l.session.hash = sha256.Sum256([]byte(cookie.Value))
 		s, ok := a.sessions[l.session.hash]
-		if !ok || !a.now().Before(s.expires) {
+		if !ok || s.Subject.UserID != l.operator || a.authorizeSubject(s.Subject) != nil || !a.now().Before(s.expires) {
 			return nil, ErrIdentity
 		}
 		l.expires = s.expires
@@ -53,6 +59,7 @@ func (a *serverAccess) watchUIUpdates(r *http.Request) (*uiUpdateAccessLease, er
 }
 
 func (a *serverAccess) unwatchUIUpdates(l *uiUpdateAccessLease) {
+	a = a.authority()
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	delete(a.updateLeases, l)
@@ -62,7 +69,11 @@ func (a *serverAccess) unwatchUIUpdates(l *uiUpdateAccessLease) {
 func (a *serverAccess) revokeUIUpdatesLocked(all bool) {
 	for l := range a.updateLeases {
 		s, exists := a.sessions[l.session.hash]
-		valid := l.anonymous && a.disabled || !l.anonymous && !a.disabled && exists && a.now().Before(s.expires)
+		identityErr := a.authorizeSubject(s.Subject)
+		if l.anonymous {
+			identityErr = a.authorizeSubject(a.subject())
+		}
+		valid := identityErr == nil && (l.anonymous && a.disabled || !l.anonymous && !a.disabled && exists && s.Subject.UserID == l.operator && a.now().Before(s.expires))
 		if all || !valid {
 			delete(a.updateLeases, l)
 			close(l.done)
@@ -248,9 +259,10 @@ func serveUIUpdateStream(w http.ResponseWriter, r *http.Request, sub *uiUpdateSu
 		Protocol       int               `json:"protocol"`
 		ConnectionID   string            `json:"connection_id"`
 		InstallationID string            `json:"installation_id"`
+		SpaceID        string            `json:"space_id"`
 		ServiceEpoch   string            `json:"service_epoch"`
 		GlobalVersions map[string]string `json:"global_versions"`
-	}{1, connection, requestInstallationID(r), epoch, sub.globalVersions}) != nil {
+	}{1, connection, requestInstallationID(r), requestSpaceID(r), epoch, sub.globalVersions}) != nil {
 		return
 	}
 	heartbeat := time.NewTicker(uiUpdateHeartbeat)

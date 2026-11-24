@@ -36,7 +36,7 @@
 
 ## 验证与计时
 
-环境为 2026-11-21、macOS ARM64、Go 1.27.1，HEAD `0069e0283a98a552827aef7be089a5a3d416daee` 加原有工作树。源码摘要、完整选择、逐项结果及 wait／held 见[机器证据](platform-revocation-matrix-evidence.json)。匹配源码的 `go test -c -vet=off -tags=integration` 二进制经 `go tool test2json -t` 执行，编译不计入切片墙钟；`-count=1`、四槽、默认并发，单次包级诊断上限四分钟。普通改前／最终改后顺序运行，最终计时期间没有并行运行本轮其他检查。
+环境为 2026-11-21、macOS ARM64、Go 1.27.1，HEAD `0069e0283a98a552827aef7be089a5a3d416daee` 加原有工作树。源码摘要、完整选择、逐项结果及 wait／held 见机器证据（本地验收文件 `platform-revocation-matrix-evidence.json`）。匹配源码的 `go test -c -vet=off -tags=integration` 二进制经 `go tool test2json -t` 执行，编译不计入切片墙钟；`-count=1`、四槽、默认并发，单次包级诊断上限四分钟。普通改前／最终改后顺序运行，最终计时期间没有并行运行本轮其他检查。
 
 | 检查 | 结果 | 命令墙钟／包执行（秒） |
 | --- | --- | ---: |

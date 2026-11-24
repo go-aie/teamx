@@ -69,6 +69,7 @@ func reclaimReleasedInputSource(t *testing.T, p *platformInputStorage, link foll
 }
 
 func TestInputSourceAssociationSurvivesReceiptReclamation(t *testing.T) {
+	parallelFixtureTest(t)
 	h, p, _, link := inputSourceFixture(t)
 	id := link.MemberIdentity
 	unit, err := h.store.readFollowup(id, link.ObjectRef, referenceDigest("unit_", link.ObjectRef))
@@ -120,6 +121,7 @@ func TestInputSourceAssociationSurvivesReceiptReclamation(t *testing.T) {
 }
 
 func TestInputSourceBusinessReadsDoNotReadRetainedContent(t *testing.T) {
+	parallelFixtureTest(t)
 	h, _, _, link := inputSourceFixture(t)
 	records := filepath.Join(h.store.dir, "inboxes", link.MembershipID, link.Source.Provider, "records")
 	segments, err := filepath.Glob(filepath.Join(records, "*.jsonl"))
@@ -141,6 +143,7 @@ func TestInputSourceBusinessReadsDoNotReadRetainedContent(t *testing.T) {
 }
 
 func TestInputSourceAssociationRejectsInvalidSavedFacts(t *testing.T) {
+	parallelFixtureTest(t)
 	for _, mode := range []string{"member", "reference", "sequence", "partition", "other-member-partition", "other-provider-partition", "source", "target", "action"} {
 		t.Run(mode, func(t *testing.T) {
 			h, p, _, link := inputSourceFixture(t)
@@ -190,6 +193,7 @@ func TestInputSourceAssociationRejectsInvalidSavedFacts(t *testing.T) {
 }
 
 func TestFollowupSourceRetiredProofIsDecodeOnly(t *testing.T) {
+	parallelFixtureTest(t)
 	h, _, _, link := inputSourceFixture(t)
 	data, err := json.Marshal(link)
 	if err != nil {

@@ -113,6 +113,9 @@ func (p gitLabWorkspaceAccess) read(owner RoomIdentity, w workspaceConfig) gitla
 // durable ownership and settle Sessions before using initial=true. Preparation
 // never edits effective room/member/Session snapshots or enables scheduling.
 func (m *roomManager) ensureWorkspaces(ctx context.Context, saved managedRoomConfig, initial bool) (preparedWorkspaces, error) {
+	if err := m.config.hostTools.checkRepository(saved.Workspace); err != nil {
+		return preparedWorkspaces{}, err
+	}
 	m.mu.Lock()
 	_, ownerErr := m.workspaceRoom(saved.RoomIdentity)
 	storeErr := m.store.check(true)

@@ -10,7 +10,7 @@
 
 核对期间，既有 `room_attachment_materials.go` 与其测试分别于本地 16:10:55、16:13:48 发生其他工作树编辑。本次保留它们，并在证据中分别记录初始／后续哈希；主分支定向回归对应初始采样。16:14:50 后对更新后的材料边界补跑两项 integration＋race（Room 4.435 秒），并刷新构建、vet 和全仓 e2e 编译，均通过；未把之前的完整选择升级为覆盖这次并发编辑的结果。
 
-[机器可读证据](plugin-handoff-validation.json)保存采样时间、HEAD、原始 diff 摘要／哈希、参与调用的源码与测试哈希、实际生产包依赖、飞书直接引用、资源入口、版本与逐命令结果。采样复用 `scripts/architecture-baseline.py`，原始日志在本机 `.local/plugin-handoff/`；旧 R／History／测试健康度证据没有覆盖。依赖来自 `go list`，具体方法调用另经源码核对，不将文本命中当作完整调用图。
+机器可读证据（本地验收文件 `plugin-handoff-validation.json`）保存采样时间、HEAD、原始 diff 摘要／哈希、参与调用的源码与测试哈希、实际生产包依赖、飞书直接引用、资源入口、版本与逐命令结果。采样复用 `scripts/architecture-baseline.py`，原始日志在本机 `.local/plugin-handoff/`；旧 R／History／测试健康度证据没有覆盖。依赖来自 `go list`，具体方法调用另经源码核对，不将文本命中当作完整调用图。
 
 ## 分支判定与停止点
 

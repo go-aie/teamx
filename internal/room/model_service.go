@@ -47,6 +47,8 @@ func newModelService(config startupConfig, settings *systemSettings, home string
 		return nil, err
 	}
 	s := &modelService{document: settings.configDocument, credentials: credentials, current: modelCatalog{SchemaVersion: 1}, probeSlot: make(chan struct{}, 1), probe: dsh.Probe}
+	s.launcher.Environment = startupEnvironment(config.Env)
+	s.launcher.Execution, s.launcher.ExecutionBinding = config.execution, config.executionBinding
 	if config.Models != nil {
 		s.current = config.Models.clone()
 	}

@@ -135,11 +135,12 @@ export async function launch(api, saved = new Map(), environment = {}) {
     now = end; await settle();
   } };
   const sources = [];
+  let installationID = "";
   class EventSource {
     constructor(url) {
       this.url = url; this.listeners = {}; this.readyState = 1; sources.push(this);
       const query = new URL(url, "http://fixture").searchParams;
-      const hello = {protocol:1, connection_id:`connection-${sources.indexOf(this)}`, service_epoch:query.get("service_epoch"), global_versions:structuredClone(api.globalVersions)};
+      const hello = {protocol:1, installation_id:installationID, connection_id:`connection-${sources.indexOf(this)}`, service_epoch:query.get("service_epoch"), global_versions:structuredClone(api.globalVersions)};
       if (!api.deferUpdateHello) queueMicrotask(() => this.emit("hello", hello));
     }
     addEventListener(type, handler) { (this.listeners[type] ||= []).push(handler); }
@@ -161,6 +162,7 @@ export async function launch(api, saved = new Map(), environment = {}) {
     clearTimeout: id => timers.delete(id),
     request: async (path, body, ...args) => {
       const data = await api.request(path, body, ...args);
+      if (path === "/v1/ui") installationID = data.installation_id || "";
       // Existing fixtures predate service-wide settings. Explicit null values
       // still exercise invalid/missing settings without a fallback.
       if (path === "/v1/ui" || path === "/v1/rooms") return {time_zone:"Asia/Shanghai",settings_version:1,...(data.managed ? {service_epoch:"manager"} : {}),...data};

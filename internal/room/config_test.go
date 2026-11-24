@@ -126,29 +126,26 @@ func TestStartupConfigRejectsInvalidInputWithoutSecrets(t *testing.T) {
 	}
 }
 
-func TestStartupEnvironmentPrecedenceAndCleanup(t *testing.T) {
+func TestStartupEnvironmentPrecedenceAndIsolation(t *testing.T) {
 	const key = "TEAMX_TEST_CONFIG_SECRET"
 	t.Setenv(key, "external")
 	for _, value := range []string{"external", ""} {
-		if err := os.Setenv(key, value); err != nil {
-			t.Fatal(err)
-		}
-		restore, err := applyStartupEnv(map[string]string{key: "from-file"})
-		if err != nil || os.Getenv(key) != value {
+		t.Setenv(key, value)
+		environment := startupEnvironment(map[string]string{key: "from-file"})
+		if environmentValue(environment, key) != value {
 			t.Fatal("exported environment did not win")
 		}
-		restore()
 	}
 	if err := os.Unsetenv(key); err != nil {
 		t.Fatal(err)
 	}
-	restore, err := applyStartupEnv(map[string]string{key: "from-file"})
-	if err != nil || os.Getenv(key) != "from-file" {
-		t.Fatal("config environment unavailable")
+	a := startupEnvironment(map[string]string{key: "a"})
+	b := startupEnvironment(map[string]string{key: "b"})
+	if environmentValue(a, key) != "a" || environmentValue(b, key) != "b" {
+		t.Fatal("space environments overlapped")
 	}
-	restore()
 	if _, exists := os.LookupEnv(key); exists {
-		t.Fatal("environment leaked after service shutdown")
+		t.Fatal("config environment leaked to host")
 	}
 }
 

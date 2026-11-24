@@ -26,7 +26,7 @@ GitLab Skill 将托管评论收敛为确认目标与完整内容、提交一条�
 
 ## 成本与结果
 
-完整结果及全部工具 ID／输入、输出字节数／摘要、动作记录和原始报告位置见[验收证据](gitlab-image-send-agent-evidence.json)。两种入口均为 8 条 succeeded、2 条 not_applied、1 条 unknown，各 9 次 note POST（包含 unknown 的一次）；失败、取消和查询未新增评论。所有动作只有一次尝试，含图 Spec 在落账前已限制为直接指令／一次尝试。
+完整结果及全部工具 ID／输入、输出字节数／摘要、动作记录和原始报告位置见验收证据（本地验收文件 `gitlab-image-send-agent-evidence.json`）。两种入口均为 8 条 succeeded、2 条 not_applied、1 条 unknown，各 9 次 note POST（包含 unknown 的一次）；失败、取消和查询未新增评论。所有动作只有一次尝试，含图 Spec 在落账前已限制为直接指令／一次尝试。
 
 | 入口 | 全部工具 | CLI 子命令 | resolve／execute | 帮助 | 格式错误 | History | 发现 | 本地报告 | 回执查询 |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |

@@ -264,7 +264,7 @@ make test-e2e-check
 
 本节及附录 B 保留各次测量当时的慢项、状态与候选排序，均为历史记录；当前工作树复核和待实施顺序见 §10。
 
-本节在提交 `6bf554b` 后补充，最初只整理已有证据和后续方案。用例明细见附录 B；T1–T4 实施与机器可读证据见 [test-suite-health.zh.md](implementation/test-suite-health.zh.md) 和 [test-suite-health-evidence.json](implementation/test-suite-health-evidence.json)。§9.2 第一批现已实施，四文件共 35 项夹具复用四槽并行；同范围 38 项顶层测试、单并发和定向 race 均通过，切片墙钟 42.870 → 24.367 秒（约缩短 43.2%）。一次完整集成墙钟 831.331 秒，1,914 项顶层通过、1 项既有 CSP 断言失败、9 项跳过；第一批 38 项均通过，但当时完整集成尚未验收通过。结果及隔离审核见[第一批实施记录](implementation/room-fixture-parallel.zh.md)。第二批现已实施：动作规则及工具矩阵下沉、夹具初始化收缩，同范围墙钟 22.108 → 19.192 秒（约缩短 13.2%），15 项顶层及其承接检查、单并发和扩大调用方的 94 项定向 race 通过。校准上述过期 CSP 断言后，一次完整集成 768.749 秒通过，1,924 项顶层通过、9 项跳过，八分钟预算未达；见[第二批实施记录](implementation/authorization-tool-matrix.zh.md)。第三批现已实施：Lark 原生协议矩阵下沉，同范围整个包墙钟 74.142 → 59.599 秒（约缩短 19.6%），新增八项轻量检查；单并发、Lark 全包及 Room 调用方定向 race 通过。本次完整集成约 12 分 48 秒（Go JSON 事件跨度）通过，1,932 项顶层通过、9 项跳过，22 包通过、八分钟预算未达；见[第三批实施记录](implementation/lark-protocol-matrix.zh.md)。第四批现已实施：Inbox／连接通知剩余负向窗口使用受控时间及调度结清屏障，纯规则去掉 50 次无关种子写入，日历发布改用真实 CalendarActor／Room／Store 组件闭环。同范围含新增规则的三样本墙钟中位数 12.439 → 9.427 秒（约缩短 24.2%），单并发及 37 项定向 race 通过；本次完整集成 1,933 项顶层通过、9 项跳过，22 包通过；墙钟 948.975 秒（15 分 49 秒），八分钟预算未达。见[第四批实施记录](implementation/timer-assembly.zh.md)。原第五、第六批的承接与剩余安排以 §10 为准；本节不改变前述安全和验收要求。
+本节在提交 `6bf554b` 后补充，最初只整理已有证据和后续方案。用例明细见附录 B；T1–T4 实施与机器可读证据见 [test-suite-health.zh.md](implementation/test-suite-health.zh.md) 和 test-suite-health-evidence.json（本地验收文件 `test-suite-health-evidence.json`）。§9.2 第一批现已实施，四文件共 35 项夹具复用四槽并行；同范围 38 项顶层测试、单并发和定向 race 均通过，切片墙钟 42.870 → 24.367 秒（约缩短 43.2%）。一次完整集成墙钟 831.331 秒，1,914 项顶层通过、1 项既有 CSP 断言失败、9 项跳过；第一批 38 项均通过，但当时完整集成尚未验收通过。结果及隔离审核见[第一批实施记录](implementation/room-fixture-parallel.zh.md)。第二批现已实施：动作规则及工具矩阵下沉、夹具初始化收缩，同范围墙钟 22.108 → 19.192 秒（约缩短 13.2%），15 项顶层及其承接检查、单并发和扩大调用方的 94 项定向 race 通过。校准上述过期 CSP 断言后，一次完整集成 768.749 秒通过，1,924 项顶层通过、9 项跳过，八分钟预算未达；见[第二批实施记录](implementation/authorization-tool-matrix.zh.md)。第三批现已实施：Lark 原生协议矩阵下沉，同范围整个包墙钟 74.142 → 59.599 秒（约缩短 19.6%），新增八项轻量检查；单并发、Lark 全包及 Room 调用方定向 race 通过。本次完整集成约 12 分 48 秒（Go JSON 事件跨度）通过，1,932 项顶层通过、9 项跳过，22 包通过、八分钟预算未达；见[第三批实施记录](implementation/lark-protocol-matrix.zh.md)。第四批现已实施：Inbox／连接通知剩余负向窗口使用受控时间及调度结清屏障，纯规则去掉 50 次无关种子写入，日历发布改用真实 CalendarActor／Room／Store 组件闭环。同范围含新增规则的三样本墙钟中位数 12.439 → 9.427 秒（约缩短 24.2%），单并发及 37 项定向 race 通过；本次完整集成 1,933 项顶层通过、9 项跳过，22 包通过；墙钟 948.975 秒（15 分 49 秒），八分钟预算未达。见[第四批实施记录](implementation/timer-assembly.zh.md)。原第五、第六批的承接与剩余安排以 §10 为准；本节不改变前述安全和验收要求。
 
 ### 9.1 最新结论与优先级依据
 
@@ -352,7 +352,7 @@ make test-e2e-check
 - 第二批同范围只省约 2.92 秒，第四批中位数只省约 3.01 秒；第三批主要提速的是较早结束的 Lark 包。各自是真实局部收益，但覆盖的主路径成本太小，且不能相加为全量实测。全量计时波动又明显大于这些秒级收益。
 - 真实浏览器／平台／模型 e2e 没有在本次入口中执行。清理这类历史验收可以减少维护与编译负担，却不能冒充本次十六分钟的主要运行收益。编译也不是主要解释：本轮命令墙钟 948.975 秒，Room 执行已占 940.585 秒。
 
-后续先减少有长期必要性的测试为目标断言支付的成本，并删除确实不再值得维护的场景；不再默认“历史上加过的测试及组合都必须永久保留”。复盘的可核对数字见[第四批证据中的 reassessment](implementation/timer-assembly-evidence.json)。
+后续先减少有长期必要性的测试为目标断言支付的成本，并删除确实不再值得维护的场景；不再默认“历史上加过的测试及组合都必须永久保留”。复盘的可核对数字见第四批证据中的 reassessment（本地验收文件 `timer-assembly-evidence.json`）。
 
 **2026-11-21 当前工作树复核。** 源码 HEAD 为 `9efe816`，另含既有工作树改动。H1、H2 机器证据记录的最终测试文件分别有 18/20、15/17 个散列一致，其余文件已有后续演进；核对后未发现核心改造成果被撤回。当前已增加平台组合／运行时绑定、DSH backend factory、图文动作及 Agent CLI／指引调整，实施必须使用当前注册、授权、工具和生命周期合同，不能恢复旧 Schema 或照搬旧阶段计时。
 
@@ -381,7 +381,7 @@ make test-e2e-check
 
 ### 10.3 H1：先消除共用夹具里的额外 provider 与成员
 
-首组已实施，详见[覆盖与计时记录](implementation/provider-fixtures.zh.md)及[机器证据](implementation/provider-fixtures-evidence.json)。54 项顶层选择中 53 项通过、1 项进程 helper 跳过；移除 82 次无关 GitLab 装配，初始成员材料从 258 降为 93，必需的 5,763 次 Lark CLI 调用保留。首轮 Room 包执行 93.927 → 102.613 秒，未证明整族提速；九条自发消息恢复槽位为 130.429 → 135.628 槽秒。按下文的收益复盘要求，保留本组最小装配，暂停向其他 provider 族扩散。同族单并发与定向 race、三种标签全仓编译通过；`go vet` 被现有图片动作结构的重复 JSON tag 阻挡，详见实施记录。
+首组已实施，详见[覆盖与计时记录](implementation/provider-fixtures.zh.md)及机器证据（本地验收文件 `provider-fixtures-evidence.json`）。54 项顶层选择中 53 项通过、1 项进程 helper 跳过；移除 82 次无关 GitLab 装配，初始成员材料从 258 降为 93，必需的 5,763 次 Lark CLI 调用保留。首轮 Room 包执行 93.927 → 102.613 秒，未证明整族提速；九条自发消息恢复槽位为 130.429 → 135.628 槽秒。按下文的收益复盘要求，保留本组最小装配，暂停向其他 provider 族扩散。同族单并发与定向 race、三种标签全仓编译通过；`go vet` 被现有图片动作结构的重复 JSON tag 阻挡，详见实施记录。
 
 以下保留 H1 首组实施前的范围与验收依据，不再作为当前最高优先级扩散任务。旧默认调用链 `newLarkHarnessWithInputLog → cliToolFixtureWithInputLog → testManager + managerCreate + verifyTodoAccount` 仍保留原多成员合同；首组已显式迁移到 `newLarkHarnessWithMembers → toolRoomFixture → managerCreateWithMembers`，只装配必需 provider／成员。其他调用方是否仍需旧组合须单独核对，不批量改变默认 helper 的合同。
 
@@ -395,7 +395,7 @@ make test-e2e-check
 
 ### 10.4 H2：成组削减默认核心的重装配和重复规则矩阵
 
-已实施，覆盖承接、保留边界与整族对照见[核心测试夹具记录](implementation/core-test-fixtures.zh.md)及[机器证据](implementation/core-test-fixtures-evidence.json)。以下保留原始候选范围与收益目标；实施完成不等于分钟级收益或全仓预算已经达成。
+已实施，覆盖承接、保留边界与整族对照见[核心测试夹具记录](implementation/core-test-fixtures.zh.md)及机器证据（本地验收文件 `core-test-fixtures-evidence.json`）。以下保留原始候选范围与收益目标；实施完成不等于分钟级收益或全仓预算已经达成。
 
 以下是 H2 实施前用于选择范围的历史候选：445 项默认串行测试直接使用 Room／Inbox／manager 等较重夹具，顶层报告合计约 **293.44 秒**。约定四族已经收口；候选不是全部应替换的测试，也不是仍须逐文件完成的清单。保留原族边界和观察便于核对：
 

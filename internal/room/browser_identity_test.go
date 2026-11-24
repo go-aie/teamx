@@ -32,12 +32,14 @@ func TestBrowserInstallationIdentityIsStableAndPrivate(t *testing.T) {
 		t.Fatal(w.Code, w.Body.String())
 	}
 	// A managed release uses its installation registration, not a token or path hash.
+	originalConfig := c
+	c, _ = testAccessConfig(t, t.TempDir())
 	c.installationID = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
 	managed, err := newServerAccess(c, "http://127.0.0.1:8088")
 	if err != nil || managed.installationID != c.installationID {
 		t.Fatal(err)
 	}
-	c.installationID = ""
+	c = originalConfig
 	base := filepath.Dir(c.path)
 	if c.Server.DataDir != nil {
 		base = *c.Server.DataDir

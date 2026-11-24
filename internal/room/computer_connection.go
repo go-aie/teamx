@@ -59,6 +59,9 @@ type computerJournal struct {
 	Docker     *computerdocker.State `json:"docker,omitempty"`
 }
 type computerController struct {
+	claimInstance   func(string) error
+	closeMu         sync.Mutex
+	closed          bool
 	members         *computerMembers
 	memberEnsure    sync.Mutex
 	changeMu        sync.Mutex
@@ -106,6 +109,9 @@ func newComputerController(parent context.Context, startup startupConfig, settin
 	}
 	ctx, cancel := context.WithCancel(parent)
 	c := &computerController{document: settings.configDocument, credentials: computerCredentials{home}, owner: computer.Owner{InstallationID: installation, OwnerID: owner, ComputerID: computer.Hash(struct{ Installation, Owner string }{installation, owner})}, service: info, path: filepath.Join(dir, "connection.json"), journal: computerJournal{Version: 1}, writer: persistence.NewWriter(persistence.DefaultOperations()), lock: lock, connect: computer.Connect, bound: bound, ctx: ctx, cancel: cancel, wake: make(chan struct{}, 1), done: make(chan struct{})}
+	if startup.spaceID != "" {
+		c.owner.ComputerID = computer.Hash(struct{ Installation, Owner, Space string }{installation, owner, startup.spaceID})
+	}
 	c.docker = computerdocker.New()
 	initial := defaultComputerConfig(startup.Computer)
 	c.current.Store(&initial)
@@ -137,15 +143,39 @@ func newComputerController(parent context.Context, startup startupConfig, settin
 	}
 	return c, nil
 }
-func (c *computerController) start() { go c.loop() }
-func (c *computerController) close() error {
-	c.cancel()
-	<-c.done
-	var memberErr error
-	if c.members != nil {
-		memberErr = c.members.host.Close(context.Background())
+func (c *computerController) start()       { go c.loop() }
+func (c *computerController) close() error { return c.closeContext(context.Background()) }
+func (c *computerController) closeContext(ctx context.Context) error {
+	for !c.closeMu.TryLock() {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(5 * time.Millisecond):
+		}
 	}
-	return errors.Join(memberErr, c.writer.Close(context.Background()), unlockDirectory(c.lock))
+	defer c.closeMu.Unlock()
+	if c.closed {
+		return nil
+	}
+	c.cancel()
+	select {
+	case <-c.done:
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+	if c.members != nil {
+		if err := c.members.host.Close(ctx); err != nil {
+			return err
+		}
+	}
+	if err := c.writer.Close(ctx); err != nil {
+		return err
+	}
+	if err := unlockDirectory(c.lock); err != nil {
+		return err
+	}
+	c.closed = true
+	return nil
 }
 func (c *computerController) signal() {
 	select {
@@ -519,6 +549,11 @@ func (c *computerController) step(ctx context.Context, op *computerChange) error
 			_, info, err := c.inspect(ctx, op.Target)
 			if err != nil {
 				return err
+			}
+			if c.claimInstance != nil {
+				if err := c.claimInstance(info.InstanceID); err != nil {
+					return err
+				}
 			}
 			op.Target.InstanceID = info.InstanceID
 			op.Target.ContractDigest = info.Contract.Digest

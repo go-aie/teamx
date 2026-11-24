@@ -47,7 +47,11 @@ func (m *roomManager) computerEnvironments(id RoomIdentity) ([]computerEnvironme
 		if name == "" {
 			name = target.AgentID
 		}
-		views = append(views, computerEnvironment{key, name, "/v1/environment/" + key + "/viewer"})
+		viewer := "/v1/environment/" + key + "/viewer"
+		if m.config.access != nil && m.config.access.spaces != nil {
+			viewer = spaceRoute(m.config.access.space.SpaceID) + viewer
+		}
+		views = append(views, computerEnvironment{key, name, viewer})
 		ids[key] = target
 	}
 	return views, ids

@@ -34,6 +34,7 @@ var extensions = []extension{
 }
 
 type app struct {
+	shared      bool
 	in          io.Reader
 	out, errOut io.Writer
 	getenv      func(string) string
@@ -43,7 +44,7 @@ type app struct {
 func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
-	a := &app{in: os.Stdin, out: os.Stdout, errOut: os.Stderr, getenv: os.Getenv}
+	a := &app{shared: os.Getenv("TEAMX_GITLAB_API_ONLY") == "1", in: os.Stdin, out: os.Stdout, errOut: os.Stderr, getenv: os.Getenv}
 	os.Exit(a.run(ctx, os.Args[1:]))
 }
 
@@ -65,6 +66,18 @@ func (a *app) run(ctx context.Context, args []string) int {
 		}
 	}
 	// Parent help is recognized structurally, never by scanning business values.
+	if a.shared {
+		if len(args) == 0 || len(args) == 1 && (args[0] == "--help" || args[0] == "-h") || len(args) == 2 && args[0] == "api" && (args[1] == "--help" || args[1] == "-h") {
+			fmt.Fprintln(a.out, sharedHelp)
+			return 0
+		}
+		checked, err := sharedNativeArguments(args, a.getenv("GITLAB_HOST"))
+		if err != nil {
+			fmt.Fprintln(a.errOut, err)
+			return 2
+		}
+		return a.native(ctx, checked, false)
+	}
 	parent := args
 	if len(parent) > 0 && (parent[len(parent)-1] == "--help" || parent[len(parent)-1] == "-h") {
 		parent = parent[:len(parent)-1]
@@ -111,20 +124,49 @@ func (a *app) native(ctx context.Context, args []string, help bool) int {
 		}
 	}
 	bin := resolveGlab(a.getenv("TEAMX_GLAB_BIN"))
+	if a.shared {
+		resolved, err := exec.LookPath(bin)
+		if err != nil {
+			fmt.Fprintln(a.errOut, "glab dependency unavailable")
+			return 127
+		}
+		bin = resolved
+	}
 	config, err := os.MkdirTemp("", "teamx-glab-")
 	if err != nil {
 		fmt.Fprintln(a.errOut, "cannot prepare private glab config")
 		return 1
 	}
 	defer os.RemoveAll(config)
+	if a.shared && !help {
+		body, err := sharedNativeConfig(a.getenv("GITLAB_HOST"))
+		if err != nil || os.WriteFile(filepath.Join(config, "config.yml"), body, 0600) != nil {
+			fmt.Fprintln(a.errOut, "cannot prepare selected GitLab API host")
+			return 1
+		}
+		// glab performs Git probes during startup even for API requests. A
+		// fixed refusal executable makes those probes side-effect free; the
+		// real host Git and any workspace helper remain unreachable. glab is
+		// resolved above, before narrowing PATH. No argv is passed to a shell.
+		if os.Symlink("/usr/bin/false", filepath.Join(config, "git")) != nil {
+			fmt.Fprintln(a.errOut, "cannot prepare Git refusal")
+			return 1
+		}
+	}
 	// Do not read the operator's glab accounts or inherit alternate token sources.
 	env := []string{}
 	for _, v := range os.Environ() {
 		k, _, _ := strings.Cut(v, "=")
+		if a.shared && k == "PATH" {
+			continue
+		}
 		if strings.HasPrefix(k, "GLAB_") || strings.HasPrefix(k, "GITLAB_") || k == "CI_JOB_TOKEN" || k == "OAUTH_TOKEN" {
 			continue
 		}
 		env = append(env, v)
+	}
+	if a.shared {
+		env = append(env, "PATH="+config)
 	}
 	// A fresh config would show the post-upgrade banner on every invocation.
 	// It is separate from update checks and breaks JSON consumers merging stderr.

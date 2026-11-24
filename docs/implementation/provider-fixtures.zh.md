@@ -65,6 +65,6 @@ Lark 核验分段包含真实进程成本；native trace 只统计一次实际 P
 | 原断言审查 | 对 69 个既有测试函数体排除夹具调用／人数参数后比较，零业务体变化、零测试删除 |
 | `go vet ./...` | **未通过**：现有未跟踪文件 `internal/room/room_action_images.go:21` 的 `ServiceInfo`、`MemberIdentity` 重复嵌入 `room_id`／`room_instance` JSON tag；本阶段没有修改该生产文件 |
 
-临时计时已移除；最终源码通过单并发与 race 对应流程及上述编译检查。精确选择、逐项结果、临时埋点、分段与源码摘要见[机器可读证据](provider-fixtures-evidence.json)。
+临时计时已移除；最终源码通过单并发与 race 对应流程及上述编译检查。精确选择、逐项结果、临时埋点、分段与源码摘要见机器可读证据（本地验收文件 `provider-fixtures-evidence.json`）。
 
 本阶段不重复完整核心／integration／全仓 race，也未运行真实模型、平台或浏览器。已有完整健康基线按方案复用；核心三分钟和完整本地集成八分钟预算均不能由本次结果宣布达成。后续应依据 H2／H3 检查实际重复工作与长持槽业务组合，不能把 H1 的初始化删除数量当作分钟级提速成果。

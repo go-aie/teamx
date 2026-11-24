@@ -12,7 +12,7 @@
 | 接入与清理 | 增加只读采集脚本及测试包，正常调用不切换；没有新服务、alias 或业务接口 |
 | 停止点 | 后续阶段可据此定位源码和对照结果；失败单独记录，不通过改业务逻辑或放宽检查修复基线 |
 
-实施起点 HEAD：`633a0f2fbcd237c0e9a68f5ba13dc93ff0b68d78`（`feat: add unified agent history`），并非首次架构分析的 `a6560c7`。环境为 Go 1.27.1、darwin/arm64；完整环境、工作区状态、源码 SHA-256、build tags、测试名称、生产 import 图及分组引用见 [baseline.json](baseline.json)。
+实施起点 HEAD：`633a0f2fbcd237c0e9a68f5ba13dc93ff0b68d78`（`feat: add unified agent history`），并非首次架构分析的 `a6560c7`。环境为 Go 1.27.1、darwin/arm64；完整环境、工作区状态、源码 SHA-256、build tags、测试名称、生产 import 图及分组引用见 baseline.json（本地验收文件 `baseline.json`）。
 
 起点已有 tracked diff 仅 `docs/implementation/README.zh.md`，增加 50 行。架构方案、多份方案／实施记录、三个 Room 测试／测试资源及运行目录已有 untracked 内容；JSON 保存名称和源码摘要，不读取运行目录内容。现有未跟踪测试也属于这次工作树测试基线，不可把结果称为“纯 HEAD 检出结果”。本次增量是本记录、采集脚本、架构测试、平台边界测试补缺、证据及两处文档状态／索引更新，原有改动保留。最终机器快照在 R0 约束与文档更新后采集，`production_go_diff` 应为空；它的 tracked diff 包含本次测试改动，不冒充起点原始 diff。
 
@@ -54,7 +54,7 @@ go test ./internal/architecture ./internal/platform ./internal/workspace -count=
 | 输出与撤销 | pin／成员读租约覆盖输出；最终核验与 handoff 继续和撤权串行。`issueInputBinding` 撤销先删除准入、取消、等待 active，再 `discardHistoryResults`，不退回已用额度；`finishMCPTurn/closeInputOwners` 才清整个回合实例。`TestHistoryMCPRevokeAndCloseWaitForOutput`、`TestHistoryMCPCancelDownloadReleasesPinsAndCache` |
 | 恢复 | 有界 Room 预览带 `room_stream_ref`，已消费也可预览；失败首次回合可重供，成功后不反复给。History／预览不消费，不把重复事实当新任务；unknown 动作查原账本。`recovery.go`、`dsh.go`、`TestHistoryRecoveryPreviewAndFormalDelivery`、`TestHistoryGuidanceAndBackendModes` |
 
-功能实施的历史事实保留在 [H1](../agent-history-h1.zh.md)、[H2](../agent-history-h2.zh.md)、[H3](../agent-history-h3.zh.md)、[H4](../agent-history-h4.zh.md)。H1/H2 的“未注册”、H3 的隔离开关是当时事实；当前正常注册以 H4 和源码为准。H3 的真实平台图文、H4 的真实 DSH 默认服务路径来自已有记录及 [H3 摘要](../agent-history-h3-evidence.json)／[H4 摘要](../agent-history-h4-evidence.json)，本次没有重跑真实模型、平台或浏览器。
+功能实施的历史事实保留在 [H1](../agent-history-h1.zh.md)、[H2](../agent-history-h2.zh.md)、[H3](../agent-history-h3.zh.md)、[H4](../agent-history-h4.zh.md)。H1/H2 的“未注册”、H3 的隔离开关是当时事实；当前正常注册以 H4 和源码为准。H3 的真实平台图文、H4 的真实 DSH 默认服务路径来自已有记录及 H3 摘要（本地验收文件 `agent-history-h3-evidence.json`）／H4 摘要（本地验收文件 `agent-history-h4-evidence.json`），本次没有重跑真实模型、平台或浏览器。
 
 运行态只读观察：本次观察到 PID 28389，启动于本地时间 2026-11-19 23:09:50，命令 `./bin/teamx serve --config .teamx/config.toml`；磁盘 `bin/teamx` 的 `go version -m` 为同一 `633a0f2…`、`vcs.modified=true`。这比旧 H4 的“尚未切换”记录更新，但磁盘元数据和进程命令不能证明进程实际加载字节、更不能证明每个现有 Session 的工具发现／采用。本次未请求其受保护接口，未重启、替换二进制或轮换 Session；目标服务的 tools/list、图文、消费与恢复仍需另行验证，不能据 R0 宣称部署验收完成。
 
@@ -116,7 +116,7 @@ R6 保持 `manager.mu` 下核验、注册、绑定变更与最终证据检查的
 
 既有 `TestCapabilityImportBoundaries` 和 `TestRepositoryImportBoundaries` 继续保护平台公共合同／provider／工具进程及 Workspace；本次为前者补齐 GitLab 不得反向依赖 Lark 的对称约束。新增 `internal/architecture/boundaries_test.go` 检查**生产传递依赖**，允许测试使用 frozen fixture，但禁止实际产品包依赖 `inputstreamtest/frozen/testutil`，保护底层不能反向 import room／应用／入口；已声明的 app 子服务禁止依赖 app 根装配与入口，并保护 History 不依赖 inputs、Inbox 不依赖 agents。规则覆盖当前真实底层包及后续实际出现的包，不创建占位生产模块。
 
-本次命令、退出码、日志摘要与摘要哈希见 [validation.json](validation.json)。完整本地日志在 `.local/architecture-baseline/`；全量基线和针对性验证分别报告，后者通过不抵消前者失败。
+本次命令、退出码、日志摘要与摘要哈希见 validation.json（本地验收文件 `validation.json`）。完整本地日志在 `.local/architecture-baseline/`；全量基线和针对性验证分别报告，后者通过不抵消前者失败。
 
 | 检查 | 本轮结果 |
 | --- | --- |

@@ -16,10 +16,10 @@
 
 手机是模拟视口，无真机证据；模型与时间使用受控夹具，未读取或写入外部平台。真实 DSH 合同未改，沿用[首版交付](release.zh.md)中的独立模型证据。
 
-- [周视图](refinement/desktop-week.png)与[日期选择](refinement/desktop-date-picker.png)
-- [简单提醒详情](refinement/desktop-reminder-detail.png)
-- [桌面表单](refinement/desktop-simple-form.png)与[手机表单](refinement/mobile-simple-form.png)
-- [管理浏览器证据](refinement/browser-evidence.json)与[跨会话恢复证据](refinement/combination-evidence.json)
+- 周视图（本地验收文件 `desktop-week.png`）与日期选择（本地验收文件 `desktop-date-picker.png`）
+- 简单提醒详情（本地验收文件 `desktop-reminder-detail.png`）
+- 桌面表单（本地验收文件 `desktop-simple-form.png`）与手机表单（本地验收文件 `mobile-simple-form.png`）
+- 管理浏览器证据（本地验收文件 `browser-evidence.json`）与跨会话恢复证据（本地验收文件 `combination-evidence.json`）
 
 复验：
 
@@ -31,4 +31,4 @@ TEAMX_CALENDAR_BROWSER=1 NODE_PATH="$PWD/packaging/verifier/node_modules" \
   go test ./internal/room -run '^TestCalendar(Browser|ConversationRecoveryBrowser)$' -count=1 -v
 ```
 
-本次检查全部通过：前端 759 项、相关 Go 回归、二进制构建及两条 Chromium 验收（合计 24.029 秒）。控制台无异常，表单返回位置、scope／时区保留与跨会话恢复通过；结果见 [validation.json](refinement/validation.json)。
+本次检查全部通过：前端 759 项、相关 Go 回归、二进制构建及两条 Chromium 验收（合计 24.029 秒）。控制台无异常，表单返回位置、scope／时区保留与跨会话恢复通过；结果见 validation.json（本地验收文件 `validation.json`）。

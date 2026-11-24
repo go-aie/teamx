@@ -24,7 +24,7 @@ func TestLarkSelfSendIndependentProcessRecovery(t *testing.T) {
 		t.Run(mode, func(t *testing.T) {
 			h := selfSendHarnessWithMembers(t, 1)
 			id, _ := enableSelfSend(t, h, h.members[0], 0)
-			server := httptest.NewServer(h.m)
+			server := httptest.NewServer(fixtureHTTPHandler(h.m))
 			q := selfSendRequest(t, contractCLI(t, server.URL, h.svc, id, h.c.ToolEntryID), "stable-process-intent")
 			server.Close()
 			if mode != "settled" {
@@ -123,7 +123,7 @@ func TestLarkSelfSendLedgerFailures(t *testing.T) {
 		t.Run(mode, func(t *testing.T) {
 			h := selfSendHarnessWithMembers(t, 1)
 			id, _ := enableSelfSend(t, h, h.members[0], 0)
-			server := httptest.NewServer(h.m)
+			server := httptest.NewServer(fixtureHTTPHandler(h.m))
 			defer server.Close()
 			cli := contractCLI(t, server.URL, h.svc, id, h.c.ToolEntryID)
 			q := selfSendRequest(t, cli, "durable-intent")
@@ -170,7 +170,7 @@ func TestLarkSelfSendLedgerFailures(t *testing.T) {
 			// Reopen real components and file locks, without an extra OS process.
 			// Death, orphaned CLI and member recovery remain in the process matrix.
 			m := testManager(t, root, managerTestProfiles(t))
-			recoveredServer := httptest.NewServer(m)
+			recoveredServer := httptest.NewServer(fixtureHTTPHandler(m))
 			defer recoveredServer.Close()
 			svc, err := newService(m.roomDir(h.room.RoomID), h.room.RoomID, serviceConfig{endpoint: recoveredServer.URL, cliPath: os.Args[0], persistentScheduling: true})
 			if err != nil {
@@ -268,7 +268,7 @@ func TestLarkSelfSendBindingViewExpires(t *testing.T) {
 	parallelFixtureTest(t)
 	h := selfSendHarnessWithMembers(t, 1)
 	id, saved := enableSelfSend(t, h, h.members[0], 0)
-	server := httptest.NewServer(h.m)
+	server := httptest.NewServer(fixtureHTTPHandler(h.m))
 	defer server.Close()
 	cli := contractCLI(t, server.URL, h.svc, id, h.c.ToolEntryID)
 	request := selfSendRequest(t, cli, "after-generation-change")
@@ -370,7 +370,7 @@ func TestLarkSelfSendConcurrentRoomsAndMembers(t *testing.T) {
 	h.m.bindPlatformReferences(svc2)
 	other := &larkHarness{t, h.m, r2, svc2, state.Members, h.c, h.dir, h.clock}
 	id3, _ := enableSelfSend(t, other, other.members[0], 0)
-	server := httptest.NewServer(h.m)
+	server := httptest.NewServer(fixtureHTTPHandler(h.m))
 	defer server.Close()
 	ids := []MemberIdentity{id1, id2, id3}
 	services := []*service{h.svc, h.svc, svc2}
@@ -424,7 +424,7 @@ func TestLarkSelfSendRevocationRaces(t *testing.T) {
 			if mode == "disable" {
 				h.start()
 			}
-			server := httptest.NewServer(h.m)
+			server := httptest.NewServer(fixtureHTTPHandler(h.m))
 			defer server.Close()
 			cli := contractCLI(t, server.URL, h.svc, id, h.c.ToolEntryID)
 			q := selfSendRequest(t, cli, "inflight")

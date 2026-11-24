@@ -25,7 +25,7 @@ func TestLarkImagesRecoveryProcess(t *testing.T) {
 		t.Fatal(err)
 	}
 	m := testManager(t, root, managerTestProfiles(t))
-	server := httptest.NewServer(m)
+	server := httptest.NewServer(fixtureHTTPHandler(m))
 	defer server.Close()
 	var svc *service
 	if os.Getenv("TEAMX_SELF_RECOVERY_MEMBERS") == "1" {
@@ -59,6 +59,19 @@ func TestLarkImagesIndependentProcessRecovery(t *testing.T) {
 		}
 		for _, kind := range []string{"self", "group"} {
 			for _, mode := range []string{"settled", "during_upload", "after_dispatch", "before_verification"} {
+				// Both formats retain successful recovery for both target kinds.
+				// Crash publication uses the same ledger: cover every interruption
+				// per format and alternate the target so each target also sees each
+				// interruption across the two formats.
+				if mode != "settled" {
+					group := mode == "during_upload"
+					if log {
+						group = !group
+					}
+					if (kind == "group") != group {
+						continue
+					}
+				}
 				t.Run(storage+"/"+kind+"/"+mode, func(t *testing.T) {
 					parallelFixtureTest(t)
 					h, id, server, cli, refs := imageSendHarness(t, log)

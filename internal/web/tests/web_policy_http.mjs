@@ -3,9 +3,11 @@ import { launch, settle } from "./web_app_harness.mjs";
 import { request } from "../assets/client.mjs";
 
 const endpoint = process.env.TEAMX_WEB_ENDPOINT;
+// Node fetch does not supply the browser's Origin on JSON mutations.
+const browserFetch = (url, options) => fetch(url, {...options, headers:{...options.headers, Origin:endpoint}});
 const inflight = new Set();
 const call = (path, payload) => {
-  const task = request(endpoint + path, payload); inflight.add(task);
+  const task = request(endpoint + path, payload, browserFetch); inflight.add(task);
   return task.finally(() => inflight.delete(task));
 };
 const waitFor = async predicate => {

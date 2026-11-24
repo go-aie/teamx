@@ -76,6 +76,7 @@ func postConversationReply(t *testing.T, h *inboxHarness, key, text string, repl
 }
 
 func TestReferenceConversationImmediateAnswerAndRecovery(t *testing.T) {
+	parallelFixtureTest(t)
 	h, svc, units, sources := conversationHarness(t, 1)
 	u := askConversation(t, h, svc, units[0], sources[0].TargetRef, "本次排期按方案 A 回复，可以吗？")
 	q := u.Questions[0]
@@ -135,6 +136,7 @@ func TestReferenceConversationImmediateAnswerAndRecovery(t *testing.T) {
 }
 
 func TestReferenceConversationAmbiguousAnswersAndAccurateScope(t *testing.T) {
+	parallelFixtureTest(t)
 	h, svc, units, sources := conversationHarness(t, 2)
 	a := askConversation(t, h, svc, units[0], sources[0].TargetRef, "讨论一：采用 A？")
 	b := askConversation(t, h, svc, units[1], sources[1].TargetRef, "讨论二：采用 A？")
@@ -186,6 +188,7 @@ func TestReferenceConversationAmbiguousAnswersAndAccurateScope(t *testing.T) {
 }
 
 func TestReferenceConversationDeferredInstructionsAndNewQuestions(t *testing.T) {
+	parallelFixtureTest(t)
 	h, svc, units, sources := conversationHarness(t, 1)
 	u := askConversation(t, h, svc, units[0], sources[0].TargetRef, "本次按 A？")
 	answer := postConversationReply(t, h, "defer", "按 A，工具恢复后再处理", u.Questions[0].Seq)
@@ -248,6 +251,7 @@ func TestReferenceConversationDeferredInstructionsAndNewQuestions(t *testing.T) 
 }
 
 func TestReferenceConversationQuestionCommitGapAndSaveFailures(t *testing.T) {
+	parallelFixtureTest(t)
 	h, svc, units, sources := conversationHarness(t, 1)
 	c := followupQuestionChange{followupCommand: conversationCommand(units[0], 1), MessageRefs: []string{sources[0].TargetRef}, Text: "持久问题？"}
 	original := h.store.ops
@@ -298,6 +302,7 @@ func TestReferenceConversationQuestionCommitGapAndSaveFailures(t *testing.T) {
 }
 
 func TestReferenceConversationDirectInstructionRevocationAndPendingQuestions(t *testing.T) {
+	parallelFixtureTest(t)
 	h, svc, units, sources := conversationHarness(t, 1)
 	source := postConversationReply(t, h, "direct", "本条讨论的排期按方案 A 回复，恢复后继续", 0)
 	c := followupInstructionChange{followupCommand: conversationCommand(units[0], 1), SourceSeq: source.Seq, MessageRefs: []string{sources[0].TargetRef},
@@ -341,6 +346,7 @@ func TestReferenceConversationDirectInstructionRevocationAndPendingQuestions(t *
 }
 
 func TestReferenceConversationAnswerSaveUnknownAndCapacity(t *testing.T) {
+	parallelFixtureTest(t)
 	h, svc, units, sources := conversationHarness(t, 1)
 	u := askConversation(t, h, svc, units[0], sources[0].TargetRef, "请确认本次答复")
 	answer := postConversationReply(t, h, "save-unknown", "本次按 A", u.Questions[0].Seq)
@@ -380,6 +386,7 @@ func TestReferenceConversationAnswerSaveUnknownAndCapacity(t *testing.T) {
 }
 
 func TestReferenceConversationByteCapacityPreservesAnswers(t *testing.T) {
+	parallelFixtureTest(t)
 	h, svc, units, sources := conversationHarness(t, 1)
 	u := askConversation(t, h, svc, units[0], sources[0].TargetRef, "保留完整答复证据？")
 	body := strings.Repeat("x", maxTextBytes)

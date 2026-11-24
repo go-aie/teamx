@@ -93,14 +93,20 @@ export function apply(ctx, config) {
   });
   ctx.shellEnv.register({
     name: 'teamx-input-execution',
-    variables: { DSH_TEAMX_INPUT_BINDING: { description: 'Private execution binding managed by the TeamX runtime.' } },
+    variables: {
+      DSH_TEAMX_INPUT_BINDING: { description: 'Private execution binding managed by the TeamX runtime.' },
+      ...(config.executionProxy ? { DSH_TEAMX_EXECUTION_PROXY: { description: 'Private local execution transport.' } } : {}),
+    },
     resolve: () => {
       const e = scope.getStore();
-      return e ? { DSH_TEAMX_INPUT_BINDING: JSON.stringify({ token: e.token, call: e.call }) } : {};
+      return e ? {
+        DSH_TEAMX_INPUT_BINDING: JSON.stringify({ token: e.token, call: e.call }),
+        ...(config.executionProxy && process.env.HTTP_PROXY ? { DSH_TEAMX_EXECUTION_PROXY: process.env.HTTP_PROXY } : {}),
+      } : {};
     },
   });
   const listEnvironment = ctx.shellEnv.list.bind(ctx.shellEnv);
-  ctx.shellEnv.list = () => listEnvironment().filter(v => v.key !== 'DSH_TEAMX_INPUT_BINDING');
+  ctx.shellEnv.list = () => listEnvironment().filter(v => !['DSH_TEAMX_INPUT_BINDING', 'DSH_TEAMX_EXECUTION_PROXY'].includes(v.key));
   ctx.on('tools/execute', async (exec, next) => {
     const binding = agents.get(exec.agent);
     if (!binding || exec.token === undefined) throw new Error('Input execution correlation unavailable');

@@ -2,7 +2,7 @@
 
 对应[方案第 8.4 节](../LARK-IMAGE-SEND-PLAN.zh.md#84-独立前置任务agent-接口与指引简化)。日期：2026-11-20。
 
-第 8.4 节已实施并完成隔离验收：本地合同、共享入口、可靠性回归和最终 race，以及普通 Room／默认助理各 17 个真实 DSH／Agent 场景均通过。飞书侧为原生 CLI 子进程夹具，此结果不代表阶段 4 开放。阶段 3 [原记录](lark-image-send-s3.zh.md)和[原证据](lark-image-send-agent-evidence.json)保留。
+第 8.4 节已实施并完成隔离验收：本地合同、共享入口、可靠性回归和最终 race，以及普通 Room／默认助理各 17 个真实 DSH／Agent 场景均通过。飞书侧为原生 CLI 子进程夹具，此结果不代表阶段 4 开放。阶段 3 [原记录](lark-image-send-s3.zh.md)和原证据（本地验收文件 `lark-image-send-agent-evidence.json`）保留。
 
 ## 最终合同
 
@@ -39,7 +39,7 @@
 
 ## 真实 Agent 结果与成本
 
-完整摘要见[简化验收证据](lark-image-send-agent-simplification-evidence.json)。两种入口均完成 17 个场景，每种有 9 条 succeeded、2 条 not_applied、1 条 unknown，全部最多一次尝试；10 次原生消息 POST 包含注入 unknown 的那一次。失败、取消、原回执查询及重启均未增加消息。正式图文注册保持关闭。
+完整摘要见简化验收证据（本地验收文件 `lark-image-send-agent-simplification-evidence.json`）。两种入口均完成 17 个场景，每种有 9 条 succeeded、2 条 not_applied、1 条 unknown，全部最多一次尝试；10 次原生消息 POST 包含注入 unknown 的那一次。失败、取消、原回执查询及重启均未增加消息。正式图文注册保持关闭。
 
 下表对比阶段 3 原有的同一组 12 个业务场景；新增的五个矩阵场景另外计入全部 17 场景总数。工具数按真实 ACP 工具 ID 去重，包含失败、格式处理、History、发现、报告和恢复。帮助／发现／回执查询按实际 CLI 子命令计数，通过审计命令分词重算；一条 shell 工具调用可包含多条 CLI 命令，各列不能简单相加。解析／执行列描述目标核验和发送；可选的正常回执预查及异常恢复查询均列在回执查询列，没有从总工具数中扣除。
 

@@ -149,7 +149,7 @@ func TestDSHAdapterIsolationMetadataAndPrivateOutput(t *testing.T) {
 	var opened []dsh.Options
 	for _, id := range []MemberIdentity{a, b} {
 		opts := adapterOptions(h.store, id)
-		backend := dshBackend{store: h.store, profile: dshProfile{Instructions: "role-" + id.AgentID,
+		backend := dshBackend{ownerUserID: "room-owner", store: h.store, profile: dshProfile{Instructions: "role-" + id.AgentID,
 			Workspace: "/workspace/" + id.AgentID, ToolEnv: map[string]string{"ROLE_ENV": id.AgentID}},
 			open: func(_ context.Context, options dsh.Options) (dshComponent, error) {
 				opened = append(opened, options)

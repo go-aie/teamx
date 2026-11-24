@@ -35,7 +35,7 @@ func anonymousAccessFixture(t *testing.T) (*serverAccess, http.Handler) {
 }
 
 func settingsBody(a *serverAccess, enabled, remote bool, token, current, public string) string {
-	b, _ := json.Marshal(accessSettingsInput{Caller: Caller{Author: Author{Kind: "human", ID: a.operator}}, ExpectedVersion: a.version, LoginEnabled: enabled, RemoteEnabled: remote, Token: token, CurrentToken: current, PublicBaseURL: public})
+	b, _ := json.Marshal(accessSettingsInput{Caller: Caller{Author: Author{Kind: "human", ID: a.space.OwnerUserID}}, ExpectedVersion: a.version, LoginEnabled: enabled, RemoteEnabled: remote, Token: token, CurrentToken: current, PublicBaseURL: public})
 	return string(b)
 }
 
@@ -44,7 +44,7 @@ func TestAnonymousAccessRetainsOriginIdentityAndAgentChecks(t *testing.T) {
 	if w := accessRequest(h, "GET", "/v1/access/session", "", "", "", nil); w.Code != 200 || !strings.Contains(w.Body.String(), `"login_enabled":false`) {
 		t.Fatal(w.Code, w.Body.String())
 	}
-	body := `{"caller":{"kind":"human","id":"` + a.operator + `"}}`
+	body := `{"caller":{"kind":"human","id":"` + a.space.OwnerUserID + `"}}`
 	if w := accessRequest(h, "POST", "/v1/send", "", a.internal, body, nil); w.Code != 200 {
 		t.Fatal(w.Code)
 	}
@@ -139,7 +139,7 @@ func TestAccessSettingsEnableRotateDisableAndSharedConfig(t *testing.T) {
 	}
 	c := freshAccessConfig(t, filepath.Dir(a.config.path))
 	restarted, err := newServerAccess(c, a.internal)
-	if err != nil || !restarted.disabled || restarted.operator != a.operator {
+	if err != nil || !restarted.disabled || restarted.space.OwnerUserID != a.space.OwnerUserID {
 		t.Fatal("restart lost access state", err)
 	}
 	// Settings/model writers share the same durable config document.
@@ -221,7 +221,7 @@ func TestAnonymousCLIUsesFixedOperator(t *testing.T) {
 	a.internal, a.public = server.URL, server.URL
 	client := cliClient{endpoint: server.URL, http: server.Client()}
 	id, err := client.identity(context.Background(), "room", func(string) string { return "" })
-	if err != nil || id.Caller.ID != a.operator {
+	if err != nil || id.Caller.ID != a.space.OwnerUserID {
 		t.Fatal(id, err)
 	}
 	body := apiRequest{ServiceInfo: id.ServiceInfo, Caller: id.Caller}
@@ -346,7 +346,7 @@ func TestAccessWildcardServerKeepsInternalEndpoint(t *testing.T) {
 }
 
 func modeSettingsBody(a *serverAccess, mode, port, token, current string, login bool) string {
-	b, _ := json.Marshal(accessSettingsInput{Caller: Caller{Author: Author{Kind: "human", ID: a.operator}}, ExpectedVersion: a.version, LoginEnabled: login, AccessMode: mode, Port: port, Token: token, CurrentToken: current})
+	b, _ := json.Marshal(accessSettingsInput{Caller: Caller{Author: Author{Kind: "human", ID: a.space.OwnerUserID}}, ExpectedVersion: a.version, LoginEnabled: login, AccessMode: mode, Port: port, Token: token, CurrentToken: current})
 	return string(b)
 }
 
@@ -457,7 +457,7 @@ func TestLANOriginRequiresPrivatePeerServerIPAndSameOrigin(t *testing.T) {
 	if cookie.Name != "teamx-lan-session" || !cookie.HttpOnly || cookie.Secure || cookie.SameSite != http.SameSiteLaxMode {
 		t.Fatal("wrong LAN cookie", cookie)
 	}
-	body := `{"caller":{"kind":"human","id":"` + a.operator + `"}}`
+	body := `{"caller":{"kind":"human","id":"` + a.space.OwnerUserID + `"}}`
 	if w = request("POST", "/v1/send", host, peer, origin, body, cookie, nil); w.Code != 200 {
 		t.Fatal("same-origin LAN write rejected", w.Code, w.Body.String())
 	}

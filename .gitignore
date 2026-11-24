@@ -23,3 +23,8 @@ __pycache__/
 # Distribution archives and isolated build state
 /dist/
 /.packaging/
+
+# Local acceptance artifacts; keep implementation notes in version control
+/docs/implementation/**/*.log
+/docs/implementation/**/*.png
+/docs/implementation/**/*.json

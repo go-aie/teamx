@@ -144,7 +144,8 @@ func newCollaborationRoom(t *testing.T, out, task string) *collaborationRoom {
 		t.Fatal(err)
 	}
 	h.access, _, _ = accessFixture(t)
-	h.access.disabled, h.access.operator = true, humanCaller.ID
+	h.access.disabled = true
+	bindFixtureAccessSubject(h.access, humanCaller.ID)
 	h.server = httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var req apiRequest
 		if r.Body != nil {

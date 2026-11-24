@@ -111,7 +111,7 @@ NODE_PATH="$PWD/packaging/verifier/node_modules" TEAMX_WORKSPACE_BROWSER=1 \
 
 正常重启验收保留服务地址。MCP endpoint 属于原 Session 指纹，改用随机新端口会触发现有安全轮换，不能把这种环境变更误判为目录恢复失败，也不能忽略指纹检查来获得原 SessionID。
 
-脱敏结果见 [运行证据](agent-workspace-directories-runtime-evidence.json)。完整私有报告与截图保存在 `.local/workspace-directories-real-20261118-15/`，其中含私有凭据与 Session 数据，不提交公开；证据 JSON 保存其摘要和归一化目录关系。最后一轮实际 DSH／Chromium 测试通过，耗时 109.33 秒，含故障 Room 历史可见与发送禁用的独立页面断言。
+脱敏结果见 运行证据（本地验收文件 `agent-workspace-directories-runtime-evidence.json`）。完整私有报告与截图保存在 `.local/workspace-directories-real-20261118-15/`，其中含私有凭据与 Session 数据，不提交公开；证据 JSON 保存其摘要和归一化目录关系。最后一轮实际 DSH／Chromium 测试通过，耗时 109.33 秒，含故障 Room 历史可见与发送禁用的独立页面断言。
 
 容器门禁 `TestWorkspaceDirectoryMountedPath` 在 Docker 的 Linux 测试进程中，通过真实 bind mount 读取宿主标记；生产目录浏览／应用接口接受容器内 `/workspace/project`，实际子进程的 `pwd -P` 写回宿主后也为该路径。恢复默认后宿主文件保留。使用 `teamx-p2-ubuntu:arm64`、普通 UID、禁用网络，结果位于 `.local/workspace-directories-mount-20261118/report.json`。此项使用受控模型，不代表容器内实际 DSH 或沙箱兼容性通过。
 

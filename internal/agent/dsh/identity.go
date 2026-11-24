@@ -5,16 +5,19 @@ import (
 	"errors"
 	"path/filepath"
 	"strings"
+
+	"github.com/go-aie/teamx/agent"
 )
 
 // RuntimeIdentity includes interpreter and script bytes, not just Node's hash.
 type RuntimeIdentity struct {
-	BinaryPath   string   `json:"binary_path"`
-	BinarySHA256 string   `json:"binary_sha256"`
-	BinaryArgs   []string `json:"binary_args,omitempty"`
-	ScriptSHA256 []string `json:"script_sha256,omitempty"`
-	Version      string   `json:"version"`
-	Agent        Artifact `json:"agent,omitzero"`
+	Execution    *agent.ExecutionIdentity `json:"execution,omitempty"`
+	BinaryPath   string                   `json:"binary_path"`
+	BinarySHA256 string                   `json:"binary_sha256"`
+	BinaryArgs   []string                 `json:"binary_args,omitempty"`
+	ScriptSHA256 []string                 `json:"script_sha256,omitempty"`
+	Version      string                   `json:"version"`
+	Agent        Artifact                 `json:"agent,omitzero"`
 }
 
 func InspectRuntime(ctx context.Context, opts Options) (RuntimeIdentity, error) {
@@ -29,18 +32,32 @@ func InspectRuntime(ctx context.Context, opts Options) (RuntimeIdentity, error) 
 	if err != nil {
 		return RuntimeIdentity{}, errors.New("DSH executable unavailable")
 	}
-	for _, arg := range opts.BinaryArgs {
-		if strings.HasSuffix(arg, ".js") || strings.HasSuffix(arg, ".mjs") {
-			hash, err := executableDigest(arg)
-			if err != nil {
-				return RuntimeIdentity{}, errors.New("DSH script unavailable")
-			}
-			id.ScriptSHA256 = append(id.ScriptSHA256, hash)
-		}
+	id.ScriptSHA256, err = scriptDigests(opts.BinaryArgs)
+	if err != nil {
+		return RuntimeIdentity{}, err
 	}
+
 	if err := opts.Limits.defaults(); err != nil {
+		return RuntimeIdentity{}, err
+	}
+	id.Execution, err = executionIdentity(opts, false)
+	if err != nil {
 		return RuntimeIdentity{}, err
 	}
 	id.Version, err = installedVersion(ctx, opts)
 	return id, err
+}
+
+func scriptDigests(args []string) ([]string, error) {
+	var hashes []string
+	for _, arg := range args {
+		if strings.HasSuffix(arg, ".js") || strings.HasSuffix(arg, ".mjs") {
+			hash, err := executableDigest(arg)
+			if err != nil {
+				return nil, errors.New("DSH script unavailable")
+			}
+			hashes = append(hashes, hash)
+		}
+	}
+	return hashes, nil
 }

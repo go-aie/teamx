@@ -73,7 +73,7 @@ func (m *roomManager) prepareLarkSetupLocked(req larkAuthRequest) (*larkAuthSess
 
 func (m *roomManager) runLarkSetup(ctx context.Context, s *larkAuthSession, executable, brand string) {
 	defer s.cancel()
-	result, err := lark.ConfigureApplication(ctx, executable, brand, func(progress lark.SetupProgress) {
+	result, err := m.larkClients.ConfigureApplication(ctx, executable, brand, func(progress lark.SetupProgress) {
 		m.mu.Lock()
 		defer m.mu.Unlock()
 		if ctx.Err() != nil || m.closing {

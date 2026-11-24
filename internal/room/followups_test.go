@@ -69,6 +69,7 @@ func referenceRunning(t *testing.T, h *inboxHarness, turn, start, end uint64) {
 }
 
 func TestReferenceFollowupsNativeDiscussionsOnDemandAndPagination(t *testing.T) {
+	parallelFixtureTest(t)
 	h := newInboxHarness(t, InboxLimits{})
 	initReferenceTest(t, h)
 	for i := 1; i <= 20; i++ {
@@ -191,6 +192,7 @@ func TestReferenceFollowupsNativeDiscussionsOnDemandAndPagination(t *testing.T) 
 }
 
 func TestReferenceFollowupsUnresolvedConsumedAndExplicitRetry(t *testing.T) {
+	parallelFixtureTest(t)
 	h := newInboxHarness(t, InboxLimits{})
 	initReferenceTest(t, h)
 	receiveReference(t, h, "1", referenceTestSource("1"))
@@ -231,6 +233,7 @@ func TestReferenceFollowupsUnresolvedConsumedAndExplicitRetry(t *testing.T) {
 }
 
 func TestReferenceFollowupsPartialIdentityAndOwnership(t *testing.T) {
+	parallelFixtureTest(t)
 	h := newInboxHarness(t, InboxLimits{})
 	initReferenceTest(t, h)
 	source := referenceTestSource("1")
@@ -294,6 +297,7 @@ func TestReferenceFollowupsPartialIdentityAndOwnership(t *testing.T) {
 }
 
 func TestReferenceFollowupsPartialCommitRepairsWithoutReset(t *testing.T) {
+	parallelFixtureTest(t)
 	h := newInboxHarness(t, InboxLimits{})
 	initReferenceTest(t, h)
 	source := referenceTestSource("1")
@@ -348,6 +352,7 @@ func TestReferenceFollowupsPartialCommitRepairsWithoutReset(t *testing.T) {
 }
 
 func TestReferenceFollowupsGitlabLocalAndVerifiedAlias(t *testing.T) {
+	parallelFixtureTest(t)
 	h := newInboxHarness(t, InboxLimits{})
 	initReferenceTest(t, h)
 	first := referenceTestSource("1")
@@ -391,6 +396,7 @@ func TestReferenceFollowupsGitlabLocalAndVerifiedAlias(t *testing.T) {
 }
 
 func TestReferenceFollowupsOpaqueStringIdentityIsolation(t *testing.T) {
+	parallelFixtureTest(t)
 	h := newInboxHarness(t, InboxLimits{})
 	initReferenceTest(t, h)
 	source := platform.SourceRef{Provider: "fixture", Instance: "tenant-service", Tenant: platform.ExternalID{Namespace: "tenant", Value: "team-blue"}, Channel: "messages", SubscriptionID: strings.Repeat("b", 32), ItemKey: "1"}
@@ -438,6 +444,7 @@ func TestReferenceFollowupsOpaqueStringIdentityIsolation(t *testing.T) {
 }
 
 func TestReferenceFollowupsConsumedDependencyLossFailsClosed(t *testing.T) {
+	parallelFixtureTest(t)
 	h := newInboxHarness(t, InboxLimits{})
 	initReferenceTest(t, h)
 	receiveReference(t, h, "1", referenceTestSource("1"))

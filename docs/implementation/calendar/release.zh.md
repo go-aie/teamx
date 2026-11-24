@@ -24,7 +24,7 @@
 
 这里的“重建”是在同一测试进程关闭管理器和运行时、释放锁后，从原隔离目录重新装配服务；不是宿主崩溃或强制杀进程测试。跨日使用受控时间，不等待真实隔天，不声明长期实跑。
 
-浏览器组合证据：[结构化结果](release/combination-evidence.json)、[桌面恢复](release/desktop-recovered.png)、[手机恢复后的历史](release/mobile-recovered-history.png)。桌面为 Chromium 1440×1000，手机为 Chromium 390×844 模拟视口，无真机证据。页面控制台无异常。保存请求总数为四次显式暂停／恢复，两次重建均没有重放请求。
+浏览器组合证据：结构化结果（本地验收文件 `combination-evidence.json`）、桌面恢复（本地验收文件 `desktop-recovered.png`）、手机恢复后的历史（本地验收文件 `mobile-recovered-history.png`）。桌面为 Chromium 1440×1000，手机为 Chromium 390×844 模拟视口，无真机证据。页面控制台无异常。保存请求总数为四次显式暂停／恢复，两次重建均没有重放请求。
 
 ## 前阶段证据与保留边界
 
@@ -33,7 +33,7 @@
 | 真实 DSH／模型 | 沿用 2026-11-19 的 [C1 一次性](once.zh.md)、[C1.5 最终工具合同](agent-contract.zh.md)、[C2 重复工作日](recurrence.zh.md)证据，模型为 deepseek-v4.1-flash-1017；均核实本私信的唯一公开报告。C4 未改变合同，本次没有重跑真实模型 |
 | 真实外部平台 | 日历验收没有读取真实项目或写入外部平台；现有提醒报告不能证明项目统计、当前迭代切换或权限失效场景已经通过真实业务验收。项目任务继续复用已有连接和工具，必须有已核实范围；不构造缺失数据的统计结果 |
 | 规则与生命周期 | 本次重跑日历专项、相关 race 与集成检查，复验 DST、工作日覆盖与补班、漏跑水位、取消／暂停、领取门禁、未知提交、历史清理后的原报告回执和原跟进提醒路径 |
-| 浏览器 | 本次同时重跑 C3 的完整管理脚本与新增组合脚本。完整管理证据见 [browser-evidence.json](release/browser-evidence.json)，覆盖分页、历史、编辑、时区、SSE、回执故障、草稿、跳转、覆盖不足和空日历只读 |
+| 浏览器 | 本次同时重跑 C3 的完整管理脚本与新增组合脚本。完整管理证据见 browser-evidence.json（本地验收文件 `browser-evidence.json`），覆盖分页、历史、编辑、时区、SSE、回执故障、草稿、跳转、覆盖不足和空日历只读 |
 | 真机与故障接管 | 无真机、宿主崩溃、强杀或多年实际运行证据；不由浏览器视口、正常关闭恢复或受控时间测试替代 |
 
 ## 复验方法
@@ -52,6 +52,6 @@ TEAMX_CALENDAR_BROWSER=1 NODE_PATH="$PWD/packaging/verifier/node_modules" \
   go test ./internal/room -run '^TestCalendar(Browser|ConversationRecoveryBrowser)$' -count=1 -v
 ```
 
-真实 DSH 的独立复验方法保留在上述 C1.5／C2 记录，要求新建隔离输出目录。最终检查结果见 [validation.json](release/validation.json)。
+真实 DSH 的独立复验方法保留在上述 C1.5／C2 记录，要求新建隔离输出目录。最终检查结果见 validation.json（本地验收文件 `validation.json`）。
 
 本次检查全部通过：`go test ./...`（Room 包 507.660 秒）、相关 Go race、集成检查、前端 757 项、完整管理 Chromium 和组合 Chromium；组合脚本另经最终 race 验证。全量回归编译后新增的离线恢复用例和夹具收尾，由最终受管用例 race／集成及浏览器 race 覆盖。最终组合浏览器 race 用时 14.856 秒。

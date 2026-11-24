@@ -279,6 +279,9 @@ func (m *roomManager) saveWorkspaceOperation(op workspaceOperation) error {
 func (m *roomManager) saveWorkspaceOperationLocked(op workspaceOperation) (resultErr error) {
 	defer func() {
 		if resultErr == nil {
+			if op.Status == "completed" && m.config.directoryClaims != nil {
+				resultErr = m.config.directoryClaims.settled(m.config.access.space.SpaceID, op.RoomIdentity, op.Target.MemberDirectories)
+			}
 			m.invalidateRoomLocked("workspace", MemberIdentity{RoomIdentity: op.RoomIdentity})
 		}
 	}()

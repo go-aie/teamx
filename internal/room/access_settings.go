@@ -140,8 +140,15 @@ func internalAccessEndpoint(address string) string {
 }
 
 func (a *serverAccess) writeSession(w http.ResponseWriter) {
+	a.writeSubjectSession(w, a.subject())
+}
+func (a *serverAccess) writeSubjectSession(w http.ResponseWriter, subject userSubject) {
 	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(map[string]any{"operator": a.operator, "installation_id": a.installationID, "login_enabled": !a.disabled})
+	space := a.space.SpaceID
+	if a.authority().users != nil && space == "" {
+		space = a.authority().defaultSpace(subject)
+	}
+	_ = json.NewEncoder(w).Encode(map[string]any{"operator": subject.UserID, "user_id": subject.UserID, "auth_version": subject.AuthVersion, "space_id": space, "installation_id": a.installationID, "login_enabled": !a.authority().disabled, "deployment_managed": a.authority().users != nil})
 }
 
 type accessSettingsView struct {
@@ -228,7 +235,7 @@ func (a *serverAccess) serveSettings(w http.ResponseWriter, r *http.Request) {
 		accessError(w, 400, "invalid_request")
 		return
 	}
-	if input.Caller.Kind != "human" || input.Caller.ID != a.operator || input.Caller.MembershipID != "" {
+	if input.Caller.Kind != "human" || input.Caller.ID != requestOperator(r) || input.Caller.MembershipID != "" {
 		accessError(w, 403, "identity_mismatch")
 		return
 	}
@@ -257,6 +264,10 @@ func (a *serverAccess) serveSettings(w http.ResponseWriter, r *http.Request) {
 	}
 	if a.document == nil {
 		writeAPIError(w, ErrRequest)
+		return
+	}
+	if a.executionRequiresAuth && !input.LoginEnabled {
+		writeAPIError(w, invalidField("login_enabled", "隔离执行需要登录验证。"))
 		return
 	}
 	if a.managed && !input.LoginEnabled {

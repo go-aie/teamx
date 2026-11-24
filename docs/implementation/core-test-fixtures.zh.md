@@ -42,7 +42,7 @@ Workspace 六次多余源仓库构造被取消，对应每次 init／config name
 | 单并发重点回归 | 24 项顶层／含子项 92 项通过，零跳过；覆盖升级整族、全部新增规则、原生 callback、current 保存失败及模型轮换 | 33.109／— |
 | 标准 vet | 未通过：原有未跟踪文件 `internal/room/room_action_images.go:21` 重复嵌入 `room_id`／`room_instance` JSON tag；与 H1 已记录的问题相同 | 6.753／— |
 
-唯一跳过项是原有 `TestWorkspaceDirectoryMountedPath`，需要显式指定真实挂载路径；本次没有改变其条件。输入升级的进程死亡仍由 `TestInputUpgradeRecoversAfterProcessDeath` 实际启动子进程，不把 helper 在普通入口返回当成进程验收。完整选择、逐项结果、槽位记录和最终源码摘要见[机器证据](core-test-fixtures-evidence.json)；它是此次结果的证据，不是需要永久手工维护的选择 gate。
+唯一跳过项是原有 `TestWorkspaceDirectoryMountedPath`，需要显式指定真实挂载路径；本次没有改变其条件。输入升级的进程死亡仍由 `TestInputUpgradeRecoversAfterProcessDeath` 实际启动子进程，不把 helper 在普通入口返回当成进程验收。完整选择、逐项结果、槽位记录和最终源码摘要见机器证据（本地验收文件 `core-test-fixtures-evidence.json`）；它是此次结果的证据，不是需要永久手工维护的选择 gate。
 
 同范围最终墙钟观察为 **235.776 → 201.325 秒，少约 34.5 秒（14.6%）**。首个顶层 run 到首个顶层 cont 从 193.269 → 161.960 秒，其后并行尾部从 31.980 → 28.957 秒；这是该四族选择的阶段跨度，不能外推全仓。已有夹具日志中，Workspace 累计 held 49.104 → 45.182 槽秒，平台累计 held 98.580 → 91.617 槽秒；不能把 held 相加当作墙钟。
 

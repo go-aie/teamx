@@ -53,6 +53,7 @@ func readMixedTestInbox(t *testing.T, h *inboxHarness, turn uint64) referenceInb
 }
 
 func TestInboxMixedPayloadReadConfirmRecoveryAndReclamation(t *testing.T) {
+	parallelFixtureTest(t)
 	h := newInboxHarness(t, InboxLimits{})
 	initReferenceTest(t, h)
 	first := receiveReference(t, h, "platform", referenceTestSource("platform"))
@@ -136,6 +137,7 @@ func TestInboxMixedPayloadReadConfirmRecoveryAndReclamation(t *testing.T) {
 }
 
 func TestInboxTaskEventLinkAndConsumptionWriteInterruptions(t *testing.T) {
+	parallelFixtureTest(t)
 	for _, boundary := range []string{"link_before_rename", "link_after_rename", "ack_before_rename", "ack_after_rename"} {
 		t.Run(boundary, func(t *testing.T) {
 			h := newInboxHarness(t, InboxLimits{})
@@ -201,6 +203,7 @@ func TestInboxTaskEventLinkAndConsumptionWriteInterruptions(t *testing.T) {
 }
 
 func TestInboxTaskEventDeliveryInterruptionAndIdempotence(t *testing.T) {
+	parallelFixtureTest(t)
 	for _, boundary := range []string{"body", "delivery", "header"} {
 		t.Run(boundary, func(t *testing.T) {
 			h := newInboxHarness(t, InboxLimits{})
@@ -245,6 +248,7 @@ func TestInboxTaskEventDeliveryInterruptionAndIdempotence(t *testing.T) {
 }
 
 func TestInboxTaskEventExpiryAndSharedPrefix(t *testing.T) {
+	parallelFixtureTest(t)
 	h := newInboxHarness(t, InboxLimits{})
 	initReferenceTest(t, h)
 	now := time.Now().UTC()
@@ -279,6 +283,7 @@ func TestInboxTaskEventExpiryAndSharedPrefix(t *testing.T) {
 }
 
 func TestInboxTaskEventAdmissionCannotBypassBlockedPlatform(t *testing.T) {
+	parallelFixtureTest(t)
 	for _, eventFirst := range []bool{false, true} {
 		h := newInboxHarness(t, InboxLimits{})
 		initReferenceTest(t, h)
@@ -308,6 +313,7 @@ func TestInboxTaskEventAdmissionCannotBypassBlockedPlatform(t *testing.T) {
 }
 
 func TestInboxTaskEventCapacityAndMemberReplacement(t *testing.T) {
+	parallelFixtureTest(t)
 	limits := DefaultInboxLimits()
 	limits.Entries = 1
 	h := newInboxHarness(t, limits)
@@ -358,6 +364,7 @@ func TestInboxTaskEventCapacityAndMemberReplacement(t *testing.T) {
 }
 
 func TestInboxPayloadLegacyAndInvalidTypes(t *testing.T) {
+	parallelFixtureTest(t)
 	for _, mode := range []string{"legacy", "unknown"} {
 		t.Run(mode, func(t *testing.T) {
 			h := newInboxHarness(t, InboxLimits{})
@@ -398,6 +405,7 @@ func TestInboxPayloadLegacyAndInvalidTypes(t *testing.T) {
 }
 
 func TestInboxTaskEventMissingEvidenceNeverResetsCursor(t *testing.T) {
+	parallelFixtureTest(t)
 	for _, missing := range []string{"event", "link", "cursor", "reclaimed_link"} {
 		t.Run(missing, func(t *testing.T) {
 			h := newInboxHarness(t, InboxLimits{})
@@ -431,6 +439,7 @@ func TestInboxTaskEventMissingEvidenceNeverResetsCursor(t *testing.T) {
 }
 
 func TestInboxTaskEventSchedulingRespectsPauseAndBudget(t *testing.T) {
+	parallelFixtureTest(t)
 	h := newInboxHarness(t, InboxLimits{})
 	initReferenceTest(t, h)
 	backend := newControlledBackend()
@@ -464,6 +473,7 @@ func TestInboxTaskEventSchedulingRespectsPauseAndBudget(t *testing.T) {
 }
 
 func TestInboxMixedCLIOutputMustCompleteBeforeConfirmation(t *testing.T) {
+	parallelFixtureTest(t)
 	svc, err := startService(t.TempDir(), "mixed-inbox-cli", serviceConfig{}, func(*service, RoomSnapshot) error { return nil })
 	if err != nil {
 		t.Fatal(err)
@@ -523,6 +533,7 @@ func TestInboxMixedCLIOutputMustCompleteBeforeConfirmation(t *testing.T) {
 }
 
 func TestInboxTaskEventReclamationInterruptedSweep(t *testing.T) {
+	parallelFixtureTest(t)
 	h := newInboxHarness(t, InboxLimits{})
 	initReferenceTest(t, h)
 	event := taskEventFixture("reclaim-result")
@@ -550,6 +561,7 @@ func TestInboxTaskEventReclamationInterruptedSweep(t *testing.T) {
 }
 
 func TestInboxTaskEventCapacityRetryAfterReclamation(t *testing.T) {
+	parallelFixtureTest(t)
 	limits := DefaultInboxLimits()
 	limits.Entries = 1
 	h := newInboxHarness(t, limits)

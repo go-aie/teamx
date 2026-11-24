@@ -38,7 +38,7 @@ go test -tags=e2e ./internal/room -run '^TestDSHInternalCollaborationReal$' -cou
 
 最终改后测试自动解码父/子 Agent 的持久消息，确认完整公共指南与准确成员身份在首次模型请求前实际加载，双向 `send_message` 接收者均为真实内部 ID，内部助手没有通过 TeamX CLI 发布，Room 结果由 A 交付，reviewer 没有执行，源文件未修改。另核对父/子实际请求的 schema：原生 `subagent`、`subagent_fork`、`workflow` 和 `send_message` 均保留；最终父/子加载的消息也包含完整 DSH 补充指南。没有把父 Agent 收到指南当成子 Agent 继承的证明。
 
-受测模型为 `deepseek-v4.1-flash-1017`；实际启动的是本地 checkout 的 `@deepseek-ai/dsh 0.2.1-alpha.1`，ACP agentInfo 为 `deepseek-harness-acp 0.0.1`。分析采样的打包版本 `0.2.2-rc.1` 未做本次真实模型验收。两次改后各有两个真实模型业务回合；样本不足以证明统计可靠性、token 成本或总体调用量改善。原始轨迹保存在私有临时目录，脱敏摘要、快照哈希与准确命令见[证据](agent-backend-guidance-evidence.json)。
+受测模型为 `deepseek-v4.1-flash-1017`；实际启动的是本地 checkout 的 `@deepseek-ai/dsh 0.2.1-alpha.1`，ACP agentInfo 为 `deepseek-harness-acp 0.0.1`。分析采样的打包版本 `0.2.2-rc.1` 未做本次真实模型验收。两次改后各有两个真实模型业务回合；样本不足以证明统计可靠性、token 成本或总体调用量改善。原始轨迹保存在私有临时目录，脱敏摘要、快照哈希与准确命令见证据（本地验收文件 `agent-backend-guidance-evidence.json`）。
 
 ## 生效与后续边界
 

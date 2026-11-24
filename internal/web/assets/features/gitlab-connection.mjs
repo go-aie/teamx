@@ -1,3 +1,4 @@
+import { spaceURL } from "../space-context.mjs";
 // GitLab application setup and OAuth authorization lifecycle.
 export function createGitLabConnection({ env, connectionsUI, runtime, settingsUI, onboardingUI, interactionsUI }) {
   const { document, window, Option, request } = env;
@@ -347,7 +348,7 @@ export function createGitLabConnection({ env, connectionsUI, runtime, settingsUI
     clearSavedAuthorization();
     clearGitLabConfirmation();
     const auth=connectionsUI.platforms.gitlabAuth;clearGitLabAuthView();connectionsUI.platforms.gitlabAuth=null;connectionsUI.platforms.formVersion++;
-    if (auth) {try {const body=connectionsUI.connectionPayload({session_id:auth.session_id}); if (keepalive) await globalThis.fetch("/v1/platforms/gitlab/cancel",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body),credentials:"same-origin",keepalive:true}); else await request("/v1/platforms/gitlab/cancel",body);} catch { /* Explicit list refresh reconciles a late commit. */ }}
+    if (auth) {try {const body=connectionsUI.connectionPayload({session_id:auth.session_id}); if (keepalive) await globalThis.fetch(spaceURL("/v1/platforms/gitlab/cancel"),{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body),credentials:"same-origin",keepalive:true}); else await request("/v1/platforms/gitlab/cancel",body);} catch { /* Explicit list refresh reconciles a late commit. */ }}
     if (!connectionsUI.connectionIsLark() && !connectionsUI.connectionIsScion()) renderGitLabAccount();
   }
 

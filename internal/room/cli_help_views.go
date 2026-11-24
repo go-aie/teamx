@@ -9,6 +9,10 @@ import (
 
 // This is a local presentation choice, not identity validation or authorization.
 func rootHelpText(env func(string) string, catalog *platforms.Catalog) string {
+	shared := env("TEAMX_TOOL_CONTRACT") == sharedToolsContract
+	if shared {
+		catalog = (hostToolPolicy{restricted: true}).catalog(catalog)
+	}
 	agent := env("TEAMX_AGENT_ID") != "" || env("TEAMX_MEMBERSHIP_ID") != ""
 	text := rootCLIHelp
 	if agent {
@@ -24,6 +28,10 @@ Member business commands:
   tools list/run/skill           Bound platform entries and standalone tools
   workspace-git                 Git network operations for a bound Workspace
 `
+	}
+	if shared {
+		text = strings.ReplaceAll(text, "  workspace-git                 Git network operations for a bound Workspace\n", "")
+		text += "Platform tools: bounded GitLab API and built-in Lark operations. Managed repositories and Scion are unavailable.\n"
 	}
 	names, tools := []string{}, []string{}
 	connections := false

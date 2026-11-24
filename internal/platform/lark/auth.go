@@ -25,12 +25,20 @@ type ProfileOption struct {
 }
 
 type Discovery struct {
-	Executable   string          `json:"executable"`
-	Profiles     []ProfileOption `json:"profiles"`
-	SetupProfile string          `json:"setup_profile"`
+	ManagedStorage bool            `json:"managed_storage,omitempty"`
+	Executable     string          `json:"executable"`
+	Profiles       []ProfileOption `json:"profiles"`
+	SetupProfile   string          `json:"setup_profile"`
 }
 
 func Discover(ctx context.Context, executable, brand string) (Discovery, error) {
+	return (*ClientFactory)(nil).Discover(ctx, executable, brand)
+}
+
+func (f *ClientFactory) Discover(ctx context.Context, executable, brand string) (Discovery, error) {
+	if f != nil && f.storage != nil {
+		return f.discoverScoped(ctx, executable, brand)
+	}
 	result := Discovery{Profiles: []ProfileOption{}}
 	if Origin(brand) == "" {
 		return result, failure("invalid_profile")
@@ -105,12 +113,16 @@ type LoginResult struct {
 // lifetime independently of an HTTP request and publishes only the ready link
 // and QR image; device codes and token output never leave this function.
 func Login(ctx context.Context, p platform.CLIProfile, ready func(string, string)) (LoginResult, error) {
-	writeUnlock, err := lockConfiguration(ctx)
+	return (*ClientFactory)(nil).Login(ctx, p, ready)
+}
+
+func (f *ClientFactory) Login(ctx context.Context, p platform.CLIProfile, ready func(string, string)) (LoginResult, error) {
+	writeUnlock, err := f.lockConfiguration(ctx)
 	if err != nil {
 		return LoginResult{}, err
 	}
 	defer writeUnlock()
-	c, err := New(p)
+	c, err := f.New(p)
 	if err != nil {
 		return LoginResult{}, err
 	}
@@ -198,12 +210,16 @@ func Login(ctx context.Context, p platform.CLIProfile, ready func(string, string
 }
 
 func Logout(ctx context.Context, p platform.CLIProfile) error {
-	writeUnlock, err := lockConfiguration(ctx)
+	return (*ClientFactory)(nil).Logout(ctx, p)
+}
+
+func (f *ClientFactory) Logout(ctx context.Context, p platform.CLIProfile) error {
+	writeUnlock, err := f.lockConfiguration(ctx)
 	if err != nil {
 		return err
 	}
 	defer writeUnlock()
-	c, err := New(p)
+	c, err := f.New(p)
 	if err != nil {
 		return err
 	}

@@ -98,7 +98,7 @@ path=a[2]`, 1)
 	if r.Code != 200 {
 		t.Fatal(r.Code, r.Body.String())
 	}
-	server := httptest.NewServer(h.m)
+	server := httptest.NewServer(fixtureHTTPHandler(h.m))
 	t.Cleanup(server.Close)
 	cli := contractCLI(t, server.URL, h.svc, id, h.c.ToolEntryID)
 	var refs []lark.ImageRef
@@ -186,7 +186,14 @@ func assertImageTempCleaned(t *testing.T, h *larkHarness) {
 
 func TestLarkImagesManagedCLI(t *testing.T) {
 	for _, kind := range []string{"self", "group"} {
-		for _, mode := range []string{"single", "multiple", "caption", "fail-first", "fail-second", "fail-third", "fail-fourth", "unknown", "bad-read"} {
+		// Upload ordering and failure atomicity share SendImages for both targets.
+		// Keep its complete failure matrix on self; group retains all payload
+		// shapes and its own uncertain-result and verification boundaries.
+		modes := []string{"single", "multiple", "caption", "unknown", "bad-read"}
+		if kind == "self" {
+			modes = append(modes, "fail-first", "fail-second", "fail-third", "fail-fourth")
+		}
+		for _, mode := range modes {
 			t.Run(kind+"/"+mode, func(t *testing.T) {
 				parallelFixtureTest(t)
 				h, id, _, cli, refs := imageSendHarness(t)

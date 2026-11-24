@@ -63,7 +63,7 @@ go test -tags=e2e ./internal/room -run '^TestLarkImagePermissionSettingsBrowser$
 
 unknown 之后再次重启，Session 按既有 platform_settlement 阻断；独立的真实 CLI 子进程使用绑定成员身份仍可读取完整 unknown 回执，Attempts 保持 1，无新增上传或发送。测试保留正式角色／服务／执行入口，只为隔离任务限定 TeamX CLI 和已提供的 Inbox／History 工具；允许整理返回 JSON／stdin，不允许磁盘搜索、裸平台命令或替代账号。没有验证通用 MCP 资源发现工具或任意模型都能可靠完成这些任务。
 
-本次真实运行结果保存在[证据摘要](lark-image-send-agent-evidence.json)：
+本次真实运行结果保存在证据摘要（本地验收文件 `lark-image-send-agent-evidence.json`）：
 
 | 模型与入口 | 实际结果 |
 | --- | --- |

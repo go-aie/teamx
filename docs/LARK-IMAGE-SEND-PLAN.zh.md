@@ -399,7 +399,7 @@ MaxAttempts=1、RetryUnknown=false。已证明 not_applied 的动作仍按现有
 
 ### 8.4 独立前置任务：Agent 接口与指引简化
 
-本节已在阶段 3 之后独立实施并完成隔离验收，详见[实施与成本记录](implementation/lark-image-send-agent-simplification.zh.md)及[验收证据](implementation/lark-image-send-agent-simplification-evidence.json)。以下保留完整交付与完成条件；阶段 4 使用本节验收后的合同。目标是让 Agent 用简短、准确的合同完成飞书发送，减少身份对象搬运、字段猜测、重复读取和分支说明；不能只删提示词而保留难用的接口。
+本节已在阶段 3 之后独立实施并完成隔离验收，详见[实施与成本记录](implementation/lark-image-send-agent-simplification.zh.md)及验收证据（本地验收文件 `lark-image-send-agent-simplification-evidence.json`）。以下保留完整交付与完成条件；阶段 4 使用本节验收后的合同。目标是让 Agent 用简短、准确的合同完成飞书发送，减少身份对象搬运、字段猜测、重复读取和分支说明；不能只删提示词而保留难用的接口。
 
 #### 范围与交付
 

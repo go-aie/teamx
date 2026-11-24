@@ -25,7 +25,7 @@ func humanReadHTTP(t *testing.T, handler http.Handler, path string, req any) *ht
 		t.Fatal(err)
 	}
 	w := httptest.NewRecorder()
-	handler.ServeHTTP(w, httptest.NewRequest(http.MethodPost, path, bytes.NewReader(data)))
+	fixtureHTTPHandler(handler).ServeHTTP(w, httptest.NewRequest(http.MethodPost, path, bytes.NewReader(data)))
 	return w
 }
 
@@ -138,7 +138,7 @@ func TestHumanReadHTTPIndependentClientsRestartAndClear(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer func() { closeService(t, svc) }()
-	server := httptest.NewServer(svc)
+	server := httptest.NewServer(fixtureHTTPHandler(svc))
 	defer func() { server.Close() }()
 	// Separate transports model independently connected devices. Each sends
 	// only its own increment, with no shared browser or local storage state.
@@ -190,7 +190,7 @@ func TestHumanReadHTTPIndependentClientsRestartAndClear(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	server = httptest.NewServer(svc)
+	server = httptest.NewServer(fixtureHTTPHandler(svc))
 	if w := humanReadHTTP(t, svc, "/v1/human-read/state", stateReq); w.Code != 403 {
 		t.Fatal("old epoch accepted", w.Code)
 	}
@@ -228,7 +228,7 @@ func TestHumanReadHTTPIdentityLimitsAndFaultIsolation(t *testing.T) {
 	}
 	defer closeService(t, svc)
 	handler := a.wrap(svc)
-	caller := Caller{Author: Author{Kind: "human", ID: a.operator}}
+	caller := Caller{Author: Author{Kind: "human", ID: a.space.OwnerUserID}}
 	base := humanReadRequest{ServiceInfo: svc.info, Caller: caller}
 	post := func(path string, req any, token string) *httptest.ResponseRecorder {
 		data, _ := json.Marshal(req)

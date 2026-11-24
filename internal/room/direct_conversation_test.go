@@ -19,7 +19,7 @@ func directTestManager(t *testing.T, root string, defaults *teamRuntime) *roomMa
 	if err != nil {
 		t.Fatal(err)
 	}
-	m.config = serviceConfig{endpoint: "http://127.0.0.1:1", cliPath: os.Args[0]}
+	m.config = fixtureServiceConfig(serviceConfig{endpoint: "http://127.0.0.1:1", cliPath: os.Args[0]})
 	t.Cleanup(func() {
 		if err := m.close(); err != nil {
 			t.Error(err)

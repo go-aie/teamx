@@ -10,6 +10,8 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"github.com/go-aie/teamx/agent"
 )
 
 type turn struct {
@@ -26,7 +28,8 @@ type Session struct {
 	privateSecrets atomic.Pointer[[]string]
 	opts           Options
 	lock           *os.File
-	process        *process
+	process        agent.Execution
+	versionProcess agent.Execution
 	conn           *connection
 	id             string
 	supportsClose  bool
@@ -70,8 +73,10 @@ func open(ctx context.Context, opts Options, resume bool) (openedSession *Sessio
 		opts.inspect = processTable
 	}
 	// Do not start execution if this host cannot observe process ownership.
-	if _, err := opts.inspect(); err != nil {
-		return nil, err
+	if opts.Execution == nil {
+		if _, err := opts.inspect(); err != nil {
+			return nil, err
+		}
 	}
 	lock, ref, err := prepare(&opts, resume)
 	if err != nil {
@@ -98,7 +103,7 @@ func open(ctx context.Context, opts Options, resume bool) (openedSession *Sessio
 	}
 	var version string
 	if opts.Artifact == (Artifact{}) {
-		version, err = installedVersion(ctx, opts)
+		version, s.versionProcess, err = queryVersion(ctx, opts)
 		if err != nil {
 			return nil, err
 		}
@@ -106,11 +111,11 @@ func open(ctx context.Context, opts Options, resume bool) (openedSession *Sessio
 			return nil, fmt.Errorf("%w: installed DSH version changed", ErrRecoveryUnsupported)
 		}
 	}
-	s.process, err = startProcess(opts, s.disable)
+	s.process, err = selectedExecution(opts).Start(ctx, executionRequest(opts, append(append([]string(nil), opts.BinaryArgs...), "--profile", "acp")), s.disable)
 	if err != nil {
 		return nil, err
 	}
-	s.conn = newConnection(s.process.in, s.process.out, opts.Limits)
+	s.conn = newConnection(s.process.Stdin(), s.process.Stdout(), opts.Limits)
 	s.conn.onNotification, s.conn.onRequest, s.conn.onFailure = s.notification, s.request, s.disable
 	go s.conn.read()
 	handshakeCtx, cancel := context.WithTimeout(ctx, opts.Limits.HandshakeTimeout)
@@ -223,12 +228,23 @@ func open(ctx context.Context, opts Options, resume bool) (openedSession *Sessio
 			return nil, errors.New("DSH did not confirm configured reasoning effort")
 		}
 	}
+	scripts, err := scriptDigests(opts.BinaryArgs)
+	if err != nil {
+		return nil, err
+	}
+	if err := s.process.Ready(); err != nil {
+		return nil, err
+	}
+	execution, err := executionIdentity(opts, true)
+	if err != nil {
+		return nil, err
+	}
 	artifact := opts.Artifact
 	if artifact == (Artifact{}) {
 		artifact = identity
 		artifact.Version = version
 	}
-	ref = reference{Version: 1, Artifact: artifact, BinaryPath: opts.BinaryPath, BinaryArgs: opts.BinaryArgs, BinarySHA256: hash, AgentInfo: init.AgentInfo, Workspace: opts.Workspace, SessionID: s.id, ConfigSHA256: configDigest(opts)}
+	ref = reference{Version: 1, Artifact: artifact, BinaryPath: opts.BinaryPath, BinaryArgs: opts.BinaryArgs, BinarySHA256: hash, AgentInfo: init.AgentInfo, Workspace: opts.Workspace, SessionID: s.id, ConfigSHA256: configDigest(opts), Execution: execution, ScriptSHA256: scripts}
 	if err := atomicJSON(opts.StateDir, "backend.json", ref); err != nil {
 		return nil, err
 	}
@@ -312,7 +328,7 @@ func (s *Session) RunPrompt(ctx context.Context, prompt []ContentBlock) (TurnRes
 		defer stop()
 		// Anchor running descendants before cancellation can reap an
 		// intermediary and reparent a detached tool between watcher ticks.
-		if _, err := s.process.snapshot(); err != nil {
+		if err := s.process.Check(); err != nil {
 			return s.failTurn(t, errors.Join(cancellation, err))
 		}
 		if err := s.conn.notify(control, "session/cancel", map[string]string{"sessionId": s.id}); err != nil {
@@ -356,7 +372,7 @@ func (s *Session) RunPrompt(ctx context.Context, prompt []ContentBlock) (TurnRes
 			control, stop = context.WithTimeout(context.Background(), s.opts.Limits.CancelTimeout)
 			defer stop()
 		}
-		if err := s.process.waitToolsStopped(control); err != nil {
+		if err := s.process.WaitToolsStopped(control); err != nil {
 			return s.failTurn(t, errors.Join(cancellation, err))
 		}
 	}
@@ -480,7 +496,10 @@ func (s *Session) startCleanup() {
 				<-s.conn.readDone
 			}
 			if s.process != nil {
-				s.process.stop(s.opts.Limits.CancelTimeout)
+				s.process.Stop(s.opts.Limits.CancelTimeout)
+			}
+			if s.versionProcess != nil {
+				s.versionProcess.Stop(s.opts.Limits.CancelTimeout)
 			}
 			s.workers.Wait()
 			// Only an opened, healthy session with successful protocol close
@@ -493,17 +512,9 @@ func (s *Session) startCleanup() {
 			}
 			healthy := opened && s.cleanupErr == nil
 			if healthy && s.process != nil {
-				s.process.mu.Lock()
-				forced, state := s.process.forced, s.process.cmd.ProcessState
-				s.process.mu.Unlock()
-				switch {
-				case forced:
-					s.cleanupErr = fmt.Errorf("%w: process required forced cleanup", ErrRecoveryUnsupported)
-				case state == nil:
-					s.cleanupErr = fmt.Errorf("%w: process exit status unavailable", ErrRecoveryUnsupported)
-				case !state.Success():
-					s.cleanupErr = fmt.Errorf("%w: process %s", ErrRecoveryUnsupported, state)
-				default:
+				if err := s.process.Result(); err != nil {
+					s.cleanupErr = errors.Join(ErrRecoveryUnsupported, err)
+				} else {
 					ref := s.reference
 					ref.Stopped = true
 					s.cleanupErr = atomicJSON(s.opts.StateDir, "backend.json", ref)

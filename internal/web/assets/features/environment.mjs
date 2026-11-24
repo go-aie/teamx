@@ -1,3 +1,4 @@
+import { spaceURL } from "../space-context.mjs";
 import { captureReturnView } from "../view-return.mjs";
 import { randomUUID } from "../random-id.mjs";
 
@@ -87,7 +88,7 @@ export function createEnvironment({env, runtime, layoutUI, conversationToolsUI})
     if (!current) return;
     if (!/^\/v1\/environment\/[a-f0-9]{64}\/viewer$/.test(current.viewer_url)) { status("电脑入口无效，请重新连接。"); return; }
     frame = document.createElement("iframe"); frame.title = `${current.label}的电脑画面`;
-    frame.setAttribute("sandbox", "allow-scripts allow-same-origin"); frame.setAttribute("referrerpolicy", "no-referrer"); frame.src = current.viewer_url;
+    frame.setAttribute("sandbox", "allow-scripts allow-same-origin"); frame.setAttribute("referrerpolicy", "no-referrer"); frame.src = spaceURL(current.viewer_url);
     $("environment-screen").append(frame); status("正在连接电脑…"); void inspectControl();
   }
   async function refresh() {

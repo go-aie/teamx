@@ -1,3 +1,4 @@
+import { pageSpaceID } from "../space-context.mjs";
 import {imageUploadStatus} from "./lark-capabilities.mjs";
 // Durable connection and selection cards rendered inside conversations.
 export function createPlatformInteractions({ env, runtime, conversationUI, settingsUI, connectionsUI, gitlabUI, roomsUI }) {
@@ -12,7 +13,7 @@ export function createPlatformInteractions({ env, runtime, conversationUI, setti
   const identityFields=["room_id","room_instance","agent_id","membership_id","operation_id","source_seq"];
   let returning=null, returnSelected=false;
   function rememberAuthorization(op) {
-    const ref={...Object.fromEntries(identityFields.map(key=>[key,op[key]])),installation_id:state.installationID || "",operator:state.operator};
+    const ref={...(pageSpaceID ? {space_id:pageSpaceID} : {}),...Object.fromEntries(identityFields.map(key=>[key,op[key]])),installation_id:state.installationID || "",operator:state.operator};
     returning=null;returnSelected=true;
     try{runtime.storage?.setItem(returnKey,JSON.stringify(ref));}catch{}
     conversationUI.saveDraft();
@@ -26,7 +27,7 @@ export function createPlatformInteractions({ env, runtime, conversationUI, setti
       }catch{returning=null;}
     }
     if(!returning)return;
-    if(identityFields.some(key=>!returning[key]) || returning.installation_id!==(state.installationID || "") || returning.operator!==catalog.operator) {clearAuthorizationReturn();return;}
+    if((returning.space_id && returning.space_id !== pageSpaceID) || identityFields.some(key=>!returning[key]) || returning.installation_id!==(state.installationID || "") || returning.operator!==catalog.operator) {clearAuthorizationReturn();return;}
     const room=catalog.rooms.find(r=>r.room_id===returning.room_id && r.room_instance===returning.room_instance);
     if(!room){clearAuthorizationReturn();return;}
     returnSelected=true;roomsUI.selectRoom(room);

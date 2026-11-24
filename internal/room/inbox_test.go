@@ -108,6 +108,7 @@ func (h *inboxHarness) reload(t *testing.T, reopen bool) {
 }
 
 func TestAgentInboxDurableReceiptAndRecovery(t *testing.T) {
+	parallelFixtureTest(t)
 	h := newInboxHarness(t, InboxLimits{})
 	request := h.receive("first")
 	request.Item.Text = "source <p> & body"
@@ -144,6 +145,7 @@ func TestAgentInboxDurableReceiptAndRecovery(t *testing.T) {
 }
 
 func TestInboxContentSnapshotPreservesOldReceiptAndRecovery(t *testing.T) {
+	parallelFixtureTest(t)
 	h := newInboxHarness(t, InboxLimits{})
 	old := h.receive("old-envelope")
 	first := inboxCall[InboxReceipt](t, h, old)
@@ -170,6 +172,7 @@ func TestInboxContentSnapshotPreservesOldReceiptAndRecovery(t *testing.T) {
 }
 
 func TestAgentInboxIsolationAndSingleWriter(t *testing.T) {
+	parallelFixtureTest(t)
 	h := newInboxHarness(t, InboxLimits{})
 	if _, err := SpawnAgentInbox(h.rt, h.store, h.id, InboxLimits{}); !errors.Is(err, ErrBusy) {
 		t.Fatal("two writers admitted", err)
@@ -233,6 +236,7 @@ func TestAgentInboxIsolationAndSingleWriter(t *testing.T) {
 }
 
 func TestAgentInboxPreviewSnapshotAndBounds(t *testing.T) {
+	parallelFixtureTest(t)
 	limits := DefaultInboxLimits()
 	limits.PageSize, limits.EntryBytes, limits.PageBytes = 2, 4096, 4096
 	h := newInboxHarness(t, limits)
@@ -272,6 +276,7 @@ func TestAgentInboxPreviewSnapshotAndBounds(t *testing.T) {
 }
 
 func TestAgentInboxCapacityAndValidation(t *testing.T) {
+	parallelFixtureTest(t)
 	for _, mode := range []string{"entries", "bytes", "entry_bytes"} {
 		t.Run(mode, func(t *testing.T) {
 			limits := DefaultInboxLimits()
@@ -315,6 +320,7 @@ func TestAgentInboxCapacityAndValidation(t *testing.T) {
 }
 
 func TestAgentInboxCommitBoundaryAndStop(t *testing.T) {
+	parallelFixtureTest(t)
 	h := newInboxHarness(t, InboxLimits{})
 	entered, release := make(chan struct{}), make(chan struct{})
 	var once sync.Once
@@ -365,6 +371,7 @@ func TestAgentInboxCommitBoundaryAndStop(t *testing.T) {
 }
 
 func TestAgentInboxWriteFailures(t *testing.T) {
+	parallelFixtureTest(t)
 	for _, boundary := range []string{"before_rename", "rename_unknown", "fsync_unknown"} {
 		t.Run(boundary, func(t *testing.T) {
 			h := newInboxHarness(t, InboxLimits{})
@@ -414,6 +421,7 @@ func TestAgentInboxWriteFailures(t *testing.T) {
 }
 
 func TestAgentInboxCorruptionIsNotReset(t *testing.T) {
+	parallelFixtureTest(t)
 	for _, corruption := range []string{"gap", "wrong_owner", "missing_header"} {
 		t.Run(corruption, func(t *testing.T) {
 			h := newInboxHarness(t, InboxLimits{})
@@ -451,6 +459,7 @@ func TestAgentInboxCorruptionIsNotReset(t *testing.T) {
 }
 
 func TestAgentInboxCancelledCallDoesNotCancelCommit(t *testing.T) {
+	parallelFixtureTest(t)
 	h := newInboxHarness(t, InboxLimits{})
 	entered, release := make(chan struct{}), make(chan struct{})
 	var once sync.Once
@@ -475,6 +484,7 @@ func TestAgentInboxCancelledCallDoesNotCancelCommit(t *testing.T) {
 }
 
 func TestAgentInboxEnqueueIsNotDurableReceipt(t *testing.T) {
+	parallelFixtureTest(t)
 	h := newInboxHarness(t, InboxLimits{})
 	entered, release := make(chan struct{}), make(chan struct{})
 	var once sync.Once
@@ -503,6 +513,7 @@ func TestAgentInboxEnqueueIsNotDurableReceipt(t *testing.T) {
 }
 
 func TestAgentInboxTaskAdmissionFailure(t *testing.T) {
+	parallelFixtureTest(t)
 	h := newInboxHarness(t, InboxLimits{}, actorx.WithTaskLimit(1))
 	// Occupy the inbox's only task slot with a read waiting for Store access.
 	h.store.mu.Lock()
@@ -532,6 +543,7 @@ func TestAgentInboxTaskAdmissionFailure(t *testing.T) {
 }
 
 func TestAgentInboxInterruptedPreviewDoesNotConsume(t *testing.T) {
+	parallelFixtureTest(t)
 	h := newInboxHarness(t, InboxLimits{})
 	inboxCall[InboxReceipt](t, h, h.receive("unread"))
 	h.store.mu.Lock()
@@ -560,6 +572,7 @@ func TestAgentInboxInterruptedPreviewDoesNotConsume(t *testing.T) {
 }
 
 func TestAgentInboxMissingRoomIsNotReinitialized(t *testing.T) {
+	parallelFixtureTest(t)
 	dir := t.TempDir()
 	if err := os.Mkdir(filepath.Join(dir, "inboxes"), 0700); err != nil {
 		t.Fatal(err)

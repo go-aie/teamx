@@ -3,6 +3,7 @@ package room
 import (
 	"context"
 	"errors"
+	"time"
 
 	"github.com/go-aie/teamx/internal/app/platforms"
 	"github.com/go-aie/teamx/internal/platform"
@@ -122,7 +123,15 @@ func (m *roomManager) preparePlatformCallLocked(ctx context.Context, req toolsRe
 			return a, nil, nil, ErrConflict
 		}
 	}
-	ctx, cancel := context.WithCancel(ctx)
+	var cancel context.CancelFunc
+	if m.config.hostTools.restricted {
+		if m.platformCalls.Len() >= 16 {
+			return a, nil, nil, ErrCapacity
+		}
+		ctx, cancel = context.WithTimeout(ctx, 5*time.Minute)
+	} else {
+		ctx, cancel = context.WithCancel(ctx)
+	}
 	call := &platformCall{owner: req.RoomIdentity, tool: a.definition.Name, platformID: binding.PlatformID, account: a.account, secret: a.secret, agentID: req.Caller.ID, membershipID: req.Caller.MembershipID}
 	call.Call = m.platformCalls.Register(call, cancel)
 	return a, call, ctx, nil

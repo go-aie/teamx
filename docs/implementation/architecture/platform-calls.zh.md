@@ -40,7 +40,7 @@
 
 ## 验证与限制
 
-命令、退出码、日志摘要及源码哈希见 [platform-calls-validation.json](platform-calls-validation.json)。原始日志和改前源码快照位于 `.local/architecture-platform-calls/`，不覆盖此前阶段证据。
+命令、退出码、日志摘要及源码哈希见 platform-calls-validation.json（本地验收文件 `platform-calls-validation.json`）。原始日志和改前源码快照位于 `.local/architecture-platform-calls/`，不覆盖此前阶段证据。
 
 | 检查 | 结果 |
 | --- | --- |

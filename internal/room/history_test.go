@@ -107,6 +107,7 @@ func nextHistoryTurn(t *testing.T, h *roomHarness, s *inputSession) *inputSessio
 }
 
 func TestHistoryRoomVisibilityFrozenPagesAndNoWrites(t *testing.T) {
+	parallelFixtureTest(t)
 	h, s := unifiedReaderFixture(t, 5)
 	roomCall[PostReceipt](t, h, PostMessage{RoomIdentity: h.id, Caller: agentCallerIdentity(s.storage.id), ClientMessageID: "own", Text: "own saved decision"})
 	private := appendInputEvent(t, h, "mine", s.storage.id.MembershipID)
@@ -165,6 +166,7 @@ func TestHistoryRoomVisibilityFrozenPagesAndNoWrites(t *testing.T) {
 }
 
 func TestHistoryConsumedSkippedPendingAndNoMatters(t *testing.T) {
+	parallelFixtureTest(t)
 	h, s := unifiedReaderFixture(t, 0)
 	id := s.storage.id
 	ref := receiveHistoryItem(t, s, storedGitLab(id, "first", "events", "7", "42", "consumed"))
@@ -230,6 +232,7 @@ func slicesHistoryContains(streams []historyStreamSummary, ref string) bool {
 }
 
 func TestHistoryDirectorySnapshotIdentityAndPagination(t *testing.T) {
+	parallelFixtureTest(t)
 	h, s := unifiedReaderFixture(t, 0)
 	id := s.storage.id
 	refs := map[string]bool{}
@@ -296,6 +299,7 @@ func TestHistoryDirectorySnapshotIdentityAndPagination(t *testing.T) {
 }
 
 func TestHistorySharedGrantRevocationRejoinAndFrozenRecipients(t *testing.T) {
+	parallelFixtureTest(t)
 	h, a, b, p := sharedReaders(t)
 	receiveSharedFixture(t, a, "one", "42")
 	receiveSharedFixture(t, a, "two", "42")
@@ -354,6 +358,7 @@ func TestHistorySharedGrantRevocationRejoinAndFrozenRecipients(t *testing.T) {
 }
 
 func TestHistoryBudgetSuffixAndActualContinuationBoundary(t *testing.T) {
+	parallelFixtureTest(t)
 	h, s := unifiedReaderFixture(t, 0)
 	ref := ""
 	for i := range 28 {
@@ -391,6 +396,7 @@ func TestHistoryBudgetSuffixAndActualContinuationBoundary(t *testing.T) {
 }
 
 func TestHistoryExpiryClearRestartAndStableStreamReference(t *testing.T) {
+	parallelFixtureTest(t)
 	h, s := unifiedReaderFixture(t, 5)
 	ref := roomStreamRef(s.storage.id)
 	page, _ := historyRead(t, s, "before-clear", ref, 2)
@@ -434,6 +440,7 @@ func TestHistoryExpiryClearRestartAndStableStreamReference(t *testing.T) {
 }
 
 func TestHistoryArgumentsLifecycleAndSharedExecutionBudget(t *testing.T) {
+	parallelFixtureTest(t)
 	h, s := unifiedReaderFixture(t, 3)
 	// The decoder owns the shape matrix; retain one dispatch rejection here.
 	if _, err := s.historyCall(h.ctx, "invalid", "history_read", []byte(`{"stream_ref":"x","consume":false}`)); err == nil {
@@ -484,6 +491,7 @@ func TestHistoryArgumentsLifecycleAndSharedExecutionBudget(t *testing.T) {
 }
 
 func TestHistoryCorruptPublishedBodyIsAnError(t *testing.T) {
+	parallelFixtureTest(t)
 	h, s := unifiedReaderFixture(t, 0)
 	ref := receiveHistoryItem(t, s, storedGitLab(s.storage.id, "corrupt", "events", "7", "42", "saved"))
 	files, err := filepath.Glob(filepath.Join(h.store.dir, "inboxes", s.storage.id.MembershipID, "gitlab", "records", "*"))
@@ -500,6 +508,7 @@ func TestHistoryCorruptPublishedBodyIsAnError(t *testing.T) {
 }
 
 func TestHistoryReclamationInvalidatesReadAndDirectorySnapshots(t *testing.T) {
+	parallelFixtureTest(t)
 	h, s := unifiedReaderFixture(t, 0)
 	ref := ""
 	locations := []inputstream.Location{}
@@ -556,6 +565,7 @@ func TestHistoryReclamationInvalidatesReadAndDirectorySnapshots(t *testing.T) {
 }
 
 func TestHistorySnapshotBoundAndNativePinLifetime(t *testing.T) {
+	parallelFixtureTest(t)
 	h, s := unifiedReaderFixture(t, 4)
 	ref := roomStreamRef(s.storage.id)
 	first, _ := historyRead(t, s, "old", ref, 1)
@@ -609,6 +619,7 @@ func TestHistorySnapshotBoundAndNativePinLifetime(t *testing.T) {
 }
 
 func TestHistorySchemasAndProductionReadOnlyDefinitions(t *testing.T) {
+	parallelFixtureTest(t)
 	definitions := historyToolDefinitions()
 	if len(definitions) != 2 {
 		t.Fatal(definitions)
@@ -662,6 +673,7 @@ func TestHistorySchemasAndProductionReadOnlyDefinitions(t *testing.T) {
 }
 
 func TestHistoryEmptyDirectoryAndFallbackScope(t *testing.T) {
+	parallelFixtureTest(t)
 	h, s := unifiedReaderFixture(t, 0)
 	empty, _ := historyResult[historyDirectory](t, s, "empty", "history_list", map[string]any{})
 	if len(empty.Streams) != 0 || empty.Next != "" || empty.Stop != "" {
@@ -682,6 +694,7 @@ func TestHistoryEmptyDirectoryAndFallbackScope(t *testing.T) {
 }
 
 func TestHistoryNativeDirectoryUsesPublishedMetadata(t *testing.T) {
+	parallelFixtureTest(t)
 	h, s := unifiedReaderFixture(t, 1)
 	state, err := h.store.LoadRoom()
 	if err != nil {

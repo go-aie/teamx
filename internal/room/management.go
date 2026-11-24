@@ -172,6 +172,7 @@ type roomsIndex struct {
 // The root lock owns catalog mutations and live services. Catalog reads use
 // the published immutable view. Durable operations outlive their HTTP caller.
 type roomManager struct {
+	ownComputer         *computerController // assigned only by the owning SpaceRuntime
 	environmentInputsMu sync.Mutex
 	environmentInputs   map[string]map[*environmentInputStream]bool
 	calendars           *CalendarService
@@ -349,9 +350,6 @@ func (m *roomManager) indexPath() string        { return filepath.Join(m.store.d
 func (m *roomManager) roomDir(id string) string { return filepath.Join(m.store.dir, "rooms", id) }
 func (m *roomManager) close() error {
 	m.updates.close()
-	if m.modelControl != nil {
-		m.modelControl.stop()
-	}
 	ctx, cancel := context.WithTimeout(context.Background(), serviceShutdownTimeout)
 	defer cancel()
 	return m.shutdown(ctx)
@@ -694,6 +692,14 @@ func writeRoomResource(path string, data []byte, mode os.FileMode) error {
 }
 
 func (m *roomManager) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	if m.config.access != nil && !m.config.access.ownsRequest(r) {
+		accessError(w, 403, "identity_mismatch")
+		return
+	}
+	if err := m.config.hostTools.checkHTTP(r.URL.Path); err != nil {
+		writeAPIError(w, err)
+		return
+	}
 	if r.URL.Path == "/v1/setup/model" && r.Method == "POST" {
 		m.serveCompletedModelSetup(w, r)
 		return
@@ -725,12 +731,13 @@ func (m *roomManager) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		// Bootstrap remains available with an empty catalog and during switching.
 		_ = json.NewEncoder(w).Encode(struct {
 			Managed             bool   `json:"managed"`
+			SpaceID             string `json:"space_id,omitempty"`
 			InstallationID      string `json:"installation_id,omitempty"`
 			ServiceEpoch        string `json:"service_epoch"`
 			OperatorDisplayName string `json:"operator_display_name"`
 			settingsView
 			Storage *storagePaths `json:"storage,omitempty"`
-		}{true, requestInstallationID(r), m.epoch, humanOperator(), m.settings.snapshot().settingsView, m.settings.storagePaths(m.store.dir)})
+		}{true, requestSpaceID(r), requestInstallationID(r), m.epoch, humanOperator(), m.settings.snapshot().settingsView, m.settings.storagePaths(m.store.dir)})
 		return
 	}
 	if r.URL.Path == "/v1/settings" || r.URL.Path == "/v1/settings/save" {

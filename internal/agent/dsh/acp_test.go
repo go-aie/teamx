@@ -187,17 +187,17 @@ func TestProcessIdentityParsingAndReparenting(t *testing.T) {
 	}
 	opts := fixtureOptions(t)
 	s := openFixture(t, opts)
-	pid := s.process.cmd.Process.Pid
+	pid := s.process.(*process).cmd.Process.Pid
 	if _, err := s.Run(context.Background(), "hello"); err != nil {
 		t.Fatal(err)
 	}
-	live, err := s.process.snapshot()
+	live, err := s.process.(*process).snapshot()
 	if err != nil || live[pid].pid != pid {
 		t.Fatalf("root not observed: %+v %v", live, err)
 	}
 	// A remembered detached descendant stays owned after reparenting, while
 	// a reused PID with a different start identity must never be signalled.
-	p := &process{cmd: s.process.cmd, owned: map[int]processIdentity{12: {pid: 12, started: "old"}}, inspect: func() (map[int]processIdentity, error) {
+	p := &process{cmd: s.process.(*process).cmd, owned: map[int]processIdentity{12: {pid: 12, started: "old"}}, inspect: func() (map[int]processIdentity, error) {
 		return map[int]processIdentity{12: {pid: 12, parent: 1, group: 12, started: "new"}}, nil
 	}}
 	if live, err := p.snapshot(); err != nil || len(live) != 0 {

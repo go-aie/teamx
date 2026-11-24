@@ -78,7 +78,7 @@ func managerHTTP(m *roomManager, path string, body any) *httptest.ResponseRecord
 	}
 	r := httptest.NewRequest(method, path, bytes.NewReader(data))
 	w := httptest.NewRecorder()
-	m.ServeHTTP(w, r)
+	fixtureHTTPHandler(m).ServeHTTP(w, r)
 	return w
 }
 

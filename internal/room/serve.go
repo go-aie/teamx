@@ -1,13 +1,13 @@
 package room
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"flag"
 	"fmt"
 	"io"
 	"net"
-	"net/http"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -16,6 +16,7 @@ import (
 
 	"github.com/go-aie/teamx/internal/agent/dsh"
 	"github.com/go-aie/teamx/internal/app/platforms"
+	"github.com/go-aie/teamx/internal/authn"
 	"github.com/go-aie/teamx/internal/platform/notification"
 )
 
@@ -36,57 +37,28 @@ type serverOptions struct {
 	create          func(string, string, serviceConfig) (*service, error)
 	listen          func(string, string) (net.Listener, error)
 	ready           func(any) error
-	setupCompleted  bool
 	probe           func(context.Context, dsh.Options) (dsh.ProbeResult, error)
-	access          func(startupConfig, string) (*serverAccess, error) // Internal test seam; production always uses newServerAccess.
+	deployment      *deploymentComposition
+	access          func(startupConfig, string) (*serverAccess, error)     // Internal test seam; production always uses newServerAccess.
+	execution       func(context.Context, *startupConfig, ...string) error // Internal assembly test seam; not a config capability.
 }
 
 func runConfiguredServer(ctx context.Context, args []string, stdout, stderr io.Writer, options serverOptions) error {
-	originalListen := options.listen
-	if originalListen == nil {
-		originalListen = net.Listen
-	}
-	accessFactory := options.access
-	if accessFactory == nil {
-		accessFactory = newServerAccess
-	}
-	var sharedAccess *serverAccess
-	options.access = func(c startupConfig, endpoint string) (*serverAccess, error) {
-		if sharedAccess != nil {
-			sharedAccess.setupRequired = false
-			return sharedAccess, nil
-		}
-		var err error
-		sharedAccess, err = accessFactory(c, endpoint)
-		return sharedAccess, err
-	}
-	selected := ""
-	options.listen = func(network, address string) (net.Listener, error) {
-		if selected != "" {
-			address = selected
-		}
-		listener, err := originalListen(network, address)
-		if err == nil {
-			selected = listener.Addr().String()
-		}
-		return listener, err
-	}
-	for {
-		err := runServerOnce(ctx, args, stdout, stderr, options)
-		if !errors.Is(err, errModelSetupSaved) {
-			return err
-		}
-		options.setupCompleted = true
-	}
+	// Setup replaces only its settled SpaceRuntime; the entry listener and
+	// other Spaces keep running throughout the transition.
+	return runServerOnce(ctx, args, stdout, stderr, options)
 }
 
 func runServerOnce(ctx context.Context, args []string, stdout, stderr io.Writer, options serverOptions) (runErr error) {
-	if err := ctx.Err(); err != nil {
+	if options.deployment == nil {
+		selected := personalDeployment(options.create)
+		options.deployment = &selected
+	}
+	if err := options.deployment.validate(); err != nil {
 		return err
 	}
-	create := options.create
-	if create == nil {
-		create = newConfiguredService
+	if err := ctx.Err(); err != nil {
+		return err
 	}
 	listenTCP := options.listen
 	if listenTCP == nil {
@@ -131,6 +103,12 @@ func runServerOnce(ctx context.Context, args []string, stdout, stderr io.Writer,
 	if *setupModel && *home == "" && *serverRoot == "" {
 		return fmt.Errorf("--setup-model requires --home or --server-root")
 	}
+	var homeLock *os.File
+	defer func() {
+		if homeLock != nil {
+			runErr = errors.Join(runErr, unlockDirectory(homeLock))
+		}
+	}()
 	var layout serverLayout
 	if *home != "" || *serverRoot != "" {
 		if explicit["config"] || explicit["room"] || explicit["state-dir"] || explicit["dsh-config"] {
@@ -145,7 +123,7 @@ func runServerOnce(ctx context.Context, args []string, stdout, stderr io.Writer,
 		if err != nil {
 			return err
 		}
-		defer func() { runErr = errors.Join(runErr, unlockDirectory(lock)) }()
+		homeLock = lock
 		if layout.Root != "" {
 			if err := registerServerInstallation(layout); err != nil {
 				return err
@@ -166,13 +144,53 @@ func runServerOnce(ctx context.Context, args []string, stdout, stderr io.Writer,
 	if err != nil {
 		return err
 	}
+	selectedFactories := options.deployment.factories
+	if startup.Deployment.Mode == "multi-user" {
+		if selectedFactories.authentication == nil {
+			return errors.New("authentication binding missing")
+		}
+		provider, err := selectedFactories.authentication(startup.Deployment.Authentication)
+		if err != nil {
+			return err
+		}
+		if provider == nil {
+			return errors.New("authentication provider missing")
+		}
+		selectedFactories.authentication = func(externalAuthConfig) (authn.Provider, error) { return provider, nil }
+	}
+	plannedListen := *listen
+	if !explicit["listen"] && startup.Server.Listen != nil {
+		plannedListen = *startup.Server.Listen
+	}
+	selectExecution := options.execution
+	if selectExecution == nil {
+		selectExecution = selectAgentExecution
+	}
+	if err := selectExecution(ctx, &startup, internalAccessEndpoint(plannedListen)); err != nil {
+		return err
+	}
+	selectedExecution := startup.execution
+	if startup.Deployment.Mode == "multi-user" && homeLock == nil {
+		if err := checkDeploymentRoot(startup); err != nil {
+			return err
+		}
+		homeLock, err = lockBundleHome(filepath.Dir(startup.path))
+		if err != nil {
+			return err
+		}
+	}
 	if layout.Home != "" {
+		selectedSource := startup.source
+		selectedMode := startup.Deployment.Mode
 		if err := prepareFirstAccess(startup); err != nil {
 			return err
 		}
 		startup, err = readStartupConfig(*configFile, false, false)
 		if err != nil {
 			return err
+		}
+		if selectedMode != startup.Deployment.Mode || selectedMode == "multi-user" && !bytes.Equal(selectedSource, startup.source) {
+			return ErrConflict
 		}
 		if startup.Access.LoginEnabled == nil || *startup.Access.LoginEnabled {
 			fmt.Fprintf(stderr, "管理 token 文件：%s\n", adminTokenPath(startup))
@@ -186,11 +204,12 @@ func runServerOnce(ctx context.Context, args []string, stdout, stderr io.Writer,
 		startup.installationID = installation.InstanceID
 	}
 	var migrationErr error
-	if !explicit["room"] && !explicit["state-dir"] {
+	if startup.Deployment.Mode != "multi-user" && !explicit["room"] && !explicit["state-dir"] {
 		installationID := startup.installationID
 		startup, migrationErr = migrateModelConfiguration(startup, nil)
 		startup.installationID = installationID
 	}
+	startup.execution = selectedExecution
 	if err := pinBundledRuntime(&startup, layout); err != nil {
 		return err
 	}
@@ -241,6 +260,9 @@ func runServerOnce(ctx context.Context, args []string, stdout, stderr io.Writer,
 		return err
 	}
 	singleRoom := explicit["room"] || explicit["state-dir"]
+	if singleRoom && startup.Deployment.Mode == "multi-user" {
+		return errors.New("multi-user deployment does not accept single-room overrides")
+	}
 	if singleRoom && !explicit["state-dir"] {
 		if !validText(*dataDir) {
 			return ErrRequest
@@ -264,11 +286,6 @@ func runServerOnce(ctx context.Context, args []string, stdout, stderr io.Writer,
 	if err := validateAccessListen(startup, *listen); err != nil {
 		return err
 	}
-	restoreEnv, err := applyStartupEnv(startup.Env)
-	if err != nil {
-		return err
-	}
-	defer restoreEnv()
 	network := "tcp4"
 	if net.ParseIP(host).To4() == nil {
 		network = "tcp6"
@@ -282,287 +299,61 @@ func runServerOnce(ctx context.Context, args []string, stdout, stderr io.Writer,
 	if accessFactory == nil {
 		accessFactory = newServerAccess
 	}
+	if singleRoom {
+		startup.singleRoomDir, err = filepath.Abs(*dir)
+		if err != nil {
+			return err
+		}
+	}
 	access, err := accessFactory(startup, internalAccessEndpoint(listener.Addr().String()))
 	if err != nil {
 		return err
 	}
-	if migrationErr != nil {
-		return serveModelMigrationBlocked(ctx, listener, startup, access, ready)
+	if access == nil {
+		return errors.New("server identity binding missing")
 	}
-	if access != nil {
-		access.document = settings.configDocument
+	hostTools, err := options.deployment.factories.hostTools(startup.Deployment.Mode)
+	if err != nil {
+		return err
 	}
-	if layout.Home != "" && ((*setupModel && !options.setupCompleted) || modelSetupRequired(startup)) {
-		access.setupRequired = true
-		err := serveSetupRequired(ctx, listener, startup, settings, access, ready, stderr, options.probe)
-		if !errors.Is(err, errModelSetupSaved) {
+	config := serviceConfig{hostTools: hostTools, execution: startup.execution, executionResources: newExecutionResources(hostTools.resourceLimits(startup.Deployment.Resources)), platformCatalog: hostTools.catalog(options.platformCatalog),
+		workspaceProtected: []string{layout.Root, layout.Home},
+		environment:        startupEnvironment(startup.Env),
+		unifiedInputs:      options.create == nil, inputUpgradeLog: stderr,
+		modelStartup: &startup, modelProbe: options.probe, access: access, settings: settings,
+		endpoint: internalAccessEndpoint(listener.Addr().String()), mergeWindow: *mergeWindow, maxTurns: *maxTurns,
+		dshProfiles: profiles, dshTurnTimeout: *dshTurnTimeout, inboxExpiry: inboxExpiry,
+		inboxMode: startup.Server.InboxMode, imageMaterials: startup.Server.ImageMaterials,
+	}
+	if access.users != nil {
+		if err := config.hostTools.validateCatalog(config.platformCatalog); err != nil {
 			return err
 		}
-		// The setup listener and data lock are settled before normal startup.
-		_ = listener.Close()
-		// Re-enter after releasing the home lock through the outer restart loop.
-		return errModelSetupSaved
-	}
-	var models *modelExecution
-	if startup.Models != nil && len(startup.Models.Entries) > 0 {
-		models, err = loadModelExecution(startup)
+		spaces, err := newHostedSpaceServer(ctx, startup, config, selectedFactories, stderr)
 		if err != nil {
 			return err
 		}
-		if startup.Runtime == nil {
-			return errors.New("managed model launcher missing")
-		}
-		runtime := *startup.Runtime
-		runtime.ManagedModels = true
-		runtime.Model = dsh.ModelConfig{}
-		startup.Runtime = &runtime
+		spaces.homeLock, homeLock = homeLock, nil
+		options.deployment.spaces = spaces
+		return spaces.Serve(ctx, listener, ready)
 	}
-	if !singleRoom {
-		config := serviceConfig{platformCatalog: options.platformCatalog,
-			workspaceProtected: []string{layout.Root, layout.Home},
-			unifiedInputs:      options.create == nil, inputUpgradeLog: stderr,
-			modelStartup: &startup, modelProbe: options.probe, models: models, access: access, settings: settings,
-			endpoint: internalAccessEndpoint(listener.Addr().String()), mergeWindow: *mergeWindow, maxTurns: *maxTurns,
-			dshTurnTimeout: *dshTurnTimeout, inboxExpiry: inboxExpiry, inboxMode: startup.Server.InboxMode, imageMaterials: startup.Server.ImageMaterials,
-		}
-		return serveRoomManager(ctx, listener, *dataDir, *teamsDir, config, startup.Runtime, create, ready, stderr)
-	}
-	uiProfiles := profileNames(profiles)
-	cliPath, err := os.Executable()
+	runtime, err := newSpaceRuntime(startup, config, selectedFactories)
 	if err != nil {
 		return err
 	}
-	cliPath, err = filepath.EvalSymlinks(cliPath)
+	runtime.homeLock, homeLock = homeLock, nil
+	options.deployment.runtime = runtime
+	runtime.roomID = *roomID
+	runtime.singleRoom = singleRoom
+	runtime.setupRequired = layout.Home != "" && (*setupModel || modelSetupRequired(startup))
+	runtime.migrationErr = migrationErr
+	if singleRoom {
+		return runtime.Serve(ctx, listener, ready, stderr)
+	}
+	spaces, err := newSpaceServer(ctx, runtime, stderr)
 	if err != nil {
-		return err
+		return errors.Join(err, runtime.closeWithTimeout())
 	}
-	svc, err := create(*dir, *roomID, serviceConfig{platformCatalog: options.platformCatalog,
-		access: access, settings: settings, unifiedInputs: options.create == nil, inputUpgradeLog: stderr,
-		endpoint: internalAccessEndpoint(listener.Addr().String()), cliPath: cliPath, mergeWindow: *mergeWindow, maxTurns: *maxTurns,
-		dshProfiles: profiles, uiProfiles: uiProfiles, dshTurnTimeout: *dshTurnTimeout, inboxExpiry: inboxExpiry, inboxMode: startup.Server.InboxMode, imageMaterials: startup.Server.ImageMaterials,
-	})
-	if err != nil {
-		return err
-	}
-	defer func() {
-		closeCtx, cancel := context.WithTimeout(context.Background(), serviceShutdownTimeout)
-		defer cancel()
-		runErr = errors.Join(runErr, svc.close(closeCtx))
-	}()
-	computerControl, err := newComputerController(ctx, startup, settings, svc.info, access.installationID, access.operator, func(member MemberIdentity) (bool, error) {
-		if member.RoomID != svc.info.RoomID || member.RoomInstance != svc.info.RoomInstance {
-			return false, nil
-		}
-		svc.store.mu.Lock()
-		defer svc.store.mu.Unlock()
-		state, err := svc.store.loadRoom()
-		if err != nil {
-			return false, err
-		}
-		for _, live := range state.Members {
-			if live.AgentID == member.AgentID && live.MembershipID == member.MembershipID {
-				return true, nil
-			}
-		}
-		return false, nil
-	})
-	if err != nil {
-		return err
-	}
-	computerControl.members, err = newComputerMembers(computerControl, nil, svc)
-	if err != nil {
-		computerControl.cancel()
-		_ = computerControl.writer.Close(context.Background())
-		_ = unlockDirectory(computerControl.lock)
-		return err
-	}
-	settings.computer = computerControl
-	computerControl.start()
-	defer func() {
-		closeCtx, cancel := context.WithTimeout(context.Background(), serviceShutdownTimeout)
-		defer cancel()
-		runErr = errors.Join(runErr, svc.close(closeCtx), computerControl.close())
-	}()
-	server := &http.Server{Handler: access.wrap(svc), ReadHeaderTimeout: 3 * time.Second, ReadTimeout: 5 * time.Second,
-		WriteTimeout: 15 * time.Second, IdleTimeout: 30 * time.Second, MaxHeaderBytes: 16 << 10}
-	done := make(chan error, 1)
-	go func() { done <- server.Serve(listener) }()
-	if err := svc.resumeMembers(ctx); err != nil {
-		_ = server.Close()
-		return err
-	}
-	info := struct {
-		ServiceInfo
-		Endpoint string `json:"endpoint"`
-	}{svc.info, internalAccessEndpoint(listener.Addr().String())}
-	if err := ready(info); err != nil {
-		_ = server.Close()
-		return err
-	}
-	fmt.Fprintf(stderr, "Room UI: %s/\n", info.Endpoint)
-	fmt.Fprintln(stderr, "new members start paused; saved enable/pause intent survives restart; settled recoverable faults receive one automatic recovery attempt")
-	for _, member := range svc.recovered {
-		if member.notice != "" {
-			fmt.Fprintf(stderr, "restore %s: %s\n", member.id.AgentID, member.notice)
-		}
-	}
-	roomExit := make(chan error, 1)
-	go func() {
-		exit, err := svc.room.Wait(svc.ctx)
-		if err == nil {
-			err = exit.Reason
-		}
-		roomExit <- err
-	}()
-	select {
-	case <-ctx.Done():
-	case err = <-roomExit:
-		if err == nil {
-			err = fmt.Errorf("Room exited")
-		}
-	case err = <-done:
-		if errors.Is(err, http.ErrServerClosed) {
-			err = nil
-		}
-	}
-	shutdownCtx, cancel := context.WithTimeout(context.Background(), serviceShutdownTimeout)
-	defer cancel()
-	// Establish the admission boundary and stop member scheduling immediately.
-	// HTTP remains owned until member tasks and Room have been joined; waiting
-	// for HTTP first would let pending notifications start more backend turns.
-	cleanupErr := svc.close(shutdownCtx)
-	if shutdownErr := server.Shutdown(shutdownCtx); shutdownErr != nil {
-		_ = server.Close()
-		return errors.Join(err, cleanupErr, fmt.Errorf("HTTP cleanup incomplete: %w", shutdownErr))
-	}
-	return errors.Join(err, cleanupErr)
-}
-
-// The manager owns all opened services and every admitted lifecycle operation.
-func serveRoomManager(ctx context.Context, listener net.Listener, dir, teamsDir string, config serviceConfig, defaults *teamRuntime, create func(string, string, serviceConfig) (*service, error), ready func(any) error, stderr io.Writer) (runErr error) {
-	var upgrade *inputUpgradeOptions
-	if config.unifiedInputs {
-		upgrade = &inputUpgradeOptions{log: config.inputUpgradeLog}
-	}
-	manager, err := openTeamRoomManagerWithCatalog(dir, teamsDir, config.maxTurns, defaults, upgrade, config.platformCatalog)
-	if err != nil {
-		return err
-	}
-	defer func() { runErr = errors.Join(runErr, manager.close()) }()
-	config.cliPath, err = os.Executable()
-	if err != nil {
-		return err
-	}
-	config.cliPath, err = filepath.EvalSymlinks(config.cliPath)
-	if err != nil {
-		return err
-	}
-	manager.config, manager.factory = config, create
-	manager.workspaceProtected = append(manager.workspaceProtected, config.workspaceProtected...)
-	if config.modelStartup != nil {
-		startup := config.modelStartup
-		if startup.Server.WorkspaceRoots != nil {
-			roots := append([]string{}, (*startup.Server.WorkspaceRoots)...)
-			manager.workspaceRoots = &roots
-		}
-		home := filepath.Dir(startup.path)
-		manager.workspaceProtected = append(manager.workspaceProtected, home)
-	}
-	if config.settings != nil {
-		manager.settings = config.settings
-		manager.settings.observe = func() { manager.updates.mark(uiUpdate{Topic: "settings"}) }
-	}
-	if config.models != nil && config.modelStartup != nil {
-		manager.modelControl, err = newModelController(ctx, manager, *config.modelStartup, config.modelProbe)
-		if err != nil {
-			return err
-		}
-	}
-	if config.modelStartup != nil && config.access != nil {
-		control, err := newComputerController(ctx, *config.modelStartup, manager.settings, ServiceInfo{ServiceEpoch: manager.epoch}, config.access.installationID, config.access.operator, func(member MemberIdentity) (bool, error) {
-			manager.mu.Lock()
-			defer manager.mu.Unlock()
-			for _, room := range manager.index.Rooms {
-				if room.RoomIdentity != member.RoomIdentity {
-					continue
-				}
-				var state RoomSnapshot
-				if err := readSnapshot(filepath.Join(manager.roomDir(room.RoomID), "room.json"), &state, maxRoomFileBytes); err != nil {
-					return false, err
-				}
-				if state.RoomIdentity != member.RoomIdentity {
-					return false, ErrIdentity
-				}
-				for _, live := range state.Members {
-					if live.AgentID == member.AgentID && live.MembershipID == member.MembershipID {
-						return true, nil
-					}
-				}
-			}
-			return false, nil
-		})
-		if err != nil {
-			return err
-		}
-		control.members, err = newComputerMembers(control, manager, nil)
-		if err != nil {
-			control.cancel()
-			_ = control.writer.Close(context.Background())
-			_ = unlockDirectory(control.lock)
-			return err
-		}
-		manager.settings.computer = control
-		control.start()
-		defer func() { runErr = errors.Join(runErr, manager.close(), control.close()) }()
-	}
-	if err := manager.startPlatformNotifications(); err != nil {
-		return err
-	}
-	manager.mu.Lock()
-	manager.startConnectNotificationsLocked()
-	manager.mu.Unlock()
-	server := &http.Server{Handler: config.access.wrap(manager), ReadHeaderTimeout: 3 * time.Second, ReadTimeout: 5 * time.Second,
-		WriteTimeout: 15 * time.Second, IdleTimeout: 30 * time.Second, MaxHeaderBytes: 16 << 10}
-	defer server.Close()
-	done := make(chan error, 1)
-	go func() { done <- server.Serve(listener) }()
-	// Default creation is local and independent of the browser selection. A
-	// blocked assistant must not prevent existing Rooms from being served.
-	manager.mu.Lock()
-	assistant, assistantErr := manager.ensureDefaultAssistantLocked()
-	manager.mu.Unlock()
-	if assistantErr != nil {
-		fmt.Fprintf(stderr, "Default assistant initialization: %v\n", assistantErr)
-		if assistant != nil && assistant.NextStep != "" {
-			fmt.Fprintf(stderr, "Configure the default assistant with `%s`, then restart TeamX to retry the original creation.\n", assistant.NextStep)
-		}
-	}
-	if err := manager.restoreRuntimes(); err != nil {
-		return err
-	}
-	info := struct {
-		ServiceEpoch string `json:"service_epoch"`
-		Endpoint     string `json:"endpoint"`
-		DataDir      string `json:"data_dir"`
-		TeamsDir     string `json:"teams_dir"`
-	}{manager.epoch, internalAccessEndpoint(listener.Addr().String()), filepath.Clean(manager.store.dir), manager.teamsDir}
-	if err := ready(info); err != nil {
-		return err
-	}
-	fmt.Fprintf(stderr, "Room UI: %s/\nRoom catalog: %s/v1/rooms\nData directory: %s\nTeams directory: %s\n", info.Endpoint, info.Endpoint, info.DataDir, info.TeamsDir)
-	select {
-	case <-ctx.Done():
-	case err = <-done:
-		if errors.Is(err, http.ErrServerClosed) {
-			err = nil
-		}
-	}
-	shutdownCtx, cancel := context.WithTimeout(context.Background(), serviceShutdownTimeout)
-	defer cancel()
-	cleanupErr := manager.shutdown(shutdownCtx)
-	if shutdownErr := server.Shutdown(shutdownCtx); shutdownErr != nil {
-		_ = server.Close()
-		return errors.Join(err, cleanupErr, fmt.Errorf("HTTP cleanup incomplete: %w", shutdownErr))
-	}
-	return errors.Join(err, cleanupErr)
+	options.deployment.spaces = spaces
+	return spaces.Serve(ctx, listener, ready)
 }

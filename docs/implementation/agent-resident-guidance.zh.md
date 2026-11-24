@@ -24,7 +24,7 @@
 
 ## 大小与验证
 
-度量、同输入模型对照和失败样本见[脱敏证据](agent-resident-guidance-evidence.json)。固定交付沿正常 `OpenSession → PrepareOpen → Launch.Instructions → 所选工厂` 验证，覆盖默认助理、保存的自定义角色及 legacy／CLI／HTTP 输入合同。
+度量、同输入模型对照和失败样本见脱敏证据（本地验收文件 `agent-resident-guidance-evidence.json`）。固定交付沿正常 `OpenSession → PrepareOpen → Launch.Instructions → 所选工厂` 验证，覆盖默认助理、保存的自定义角色及 legacy／CLI／HTTP 输入合同。
 
 在两侧均保留同期新增的 Workspace 文件链接指导后，公共源指南从 15,896 降至 14,507 UTF-8 字节；默认助理的 HTTP 最终 Instructions 从 23,771 降至 22,382 字节（减少 1,389，约 5.8%）。初始模型基线采于该 137 字节的并行指导加入之前，实际 Instructions 和源文件大小分别保留在证据中；没有覆盖这条无关改动。按需资源补充的边界计入总量，不把下沉后的资源大小忽略；具体单任务及完整轨迹比较见证据。未采集模型实际 token／缓存费用，不据字节数推算统计可靠性、耗时或费用收益。
 

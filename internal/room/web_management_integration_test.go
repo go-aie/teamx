@@ -22,7 +22,7 @@ func TestManagedWebUIEndToEnd(t *testing.T) {
 	m.teams = map[string]teamDefinition{"sample": testTeamDefinition(t)}
 	m.publishRoomsCatalogLocked()
 	m.factory = controlledActivationFactory(nil, nil)
-	server := httptest.NewUnstartedServer(m)
+	server := httptest.NewUnstartedServer(fixtureHTTPHandler(m))
 	m.config.endpoint = "http://" + server.Listener.Addr().String()
 	server.Start()
 	defer server.Close()
@@ -55,7 +55,7 @@ func TestWorkspaceAppHTTPBinding(t *testing.T) {
 	m.platformHTTP = workspaceHTTPFunc(f.http)
 	m.platformProject = func(context.Context, string, string, workspaceSecret) (int64, error) { return 7, nil }
 	c := platformTestSave(t, m, platformTestRequest(m))
-	server := httptest.NewUnstartedServer(m)
+	server := httptest.NewUnstartedServer(fixtureHTTPHandler(m))
 	m.config.endpoint = "http://" + server.Listener.Addr().String()
 	server.Start()
 	defer server.Close()

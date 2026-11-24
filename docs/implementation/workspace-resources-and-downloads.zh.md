@@ -20,7 +20,7 @@ Markdown 文档的相对链接、引用式链接和图片扩展 F2 的同一路�
 
 ## 验证
 
-最终命令、结果和浏览器场景见 [验证数据](workspace-files/resources-evidence.json)。
+最终命令、结果和浏览器场景见 验证数据（本地验收文件 `resources-evidence.json`）。
 
 前端 824 项测试、相关 Go 测试、定向 race 及实际 HTTP／浏览器验证通过。完整 `go test ./internal/room ./internal/web` 在 534.177 秒后报告 Room 包两项既有架构失败：`TestStaticAssemblySourcesAndCapabilitiesAgree` 的 GitLab Events 装配不一致，以及 `TestInboxAndActionCoreHasNoNativeProviderRules` 中 `actions_target.go` 的飞书规则、`agent_contract.go` 的飞书适配器依赖；Web 包通过。它们与 F1/F2 的已知失败一致，未因此修改对应实现，完整回归不能记为通过。
 
@@ -31,7 +31,7 @@ Markdown 文档的相对链接、引用式链接和图片扩展 F2 的同一路�
 - 实际 TeamX HTTP／Chromium：多人 Room 和默认助理私信；1600×1000、1000×850、390×850。覆盖直接浏览与消息入口、文档导航／返回、锚点、图片放大、20 张自动预算与显式加载、Markdown／HTML 下载、Blob 清理、内容迟到、生产目录应用／恢复、旧链接失效与消息清空。消息为持久化的可信来源夹具；F2 的独立回归另行覆盖真实 Session host／执行凭据／send 链路，均不代表真实模型验收。
 - F1/F2 浏览器回归覆盖默认／外部目录、单聊／多人 Room、旧消息、单请求直达、源码、展开、草稿、焦点与侧栏恢复。
 
-截图：[窄桌面](workspace-files/resources-1000.png)、[手机尺寸](workspace-files/resources-390.png)。操作说明见 [Workspace 使用指南](../workspace.zh.md#查看工作区文件)，接口与限制见 [技术参考](../reference/workspace.zh.md#文件只读接口)。
+截图：窄桌面（本地验收文件 `resources-1000.png`）、手机尺寸（本地验收文件 `resources-390.png`）。操作说明见 [Workspace 使用指南](../workspace.zh.md#查看工作区文件)，接口与限制见 [技术参考](../reference/workspace.zh.md#文件只读接口)。
 
 ## 未验范围
 

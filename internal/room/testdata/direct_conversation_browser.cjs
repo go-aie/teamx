@@ -65,7 +65,7 @@ const {chromium}=require('playwright'),assert=require('node:assert/strict');
   assert.equal(await page.locator('#agent-controls #activity-avatar').isVisible(),true);
   await page.locator('#agent-actions').getByRole('button',{name:/暂停/}).waitFor();
   await page.locator('#agent-actions').getByRole('button',{name:/暂停/}).click();
-  await page.locator('#agent-actions').getByRole('button',{name:/启用协作/}).waitFor();
+  await page.locator('#agent-actions').getByRole('button',{name:/启用/}).waitFor();
   const layouts=[];
   for(const viewport of [{width:1440,height:1000},{width:390,height:844},{width:320,height:568},{width:844,height:390}]) {
    await page.setViewportSize(viewport);

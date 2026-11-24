@@ -36,7 +36,7 @@ Room 中的默认目录 helper 仅缓存不可变的已校验快照，不是全�
 
 ## 验证与限制
 
-可复现命令、退出码、日志摘要和本轮源码哈希见 [platform-assembly-validation.json](platform-assembly-validation.json)。原始日志与隔离对照位于 `.local/architecture-platforms/`，R0／R3a／R1a／R5a 证据不覆盖。本轮为本地组件与受控集成验证，没有执行真实模型、远端写入、浏览器验收或部署。
+可复现命令、退出码、日志摘要和本轮源码哈希见 platform-assembly-validation.json（本地验收文件 `platform-assembly-validation.json`）。原始日志与隔离对照位于 `.local/architecture-platforms/`，R0／R3a／R1a／R5a 证据不覆盖。本轮为本地组件与受控集成验证，没有执行真实模型、远端写入、浏览器验收或部署。
 
 | 检查 | 结果 |
 | --- | --- |

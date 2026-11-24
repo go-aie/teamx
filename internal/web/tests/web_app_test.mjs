@@ -2057,6 +2057,22 @@ test("Workspace preserves the managed root and requires explicit repository and 
   assert.equal(sent.pat, undefined); assert.equal(sent.target.binding.platform_id, "a".repeat(32));
 });
 
+test("server repository capability hides initialization while keeping the directory selector", async () => {
+  const api = workspaceServer();
+  api.workspaces.get("A").managed_repositories = false;
+  const ui = await launch(api);
+  assert.equal(ui.el("workspace-trigger").disabled, false);
+  await ui.el("workspace-trigger").emit("click");
+  assert.equal(ui.el("workspace-selector").open, true);
+  assert.equal(ui.el("workspace-select-settings").hidden, true);
+  // A stale settings entry still renders its effective server capability.
+  await openWorkspaceSettings(ui);
+  assert.equal(ui.el("workspace-repository-option").hidden, true);
+  assert.equal(ui.el("workspace-repository").disabled, true);
+  assert.equal(ui.el("workspace-git-fields").hidden, true);
+  assert.equal(api.calls.some(call => call.path === "/v1/workspace/apply"), false);
+});
+
 test("Workspace lost response observes original ID across reload, blocks duplicates, and explicitly retries only the receipt", async () => {
   const api = workspaceServer(), ui = await launch(api);
   await editWorkspace(ui, true);

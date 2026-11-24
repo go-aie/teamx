@@ -40,7 +40,7 @@ MCP `content[0]` 是业务 JSON，其余内容块直接承载 image。每条 ent
 
 真实 DSH／ACP 使用当前配置的 `deepseek-v4.1-flash-1017`，HTTP 和 CLI Inbox 模式各一次。两次均从 MCP 的一次 `history_read` 获得保存文字和随机验证码图片，答案命中文字与完整像素验证码；网关观察到原生 image 输入，保存正文和提示中未提供完整图片答案。读取前后权威存储一致，未发生外部业务写入。
 
-可复核摘要见 [H2 图文证据](agent-history-h2-evidence.json)，完整私有 trace 位于 `.local/history-mcp-real-20261119-02/report.json`。**真实的是 DSH／ACP／框架桥接／模型和 MCP 交付；保存通知、图片字节及图片下载是本地 fixture。** 这不代表真实 GitLab／飞书平台材料、完整恢复、容量性能或正式启用已验收。
+可复核摘要见 H2 图文证据（本地验收文件 `agent-history-h2-evidence.json`），完整私有 trace 位于 `.local/history-mcp-real-20261119-02/report.json`。**真实的是 DSH／ACP／框架桥接／模型和 MCP 交付；保存通知、图片字节及图片下载是本地 fixture。** 这不代表真实 GitLab／飞书平台材料、完整恢复、容量性能或正式启用已验收。
 
 已通过的检查：
 

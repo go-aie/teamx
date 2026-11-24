@@ -15,7 +15,7 @@
 
 每组都覆盖新 Session 和受控轮换后的纯开关、卡片交互与接续。共 **8 张模型实际创建的卡片**完成 Chromium 搜索、分页、提交及原 Agent 结果确认，8／8 的 handled_version 与 result_version 一致；卡片本身未改订阅。两组飞书还通过“只接收这个群”、关闭私聊，以及关开后完整保留指定范围的检查。
 
-本轮按方案要求的有限独立样本验收通过；历史限流和行为偏差记录继续保留，不据此推断长期生产成功率。真实提供方读取仍未运行，实际通知到达和提醒送达仍属于其他验收边界。原始报告、逐场景工具轨迹及截图保存在 `/tmp/teamx-notification-selection-retry-20261119-1`，汇总已追加到[验收证据](platform-notification-selection-evidence.json)的 retry_batches，旧结果保留。
+本轮按方案要求的有限独立样本验收通过；历史限流和行为偏差记录继续保留，不据此推断长期生产成功率。真实提供方读取仍未运行，实际通知到达和提醒送达仍属于其他验收边界。原始报告、逐场景工具轨迹及截图保存在 `/tmp/teamx-notification-selection-retry-20261119-1`，汇总已追加到验收证据（本地验收文件 `platform-notification-selection-evidence.json`）的 retry_batches，旧结果保留。
 
 ## 行为与生效
 
@@ -48,7 +48,7 @@ go test -tags=e2e ./internal/room -run '^TestPlatformNotificationSelectionRealDS
 
 ## 实施时的证据与门槛（重试前）
 
-结构化结果及早期失败片段见[验收证据](platform-notification-selection-evidence.json)。本次使用真实配置中的默认模型 `deepseek-v4.1-flash-1017`，未为通过验收切换模型。
+结构化结果及早期失败片段见验收证据（本地验收文件 `platform-notification-selection-evidence.json`）。本次使用真实配置中的默认模型 `deepseek-v4.1-flash-1017`，未为通过验收切换模型。
 
 | 验证层级 | 本次结果 |
 | --- | --- |

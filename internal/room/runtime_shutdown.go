@@ -33,6 +33,12 @@ func (m *roomManager) shutdown(ctx context.Context) error {
 	m.mu.Lock()
 	m.closing = true
 	var authDone []<-chan struct{}
+	if m.modelControl != nil {
+		m.modelControl.cancel()
+		done := make(chan struct{})
+		go func() { m.modelControl.workers.Wait(); close(done) }()
+		authDone = append(authDone, done)
+	}
 	if m.connectNotifyCancel != nil {
 		m.connectNotifyCancel()
 		authDone = append(authDone, m.connectNotifyDone)
@@ -154,15 +160,20 @@ func (m *roomManager) shutdown(ctx context.Context) error {
 	if m.store.check(true) == nil {
 		cleanupErr = errors.Join(cleanupErr, m.saveIndex(next))
 	}
-	if cleanupErr != nil {
+	if !backendCleanupSettled(cleanupErr) {
 		return cleanupErr // unresolved resources retain root ownership
+	}
+	if m.ownComputer != nil {
+		if err := m.ownComputer.closeContext(ctx); err != nil {
+			return errors.Join(cleanupErr, err)
+		}
 	}
 	if m.calendars != nil {
 		if err := m.calendars.close(ctx); err != nil {
-			return err
+			return errors.Join(cleanupErr, err)
 		}
 	}
-	return m.store.Close()
+	return errors.Join(cleanupErr, m.store.Close())
 }
 
 func (m *roomManager) shutdownRuntime(ctx context.Context, owner RoomIdentity, svc *service, done <-chan struct{}) error {

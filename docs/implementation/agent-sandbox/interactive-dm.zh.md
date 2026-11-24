@@ -23,7 +23,7 @@
 4. 完整 `go test ./...` 回归（Room 包 404.497 秒）、定向 race、配置文件权限/身份隔离测试通过；恢复 Session 时保留两个 MCP 且 TeamX 凭据独立刷新。另扫描该私信的持久状态及压缩 Session，未发现 AIO 密钥。
 5. TeamX 已正常关闭原服务并部署新版本，当前服务健康，原有 9 个会话和新增测试私信均保留。
 
-机器摘要见 [interactive-dm-evidence.json](interactive-dm-evidence.json)。原始运行材料、公开搜索轨迹、Agent 工具轨迹、Workspace 截图及浏览器 UI 检查材料放在 `.local/agent-sandbox/live-dm/`，未提交真实密钥或其他会话内容。
+机器摘要见 interactive-dm-evidence.json（本地验收文件 `interactive-dm-evidence.json`）。原始运行材料、公开搜索轨迹、Agent 工具轨迹、Workspace 截图及浏览器 UI 检查材料放在 `.local/agent-sandbox/live-dm/`，未提交真实密钥或其他会话内容。
 
 ## 使用与维护
 

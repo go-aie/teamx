@@ -78,9 +78,9 @@ func launchOptions(o dsh.Options) agent.Launch {
 	if o.Credential != nil {
 		credential = &agent.Credential{Ref: o.Credential.Ref, Value: o.Credential.Value}
 	}
-	return agent.Launch{BinaryPath: o.BinaryPath, BinaryArgs: o.BinaryArgs, Artifact: o.Artifact,
+	return agent.Launch{Execution: o.Execution, ExecutionBinding: o.ExecutionBinding, BinaryPath: o.BinaryPath, BinaryArgs: o.BinaryArgs, Artifact: o.Artifact,
 		Workspace: o.Workspace, StateDir: o.StateDir, Instructions: o.Instructions,
-		Model: agent.ModelConfig(o.Model), Credential: credential, ToolEnv: o.ToolEnv,
+		Model: agent.ModelConfig(o.Model), Credential: credential, Environment: o.Environment, ToolEnv: o.ToolEnv,
 		ExecutionToken: o.ExecutionToken, MCPServers: o.MCPServers, InputBridge: o.InputBridge, CapabilityDigest: o.CapabilityDigest,
 		ObserveActivity: o.ObserveActivity, TextBytes: o.Limits.TextBytes, TurnTimeout: o.Limits.TurnTimeout}
 }
@@ -90,9 +90,9 @@ func componentOptions(l agent.Launch) dsh.Options {
 	if l.Credential != nil {
 		credential = &dsh.Credential{Ref: l.Credential.Ref, Value: l.Credential.Value}
 	}
-	return dsh.Options{BinaryPath: l.BinaryPath, BinaryArgs: l.BinaryArgs, Artifact: l.Artifact,
+	return dsh.Options{Execution: l.Execution, ExecutionBinding: l.ExecutionBinding, BinaryPath: l.BinaryPath, BinaryArgs: l.BinaryArgs, Artifact: l.Artifact,
 		Workspace: l.Workspace, StateDir: l.StateDir, Instructions: l.Instructions,
-		Model: dsh.ModelConfig(l.Model), Credential: credential, ToolEnv: l.ToolEnv,
+		Model: dsh.ModelConfig(l.Model), Credential: credential, Environment: l.Environment, ToolEnv: l.ToolEnv,
 		ExecutionToken: l.ExecutionToken, MCPServers: l.MCPServers, InputBridge: l.InputBridge, CapabilityDigest: l.CapabilityDigest,
 		ObserveActivity: l.ObserveActivity, Limits: dsh.Limits{TextBytes: l.TextBytes, TurnTimeout: l.TurnTimeout}}
 }

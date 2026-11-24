@@ -18,7 +18,9 @@ func serveModelMigrationBlocked(ctx context.Context, listener net.Listener, c st
 	var workers sync.WaitGroup
 	running := false
 	saved := make(chan struct{}, 1)
+	access.mu.Lock()
 	access.setupRequired = true
+	access.mu.Unlock()
 	handler := access.wrap(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		if r.Method == "GET" && r.URL.Path == "/" {
@@ -65,7 +67,7 @@ func serveModelMigrationBlocked(ctx context.Context, listener net.Listener, c st
 	server := &http.Server{Handler: handler, ReadHeaderTimeout: 3 * time.Second, ReadTimeout: 5 * time.Second, WriteTimeout: 15 * time.Second, IdleTimeout: 30 * time.Second}
 	defer server.Close()
 	done := make(chan error, 1)
-	go func() { done <- server.Serve(listener) }()
+	go func() { done <- serveRuntimeHTTP(server, listener) }()
 	if err := ready(map[string]any{"endpoint": "http://" + listener.Addr().String(), "status": "migration_required", "ready": false}); err != nil {
 		return err
 	}
@@ -81,7 +83,7 @@ func serveModelMigrationBlocked(ctx context.Context, listener net.Listener, c st
 	}
 	shutdown, cancel := context.WithTimeout(context.Background(), serviceShutdownTimeout)
 	defer cancel()
-	err := server.Shutdown(shutdown)
+	err := shutdownRuntimeHTTP(server, listener, shutdown)
 	workers.Wait()
 	return errors.Join(result, err)
 }

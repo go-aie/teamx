@@ -23,6 +23,9 @@ func (m *roomManager) resolveWorkspacePlatformLocked(owner RoomIdentity, w works
 }
 
 func (m *roomManager) prepareWorkspacePlatform(ctx context.Context, req *workspaceApplyRequest) error {
+	if err := m.config.hostTools.checkRepository(&req.Target); err != nil {
+		return err
+	}
 	m.mu.Lock()
 	if req.ServiceEpoch != m.epoch || req.Caller.Kind != "human" || !validText(req.Caller.ID) || req.Caller.MembershipID != "" {
 		m.mu.Unlock()
@@ -141,6 +144,9 @@ func workspacePlatformTools(b workspaceBinding) string {
 // environment. It is never added to prepared ToolEnv or a Session configuration.
 func (m *roomManager) connectionExecute(owner RoomIdentity, w workspaceConfig, run platform.Execute) platform.Execute {
 	return func(ctx context.Context, dir string, env map[string]string, executable string, args ...string) (out []byte, err error) {
+		if m.config.hostTools.restricted {
+			return nil, hostToolUnavailable("managed_repository")
+		}
 		m.mu.Lock()
 		resolved, err := m.resolveWorkspacePlatformLocked(owner, w)
 		m.mu.Unlock()

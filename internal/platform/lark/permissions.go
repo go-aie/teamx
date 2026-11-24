@@ -125,7 +125,7 @@ func (f *ClientFactory) CheckPermissions(ctx context.Context, profile platform.C
 		return PermissionCheck{}, err
 	}
 	pinReason := "account_pinning_unavailable"
-	if runtime.GOOS == "darwin" {
+	if f.SupportsPin() {
 		pin, pinErr := f.Pin(ctx, profile, expected)
 		if pinErr == nil {
 			p.AccountFixed = true
@@ -294,7 +294,7 @@ func permissionCapabilities(p PermissionCheck, goos, pinReason string) []Capabil
 			}
 		}
 		switch {
-		case d.RequiresPin && goos != "darwin":
+		case d.RequiresPin && goos != "darwin" && (goos != "linux" || !p.AccountFixed):
 			v.State, v.ReasonCode = "unsupported", "account_pinning_unavailable"
 		case len(v.MissingApplicationScopes) > 0:
 			v.State, v.ReasonCode, v.NextAction = "blocked", "application_scopes_missing", "configure_application"

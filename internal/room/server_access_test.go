@@ -96,7 +96,7 @@ func TestAccessAllPrivateRoutesAndCallerBinding(t *testing.T) {
 	if w := accessRequest(h, "GET", "/v1/info?caller_id=forged", token, "", "", nil); w.Code != 403 {
 		t.Fatal("forged query caller accepted", w.Code)
 	}
-	body := `{"caller":{"kind":"human","id":"` + a.operator + `"},"text":"untouched"}`
+	body := `{"caller":{"kind":"human","id":"` + a.space.OwnerUserID + `"},"text":"untouched"}`
 	w := accessRequest(h, "POST", "/v1/send", token, "", body, nil)
 	if w.Code != 200 || w.Body.String() != body {
 		t.Fatal("request bytes changed", w.Code)
@@ -111,7 +111,7 @@ func TestAccessSessionLogoutExpiryRestartRotationAndLimit(t *testing.T) {
 	if _, ok := a.sessions[sha256.Sum256([]byte(cookie.Value))]; !ok {
 		t.Fatal("missing session hash")
 	}
-	body := `{"caller":{"kind":"human","id":"` + a.operator + `"}}`
+	body := `{"caller":{"kind":"human","id":"` + a.space.OwnerUserID + `"}}`
 	if w := accessRequest(h, "POST", "/v1/send", "", "", body, cookie); w.Code != 403 {
 		t.Fatal("empty origin accepted", w.Code)
 	}
@@ -189,7 +189,7 @@ func TestAccessExecutionScopeLifecycleAndNoFixedTTL(t *testing.T) {
 			t.Fatal(path, w.Code)
 		}
 	}
-	for _, mutate := range []func(*executionBinding){func(b *executionBinding) { b.Caller = Caller{Author: Author{Kind: "human", ID: a.operator}} }, func(b *executionBinding) { b.RoomID = "other" }, func(b *executionBinding) { b.RoomInstance = "other" }, func(b *executionBinding) { b.ServiceEpoch = "other" }, func(b *executionBinding) { b.Caller.ID = "other" }, func(b *executionBinding) { b.Caller.MembershipID = "other" }} {
+	for _, mutate := range []func(*executionBinding){func(b *executionBinding) { b.Caller = Caller{Author: Author{Kind: "human", ID: a.space.OwnerUserID}} }, func(b *executionBinding) { b.RoomID = "other" }, func(b *executionBinding) { b.RoomInstance = "other" }, func(b *executionBinding) { b.ServiceEpoch = "other" }, func(b *executionBinding) { b.Caller.ID = "other" }, func(b *executionBinding) { b.Caller.MembershipID = "other" }} {
 		changed := binding
 		mutate(&changed)
 		body, _ := json.Marshal(changed)
@@ -540,7 +540,7 @@ func TestAccessRestartRotatesTokenWithoutChangingOwner(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if fresh.operator != old.operator {
+	if fresh.space.OwnerUserID != old.space.OwnerUserID {
 		t.Fatal("rotation changed human identity")
 	}
 	handler := fresh.wrap(next)
@@ -601,4 +601,12 @@ func TestAccessModelFormAssetsLoadBeforeLogin(t *testing.T) {
 	if response := accessRequest(handler, http.MethodGet, "/ui/styles/settings.css", "", "", "", nil); response.Code != http.StatusUnauthorized {
 		t.Fatal("unrelated UI asset became public", response.Code)
 	}
+}
+
+// Synthetic fixtures keep their pre-existing message authors. Production obtains
+// this immutable subject from registerPersonalSpace and never mutates it.
+func bindFixtureAccessSubject(a *serverAccess, id string) {
+	a.identity.User.ID = id
+	a.identity.Space.OwnerUserID = id
+	a.space.OwnerUserID = id
 }

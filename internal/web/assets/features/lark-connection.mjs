@@ -1,3 +1,4 @@
+import { spaceURL } from "../space-context.mjs";
 // Lark application setup, account discovery and authorization lifecycle.
 import {imageUploadStatus} from "./lark-capabilities.mjs";
 export function createLarkConnection({ env, runtime, connectionsUI, settingsUI, onboardingUI }) {
@@ -128,6 +129,9 @@ export function createLarkConnection({ env, runtime, connectionsUI, settingsUI, 
     $("connection-login").hidden = !option || !needsAuth || active || blocked || connectionsUI.platforms.detecting;
     $("connection-login").textContent = setup?.stage === "authorization" && incomplete ? "继续账号授权" : expired ? "重新授权" : `登录${connectionBrand() === "lark" ? "Lark" : "飞书"}`;
     for (const id of ["connection-profile", "connection-executable", "connection-detect", "connection-login", "connection-logout", "connection-reauthorize"]) $(id).disabled = active || pending || connectionsUI.platforms.detecting;
+    const managedStorage = connectionsUI.platforms.discovery?.managed_storage === true;
+    $("connection-executable").disabled ||= managedStorage;
+    for (const id of ["connection-executable-label", "connection-executable", "connection-cli-hint"]) $(id).hidden = managedStorage;
     $("connection-name").disabled = active || pending;
     $("connection-provider").disabled = active || pending || !!connectionsUI.platforms.selected || onboardingUI.onboarding.active && !!onboardingUI.onboarding.pending;
     $("connection-save").disabled = active || pending || incomplete || connectionsUI.platforms.detecting || !!connectionsUI.platforms.selected && !connectionsUI.connectionDirty() && !onboardingUI.onboarding.active;
@@ -149,7 +153,7 @@ export function createLarkConnection({ env, runtime, connectionsUI, settingsUI, 
     $("connection-recheck").disabled = connectionsUI.platforms.detecting;
     $("connection-advanced").hidden = active || pending || connectionsUI.platforms.detecting || !needsRepair;
     if (!needsRepair) $("connection-advanced").open = false;
-    $("connection-setup").hidden = hasProfiles && !blocked;
+    $("connection-setup").hidden = managedStorage || hasProfiles && !blocked;
     $("connection-detect").textContent = connectionsUI.platforms.detecting ? "正在检测…" : "重新检测";
     renderLarkSetupCommand();
 
@@ -267,7 +271,7 @@ export function createLarkConnection({ env, runtime, connectionsUI, settingsUI, 
     let result;
     try {
       const body = {...auth.owner, session_id: auth.session_id};
-      if (keepalive) await globalThis.fetch("/v1/platforms/lark/cancel", {method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body),credentials:"same-origin",keepalive:true});
+      if (keepalive) await globalThis.fetch(spaceURL("/v1/platforms/lark/cancel"), {method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body),credentials:"same-origin",keepalive:true});
       else result = await request("/v1/platforms/lark/cancel", body);
       if (version !== connectionsUI.platforms.formVersion) return;
       if (result && auth.action === "setup") rememberLarkSetup(result);

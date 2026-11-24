@@ -86,7 +86,7 @@ func TestLarkSelfSendRecoveryProcess(t *testing.T) {
 		t.Fatal(err)
 	}
 	m := testManager(t, root, managerTestProfiles(t))
-	server := httptest.NewServer(m)
+	server := httptest.NewServer(fixtureHTTPHandler(m))
 	defer server.Close()
 	var svc *service
 	if os.Getenv("TEAMX_SELF_RECOVERY_MEMBERS") == "1" {

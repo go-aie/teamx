@@ -30,7 +30,7 @@
 
 验收中发现旧 `policyRealBackend` 在公开工厂已持有 Component 后才替换 `dshSession.component`，因此漏记了 ACP 回合。观察器现改为在所选工厂返回 Component 时包装，保留原工厂、实际 prompt、图像能力、运行身份、私密值遮蔽与 Activity；新增正常 OpenSession 回归防止零轨迹被误当零调用。这个修复只影响测试。修复前的功能结果仍有持久回执/HTTP 证据，但不用于调用量比较。
 
-首轮相关 integration＋race 回归 **38 个顶层用例、含子项 123 项通过**；补充的帮助、最终指南、根 actions、观察器与 Scion 检查也通过。各次运行有重叠，不相加计数；准确用例名、次数、文本快照哈希和模型轨迹摘要见[脱敏证据](agent-business-guidance-evidence.json)。构建和差异空白检查通过。
+首轮相关 integration＋race 回归 **38 个顶层用例、含子项 123 项通过**；补充的帮助、最终指南、根 actions、观察器与 Scion 检查也通过。各次运行有重叠，不相加计数；准确用例名、次数、文本快照哈希和模型轨迹摘要见脱敏证据（本地验收文件 `agent-business-guidance-evidence.json`）。构建和差异空白检查通过。
 
 一次核心包全量检查中，A2 引起的旧字符串断言和将业务 turn_number 误判为输入参数的断言已修正并复验；以下两项在改前 overlay 也失败，保持原状，不能宣称核心包全绿：
 

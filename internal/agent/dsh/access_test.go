@@ -58,3 +58,45 @@ func TestExecutionTokenDoesNotChangeMaterialOrRecoveryFingerprint(t *testing.T) 
 		t.Fatal(err)
 	}
 }
+
+func TestExplicitProcessEnvironmentPreservesFilteringAndRecoveryIdentity(t *testing.T) {
+	opts := fixtureOptions(t)
+	original := configDigest(opts)
+	opts.Environment = []string{"PRIVATE_SPACE_VALUE=space-A", opts.Model.APIKeyEnv + "=space-key", "TEAMX_ADMIN_TOKEN=never-delegate", "DSH_UNTRUSTED=never-delegate"}
+	if opts.credential() != "space-key" {
+		t.Fatal("credential ignored explicit process environment")
+	}
+	env := strings.Join(environment(opts), "\n")
+	if !strings.Contains(env, "PRIVATE_SPACE_VALUE=space-A") || strings.Contains(env, "never-delegate") || strings.Contains(env, "TEAMX_ADMIN_TOKEN") {
+		t.Fatal("explicit environment bypassed credential filtering")
+	}
+	if configDigest(opts) != original {
+		t.Fatal("ephemeral environment changed Session recovery identity")
+	}
+	session := openFixture(t, opts)
+	if err := session.Close(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	if err := filepath.WalkDir(opts.StateDir, func(path string, entry os.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if entry.IsDir() {
+			return nil
+		}
+		data, err := os.ReadFile(path)
+		if err != nil {
+			return err
+		}
+		if strings.Contains(string(data), "space-key") || strings.Contains(string(data), "space-A") {
+			t.Error("process environment persisted", path)
+		}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	opts.Environment = []string{}
+	if opts.credential() != "" {
+		t.Fatal("empty explicit environment fell back to host credential")
+	}
+}

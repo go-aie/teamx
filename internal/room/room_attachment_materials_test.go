@@ -57,6 +57,7 @@ func materialPixels(t *testing.T, result *mcp.CallToolResult) [][]byte {
 }
 
 func TestRoomAttachmentMaterialsMCPReadHistoryAndReplay(t *testing.T) {
+	parallelFixtureTest(t)
 	h, s := roomAttachmentReaderFixture(t)
 	one, two := uploadTestAttachment(t, h.store, 1), uploadTestAttachment(t, h.store, 2)
 	postAttachmentMessage(t, h, "", one, two)
@@ -161,6 +162,7 @@ func TestRoomAttachmentMaterialsMCPReadHistoryAndReplay(t *testing.T) {
 }
 
 func TestRoomAttachmentMaterialsMissingAndBudgets(t *testing.T) {
+	parallelFixtureTest(t)
 	for _, mode := range []string{"missing", "corrupt", "pixels"} {
 		t.Run(mode, func(t *testing.T) {
 			h, s := roomAttachmentReaderFixture(t)
@@ -203,6 +205,7 @@ func TestRoomAttachmentMaterialsMissingAndBudgets(t *testing.T) {
 }
 
 func TestRoomAttachmentMaterialsSelectedRangeAndLifecycle(t *testing.T) {
+	parallelFixtureTest(t)
 	h, s := roomAttachmentReaderFixture(t)
 	one, orphan := uploadTestAttachment(t, h.store, 1), uploadTestAttachment(t, h.store, 2)
 	postAttachmentMessage(t, h, "selected", one)
@@ -295,6 +298,7 @@ func TestRoomAttachmentMaterialsSelectedRangeAndLifecycle(t *testing.T) {
 }
 
 func TestRoomAttachmentMaterialsShortOutputKeepsImagesAndNativeCursor(t *testing.T) {
+	parallelFixtureTest(t)
 	h, s := roomAttachmentReaderFixture(t)
 	postAttachmentMessage(t, h, "", uploadTestAttachment(t, h.store, 1))
 	a, token, _ := historyAccess(t, s)
@@ -315,6 +319,7 @@ func TestRoomAttachmentMaterialsShortOutputKeepsImagesAndNativeCursor(t *testing
 }
 
 func TestRoomAttachmentMaterialsScopeAndPlatformDispatch(t *testing.T) {
+	parallelFixtureTest(t)
 	h, s := roomAttachmentReaderFixture(t)
 	one := uploadTestAttachment(t, h.store, 1)
 	postAttachmentMessage(t, h, "local", one)
@@ -408,6 +413,7 @@ func TestRoomAttachmentMaterialsScopeAndPlatformDispatch(t *testing.T) {
 }
 
 func TestRoomAttachmentMaterialsReadProtectionAndRetention(t *testing.T) {
+	parallelFixtureTest(t)
 	for _, mode := range []string{"formal", "history"} {
 		t.Run(mode, func(t *testing.T) {
 			h, s := roomAttachmentReaderFixture(t)
@@ -501,6 +507,7 @@ func TestRoomAttachmentMaterialsReadProtectionAndRetention(t *testing.T) {
 }
 
 func TestRoomAttachmentMaterialsExecutionBudgetAndReuse(t *testing.T) {
+	parallelFixtureTest(t)
 	for _, reuse := range []bool{false, true} {
 		t.Run(fmt.Sprint(reuse), func(t *testing.T) {
 			h, s := roomAttachmentReaderFixture(t)

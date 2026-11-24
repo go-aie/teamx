@@ -5,7 +5,6 @@ import (
 	"context"
 	"errors"
 	"reflect"
-	"runtime"
 	"slices"
 	"time"
 
@@ -205,7 +204,7 @@ func (m *roomManager) prepareLarkToolChange(ctx context.Context, req *toolBindin
 		snap := larkPlatformCapabilityResult{PlatformID: a.PlatformID, PlatformVersion: a.PlatformVersion, Generation: a.Generation, CredentialVersion: a.CredentialVersion, PermissionCheck: lark.PermissionCheck{Account: a.Identity, CheckedAt: time.Now().UTC(), Application: lark.ScopeCheck{State: "unchecked"}, User: lark.ScopeCheck{State: "unchecked"}, Renewal: lark.ScopeCheck{State: "unchecked"}}}
 		for _, dependency := range lark.CapabilityDependencies() {
 			c := lark.Capability{Name: dependency.Name, State: "unchecked", ReasonCode: "check_not_run_for_revocation", NextAction: "retry_check", EvidenceState: "not_required"}
-			if dependency.RequiresPin && runtime.GOOS != "darwin" {
+			if dependency.RequiresPin && !m.larkClients.SupportsPin() {
 				c.State, c.ReasonCode, c.NextAction = "unsupported", "account_pinning_unavailable", ""
 			}
 			snap.Capabilities = append(snap.Capabilities, c)

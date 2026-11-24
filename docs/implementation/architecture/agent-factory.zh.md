@@ -35,7 +35,7 @@ Session 关闭仍先撤销并等待原 MCP／输入授权，再关闭组件。�
 
 后续 [S2a 内部助手边界验证](../agent-collaboration-boundaries.zh.md)补充了打包 DSH `0.2.2-rc.1` 的真实版本、原生工具／指南与生命周期轨迹，供 P4b 复用；其中保留子 Agent MCP 缺失和在途取消／关闭失败。该专项不代替 P4b 的能力归属整理及其余验收矩阵。
 
-逐命令、测试数量、源码哈希及日志位置见[验证证据](agent-factory-validation.json)。公开包集成 fixture 只导入 `agent` 与 `builtin/agents/dsh`，启动本地确定性 ACP 子进程，验证新建／原 Session 恢复、独立输入证明失败、关闭与 PID 消失；它不使用真实模型或平台。
+逐命令、测试数量、源码哈希及日志位置见验证证据（本地验收文件 `agent-factory-validation.json`）。公开包集成 fixture 只导入 `agent` 与 `builtin/agents/dsh`，启动本地确定性 ACP 子进程，验证新建／原 Session 恢复、独立输入证明失败、关闭与 PID 消失；它不使用真实模型或平台。
 
 验证还覆盖隐藏后端具体类型的模型轮换 fixture、部分打开失败、撤销等待、手动／自动轮换、未知提交重试、关闭 Room 模型应用、正式输入、History、图文材料、恢复与 Store 所有权。默认构建、help、装配检查和全仓 e2e 配置编译单独记录；编译不计为真实后端验收。
 

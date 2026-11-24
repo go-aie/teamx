@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/go-aie/teamx/agent"
 	"io"
 	"net/http"
 	"os"
@@ -119,11 +120,16 @@ type apiError struct {
 }
 
 type service struct {
-	calendars       *CalendarService
-	ownCalendars    bool
-	calendarMu      sync.Mutex
-	calendar        *calendarHandle
-	calendarRunning atomic.Bool
+	hostTools          hostToolPolicy
+	execution          agent.ExecutionFactory
+	executionResources *executionResources
+	ownComputer        *computerController // only explicit single-Room runtime owns this controller
+	environment        []string
+	calendars          *CalendarService
+	ownCalendars       bool
+	calendarMu         sync.Mutex
+	calendar           *calendarHandle
+	calendarRunning    atomic.Bool
 
 	maintainShared            atomic.Pointer[sharedInboxMaintenance]
 	checkWorkspace            func(string) error
@@ -202,6 +208,15 @@ func newConfiguredService(dir, roomID string, config serviceConfig) (*service, e
 // startConfiguredService establishes resource ownership before assembling members. The
 // assembly callback also lets in-package tests inject deterministic Backends.
 func startConfiguredService(dir, roomID string, config serviceConfig, assemble func(*service, RoomSnapshot) error) (_ *service, err error) {
+	if config.access != nil {
+		if _, err := config.access.authorizeSpace(config.access.subject(), config.access.space.SpaceID); err != nil {
+			return nil, err
+		}
+		config.ownerUserID = config.access.space.OwnerUserID
+	}
+	if config.ownerUserID == "" {
+		return nil, ErrIdentity
+	}
 	if config.platformCatalog == nil {
 		config.platformCatalog = emptyPlatformCatalog()
 	}
@@ -302,7 +317,7 @@ func startConfiguredService(dir, roomID string, config serviceConfig, assemble f
 	if err != nil {
 		return nil, err
 	}
-	s := &service{checkWorkspace: config.checkWorkspace, unifiedInputs: state.InputLog != nil, inputAdapters: config.inputAdapters,
+	s := &service{hostTools: config.hostTools, execution: config.execution, executionResources: config.executionResources, checkWorkspace: config.checkWorkspace, unifiedInputs: state.InputLog != nil, inputAdapters: config.inputAdapters,
 		updates: updates, updatesDone: make(chan struct{}), ownUpdates: config.updates == nil,
 		agentNames:           config.agentNames,
 		access:               config.access,
@@ -320,6 +335,7 @@ func startConfiguredService(dir, roomID string, config serviceConfig, assemble f
 		persistentScheduling: config.persistentScheduling,
 		grantsFrozen:         grantsFrozen,
 		dshProfiles:          config.dshProfiles,
+		environment:          config.environment,
 		models:               config.models, modelTargets: config.modelTargets,
 		uiProfiles: config.uiProfiles,
 	}
@@ -337,10 +353,7 @@ func startConfiguredService(dir, roomID string, config serviceConfig, assemble f
 		s.settings.observe = func() { s.updates.mark(uiUpdate{Topic: "settings"}) }
 	}
 	s.memberFactory = s.newMember
-	operator := humanOperator()
-	if s.access != nil {
-		operator = s.access.operator
-	}
+	operator := config.ownerUserID
 	s.humanRead = newHumanReadStore(store.dir, state, operator)
 	s.humanRead.observe = func() {
 		u := roomUIUpdate("human_read", s.info)
@@ -506,6 +519,11 @@ func (s *service) close(ctx context.Context) error {
 		}
 		cleanupErr = errors.Join(cleanupErr, exit.Reason)
 	}
+	if s.ownComputer != nil {
+		if err := s.ownComputer.closeContext(ctx); err != nil {
+			return err
+		}
+	}
 	if h := s.calendarCurrent(); h != nil {
 		if err := s.calendars.retire(ctx, h); err != nil {
 			return err
@@ -660,11 +678,18 @@ func (s *service) addLocked(req apiRequest) (MemberInfo, error) {
 }
 
 func (s *service) toolEnv(id MemberIdentity) []string {
-	env := make([]string, 0, len(os.Environ())+6)
-	for _, entry := range os.Environ() {
+	inherited := s.environment
+	if inherited == nil {
+		inherited = os.Environ()
+	}
+	env := make([]string, 0, len(inherited)+6)
+	for _, entry := range inherited {
 		if !isRoomToolEnv(entry) {
 			env = append(env, entry)
 		}
+	}
+	if s.hostTools.restricted {
+		env = append(env, "TEAMX_TOOL_CONTRACT="+sharedToolsContract)
 	}
 	return append(env, "TEAMX_ENDPOINT="+s.endpoint, "TEAMX_ROOM_ID="+id.RoomID, "TEAMX_ROOM_INSTANCE="+id.RoomInstance,
 		"TEAMX_SERVICE_EPOCH="+s.info.ServiceEpoch, "TEAMX_AGENT_ID="+id.AgentID, "TEAMX_MEMBERSHIP_ID="+id.MembershipID)
@@ -839,6 +864,10 @@ func (s *service) settleMemberRemoval(membershipID string) error {
 }
 
 func (s *service) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	if s.access != nil && !s.access.ownsRequest(r) {
+		accessError(w, 403, "identity_mismatch")
+		return
+	}
 	if r.URL.Path == "/v1/setup" && r.Method == "GET" {
 		w.Header().Set("Content-Type", "application/json")
 		io.WriteString(w, `{"setup_required":false}`)

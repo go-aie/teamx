@@ -1,0 +1,8 @@
+{
+  "target": "ubuntu-22.04-amd64",
+  "packages": [
+    {"name": "bubblewrap", "version": "0.6.1-1ubuntu0.3", "url": "https://mirrors.aliyun.com/ubuntu/pool/main/b/bubblewrap/bubblewrap_0.6.1-1ubuntu0.3_amd64.deb", "sha256": "706763714e5d19fc7ab2572a6418506e3a4a5d5960e99309707b58117e6b40cb"},
+    {"name": "socat", "version": "1.7.4.1-3ubuntu4", "url": "https://mirrors.aliyun.com/ubuntu/pool/main/s/socat/socat_1.7.4.1-3ubuntu4_amd64.deb", "sha256": "aec6c231f65564cb75c9c2e5c3ce0739482688f373f141471ecf9276fc03df67"},
+    {"name": "ripgrep", "version": "13.0.0-2ubuntu0.1", "url": "https://mirrors.aliyun.com/ubuntu/pool/universe/r/rust-ripgrep/ripgrep_13.0.0-2ubuntu0.1_amd64.deb", "sha256": "cd857d6b567e53cd929d2cab8fc99239e5807d37672ddc86e9a30a81d47ec1f3"}
+  ]
+}

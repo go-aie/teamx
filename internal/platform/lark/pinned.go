@@ -30,7 +30,7 @@ func Pin(ctx context.Context, p platform.CLIProfile, expected platform.AccountId
 }
 
 func (f *ClientFactory) Pin(ctx context.Context, p platform.CLIProfile, expected platform.AccountIdentity) (*Pinned, error) {
-	if runtime.GOOS != "darwin" {
+	if !f.SupportsPin() {
 		return nil, failure("account_pinning_unavailable")
 	}
 	if !ValidAccount(expected, p) {
@@ -66,6 +66,9 @@ func (f *ClientFactory) Pin(ctx context.Context, p platform.CLIProfile, expected
 	if err != nil {
 		return nil, failure("account_pinning_unavailable")
 	}
+	if real, err := filepath.EvalSymlinks(dir); err == nil {
+		dir = real
+	}
 	pin := &Pinned{client: c, Account: expected}
 	c.configDir = dir
 	app := map[string]any{"name": p.Profile, "appId": config.AppID, "appSecret": map[string]string{"source": "keychain", "id": "appsecret:" + config.AppID}, "brand": p.Brand, "dpopMode": config.DPoPMode, "defaultAs": "user", "users": []map[string]string{{"userOpenId": expected.ID.Value}}}
@@ -84,6 +87,9 @@ func (f *ClientFactory) Pin(ctx context.Context, p platform.CLIProfile, expected
 	}
 	return pin, nil
 }
+
+func supportsLegacyPin() bool { return runtime.GOOS == "darwin" }
+func supportsLinuxPin() bool  { return runtime.GOOS == "linux" }
 func (p *Pinned) Close() {
 	if p != nil {
 		p.closeOnce.Do(func() { _ = os.RemoveAll(p.client.configDir) })
@@ -169,7 +175,7 @@ func (p *Pinned) SendPermission(ctx context.Context) (SendPermission, error) {
 	result.PeopleSearchEnabled = app.State != "unchecked" && user.State != "unchecked" && !slices.Contains(app.Missing, PeopleSearchScopes) && !slices.Contains(user.Missing, PeopleSearchScopes)
 	result.GroupSendEnabled = result.ReplyEnabled && result.TargetVerificationEnabled
 	result.SelfSendEnabled = result.GroupSendEnabled
-	for _, v := range permissionCapabilities(PermissionCheck{Application: app, User: user, AccountFixed: true}, "darwin", "") {
+	for _, v := range permissionCapabilities(PermissionCheck{Application: app, User: user, AccountFixed: true}, runtime.GOOS, "") {
 		if v.Name == "image.upload" || v.Name == "people.search" || strings.HasPrefix(v.Name, "message.") && v.Name != "message.read" {
 			result.Capabilities = append(result.Capabilities, v)
 		}

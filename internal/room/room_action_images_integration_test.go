@@ -23,7 +23,7 @@ import (
 func TestRoomActionImagesManagedActionContextAndCleanup(t *testing.T) {
 	h := selfSendHarness(t)
 	id, _ := enableSelfSend(t, h, h.members[0], 0)
-	server := httptest.NewServer(h.m)
+	server := httptest.NewServer(fixtureHTTPHandler(h.m))
 	defer server.Close()
 	pixels := attachmentTestPNG(t, true)
 	refs := []roomActionImageRef{}

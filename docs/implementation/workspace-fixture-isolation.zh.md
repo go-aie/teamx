@@ -40,4 +40,4 @@
 
 两个环境／结清检查已连续 3 次通过。默认、integration、e2e 的 Room 编译及 integration 标签的 Room `go vet` 已通过。同范围定向 race 也已通过，没有竞争报告。
 
-结果、选择范围与源码摘要见[机器证据](workspace-fixture-isolation-evidence.json)，临时原始日志位于 `/tmp/teamx-f4/`；临时目录不是永久 gate。全仓 integration、全仓 race／vet、Web 及其余统一预算验收归 F5。真实平台、模型、浏览器与外部挂载未在本轮执行。
+结果、选择范围与源码摘要见机器证据（本地验收文件 `workspace-fixture-isolation-evidence.json`），临时原始日志位于 `/tmp/teamx-f4/`；临时目录不是永久 gate。全仓 integration、全仓 race／vet、Web 及其余统一预算验收归 F5。真实平台、模型、浏览器与外部挂载未在本轮执行。

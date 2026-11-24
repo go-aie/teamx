@@ -21,6 +21,9 @@ func TestAssets(t *testing.T) {
 		switch path.Ext(name) {
 		case ".html":
 			asset, contentType = "/", "text/html"
+			if name == "assets/space-loading.html" {
+				asset = "/space-loading"
+			}
 			if name == "assets/access.html" {
 				asset = "/access"
 			}

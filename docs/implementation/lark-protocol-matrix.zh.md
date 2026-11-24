@@ -69,7 +69,7 @@ wait／held 只用于区分四槽排队与持槽（含清理）；不包含 Go `
 
 Room 调用方选择：`TestLarkPlatformAndMembershipReadBoundary`、`TestLarkInboxImagePreviewAndModelPrompt`、`TestLarkImageSourceScopeAndBudgets`、`TestLarkImageLifecycleCancellation`、`TestLarkReplyProductionResolvesCapturedMessageWithReadOnlyBinding`、`TestLarkSendProductionGateAndCatalog`、`TestLarkHistoricalConversationUsesCurrentCredentialForSameAccount`。没有把组件／编译结果表述为真实平台、模型或浏览器验收。
 
-本批未运行独立全仓核心或全仓 race，也不重新执行原本未改动的真实平台／模型验收。原始 JSON 在 `/tmp/teamx-lark-matrix/`；命令、选择、每项通过记录、wait／held 和源码校验值固化于 [lark-protocol-matrix-evidence.json](lark-protocol-matrix-evidence.json)，不依赖临时目录长期存在。
+本批未运行独立全仓核心或全仓 race，也不重新执行原本未改动的真实平台／模型验收。原始 JSON 在 `/tmp/teamx-lark-matrix/`；命令、选择、每项通过记录、wait／held 和源码校验值固化于 lark-protocol-matrix-evidence.json（本地验收文件 `lark-protocol-matrix-evidence.json`），不依赖临时目录长期存在。
 
 完整集成使用 `go test -json -count=1 -tags=integration -timeout=16m ./... -run '.'`，相当于 `make test-integration TEST_TIMEOUT=16m` 加本次运行参数。16 分钟只用于完成健康诊断，没有修改 Makefile 的八分钟默认预算。
 

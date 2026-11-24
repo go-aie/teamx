@@ -30,7 +30,7 @@ go test -tags=integration ./internal/room -run '^(TestActions.*|TestAgentCommand
 
 三组通过，定向 race 为 193.732 秒。最终帮助／URL 合同又做了定向验证；E2E 新入口及原派发预算／命令计数测试通过。未运行全仓测试，普通 CI 不启用真实模型或真实写入。
 
-真实 DSH／模型通过普通 Room 和默认助理的自然请求测试，未预注入 ref／原生 ID，也未追加命令教程。正常路径的目标调用是一次 resolve 加一次 execute；发现、Skill、消息读取和本地报告单独计数。调用及失败样本见[结构化证据](gitlab-image-send-url-evidence.json)。
+真实 DSH／模型通过普通 Room 和默认助理的自然请求测试，未预注入 ref／原生 ID，也未追加命令教程。正常路径的目标调用是一次 resolve 加一次 execute；发现、Skill、消息读取和本地报告单独计数。调用及失败样本见结构化证据（本地验收文件 `gitlab-image-send-url-evidence.json`）。
 
 ## 真实账号、发布与恢复
 

@@ -2,7 +2,7 @@
 
 日期：2026-11-21。对应[第二阶段 P2n](../../GORDIS-PLUGIN-AND-SELECTIVE-BUILD-PLAN.zh.md#94-p2np2t补通知和工具的完整运行边界)，承接 [P1b](extension-assembly.zh.md)。飞书 messages 继续使用 SearchSource／schema 4，新增显式运行绑定与可实际投递的公开通知作者合同；默认完整组合保留。
 
-工作基准为 HEAD `fc9ae9d0a8ad09599cc9fd851c448fec2e84e431` 加 P1a／P1b 及既有工作树。本次未提交、发布或切换日常服务。没有新增依赖、迁移存储格式、运行真实模型或进行远端业务写入。逐项命令、日志摘要、源码哈希、依赖与限制见[验证证据](notification-runtime-validation.json)。
+工作基准为 HEAD `fc9ae9d0a8ad09599cc9fd851c448fec2e84e431` 加 P1a／P1b 及既有工作树。本次未提交、发布或切换日常服务。没有新增依赖、迁移存储格式、运行真实模型或进行远端业务写入。逐项命令、日志摘要、源码哈希、依赖与限制见验证证据（本地验收文件 `notification-runtime-validation.json`）。
 
 ## 实现和原 owner
 

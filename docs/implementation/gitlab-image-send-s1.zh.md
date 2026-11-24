@@ -31,7 +31,7 @@ GitLab Skill 只补本阶段必要入口、整条发送及 unknown 指引，保�
 
 ## 本地证据与成本
 
-改动前的文字 schema、帮助及 Skill 样本保存在[基线](gitlab-image-send-baseline.json)；实际 manager／service／CLI 的请求、内部 DTO、正常投影及冻结记录保存在[合同样本](gitlab-image-send-contract-evidence.json)。样本为本地 HTTPS 夹具，非真实平台结果。没有已交付的旧 GitLab 图文链路，因此无旧图文性能基线。
+改动前的文字 schema、帮助及 Skill 样本保存在基线（本地验收文件 `gitlab-image-send-baseline.json`）；实际 manager／service／CLI 的请求、内部 DTO、正常投影及冻结记录保存在合同样本（本地验收文件 `gitlab-image-send-contract-evidence.json`）。样本为本地 HTTPS 夹具，非真实平台结果。没有已交付的旧 GitLab 图文链路，因此无旧图文性能基线。
 
 下面的目标／回执样本均为准确讨论回复；字节数按实际紧凑 JSON 的 UTF-8 字节计，帮助／Skill 按正文计。
 

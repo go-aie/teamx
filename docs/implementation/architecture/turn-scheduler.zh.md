@@ -41,7 +41,7 @@
 
 ## 验证
 
-命令、退出码、日志哈希、源码摘要和算法对照见 [turn-scheduler-validation.json](turn-scheduler-validation.json)，本地日志在 `.local/architecture-scheduler/`。本轮均为本地组件或受控 Backend 集成证据；未执行真实模型、平台写入或浏览器验收。
+命令、退出码、日志哈希、源码摘要和算法对照见 turn-scheduler-validation.json（本地验收文件 `turn-scheduler-validation.json`），本地日志在 `.local/architecture-scheduler/`。本轮均为本地组件或受控 Backend 集成证据；未执行真实模型、平台写入或浏览器验收。
 
 | 检查 | 结果 |
 | --- | --- |

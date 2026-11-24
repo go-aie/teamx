@@ -3,6 +3,7 @@ package room
 import (
 	"context"
 	"io"
+	"net/http"
 	"os"
 	"sync"
 
@@ -49,13 +50,21 @@ func newRoomManager(dir string, maxTurns uint64) (*roomManager, error) {
 	return openRoomManager(dir, maxTurns, nil)
 }
 func openRoomManager(dir string, maxTurns uint64, upgrade *inputUpgradeOptions) (*roomManager, error) {
-	return openRoomManagerWithCatalog(dir, maxTurns, upgrade, defaultPlatformCatalog())
+	m, err := openRoomManagerWithCatalog(dir, maxTurns, upgrade, defaultPlatformCatalog())
+	if m != nil {
+		m.factory = newService
+	}
+	return m, err
 }
 func newTeamRoomManager(dir, teams string, maxTurns uint64, defaults *teamRuntime) (*roomManager, error) {
 	return openTeamRoomManager(dir, teams, maxTurns, defaults, nil)
 }
 func openTeamRoomManager(dir, teams string, maxTurns uint64, defaults *teamRuntime, upgrade *inputUpgradeOptions) (*roomManager, error) {
-	return openTeamRoomManagerWithCatalog(dir, teams, maxTurns, defaults, upgrade, defaultPlatformCatalog())
+	m, err := openTeamRoomManagerWithCatalog(dir, teams, maxTurns, defaults, upgrade, defaultPlatformCatalog())
+	if m != nil {
+		m.factory = newService
+	}
+	return m, err
 }
 func OpenStore(dir, roomID string) (*Store, error) { return openStore(dir, roomID, nil) }
 func openStore(dir, roomID string, upgrade *inputUpgradeOptions) (*Store, error) {
@@ -65,6 +74,9 @@ func lockStore(dir, roomID string) (*Store, error) {
 	return lockStoreWithCatalog(dir, roomID, defaultPlatformCatalog())
 }
 func fixtureServiceConfig(c serviceConfig) serviceConfig {
+	if c.ownerUserID == "" {
+		c.ownerUserID = humanOperator()
+	}
 	if c.platformCatalog == nil {
 		c.platformCatalog = defaultPlatformCatalog()
 	}
@@ -133,4 +145,21 @@ func projectInputSource(e followupEvent, entry *InboxEntry) any {
 }
 func validOnboarding(op platformOnboarding) bool {
 	return (&roomManager{platformCatalog: defaultPlatformCatalog()}).validOnboarding(op)
+}
+
+// Bare component fixtures explicitly supply their synthetic human subject. This
+// is not available to the production executable or its HTTP entry points.
+func fixtureHTTPHandler(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		owner := humanOperator()
+		if service, ok := next.(*service); ok && service.humanRead != nil {
+			owner = service.humanRead.operator
+		}
+		next.ServeHTTP(w, fixtureHumanRequest(r, owner))
+	})
+}
+
+func fixtureHumanRequest(r *http.Request, owner string) *http.Request {
+	scope := authorizedSpace{Subject: userSubject{UserID: owner, AuthVersion: 1}, SpaceContext: SpaceContext{SpaceID: "component-fixture", OwnerUserID: owner, RuntimeEpoch: "component-fixture"}}
+	return r.WithContext(context.WithValue(r.Context(), spaceContextKey{}, scope))
 }

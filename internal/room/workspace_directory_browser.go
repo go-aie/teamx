@@ -34,6 +34,9 @@ func (m *roomManager) workspaceDirectoryRoots() ([]workspaceDirectoryRoot, strin
 	roots := m.workspaceRoots
 	defaultHome := roots == nil
 	if roots == nil {
+		if m.config.hostTools.restricted {
+			return []workspaceDirectoryRoot{}, "directory_selection_disabled"
+		}
 		home, err := os.UserHomeDir()
 		if err != nil || !validDirectoryPath(home) || filepath.Dir(home) == home {
 			return []workspaceDirectoryRoot{}, "directory_home_unavailable"
@@ -264,7 +267,7 @@ func (m *roomManager) serveWorkspaceDirectories(w http.ResponseWriter, r *http.R
 		writeAPIError(w, err)
 		return
 	}
-	policy := &roomManager{store: m.store, teamsDir: m.teamsDir, workspaceProtected: slices.Clone(m.workspaceProtected)}
+	policy := &roomManager{config: m.config, store: m.store, teamsDir: m.teamsDir, workspaceProtected: slices.Clone(m.workspaceProtected)}
 	if m.workspaceRoots != nil {
 		roots := slices.Clone(*m.workspaceRoots)
 		policy.workspaceRoots = &roots

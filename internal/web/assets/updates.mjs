@@ -1,3 +1,4 @@
+import { spaceURL } from "./space-context.mjs";
 // HTTP observation scheduling only. Transport/lifecycle ownership is installed
 // separately; creating a scheduler does not open a stream or start a poll.
 export const updateIntervals = Object.freeze({
@@ -199,7 +200,7 @@ export function createUpdateConnection({ env, identity, reconcile, invalidate, s
     const token = generation;
     const query = new URLSearchParams({ service_epoch: info.service_epoch });
     if (info.room_id) for (const field of ["room_id", "room_instance", "room_service_epoch"]) query.set(field, info[field]);
-    try { source = new env.EventSource(`/v1/updates?${query}`); }
+    try { source = new env.EventSource(spaceURL(`/v1/updates?${query}`)); }
     catch { replace(); return; }
     const owned = source;
     const valid = () => !stopped && token === generation && source === owned;

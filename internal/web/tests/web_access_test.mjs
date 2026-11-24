@@ -29,6 +29,21 @@ test("login focuses the password field and preserves focus when returning to the
   assert.equal(ui.el("token").focusCount,focused);
 });
 
+test("OpenCSG uses the fixed native POST login form without exposing deployment credentials",async()=>{
+  const ui=await launch(async(path)=>path==="/v1/access/method" ? {status:200,data:{provider:"opencsg"}} : {status:401,data:{}});
+  assert.equal(ui.el("sso-login-form").hidden,false);
+  assert.equal(ui.el("login-form").hidden,true);
+  assert.equal(ui.el("sso-login-submit").textContent,"使用 OpenCSG 登录");
+  assert.match(html,/<form id="sso-login-form"[^>]*method="post"[^>]*action="\/v1\/access\/sso\/login"/);
+});
+
+test("external authentication can replace the provider without changing the login transaction",async()=>{
+  const ui=await launch(async(path)=>path==="/v1/access/method" ? {status:200,data:{method:"external",provider:"fixture"}} : {status:401,data:{}});
+  assert.equal(ui.el("sso-login-form").hidden,false);
+  assert.equal(ui.el("login-form").hidden,true);
+  assert.equal(ui.el("sso-login-submit").textContent,"使用账号登录");
+});
+
 async function launch(api, saved = new Map(), hash = "") {
   const elements = new Map([...html.matchAll(/id="([^"]+)"/g)].map(([,id])=>[id, {
     value:"",hidden:false,disabled:false,listeners:{},attributes:{},
@@ -43,7 +58,7 @@ async function launch(api, saved = new Map(), hash = "") {
   el("model-form").elements=[...html.matchAll(/<(?:input|select|button) id="([^"]+)"/g)].map(([,id])=>el(id)).filter(field=>![el("login-submit"),el("logout"),el("retry-migration"),el("check-setup-operation"),el("reload-model-draft"),el("toggle-token"),el("token")].includes(field));
   const timers=[],navigation=[],documentEvents=new Map();
   const document={hidden:false,body:{},activeElement:null,getElementById:el,addEventListener:(name,fn)=>documentEvents.set(name,fn)};
-  vm.runInNewContext(source, {...modelForm,randomUUID,URL,crypto:webcrypto,
+  vm.runInNewContext(source, {...modelForm,randomUUID,URL,crypto:webcrypto, spaceURL:path=>path,spaceStorage:storage=>storage,mountSpacePicker:()=>{},
     document,navigator:{onLine:true},
     location:{origin:"http://fixture",hash,replace:path=>navigation.push(path)},addEventListener(){},
     sessionStorage:{getItem:key=>saved.get(key),setItem:(key,value)=>saved.set(key,value),removeItem:key=>saved.delete(key)},

@@ -142,7 +142,9 @@ func TestPermissionCapabilitiesDegradeOnlyAffectedBranches(t *testing.T) {
 		t.Fatal(all)
 	}
 	for _, goos := range []string{"linux", "windows"} {
-		all = permissionCapabilities(ready(), goos, "")
+		unfixed := ready()
+		unfixed.AccountFixed = false
+		all = permissionCapabilities(unfixed, goos, "")
 		for _, v := range all {
 			if v.Name == "image.upload" || strings.HasPrefix(v.Name, "message.") && v.Name != "message.read" {
 				if v.State != "unsupported" || v.NextAction != "" {
@@ -155,6 +157,9 @@ func TestPermissionCapabilitiesDegradeOnlyAffectedBranches(t *testing.T) {
 				t.Fatal("platform check invents member configuration")
 			}
 		}
+	}
+	if v := findCapability(t, permissionCapabilities(ready(), "linux", ""), "message.reply"); v.State != "ready" {
+		t.Fatal("verified Linux account pin was ignored", v)
 	}
 	// Decode the public contract too; readiness must not leak native credentials.
 	b, _ := json.Marshal(PermissionCheck{Capabilities: all})

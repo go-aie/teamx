@@ -36,10 +36,10 @@ func acceptRealSession(opts Options, report map[string]any, memory, role, challe
 		closeErr := s.Close(closeCtx)
 		runErr = errors.Join(runErr, closeErr)
 		if closeErr == nil {
-			s.process.mu.Lock()
-			forced := s.process.forced
-			s.process.mu.Unlock()
-			code := s.process.cmd.ProcessState.ExitCode()
+			s.process.(*process).mu.Lock()
+			forced := s.process.(*process).forced
+			s.process.(*process).mu.Unlock()
+			code := s.process.(*process).cmd.ProcessState.ExitCode()
 			report["exit"] = map[string]any{"code": code, "forced": forced, "ownedProcessesStopped": true}
 			if code != 0 || forced {
 				runErr = errors.Join(runErr, errors.New("real DSH required forced cleanup or exited abnormally"))

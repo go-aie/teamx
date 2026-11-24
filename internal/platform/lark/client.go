@@ -73,6 +73,8 @@ type Reader interface {
 }
 type Client struct {
 	configDir string // internal pinned context; never accepted from an Agent
+	dataDir   string
+	storage   *cliStorage
 	profile   platform.CLIProfile
 	requests  *requestBudget
 	selfSend  *requestBudget
@@ -91,7 +93,13 @@ func (f *ClientFactory) New(p platform.CLIProfile) (*Client, error) {
 	if f != nil && f.requests != nil && f.selfSend != nil {
 		requests, selfSend, profileGates = f.requests, f.selfSend, &f.gates
 	}
-	return &Client{profile: p, requests: requests, selfSend: selfSend, gates: profileGates}, nil
+	c := &Client{profile: p, requests: requests, selfSend: selfSend, gates: profileGates}
+	if f != nil && f.storage != nil {
+		if err := f.storage.bind(c); err != nil {
+			return nil, err
+		}
+	}
+	return c, nil
 }
 
 // Shared gates include independently constructed clients and Rooms. Waiting is
@@ -99,7 +107,7 @@ func (f *ClientFactory) New(p platform.CLIProfile) (*Client, error) {
 var gates sync.Map
 
 func (c *Client) lock(ctx context.Context) (func(), error) {
-	key := c.profile.Profile
+	key := c.profile.Profile + "|" + c.dataDir
 	v, _ := c.gates.LoadOrStore(key, make(chan struct{}, 1))
 	gate := v.(chan struct{})
 	select {
@@ -147,6 +155,9 @@ func (c *Client) runCheck(ctx context.Context, args ...string) ([]byte, error) {
 	return c.runProcess(ctx, "", 30*time.Second, true, args...)
 }
 func (c *Client) runProcess(ctx context.Context, dir string, timeout time.Duration, allowCheck bool, args ...string) ([]byte, error) {
+	if c.storage != nil && (privateCLIDirectory(c.configDir) != nil || privateCLIDirectory(c.dataDir) != nil || privateCLIDirectory(c.storage.root) != nil) {
+		return nil, failure("invalid_cli_storage")
+	}
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 	out := &limitedBuffer{limit: maxOutput, cancel: cancel}
@@ -208,6 +219,9 @@ func (c *Client) command(ctx context.Context, dir string, args ...string) *exec.
 	cmd.Env = append(cmd.Env, "LARKSUITE_CLI_NO_UPDATE_NOTIFIER=1", "LARKSUITE_CLI_NO_SKILLS_NOTIFIER=1")
 	if c.configDir != "" {
 		cmd.Env = append(cmd.Env, "LARKSUITE_CLI_CONFIG_DIR="+c.configDir)
+	}
+	if c.dataDir != "" {
+		cmd.Env = append(cmd.Env, "LARKSUITE_CLI_DATA_DIR="+c.dataDir)
 	}
 	configureProcess(cmd)
 	return cmd

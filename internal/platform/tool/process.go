@@ -12,15 +12,16 @@ import (
 
 // Definition registers a reusable executable or a bounded built-in dispatcher.
 type Definition struct {
-	InternalOnly bool                   `json:"internal_only,omitempty"`
-	Name         string                 `json:"name"`
-	Description  string                 `json:"description"`
-	Version      string                 `json:"version"`
-	Provider     string                 `json:"provider,omitempty"`
-	Skill        string                 `json:"skill,omitempty"`
-	Executable   string                 `json:"-"`
-	Environment  map[string]string      `json:"-"` // child variable -> account field
-	Dependencies []ExecutableDependency `json:"-"`
+	ProcessEnvironment []string               `json:"-"` // nil inherits the host; filtering remains mandatory
+	InternalOnly       bool                   `json:"internal_only,omitempty"`
+	Name               string                 `json:"name"`
+	Description        string                 `json:"description"`
+	Version            string                 `json:"version"`
+	Provider           string                 `json:"provider,omitempty"`
+	Skill              string                 `json:"skill,omitempty"`
+	Executable         string                 `json:"-"`
+	Environment        map[string]string      `json:"-"` // child variable -> account field
+	Dependencies       []ExecutableDependency `json:"-"`
 }
 
 // Help requests need no account or credential resolution. No business routing.
@@ -84,7 +85,7 @@ func (p Process) Run(ctx context.Context, args []string) int {
 	}
 	env := []string{"HOME=" + private, "XDG_CONFIG_HOME=" + private, "TMPDIR=" + private}
 	for _, key := range []string{"PATH", "LANG", "LC_ALL", "TZ", "SSL_CERT_FILE", "SSL_CERT_DIR", "HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY", "NO_PROXY", "http_proxy", "https_proxy", "all_proxy", "no_proxy", "TEAMX_GLAB_BIN", "TEAMX_SCN_BIN"} {
-		if value, ok := os.LookupEnv(key); ok {
+		if value, ok := dEnvironment(p.Definition, key); ok {
 			env = append(env, key+"="+value)
 		}
 	}

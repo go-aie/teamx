@@ -58,6 +58,7 @@ func assertActionImagePinsReleased(t *testing.T, s *Store) {
 func contextGuard(ctx context.Context) error { return ctx.Err() }
 
 func TestRoomActionImagesOriginalsAndRetention(t *testing.T) {
+	parallelFixtureTest(t)
 	for _, log := range []bool{false, true} {
 		t.Run(fmt.Sprint(log), func(t *testing.T) {
 			h, svc, ctx, refs := actionImagesFixture(t, log)
@@ -134,6 +135,7 @@ func TestRoomActionImagesOriginalsAndRetention(t *testing.T) {
 }
 
 func TestRoomActionImagesRejectInvalidSourcesAndRelease(t *testing.T) {
+	parallelFixtureTest(t)
 	for _, log := range []bool{false, true} {
 		for _, mode := range []string{"empty", "too_many", "duplicate", "wrong_seq", "zero_seq", "invalid_id", "draft", "missing", "corrupt", "owner", "descriptor", "cross_room", "active", "unconfirmed", "recovery", "cancelled", "no_context", "wrong_service", "wrong_member", "failed_guard"} {
 			t.Run(fmt.Sprintf("log=%v/%s", log, mode), func(t *testing.T) {
@@ -219,6 +221,7 @@ func TestRoomActionImagesRejectInvalidSourcesAndRelease(t *testing.T) {
 }
 
 func TestRoomActionImagesCheckExecutionWithoutRoomScan(t *testing.T) {
+	parallelFixtureTest(t)
 	for _, mode := range []string{"room_unreadable", "turn_changed", "turn_completed", "invalid_agent", "agent_symlink", "session_generation", "pending_session", "session_symlink", "cancelled", "binding_revoked", "closing", "restarting"} {
 		t.Run(mode, func(t *testing.T) {
 			h, svc, ctx, refs := actionImagesFixture(t, true)
@@ -318,6 +321,7 @@ func TestRoomActionImagesCheckExecutionWithoutRoomScan(t *testing.T) {
 }
 
 func TestRoomActionImagesValidateActualFormatDimensionsAndTotal(t *testing.T) {
+	parallelFixtureTest(t)
 	for _, mode := range []string{"mime", "dimensions", "pixels", "format", "total"} {
 		t.Run(mode, func(t *testing.T) {
 			h, svc, ctx, _ := actionImagesFixture(t, false)
@@ -387,6 +391,7 @@ func TestRoomActionImagesValidateActualFormatDimensionsAndTotal(t *testing.T) {
 }
 
 func TestRoomActionImagesReadContractsAndIndependentBudget(t *testing.T) {
+	parallelFixtureTest(t)
 	for _, transport := range []string{"http", "cli"} {
 		for _, images := range []bool{false, true} {
 			t.Run(fmt.Sprintf("%s/images=%v", transport, images), func(t *testing.T) {
@@ -511,6 +516,7 @@ func TestRoomActionImagesReadContractsAndIndependentBudget(t *testing.T) {
 }
 
 func TestRoomActionImagesCapturesPersistedSessionGeneration(t *testing.T) {
+	parallelFixtureTest(t)
 	h, svc, ctx, refs := actionImagesFixture(t, true)
 	call := ctx.Value(roomActionContextKey{}).(roomActionContext)
 	path := filepath.Join(h.store.dir, "agents", call.MembershipID, "session.json")

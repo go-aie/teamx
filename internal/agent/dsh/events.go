@@ -310,10 +310,8 @@ func (s *Session) Diagnostics() (text string, truncated bool) {
 	if s.process == nil {
 		return "", false
 	}
-	s.process.mu.Lock()
-	defer s.process.mu.Unlock()
-	text = s.process.stderrText.String()
-	return s.redactBounded(text, s.process.stderrTruncated), s.process.stderrTruncated
+	text, truncated = s.process.Diagnostic()
+	return s.redactBounded(text, truncated), truncated
 }
 
 // Kept separate so diagnostics do not expose a key copied into backend output.

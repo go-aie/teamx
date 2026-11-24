@@ -176,6 +176,7 @@ func computerToolNames(t *testing.T, envelope map[string]json.RawMessage) map[st
 	return out
 }
 func TestComputerNativeMCPBothCredentialsAndInboxModes(t *testing.T) {
+	parallelFixtureTest(t)
 	for _, provider := range []string{"aio", "other"} {
 		for _, mode := range []string{"http", "cli"} {
 			t.Run(provider+"/"+mode, func(t *testing.T) {
@@ -238,6 +239,7 @@ func (d *nativeComputerDriver) resultOrDefault() json.RawMessage {
 	return json.RawMessage(`{"content":[{"type":"text","text":"native-result","vendor_block":{"kept":true}}],"structuredContent":{"value":9007199254740993},"isError":true,"vendor_result":[1,2,3]}`)
 }
 func TestComputerMemberRevocationFencesCallsAndPreservesProfile(t *testing.T) {
+	parallelFixtureTest(t)
 	f := newComputerAgentFixture(t, "aio", "native")
 	if err := checkComputerSettled(f.opts, f.input.execution.Generation); err == nil {
 		t.Fatal("prepared remote turn passed settlement")
@@ -305,6 +307,7 @@ func TestComputerMemberRevocationFencesCallsAndPreservesProfile(t *testing.T) {
 	}
 }
 func TestComputerTurnFinishWaitsForRemoteAndClosedScopesStayClosed(t *testing.T) {
+	parallelFixtureTest(t)
 	f := newComputerAgentFixture(t, "aio", "native")
 	f.driver.entered = make(chan struct{}, 1)
 	f.driver.release = make(chan struct{})
@@ -333,6 +336,7 @@ func TestComputerTurnFinishWaitsForRemoteAndClosedScopesStayClosed(t *testing.T)
 	}
 }
 func TestComputerUncertainTransportReconcilesOriginalOperation(t *testing.T) {
+	parallelFixtureTest(t)
 	f := newComputerAgentFixture(t, "aio", "native")
 	// Lose only the response after the Runtime accepted and committed the action.
 	proxy := &computerLostResponse{Screen: f.x.entry(f.opts.MemberIdentity).screen}
@@ -364,6 +368,7 @@ func (s *computerLostResponse) Call(ctx context.Context, c computer.Call) (compu
 	return out, err
 }
 func TestComputerCapabilityFreezeAndNoProviderIOWhenDisabled(t *testing.T) {
+	parallelFixtureTest(t)
 	f := newComputerAgentFixture(t, "aio", "native")
 	if err := f.x.finish(f.opts.MemberIdentity, f.input.execution.Generation, 1); err != nil {
 		t.Fatal(err)
@@ -405,6 +410,7 @@ func TestComputerCapabilityFreezeAndNoProviderIOWhenDisabled(t *testing.T) {
 	}
 }
 func TestComputerConcurrentScreensUseIndependentAdmission(t *testing.T) {
+	parallelFixtureTest(t)
 	f := newComputerAgentFixture(t, "aio", "native")
 	id := f.h.memberID("B", "generation-B")
 	var config managedRoomConfig
@@ -459,6 +465,7 @@ func TestComputerConcurrentScreensUseIndependentAdmission(t *testing.T) {
 }
 
 func TestComputerHostRestartReconcilesPendingWithoutReplayingOrStartingScreen(t *testing.T) {
+	parallelFixtureTest(t)
 	f := newComputerAgentFixture(t, "aio", "native")
 	e := f.x.entry(f.opts.MemberIdentity)
 	e.mu.Lock()
@@ -561,6 +568,7 @@ func applyMemberComputer(t *testing.T, x *computerMembers, id MemberIdentity, en
 	return saved
 }
 func TestComputerManagedActiveAndClosedSessionCapabilityRotation(t *testing.T) {
+	parallelFixtureTest(t)
 	m, c, x, _ := managedComputerFixture(t)
 	room := createDirectConversation(t, m, directSelection("computer-member"))
 	id := modelMember(t, m, room)
@@ -622,6 +630,7 @@ func TestComputerManagedActiveAndClosedSessionCapabilityRotation(t *testing.T) {
 }
 
 func TestComputerPendingOwnedCloseCanBeVerifiedOnSameResource(t *testing.T) {
+	parallelFixtureTest(t)
 	var calls atomic.Int32
 	resource := &ownedSession{Session: &computerClosingSession{close: func(context.Context) error {
 		if calls.Add(1) == 1 {
@@ -651,6 +660,7 @@ func (s *computerNeverSent) Call(context.Context, computer.Call) (computer.Outco
 	return computer.Outcome{}, errors.New("connection lost before acceptance")
 }
 func TestComputerLostBeforeAcceptanceRequiresStopAndRetainsUnknownHint(t *testing.T) {
+	parallelFixtureTest(t)
 	f := newComputerAgentFixture(t, "aio", "native")
 	e := f.x.entry(f.opts.MemberIdentity)
 	e.mu.Lock()
@@ -679,6 +689,7 @@ func TestComputerLostBeforeAcceptanceRequiresStopAndRetainsUnknownHint(t *testin
 	}
 }
 func TestComputerLocalAdmissionRefusalNeverLeavesRemotePending(t *testing.T) {
+	parallelFixtureTest(t)
 	f := newComputerAgentFixture(t, "aio", "native")
 	input := connectionInput(f.c, f.c.current.Load().Endpoint)
 	input.Enabled = false
@@ -696,6 +707,7 @@ func TestComputerLocalAdmissionRefusalNeverLeavesRemotePending(t *testing.T) {
 }
 
 func TestComputerMemberSettlementPreservesScreenForNextSession(t *testing.T) {
+	parallelFixtureTest(t)
 	f := newComputerAgentFixture(t, "aio", "native")
 	e := f.x.entry(f.opts.MemberIdentity)
 	original := e.resource.Screen
@@ -717,6 +729,7 @@ func TestComputerMemberSettlementPreservesScreenForNextSession(t *testing.T) {
 	}
 }
 func TestComputerRemovedMemberOperationStopsOriginalScreenWithoutAdoptingReplacement(t *testing.T) {
+	parallelFixtureTest(t)
 	f := newComputerAgentFixture(t, "aio", "native")
 	input := memberComputerInput{MemberIdentity: f.opts.MemberIdentity, Caller: Caller{Author: Author{Kind: "human", ID: "owner"}}, ServiceEpoch: f.c.service.ServiceEpoch, ExpectedVersion: 1, OperationID: newComputerID(), Enabled: false}
 	op, err := f.x.request(input, "owner")
@@ -746,6 +759,7 @@ func TestComputerRemovedMemberOperationStopsOriginalScreenWithoutAdoptingReplace
 }
 
 func TestComputerSameInstanceUpdateRefreshesTransportWithoutSessionCapabilityChange(t *testing.T) {
+	parallelFixtureTest(t)
 	m, c, x, endpoint := managedComputerFixture(t)
 	room := createDirectConversation(t, m, directSelection("computer-transport"))
 	id := modelMember(t, m, room)
@@ -788,6 +802,7 @@ func TestComputerSameInstanceUpdateRefreshesTransportWithoutSessionCapabilityCha
 }
 
 func TestComputerPendingRecoveryDoesNotEraseLocalResumeEligibility(t *testing.T) {
+	parallelFixtureTest(t)
 	m, _, x, _ := managedComputerFixture(t)
 	room := createDirectConversation(t, m, directSelection("computer-recovery-gate"))
 	id := modelMember(t, m, room)
@@ -861,6 +876,7 @@ func snapshotRunner(t *testing.T, store *Store, id MemberIdentity) RunnerConfig 
 }
 
 func TestComputerStandaloneMemberPreferencePersistsWithoutProvider(t *testing.T) {
+	parallelFixtureTest(t)
 	h, input := unifiedReaderFixture(t, 0)
 	c, settings := connectionController(t, filepath.Join(t.TempDir(), "config.toml"), func(string, string, string) (computer.ManagedProvider, error) {
 		t.Fatal("disabled standalone preference performed Provider IO")
@@ -912,6 +928,7 @@ func TestComputerStandaloneMemberPreferencePersistsWithoutProvider(t *testing.T)
 }
 
 func TestComputerCapacityWaitAllowsGlobalIncreaseAndDisable(t *testing.T) {
+	parallelFixtureTest(t)
 	m, c, x, endpoint := managedComputerFixture(t)
 	var ids []MemberIdentity
 	for i := 0; i < 4; i++ {
@@ -984,6 +1001,7 @@ func TestComputerCapacityWaitAllowsGlobalIncreaseAndDisable(t *testing.T) {
 }
 
 func TestComputerRotatedCapabilityMetadataDoesNotBlockRoomDeletion(t *testing.T) {
+	parallelFixtureTest(t)
 	m, _, x, _ := managedComputerFixture(t)
 	room := createDirectConversation(t, m, directSelection("computer-delete-rotated"))
 	id := modelMember(t, m, room)
@@ -1013,6 +1031,7 @@ func TestComputerRotatedCapabilityMetadataDoesNotBlockRoomDeletion(t *testing.T)
 }
 
 func TestComputerDeletionFindsAcceptedScreenWithLostEnsureResponse(t *testing.T) {
+	parallelFixtureTest(t)
 	m, c, x, _ := managedComputerFixture(t)
 	room := createDirectConversation(t, m, directSelection("computer-orphan-start"))
 	id := modelMember(t, m, room)
@@ -1069,6 +1088,7 @@ func TestComputerDeletionFindsAcceptedScreenWithLostEnsureResponse(t *testing.T)
 }
 
 func TestComputerDisableAfterReplacementNeverRevisitsSettledOldInstance(t *testing.T) {
+	parallelFixtureTest(t)
 	m, c, x, oldEndpoint := managedComputerFixture(t)
 	room := createDirectConversation(t, m, directSelection("computer-old-offline"))
 	id := modelMember(t, m, room)
@@ -1097,6 +1117,7 @@ func TestComputerDisableAfterReplacementNeverRevisitsSettledOldInstance(t *testi
 }
 
 func TestComputerReplacementFindsLostStartBehindOldStoppedHandle(t *testing.T) {
+	parallelFixtureTest(t)
 	m, c, x, _ := managedComputerFixture(t)
 	room := createDirectConversation(t, m, directSelection("computer-new-orphan"))
 	id := modelMember(t, m, room)

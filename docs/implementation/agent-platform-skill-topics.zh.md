@@ -29,7 +29,7 @@ CLI → `/v1/platforms/skill` 仍校验当前成员身份，无需已有平台�
 
 ## 验证与证据
 
-结构化结果、改前/改后样本及失败记录见[脱敏证据](agent-platform-skill-topics-evidence.json)。
+结构化结果、改前/改后样本及失败记录见脱敏证据（本地验收文件 `agent-platform-skill-topics-evidence.json`）。
 
 无绑定 CLI/HTTP 检查覆盖默认完整指南和两个 topic、未知/路径形式/大小写错误、其他操作不接受 topic、伪造人类或旧 Membership 拒绝；读取不创建连接或绑定。离线帮助无需环境/服务；固定指南沿正常 `OpenSession → PrepareOpen → Launch.Instructions → 所选工厂` 检查默认与保存角色、三种输入合同的实际交付。
 

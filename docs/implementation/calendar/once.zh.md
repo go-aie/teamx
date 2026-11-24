@@ -1,6 +1,6 @@
 # 私信一次性定时任务交付记录
 
-2026-11-19。对应会话日历方案 C1。真实验收的结构化记录见 [once-evidence.json](once-evidence.json)。
+2026-11-19。对应会话日历方案 C1。真实验收的结构化记录见 once-evidence.json（本地验收文件 `once-evidence.json`）。
 
 ## 已交付范围
 

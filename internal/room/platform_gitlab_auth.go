@@ -942,6 +942,9 @@ func (m *roomManager) serveGitLabComplete(w http.ResponseWriter, r *http.Request
 					ref := map[string]any{"installation_id": requestInstallationID(r), "operator": s.owner,
 						"room_id": op.RoomID, "room_instance": op.RoomInstance, "agent_id": op.AgentID,
 						"membership_id": op.MembershipID, "operation_id": op.ID, "source_seq": op.Source.Seq}
+					if m.config.access != nil && m.config.access.spaces != nil {
+						ref["space_id"] = m.config.access.space.SpaceID
+					}
 					raw, _ := json.Marshal(ref)
 					destination = "/#platform-connection=" + url.PathEscape(string(raw))
 				}
@@ -949,6 +952,9 @@ func (m *roomManager) serveGitLabComplete(w http.ResponseWriter, r *http.Request
 		}
 	}
 	m.mu.Unlock()
+	if m.config.access != nil && m.config.access.spaces != nil {
+		destination = spaceRoute(m.config.access.space.SpaceID) + destination
+	}
 	w.Header().Set("Cache-Control", "no-store")
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.Header().Set("Referrer-Policy", "no-referrer")

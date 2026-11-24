@@ -7,9 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
-	"net"
 	"net/http"
-	"net/http/httptest"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -59,12 +57,7 @@ func TestTodosAppHTTP(t *testing.T) {
 		t.Skip("Node required")
 	}
 	m, room := todosAppManager(t)
-	listener, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Skipf("loopback listener unavailable: %v", err)
-	}
-	server := &httptest.Server{Listener: listener, Config: &http.Server{Handler: m}}
-	server.Start()
+	server := browserTestServer(t, m)
 	defer server.Close()
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()

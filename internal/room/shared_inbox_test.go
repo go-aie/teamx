@@ -66,6 +66,7 @@ func sharedRef(t *testing.T, s *inputSession) string {
 	return ""
 }
 func TestSharedInboxTwoMembersReadAndIndependentProgress(t *testing.T) {
+	parallelFixtureTest(t)
 	h, a, b, p := sharedReaders(t)
 	receiveSharedFixture(t, a, "one", "42")
 	receiveSharedFixture(t, a, "two", "77")
@@ -125,6 +126,7 @@ func TestSharedInboxTwoMembersReadAndIndependentProgress(t *testing.T) {
 	}
 }
 func TestSharedInboxHandoffRevocationAndReceiptRecovery(t *testing.T) {
+	parallelFixtureTest(t)
 	h, a, b, p := sharedReaders(t)
 	receiveSharedFixture(t, a, "one", "42")
 	ref := sharedRef(t, a)
@@ -180,6 +182,7 @@ func TestSharedInboxHandoffRevocationAndReceiptRecovery(t *testing.T) {
 	}
 }
 func TestSharedInboxPrivateAndSharedReadBudget(t *testing.T) {
+	parallelFixtureTest(t)
 	h, a, _, p := sharedReaders(t)
 	for i := range 28 {
 		receiveSharedFixture(t, a, fmt.Sprintf("item-%02d", i), "42")
@@ -238,6 +241,7 @@ func TestSharedInboxPrivateAndSharedReadBudget(t *testing.T) {
 }
 
 func TestSharedInboxSettledReplayAndMemberPreview(t *testing.T) {
+	parallelFixtureTest(t)
 	h, a, b, _ := sharedReaders(t)
 	receiveSharedFixture(t, a, "one", "42")
 	ref := sharedRef(t, a)
@@ -277,6 +281,7 @@ func TestSharedInboxSettledReplayAndMemberPreview(t *testing.T) {
 }
 
 func TestSharedInboxRevokeBetweenBodyAuthorizationAndMemberHandoff(t *testing.T) {
+	parallelFixtureTest(t)
 	h, a, _, p := sharedReaders(t)
 	receiveSharedFixture(t, a, "one", "42")
 	q := inputstream.ReadRequest{Turn: 1, ID: "authorization-crash", Stream: sharedRef(t, a)}

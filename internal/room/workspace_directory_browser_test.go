@@ -315,7 +315,7 @@ func TestWorkspaceDirectoryBrowserHumanAccess(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer revoke()
-	path := "/v1/workspace/directories?caller_id=" + url.QueryEscape(a.operator)
+	path := "/v1/workspace/directories?caller_id=" + url.QueryEscape(a.space.OwnerUserID)
 	for _, credential := range []string{"", execution} {
 		if w := accessRequest(h, "GET", path, credential, "", "", nil); w.Code == 200 {
 			t.Fatal("non-human allowed", w.Code)

@@ -16,7 +16,7 @@ Session 使用本次实际执行配置的规范 cwd 计算 `workspaceRootID`，�
 
 ## 验证
 
-- 前端完整测试及相关 Go 测试通过；具体结果见 [验证数据](workspace-files/message-links-evidence.json)。
+- 前端完整测试及相关 Go 测试通过；具体结果见 验证数据（本地验收文件 `message-links-evidence.json`）。
 - Go 覆盖执行凭据链路及撤销、伪造字段、来源缺失、原子失败、容量、分段日志不可变比较、幂等、Store 正常重启及新 epoch、恢复时的新旧配置、目录变化、成员退出、跨 Room、清空与直接浏览的独立权限。
 - 实际 HTTP／Chromium：单聊和多人 Room，1600×1000、1000×850、390×850；执行组件经 Session host 取得凭据，再通过生产认证／send 发送链接，浏览器点击。覆盖单请求直达、引用式链接、源码刷新、展开、返回、焦点和草稿恢复、所在目录、旧消息提示，以及清空期间迟到响应丢弃。
 - F1 的单聊／多人 Room × 默认／外部目录四组实际浏览回归通过。
@@ -34,7 +34,7 @@ TEAMX_FILES_BROWSER=1 NODE_PATH="$PWD/packaging/verifier/node_modules" \
 go test ./internal/room ./internal/web
 ```
 
-截图：[窄桌面](workspace-files/message-1000.png)、[手机尺寸](workspace-files/message-390.png)。操作说明见 [Workspace 使用指南](../workspace.zh.md#查看工作区文件)，参数和消息来源合同见 [技术参考](../reference/workspace.zh.md#文件只读接口)。
+截图：窄桌面（本地验收文件 `message-1000.png`）、手机尺寸（本地验收文件 `message-390.png`）。操作说明见 [Workspace 使用指南](../workspace.zh.md#查看工作区文件)，参数和消息来源合同见 [技术参考](../reference/workspace.zh.md#文件只读接口)。
 
 ## 后续边界
 

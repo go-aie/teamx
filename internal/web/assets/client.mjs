@@ -1,3 +1,4 @@
+import { spaceURL } from "./space-context.mjs";
 import { savedAttachments } from "./attachment-drafts.mjs";
 
 export async function request(path, payload, fetcher = globalThis.fetch, timeout = 10000, signal) {
@@ -7,14 +8,14 @@ export async function request(path, payload, fetcher = globalThis.fetch, timeout
   else signal?.addEventListener("abort", abort, { once: true });
   const timer = setTimeout(() => controller.abort(), timeout);
   try {
-    const response = await fetcher(path, { method: payload ? "POST" : "GET", cache: "no-store",
+    const response = await fetcher(spaceURL(path), { method: payload ? "POST" : "GET", cache: "no-store",
       headers: payload ? { "Content-Type": "application/json" } : {},
       body: payload ? JSON.stringify(payload) : undefined, signal: controller.signal });
     const result = await response.json();
     if (!response.ok) {
       if (response.status === 401 && globalThis.location?.pathname !== "/access") {
         const hash=globalThis.location?.hash || "";
-        globalThis.location?.assign("/access"+(hash.startsWith("#platform-connection=") || hash==="#platform-settings" ? hash : ""));
+        globalThis.location?.assign(spaceURL("/access")+(hash.startsWith("#platform-connection=") || hash==="#platform-settings" ? hash : ""));
       }
       const error = new Error(result.message || result.error || `请求失败 (${response.status})`);
       error.code = result.code;

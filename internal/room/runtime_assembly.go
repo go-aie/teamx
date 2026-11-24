@@ -167,6 +167,7 @@ func (m *roomManager) workspaceActivationConfig(id RoomIdentity, applying string
 		return serviceConfig{}, err
 	}
 	base := saved.Runtime.profile()
+	base.environment = m.config.environment
 	if err := checkManagedRuntimeAvailability(base); err != nil {
 		return serviceConfig{}, err
 	}

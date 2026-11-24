@@ -26,13 +26,13 @@
 
 受控服务验证经过 HTTP、唯一 CalendarActor 和真实文件提交，覆盖完整历史分页、区间外来源／报告关联、只读修订不变、编辑不改写历史／已核实 scope、旧游标与过期任务版本拒绝，以及预览与物化执行同身份去重。日期测试覆盖跨年、UTC 日期差及 DST 长短日／周；Markdown 测试校验日历链接仅在显式本地处理器下开放，并拒绝不完整引用和其他协议。
 
-实际 Chromium 验证桌面 1440×1000 与手机 390×844 视口，截图及[结构化证据](experience/browser-evidence.json)保存在 `experience/`。手机为视口模拟，无真机证据。任务、历史及报告来自隔离目录中的受控服务和真实持久路径，未调用真实模型或外部平台。本阶段未改变领取／执行合同，真实 DSH 沿用 [C1.5](agent-contract.zh.md) 与 [C2](recurrence.zh.md) 的独立证据，不把受控历史当作真实 Agent 长期执行。
+实际 Chromium 验证桌面 1440×1000 与手机 390×844 视口，截图及结构化证据（本地验收文件 `browser-evidence.json`）保存在 `experience/`。手机为视口模拟，无真机证据。任务、历史及报告来自隔离目录中的受控服务和真实持久路径，未调用真实模型或外部平台。本阶段未改变领取／执行合同，真实 DSH 沿用 [C1.5](agent-contract.zh.md) 与 [C2](recurrence.zh.md) 的独立证据，不把受控历史当作真实 Agent 长期执行。
 
 检查全部通过：`go test ./...`（Room 包 469.771 秒）、相关 Go race 检查、前端 757 项和最终 Chromium 验收（11.26 秒）。全量回归后的界面修正另经最终前端／Chromium 检查；浏览器夹具加入隔离 settings 文件后再次执行日历、工具桥及相关恢复路径的专项 race 检查。
 
 Chromium 实际覆盖完整范围翻页与游标过期重读、同刻任务、55 条历史分页、冻结报告、较早私信报告定位、双向链接、编辑后保留 scope、真实系统显示时区切换后规则时区不变、版本冲突草稿、其他标签页 SSE 更新、暂停恢复、聊天草稿、日期和滚动返回、手机浏览器 Back、每周工作日表单、单次跳过、待完善补齐、回执丢失重放、保存后刷新失败、覆盖不足、软取消及空日历读取不创建状态文件。控制台无异常。
 
-原交付截图（早于本次任务列表调整）：[桌面周视图](experience/desktop-week.png)、[桌面详情](experience/desktop-detail.png)、[手机按日列表](experience/mobile-day.png)、[手机详情](experience/mobile-detail.png)、[手机空态](experience/mobile-empty.png)。
+原交付截图（早于本次任务列表调整）：桌面周视图（本地验收文件 `desktop-week.png`）、桌面详情（本地验收文件 `desktop-detail.png`）、手机按日列表（本地验收文件 `mobile-day.png`）、手机详情（本地验收文件 `mobile-detail.png`）、手机空态（本地验收文件 `mobile-empty.png`）。
 
 ```sh
 go test ./...

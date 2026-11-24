@@ -1,3 +1,4 @@
+import { spaceCapabilities } from "../space-context.mjs";
 import { randomUUID } from "../random-id.mjs";
 import { createNavigationIcon } from "../icons.mjs";
 // Shared platform connection forms, validation and account selection.
@@ -228,7 +229,7 @@ export function createConnections({ env, settingsUI, runtime, scionUI, gitlabUI,
     $("connection-form").hidden = false; $("platforms-list-view").hidden = true;
     $("connection-title").textContent = item?.provider === "lark" ? `${item.cli_profile?.brand === "lark" ? "Lark" : "飞书"}设置` : item ? "平台详情" : "添加平台";
     $("connection-name").value = item?.name || "";
-    setSelectOptions("connection-provider",[new Option("GitLab","gitlab"),new Option("Scion","scion"),new Option("飞书","feishu"),new Option("Lark","lark")],item?.provider === "lark" ? item.cli_profile?.brand || "feishu" : item?.provider || "gitlab");
+    setSelectOptions("connection-provider",[new Option("GitLab","gitlab"),new Option("Scion","scion"),new Option("飞书","feishu"),new Option("Lark","lark")].filter(option => spaceCapabilities()[option.value === "feishu" ? "lark" : option.value] !== false),item?.provider === "lark" ? item.cli_profile?.brand || "feishu" : item?.provider || "gitlab");
     $("connection-provider").disabled = !!item;
     $("connection-url").value = item?.url || ""; $("connection-url").readOnly = !!item;
     setSelectOptions("connection-profile",[new Option("", item?.cli_profile?.profile || "")],item?.cli_profile?.profile || "");

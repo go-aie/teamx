@@ -26,7 +26,7 @@ Topic 包含文本、纯图片、图文、MR／准确讨论锚点、完整 URL �
 
 ## 验证与证据
 
-验证结果与改前／改后模型样本见[脱敏证据](agent-gitlab-send-skill-topic-evidence.json)。
+验证结果与改前／改后模型样本见脱敏证据（本地验收文件 `agent-gitlab-send-skill-topic-evidence.json`）。
 
 组件及集成检查覆盖 CLI／HTTP 默认和 topic 读取、无凭据／原生程序、未知 topic、准确入口替换、别名、未绑定／其他成员／旧 Membership、人类伪装、其他操作拒绝 topic、Lark／Scion 默认资源以及无 Skill 工具。固定指南沿 `OpenSession → PrepareOpen → Launch.Instructions → 所选工厂` 检查保存角色和三个输入合同。动作回归复用原 URL、图文、策略、取消、重启和原 ID 恢复测试。定向 `integration -race` 共 30 个顶层用例通过（204.362 秒）；最终 topic／装配的 4 个 race 用例通过，顶层离线帮助接线后的 5 个定向 race 用例也通过（2.578 秒）；观察器正反例及调用计数测试通过。
 

@@ -14,7 +14,7 @@
 
 ## 真实模型与平台证据
 
-当前配置模型为 `deepseek-v4.1-flash-1017`，通过真实 DSH／ACP、输入 bridge 和 HTTP MCP 执行。汇总见 [H3 可复核摘要](agent-history-h3-evidence.json)，完整正文、答案、工具 trace、图片块及权威状态对照保存在 `.local/` 私有报告中。
+当前配置模型为 `deepseek-v4.1-flash-1017`，通过真实 DSH／ACP、输入 bridge 和 HTTP MCP 执行。汇总见 H3 可复核摘要（本地验收文件 `agent-history-h3-evidence.json`），完整正文、答案、工具 trace、图片块及权威状态对照保存在 `.local/` 私有报告中。
 
 | 场景 | 次数 | 实际结果 |
 | --- | ---: | --- |

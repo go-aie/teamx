@@ -214,6 +214,12 @@ func TestServerModelRepairRequiresRestartBeforeBusinessStartup(t *testing.T) {
 		t.Fatal("repaired model did not start normal service", info)
 	}
 	stop()
+	// Preserve the registered owner while editing the runtime configuration.
+	current, err := readStartupConfig(filepath.Join(home, "config.toml"), true, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	config["access"] = current.Access
 	// Invalid model structure also stays outside the Room manager.
 	r.Model.Protocol = "unsupported"
 	data, err = toml.Marshal(config)

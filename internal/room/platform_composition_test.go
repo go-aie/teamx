@@ -31,7 +31,7 @@ func TestSelectedCatalogReachesManagerStandaloneAndOfflineProjection(t *testing.
 	if m.platformCatalog != selected || len(m.toolDefinitions()) != 2 || len(m.notificationAdapters) != 2 {
 		t.Fatal("manager replaced selected catalog")
 	}
-	svc, err := newConfiguredService(t.TempDir(), "standalone", serviceConfig{platformCatalog: selected, unifiedInputs: true})
+	svc, err := newConfiguredService(t.TempDir(), "standalone", serviceConfig{ownerUserID: "composition-owner", platformCatalog: selected, unifiedInputs: true})
 	if err != nil {
 		t.Fatal(err)
 	}

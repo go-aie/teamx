@@ -1,3 +1,4 @@
+import { spaceURL } from "./space-context.mjs";
 import { randomUUID } from "./random-id.mjs";
 
 const validID = id => /^img_[a-f0-9]{32}$/.test(id);
@@ -11,7 +12,7 @@ export function attachmentURL(info, operator, id, seq) {
   const query = new URLSearchParams({ room_id: info.room_id, room_instance: info.room_instance,
     service_epoch: info.service_epoch, caller_id: operator, attachment_id: id });
   if (seq) query.set("seq", seq);
-  return `/v1/attachments/content?${query}`;
+  return spaceURL(`/v1/attachments/content?${query}`);
 }
 export function clipboardImages(data) {
   const items = Array.from(data?.items || []).filter(item => item.kind === "file").map(item => item.getAsFile()).filter(file => file?.type.startsWith("image/"));

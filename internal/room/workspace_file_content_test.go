@@ -159,7 +159,7 @@ func TestWorkspaceFileContentHTTPAdmissionAndHeaders(t *testing.T) {
 	endpoint := func() string { return "/v1/workspace/files/content?" + q.Encode() }
 	var onAdmit func()
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		m.ServeHTTP(workspaceHeaderWriter{w, func() {
+		fixtureHTTPHandler(m).ServeHTTP(workspaceHeaderWriter{w, func() {
 			if onAdmit != nil {
 				onAdmit()
 			}
@@ -194,7 +194,7 @@ func TestWorkspaceFileContentHTTPAdmissionAndHeaders(t *testing.T) {
 	// Prepare a handle, then change the current binding before delivery.
 	q.Del("download")
 	q.Set("path", "image.png")
-	req := httptest.NewRequest("GET", endpoint(), nil)
+	req := fixtureHumanRequest(httptest.NewRequest("GET", endpoint(), nil), humanCaller.ID)
 	snapshot, err := m.workspaceFilesSnapshot(req)
 	if err != nil {
 		t.Fatal(err)

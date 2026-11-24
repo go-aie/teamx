@@ -755,9 +755,23 @@ func TestDefaultAssistantManagedStartup(t *testing.T) {
 			}
 			stop := errors.New("stop after readiness")
 			var stderr bytes.Buffer
-			err = serveRoomManager(context.Background(), listener, root, filepath.Join(root, "missing-teams"),
-				serviceConfig{endpoint: "http://" + listener.Addr().String(), maxTurns: 7}, defaults,
-				controlledActivationFactory(nil, nil), func(any) error { return stop }, &stderr)
+			config := freshAccessConfig(t, t.TempDir())
+			if err := prepareFirstAccess(config); err != nil {
+				t.Fatal(err)
+			}
+			config = freshAccessConfig(t, filepath.Dir(config.path))
+			config.Server.DataDir, config.Server.TeamsDir = &root, new(string)
+			*config.Server.TeamsDir = filepath.Join(root, "missing-teams")
+			config.Runtime = defaults
+			access, accessErr := newServerAccess(config, "http://"+listener.Addr().String())
+			if accessErr != nil {
+				t.Fatal(accessErr)
+			}
+			runtime, runtimeErr := newSpaceRuntime(config, serviceConfig{access: access, settings: newSystemSettings(config), endpoint: "http://" + listener.Addr().String(), maxTurns: 7}, personalDeployment(controlledActivationFactory(nil, nil)).factories)
+			if runtimeErr != nil {
+				t.Fatal(runtimeErr)
+			}
+			err = runtime.Serve(context.Background(), listener, func(any) error { return stop }, &stderr)
 			if !errors.Is(err, stop) {
 				t.Fatal("startup did not reach readiness", err, stderr.String())
 			}

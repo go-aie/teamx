@@ -327,11 +327,18 @@ func (s *dshSession) prepareTurn(ctx context.Context, input UnreadChanged, capab
 		if e != nil {
 			return nil, dshFailure(e)
 		}
-		path := filepath.Join(filepath.Dir(s.opts.StatePath), ref.Directory, "input-execution.json")
+		path := dsh.InputBindingPath(filepath.Join(filepath.Dir(s.opts.StatePath), ref.Directory), s.backend.execution)
 		if e = os.MkdirAll(filepath.Dir(path), 0700); e != nil {
 			return nil, dshFailure(e)
 		}
-		if e = saveDSHDiagnostic(path, map[string]string{"token": token, "endpoint": s.backend.inputService.endpoint}); e != nil {
+		endpoint := s.backend.inputService.endpoint
+		if router, ok := s.backend.execution.(agent.EndpointRouter); ok {
+			endpoint, e = router.RouteEndpoint(endpoint)
+			if e != nil {
+				return nil, dshFailure(e)
+			}
+		}
+		if e = saveDSHDiagnostic(path, map[string]string{"token": token, "endpoint": endpoint}); e != nil {
 			return nil, dshFailure(e)
 		}
 		releases = append(releases, func() { _ = os.Remove(path) })
