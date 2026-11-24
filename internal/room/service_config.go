@@ -4,6 +4,7 @@ import (
 	"context"
 	"github.com/go-aie/teamx/agent"
 	"github.com/go-aie/teamx/internal/app/platforms"
+	"github.com/go-aie/teamx/internal/platform/gitlaboauth"
 	"github.com/go-aie/teamx/internal/platform/notification"
 	"io"
 	"time"
@@ -14,6 +15,7 @@ import (
 // Configuration belongs to service assembly. DSH launch/model parameters stay
 // concrete until an actual second backend defines its own configuration.
 type serviceConfig struct {
+	gitlabApplications gitlaboauth.Source
 	hostTools          hostToolPolicy
 	execution          agent.ExecutionFactory
 	executionResources *executionResources

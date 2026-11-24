@@ -18,6 +18,7 @@ import (
 
 	"github.com/go-aie/teamx/internal/platform"
 	"github.com/go-aie/teamx/internal/platform/gitlab"
+	"github.com/go-aie/teamx/internal/platform/gitlaboauth"
 	"github.com/go-aie/teamx/internal/platform/registry"
 )
 
@@ -59,6 +60,9 @@ type gitlabAuthView struct {
 	Platforms       []managedPlatform     `json:"platforms,omitempty"`
 }
 type gitlabAuthSession struct {
+	spaceID        string
+	applicationUse *gitlaboauth.Use
+	disconnect     bool
 	gitlabAuthView
 	owner, state, browser, verifier string
 	app                             registry.OAuthApplication
@@ -120,6 +124,9 @@ func (m *roomManager) finishGitLabAuthLocked(s *gitlabAuthSession, status, code 
 	default:
 		close(s.done)
 	}
+	if s.applicationUse != nil {
+		s.applicationUse.Close()
+	}
 }
 func (m *roomManager) cancelGitLabAuthLocked(s *gitlabAuthSession) {
 	s.cancel()
@@ -171,6 +178,9 @@ func (m *roomManager) gitlabAuthReferencesLocked(records []registry.Record) ([]g
 	return affected, fingerprints, nil
 }
 func (m *roomManager) checkGitLabAuthLocked(s *gitlabAuthSession) error {
+	if err := m.withGitLabGrantOwnerLocked(s.owner, func() error { return nil }); err != nil {
+		return err
+	}
 	if m.closing {
 		return ErrClosing
 	}
@@ -194,7 +204,11 @@ func (m *roomManager) checkGitLabAuthLocked(s *gitlabAuthSession) error {
 	if err != nil {
 		return err
 	}
-	if s.importID == "" {
+	if s.importID == "" && s.app.Source != "" && !s.disconnect {
+		if err := m.gitlabApplications().Check(s.app); err != nil {
+			return err
+		}
+	} else if s.importID == "" {
 		if !slices.ContainsFunc(file.OAuthApplications, func(a registry.OAuthApplication) bool {
 			return a.ID == s.app.ID && a.ClientID == s.app.ClientID && a.ClientSecret == s.app.ClientSecret && a.RedirectURI == s.app.RedirectURI && a.OwnerID == s.app.OwnerID && a.Origin == s.app.Origin && slices.Equal(a.Scopes, s.app.Scopes)
 		}) {
@@ -313,7 +327,7 @@ func (m *roomManager) serveGitLabAuth(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	secure := strings.HasPrefix(s.app.RedirectURI, "https:")
-	http.SetCookie(w, &http.Cookie{Name: gitlabCookieName(s.SessionID), Value: s.browser, Path: gitlabCookiePath, HttpOnly: true, Secure: secure, SameSite: http.SameSiteLaxMode, MaxAge: 660})
+	http.SetCookie(w, &http.Cookie{Name: gitlabCookieName(s.SessionID), Value: s.browser, Path: m.gitlabBrowserCookiePath(), HttpOnly: true, Secure: secure, SameSite: http.SameSiteLaxMode, MaxAge: 660})
 	if action == "logout" {
 		go m.runGitLabLogout(s)
 	}
@@ -322,6 +336,9 @@ func (m *roomManager) serveGitLabAuth(w http.ResponseWriter, r *http.Request) {
 	_ = json.NewEncoder(w).Encode(view)
 }
 func (m *roomManager) newGitLabAuthLocked(req gitlabAuthRequest, action string) (*gitlabAuthSession, error) {
+	if m.gitlabApplications().Managed() && req.ClientImportID != "" {
+		return nil, ErrRequest
+	}
 	var onboarding platformOnboarding
 	if req.OnboardingID != "" {
 		if action != "login" {
@@ -364,6 +381,10 @@ func (m *roomManager) newGitLabAuthLocked(req gitlabAuthRequest, action string) 
 	if req.ID != "" && (target.ID == "" || target.Provider != "gitlab") {
 		return nil, ErrConflict
 	}
+	discovery, err := m.gitlabDiscoveryLocked(file)
+	if err != nil {
+		return nil, err
+	}
 	var app registry.OAuthApplication
 	var previousApp registry.OAuthApplication
 	importID := ""
@@ -383,7 +404,7 @@ func (m *roomManager) newGitLabAuthLocked(req gitlabAuthRequest, action string) 
 			return nil, e
 		}
 		req.Name = name
-		for _, v := range file.OAuthApplications {
+		for _, v := range discovery.OAuthApplications {
 			if v.ID == req.ApplicationID && v.Origin == origin {
 				app = v
 			}
@@ -405,7 +426,7 @@ func (m *roomManager) newGitLabAuthLocked(req gitlabAuthRequest, action string) 
 		}
 	}
 	if target.ID != "" && target.CredentialID == "" && action == "login" {
-		for _, v := range file.OAuthApplications {
+		for _, v := range discovery.OAuthApplications {
 			if v.ID == req.ApplicationID && v.Origin == target.URL {
 				app = v
 			}
@@ -436,6 +457,12 @@ func (m *roomManager) newGitLabAuthLocked(req gitlabAuthRequest, action string) 
 	}
 	if err != nil {
 		return nil, err
+	}
+	if app.Source != "" && action != "logout" {
+		app, err = m.currentGitLabApplicationLocked(app)
+		if err != nil {
+			return nil, err
+		}
 	}
 	redirect, err := m.gitlabRedirectLocked()
 	if err != nil {
@@ -521,6 +548,18 @@ func (m *roomManager) newGitLabAuthLocked(req gitlabAuthRequest, action string) 
 	expires := time.Now().Add(10 * time.Minute)
 	ctx, cancel := context.WithDeadline(context.Background(), expires)
 	s := &gitlabAuthSession{gitlabAuthView: gitlabAuthView{SessionID: id, PlatformID: req.ID, OnboardingID: req.OnboardingID, Status: "waiting", ExpiresAt: expires, RequestedScopes: slices.Clone(scopes)}, owner: req.Caller.ID, state: state, browser: browser, verifier: verifier, app: app, previousApp: previousApp, importID: importID, targetID: req.ID, name: req.Name, records: records, references: refs, ctx: ctx, cancel: cancel, done: make(chan struct{})}
+	if m.config.access != nil {
+		s.spaceID = m.config.access.space.SpaceID
+	}
+	s.disconnect = action == "logout"
+	if !s.disconnect {
+		s.applicationUse, err = m.gitlabApplications().Begin(ctx, app, id, state)
+		if err != nil {
+			cancel()
+			return nil, err
+		}
+		s.ctx = s.applicationUse.Context()
+	}
 	challenge := sha256.Sum256([]byte(verifier))
 	q := url.Values{"client_id": {app.ClientID}, "redirect_uri": {redirect}, "response_type": {"code"}, "scope": {strings.Join(scopes, " ")}, "state": {state}, "code_challenge": {base64.RawURLEncoding.EncodeToString(challenge[:])}, "code_challenge_method": {"S256"}}
 	s.URL = app.Origin + "/oauth/authorize?" + q.Encode()
@@ -536,12 +575,12 @@ func (m *roomManager) newGitLabAuthLocked(req gitlabAuthRequest, action string) 
 	m.gitlabAuthSessions[id] = s
 	m.authorizationChanged(s.owner)
 	go func() {
-		<-ctx.Done()
+		<-s.ctx.Done()
 		m.mu.Lock()
 		defer m.mu.Unlock()
 		if s.Status == "waiting" {
 			status := "cancelled"
-			if errors.Is(ctx.Err(), context.DeadlineExceeded) {
+			if errors.Is(s.ctx.Err(), context.DeadlineExceeded) {
 				status = "expired"
 			}
 			m.finishGitLabAuthLocked(s, status, "")
@@ -607,7 +646,7 @@ func (m *roomManager) serveGitLabCallback(w http.ResponseWriter, r *http.Request
 	s.verifier = ""
 	transport := m.platformHTTP
 	m.mu.Unlock()
-	tokens, identity, exchangeErr := gitlab.ExchangeOAuthCode(s.ctx, gitlab.OAuthLoginRequest{Origin: s.app.Origin, ClientID: s.app.ClientID, ClientSecret: platform.NewSecret(s.app.ClientSecret), RedirectURI: s.app.RedirectURI, Code: platform.NewSecret(q.Get("code")), Verifier: platform.NewSecret(verifier), UserID: s.expectedUserID(), Scopes: strings.Join(s.RequestedScopes, " ")}, transport)
+	tokens, identity, exchangeErr := s.applicationUse.Exchange(platform.NewSecret(q.Get("code")), platform.NewSecret(verifier), s.expectedUserID(), strings.Join(s.RequestedScopes, " "), transport)
 	code := "authorization_failed"
 	var missingScopes []string
 	// Imported applications need proof of native ownership, not merely a user
@@ -674,7 +713,13 @@ func (m *roomManager) serveGitLabCallback(w http.ResponseWriter, r *http.Request
 			if s.importID != "" {
 				app.OwnerID = identity.UserID
 			}
-			adopted, exchangeErr = m.platforms.CommitOAuthLogin(s.records, s.targetID, s.name, app, s.importID, s.owner, tokens, identity)
+			exchangeErr = s.applicationUse.Commit(func() error {
+				return m.withGitLabGrantOwnerLocked(s.owner, func() error {
+					var err error
+					adopted, err = m.platforms.CommitOAuthLogin(s.records, s.targetID, s.name, app, s.importID, s.owner, tokens, identity, s.SessionID)
+					return err
+				})
+			})
 			if exchangeErr == nil {
 				for _, c := range adopted {
 					v, e := m.publicPlatformLocked(c)
@@ -789,18 +834,45 @@ func (m *roomManager) cleanupGitLabCandidate(s *gitlabAuthSession, id string) {
 			}
 		}
 	}
+	var candidate registry.OAuthCleanup
+	for _, v := range file.OAuthCleanup {
+		if v.ID == id {
+			candidate = v
+		}
+	}
+	app := registry.OAuthApplication{Origin: candidate.Origin, ClientID: candidate.ClientID, ClientSecret: candidate.ClientSecret}
+	if candidate.Source != "" {
+		for _, a := range file.OAuthApplications {
+			if a.ID == candidate.ApplicationID {
+				app = a
+			}
+		}
+		app, err = m.currentGitLabApplicationLocked(app)
+		if err != nil || app.Origin != candidate.Origin || app.ClientID != candidate.ClientID {
+			s.Cleanup = "manual_required"
+			m.mu.Unlock()
+			return
+		}
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+	appUse, err := m.gitlabApplications().BeginRevoke(ctx, app, "revoke-"+id, candidate.NativeUserID)
+	if err != nil {
+		s.Cleanup = "manual_required"
+		m.mu.Unlock()
+		return
+	}
+	defer appUse.Close()
 	item, err := m.platforms.BeginOAuthCleanup(id)
 	transport := m.platformHTTP
 	if err != nil {
 		m.mu.Unlock()
 		return
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
-	defer cancel()
 	call := &platformCall{tool: "gitlab-revoke"}
 	call.Call = m.platformCalls.Register(call, cancel)
 	m.mu.Unlock()
-	err = gitlab.RevokeOAuth(ctx, item.Origin, item.ClientID, platform.NewSecret(item.ClientSecret), platform.NewSecret(item.Token), transport)
+	err = appUse.Revoke(platform.NewSecret(item.Token), transport)
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	saved := m.platforms.FinishOAuthCleanup(id, err == nil)
@@ -921,10 +993,14 @@ func gitlabAuthReferencesFingerprint(refs []managedPlatformReference) string {
 // OAuth material and grants no authority; the UI rechecks the authenticated
 // installation, room and exact membership before reading the original receipt.
 func gitlabCompletionLocation(s *gitlabAuthSession) string {
-	if s.operationID != "" {
-		return gitlabCompletePath + "?operation_id=" + url.QueryEscape(s.operationID)
+	prefix := ""
+	if s.app.Source != "" && s.spaceID != "" {
+		prefix = spaceRoute(s.spaceID)
 	}
-	return gitlabCompletePath
+	if s.operationID != "" {
+		return prefix + gitlabCompletePath + "?operation_id=" + url.QueryEscape(s.operationID)
+	}
+	return prefix + gitlabCompletePath
 }
 func (m *roomManager) serveGitLabComplete(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {

@@ -12,6 +12,13 @@ import (
 	"github.com/go-aie/teamx/internal/platform"
 )
 
+func validApplicationSecret(a OAuthApplication) bool {
+	if a.Source == "" {
+		return a.Version == 0 && platform.ValidCredential(a.ClientSecret)
+	}
+	return a.Source == "service" && a.Version > 0 && a.ClientSecret == ""
+}
+
 func validScopes(scopes []string) bool {
 	normalized, ok := platform.NormalizeScopes(scopes)
 	return ok && slices.Equal(normalized, scopes)
@@ -37,7 +44,7 @@ func validateOAuth(file Snapshot) error {
 	apps := map[string]OAuthApplication{}
 	for _, a := range file.OAuthApplications {
 		_, origin, err := Normalize("OAuth", a.Origin)
-		if err != nil || origin != a.Origin || !validRestartID(a.ID) || apps[a.ID].ID != "" || a.OwnerID <= 0 || !platform.ValidCredential(a.ClientID) || !platform.ValidCredential(a.ClientSecret) || !validRedirect(a.RedirectURI) || !validScopes(a.Scopes) {
+		if err != nil || origin != a.Origin || !validRestartID(a.ID) || apps[a.ID].ID != "" || a.OwnerID <= 0 || !platform.ValidCredential(a.ClientID) || !validApplicationSecret(a) || !validRedirect(a.RedirectURI) || !validScopes(a.Scopes) {
 			return invalid()
 		}
 		for _, prior := range apps {
@@ -58,7 +65,7 @@ func validateOAuth(file Snapshot) error {
 			app  string
 			user int64
 		}{c.ApplicationID, c.UserID}
-		if !ok || !validRestartID(c.ID) || seen[c.ID] || accounts[key] || c.UserID <= 0 || c.GrantGeneration == 0 || c.TokenRevision == 0 || !validScopes(c.Scopes) {
+		if !ok || a.Source == "service" && (c.OwnerUserID == "" || !validRestartID(c.SpaceID) || c.OperationID == "") || !validRestartID(c.ID) || seen[c.ID] || accounts[key] || c.UserID <= 0 || c.GrantGeneration == 0 || c.TokenRevision == 0 || !validScopes(c.Scopes) {
 			return invalid()
 		}
 		for _, scope := range c.Scopes {

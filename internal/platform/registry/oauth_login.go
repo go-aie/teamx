@@ -34,13 +34,17 @@ func GitLabAccountConnected(file Snapshot, targetID, origin string, userID int64
 // Pending revocations are deliberately not business credentials. Unknown or
 // manual records are never replayed automatically, including after restart.
 type OAuthCleanup struct {
-	UncertainGrant bool   `json:"uncertain_grant,omitempty"`
-	ID             string `json:"id"`
-	Origin         string `json:"origin"`
-	ClientID       string `json:"client_id"`
-	ClientSecret   string `json:"client_secret"`
-	Token          string `json:"token,omitempty"`
-	State          string `json:"state"` // pending, unknown, manual, revoked
+	NativeUserID       int64  `json:"native_user_id,omitempty"`
+	ApplicationID      string `json:"application_id,omitempty"`
+	ApplicationVersion uint64 `json:"application_version,omitempty"`
+	Source             string `json:"source,omitempty"`
+	UncertainGrant     bool   `json:"uncertain_grant,omitempty"`
+	ID                 string `json:"id"`
+	Origin             string `json:"origin"`
+	ClientID           string `json:"client_id"`
+	ClientSecret       string `json:"client_secret,omitempty"`
+	Token              string `json:"token,omitempty"`
+	State              string `json:"state"` // pending, unknown, manual, revoked
 }
 
 func (OAuthCleanup) Format(s fmt.State, _ rune) { fmt.Fprint(s, "[REDACTED OAuth cleanup]") }
@@ -51,7 +55,7 @@ func validateOAuthCleanup(file Snapshot) error {
 	seen := map[string]bool{}
 	for _, c := range file.OAuthCleanup {
 		_, origin, err := Normalize("OAuth", c.Origin)
-		if err != nil || origin != c.Origin || !validRestartID(c.ID) || seen[c.ID] || !platform.ValidCredential(c.ClientID) || !platform.ValidCredential(c.ClientSecret) {
+		if err != nil || origin != c.Origin || !validRestartID(c.ID) || seen[c.ID] || !platform.ValidCredential(c.ClientID) || !(c.Source == "service" && c.ClientSecret == "" && validRestartID(c.ApplicationID) && c.ApplicationVersion > 0 || c.Source == "" && platform.ValidCredential(c.ClientSecret)) {
 			return ErrInvalid
 		}
 		if c.State == "revoked" {
@@ -65,7 +69,7 @@ func validateOAuthCleanup(file Snapshot) error {
 	}
 	return nil
 }
-func addOAuthCleanup(file *Snapshot, app OAuthApplication, token, state string) (string, error) {
+func addOAuthCleanup(file *Snapshot, app OAuthApplication, token, state string, nativeUser ...int64) (string, error) {
 	if token == "" {
 		return "", nil
 	}
@@ -90,7 +94,16 @@ func addOAuthCleanup(file *Snapshot, app OAuthApplication, token, state string) 
 	if err != nil {
 		return "", err
 	}
-	file.OAuthCleanup = append(file.OAuthCleanup, OAuthCleanup{ID: id, Origin: app.Origin, ClientID: app.ClientID, ClientSecret: app.ClientSecret, Token: token, State: state})
+	userID := int64(0)
+	applicationID := ""
+	applicationVersion := uint64(0)
+	if app.Source != "" {
+		applicationID, applicationVersion = app.ID, app.Version
+		if len(nativeUser) == 1 {
+			userID = nativeUser[0]
+		}
+	}
+	file.OAuthCleanup = append(file.OAuthCleanup, OAuthCleanup{NativeUserID: userID, ID: id, Origin: app.Origin, ClientID: app.ClientID, ClientSecret: app.ClientSecret, Source: app.Source, ApplicationID: applicationID, ApplicationVersion: applicationVersion, Token: token, State: state})
 	return id, nil
 }
 func (m *Manager) KeepOAuthCandidate(app OAuthApplication, tokens platform.OAuthTokens) (string, error) {
@@ -104,6 +117,9 @@ func (m *Manager) KeepOAuthCandidate(app OAuthApplication, tokens platform.OAuth
 	// Until revocation impact is accepted on the actual instance, never revoke a
 	// candidate/old grant while another token for that same application is active.
 	state := "pending"
+	if app.Source == "service" {
+		state = "manual"
+	}
 	for _, c := range file.OAuthCredentials {
 		if c.ApplicationID == app.ID && c.State != "logged_out" {
 			state = "manual"
@@ -150,7 +166,7 @@ func (m *Manager) FinishOAuthCleanup(id string, confirmed bool) error {
 
 // CommitOAuthLogin runs after the service rechecks the frozen references and
 // settles old calls. Expected records include every connection sharing a grant.
-func (m *Manager) CommitOAuthLogin(expected []Record, targetID, name string, app OAuthApplication, importID, actor string, tokens platform.OAuthTokens, identity platform.Validation) ([]platform.Platform, error) {
+func (m *Manager) CommitOAuthLogin(expected []Record, targetID, name string, app OAuthApplication, importID, actor string, tokens platform.OAuthTokens, identity platform.Validation, operation ...string) ([]platform.Platform, error) {
 	file, err := m.Load()
 	if err != nil {
 		return nil, err
@@ -163,12 +179,31 @@ func (m *Manager) CommitOAuthLogin(expected []Record, targetID, name string, app
 			return nil, ErrRequest
 		}
 	}
+	if app.Source == "service" {
+		if m.oauthSpaceID == "" || actor != m.oauthOwnerUserID || importID != "" || len(operation) != 1 || operation[0] == "" || !validApplicationSecret(app) {
+			return nil, ErrConflict
+		}
+		found := false
+		for i, old := range file.OAuthApplications {
+			if old.ID != app.ID {
+				continue
+			}
+			if old.Source != app.Source || old.Origin != app.Origin || old.ClientID != app.ClientID || old.OwnerID != app.OwnerID || old.RedirectURI != app.RedirectURI || !slices.Equal(old.Scopes, app.Scopes) || old.Version > app.Version {
+				return nil, ErrConflict
+			}
+			file.OAuthApplications[i] = app
+			found = true
+		}
+		if !found {
+			file.OAuthApplications = append(file.OAuthApplications, app)
+		}
+	}
 	foundApp := false
 	previousApp := app
 	for _, a := range file.OAuthApplications {
 		if a.ID == app.ID {
 			previousApp = a
-			foundApp = a.ClientID == app.ClientID && a.ClientSecret == app.ClientSecret && a.Origin == app.Origin && a.RedirectURI == app.RedirectURI && a.OwnerID == app.OwnerID && slices.Equal(a.Scopes, app.Scopes)
+			foundApp = a.ClientID == app.ClientID && a.ClientSecret == app.ClientSecret && a.Origin == app.Origin && a.RedirectURI == app.RedirectURI && a.OwnerID == app.OwnerID && a.Source == app.Source && a.Version == app.Version && slices.Equal(a.Scopes, app.Scopes)
 		}
 	}
 	replacement := false
@@ -299,7 +334,7 @@ func (m *Manager) CommitOAuthLogin(expected []Record, targetID, name string, app
 			if other.GrantGeneration == ^uint64(0) {
 				return nil, ErrCapacity
 			}
-			cleanupID, e := addOAuthCleanup(&file, previousApp, other.AccessToken, "manual")
+			cleanupID, e := addOAuthCleanup(&file, previousApp, other.AccessToken, "manual", other.UserID)
 			if e != nil {
 				return nil, e
 			}
@@ -342,7 +377,7 @@ func (m *Manager) CommitOAuthLogin(expected []Record, targetID, name string, app
 		}
 		uncertain := cred.State == "refresh_pending" || cred.State == "refresh_unknown"
 		if cred.AccessToken != tokens.AccessToken.Reveal() || uncertain {
-			cleanupID, e := addOAuthCleanup(&file, previousApp, cred.AccessToken, "manual")
+			cleanupID, e := addOAuthCleanup(&file, previousApp, cred.AccessToken, "manual", cred.UserID)
 			if e != nil {
 				return nil, e
 			}
@@ -357,6 +392,9 @@ func (m *Manager) CommitOAuthLogin(expected []Record, targetID, name string, app
 	}
 	if cred.GrantGeneration == ^uint64(0) || cred.TokenRevision == ^uint64(0) {
 		return nil, ErrCapacity
+	}
+	if app.Source == "service" {
+		cred.OwnerUserID, cred.SpaceID, cred.OperationID = m.oauthOwnerUserID, m.oauthSpaceID, operation[0]
 	}
 	cred.GrantGeneration++
 	cred.TokenRevision++
@@ -436,7 +474,7 @@ func (m *Manager) LogoutOAuth(credentialID string) ([]platform.Platform, []strin
 	if otherActive {
 		cleanupState = "manual"
 	}
-	cleanup, err := addOAuthCleanup(&file, app, cred.AccessToken, cleanupState)
+	cleanup, err := addOAuthCleanup(&file, app, cred.AccessToken, cleanupState, cred.UserID)
 	if err != nil {
 		return nil, nil, err
 	}

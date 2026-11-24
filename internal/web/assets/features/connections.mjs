@@ -54,6 +54,7 @@ export function createConnections({ env, settingsUI, runtime, scionUI, gitlabUI,
     $("connection-scion-row").hidden = !isScion;
     $("connection-profile-row").hidden = !isLark;
     $("connection-url-row").hidden = isLark;
+    $("gitlab-service-application-row").hidden = isLark || isScion || spaceCapabilities().gitlab_application_management !== false || !!platforms.selected;
     $("connection-url").required = !isLark;
     $("gitlab-account-row").hidden = isLark || isScion;
     $("gitlab-app-config-row").hidden = isLark || isScion;

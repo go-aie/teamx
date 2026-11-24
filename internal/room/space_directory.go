@@ -90,7 +90,10 @@ func (s *spaceServer) serveDirectory(w http.ResponseWriter, r *http.Request) {
 				_, lark = catalog.Types().LookupType("lark")
 				_, scion = catalog.Types().LookupType("scion")
 			}
-			spaces = append(spaces, view{record, lifecycleBusy, lifecycleError, state, map[string]bool{"gitlab": gitlab, "lark": (legacy || s.assembly.config.hostTools.restricted) && lark, "scion": legacy && scion, "computer": !s.assembly.config.hostTools.restricted, "managed_repositories": !s.assembly.config.hostTools.restricted}})
+			if s.access.users != nil {
+				gitlab = gitlab && s.gitlabApplications != nil
+			}
+			spaces = append(spaces, view{record, lifecycleBusy, lifecycleError, state, map[string]bool{"gitlab_application_management": s.access.users == nil, "gitlab": gitlab, "lark": (legacy || s.assembly.config.hostTools.restricted) && lark, "scion": legacy && scion, "computer": !s.assembly.config.hostTools.restricted, "managed_repositories": !s.assembly.config.hostTools.restricted}})
 		}
 		_ = writeJSON(w, map[string]any{"version": 1, "can_create": true, "default_space_id": s.access.defaultSpace(scope.Subject), "spaces": spaces})
 		return

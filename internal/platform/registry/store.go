@@ -70,6 +70,21 @@ func (m *Manager) validateSnapshot(file Snapshot) (Snapshot, error) {
 	if len(file.Platforms) > 100 {
 		return Snapshot{}, fmt.Errorf("%w: malformed platform registry", ErrInvalid)
 	}
+	if m.oauthSpaceID != "" {
+		for _, a := range file.OAuthApplications {
+			if a.Source != "service" || a.ClientSecret != "" {
+				return Snapshot{}, ErrInvalid
+			}
+		}
+		if len(file.OAuthClientImports) != 0 {
+			return Snapshot{}, ErrInvalid
+		}
+		for _, c := range file.OAuthCredentials {
+			if c.SpaceID != m.oauthSpaceID || c.OwnerUserID != m.oauthOwnerUserID {
+				return Snapshot{}, ErrInvalid
+			}
+		}
+	}
 	if err := validateOAuth(file); err != nil {
 		return Snapshot{}, err
 	}

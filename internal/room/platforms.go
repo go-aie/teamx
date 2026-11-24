@@ -56,6 +56,9 @@ func (m *roomManager) readPlatforms() (managedPlatformsFile, error) {
 	return file, managedPlatformError(err)
 }
 func (m *roomManager) updatePlatform(req managedPlatformRequest, remove bool) (managedPlatform, error) {
+	if req.Provider == "gitlab" && !m.gitlabEnabled() {
+		return managedPlatform{}, hostToolUnavailable("managed_gitlab")
+	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	if m.busy {
@@ -154,6 +157,9 @@ func (m *roomManager) verifyPlatform(ctx context.Context, req managedPlatformReq
 // Room ownership is checked here; connection owns the verified account and
 // exact credential snapshot. No notification or Workspace is required.
 func (m *roomManager) resolvePlatformAccountLocked(owner RoomIdentity, id, provider string) (registry.Account, platform.Secret, error) {
+	if provider == "gitlab" && !m.gitlabEnabled() {
+		return registry.Account{}, platform.Secret{}, hostToolUnavailable("managed_gitlab")
+	}
 	if m.closing {
 		return registry.Account{}, platform.Secret{}, ErrClosing
 	}

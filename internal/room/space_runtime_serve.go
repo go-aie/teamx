@@ -149,6 +149,10 @@ func (r *SpaceRuntime) serveManager(ctx context.Context, listener net.Listener, 
 		return err
 	}
 	manager.config, manager.factory = config, create
+	if config.gitlabApplications != nil && config.gitlabApplications.Managed() {
+		manager.platforms.SetOAuthOwner(r.OwnerUserID, r.SpaceID)
+	}
+
 	manager.larkClients = r.factories.platformClients()
 	if config.hostTools.restricted {
 		// Same platform implementation; only its CLI storage/executable binding

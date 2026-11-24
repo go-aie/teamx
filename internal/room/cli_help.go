@@ -10,6 +10,8 @@ const rootCLIHelp = `Usage: teamx COMMAND [--help]
   service                       Manage the background service (teamx service --help)
   init | doctor                 Prepare files/auth or diagnose a distribution (--bundle-root, --home; model setup is in the browser)
   access init --config FILE     Initialize the fixed operator and private admin-token file
+  access users                  Manage hosted user admission locally (--config FILE)
+  access gitlab-applications     List/configure/settle hosted OAuth applications locally (--config FILE)
   serve                         Start the authenticated service
   extensions check              Check selected declarations without starting services
   skill usage                   Read TeamX interface and execution guidance

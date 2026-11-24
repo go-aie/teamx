@@ -40,6 +40,13 @@ dsh_turn_timeout = "15m"
 # access.login_enabled 由设置页面保存；旧安装省略时保持认证开启。
 # 已有实例的 token 丢失时，才使用 access init 显式修复；操作者 ID 保持不变。
 
+# 多用户部署可选托管 GitLab（还需认证、Linux 执行隔离等组合配置）。
+# 个人部署不填写此项，继续在所属空间自建／导入应用。
+# [deployment.gitlab]
+# enabled = true
+# 管理员通过 teamx access gitlab-applications 配置应用；Secret 不放进空间配置。
+# 配置及验收边界：docs/implementation/gitlab-service-applications.zh.md
+
 # DSH 安装入口；模型参数和 API Key 在启动后的网页中配置。
 [runtime.dsh]
 binary_path = "/absolute/path/to/dsh"

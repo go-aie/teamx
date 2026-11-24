@@ -74,6 +74,10 @@ type gitlabConnectApplication struct {
 
 func (m *roomManager) gitlabConnectApplicationsLocked(file registry.Snapshot) []gitlabConnectApplication {
 	apps := []gitlabConnectApplication{}
+	file, err := m.gitlabDiscoveryLocked(file)
+	if err != nil {
+		return apps
+	}
 	redirect, err := m.gitlabRedirectLocked()
 	for _, a := range file.OAuthApplications {
 		v := gitlabConnectApplication{ID: a.ID, Origin: a.Origin, Compatible: true}
@@ -101,7 +105,14 @@ func gitlabConnectRecordMatches(file registry.Snapshot, c registry.Record, op pl
 	return err == nil && cred.State == "active" && app.ID == connectApplicationID(op) && connectApplicationFingerprint(app, op.ApplicationImport) == op.ApplicationFingerprint
 }
 func (m *roomManager) startGitLabConnectLocked(op platformConnectOperation) (platformConnectOperation, error) {
+	if !m.gitlabEnabled() {
+		return op, hostToolUnavailable("managed_gitlab")
+	}
 	file, err := m.platforms.Load()
+	if err != nil {
+		return op, err
+	}
+	file, err = m.gitlabDiscoveryLocked(file)
 	if err != nil {
 		return op, err
 	}
@@ -203,6 +214,10 @@ func (m *roomManager) authorizeGitLabConnectLocked(w http.ResponseWriter, r *htt
 		if err != nil {
 			return err
 		}
+		file, err = m.gitlabDiscoveryLocked(file)
+		if err != nil {
+			return err
+		}
 		app, importID, err := connectApplication(file, op, req)
 		if err != nil {
 			return err
@@ -231,7 +246,7 @@ func (m *roomManager) authorizeGitLabConnectLocked(w http.ResponseWriter, r *htt
 			return managedPlatformError(err)
 		}
 		s.operationID, s.targetID, s.PlatformID = op.ID, op.PlatformID, op.PlatformID
-		http.SetCookie(w, &http.Cookie{Name: gitlabCookieName(s.SessionID), Value: s.browser, Path: gitlabCookiePath, HttpOnly: true, Secure: strings.HasPrefix(s.app.RedirectURI, "https:"), SameSite: http.SameSiteLaxMode, MaxAge: 660})
+		http.SetCookie(w, &http.Cookie{Name: gitlabCookieName(s.SessionID), Value: s.browser, Path: m.gitlabBrowserCookiePath(), HttpOnly: true, Secure: strings.HasPrefix(s.app.RedirectURI, "https:"), SameSite: http.SameSiteLaxMode, MaxAge: 660})
 	}
 	return json.NewEncoder(w).Encode(struct {
 		URL string `json:"authorization_url"`
@@ -375,6 +390,7 @@ func connectApplication(file registry.Snapshot, op platformConnectOperation, req
 }
 
 type gitlabConnectSetup struct {
+	Managed         bool                       `json:"managed_application,omitempty"`
 	Origin          string                     `json:"origin"`
 	ApplicationsURL string                     `json:"applications_url"`
 	RedirectURI     string                     `json:"redirect_uri,omitempty"`
@@ -388,7 +404,10 @@ func (m *roomManager) gitlabConnectSetupLocked(op platformConnectOperation) (*gi
 	if err != nil {
 		return nil, err
 	}
-	setup := &gitlabConnectSetup{Origin: op.Input.Origin, ApplicationsURL: op.Input.Origin + "/-/user_settings/applications", Scopes: []string{"api"}, Applications: []gitlabConnectApplication{}}
+	setup := &gitlabConnectSetup{Managed: m.gitlabApplications().Managed(), Origin: op.Input.Origin, ApplicationsURL: op.Input.Origin + "/-/user_settings/applications", Scopes: []string{"api"}, Applications: []gitlabConnectApplication{}}
+	if setup.Managed {
+		setup.ApplicationsURL = ""
+	}
 	setup.RedirectURI, err = m.gitlabRedirectLocked()
 	if err != nil {
 		setup.ErrorCode = "service_address_unavailable"

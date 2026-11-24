@@ -932,6 +932,7 @@
       <fieldset id="connection-fields">
         <div id="connection-name-field" class="connection-field"><label for="connection-name">连接名称</label><input id="connection-name" maxlength="128" required placeholder="公司 GitLab" class="field-control"></div>
         <div id="connection-provider-field" class="connection-field"><label for="connection-provider">平台类型</label><select id="connection-provider" class="field-control"><option value="gitlab">GitLab</option><option value="scion">Scion</option><option value="feishu">飞书</option><option value="lark">Lark</option></select></div>
+        <div id="gitlab-service-application-row" class="connection-field connection-field-wide" hidden><label for="gitlab-service-application">GitLab 平台</label><select id="gitlab-service-application" class="field-control"></select></div>
         <div id="connection-url-row" class="connection-field connection-field-wide"><label for="connection-url">实例地址</label><input id="connection-url" type="url" required placeholder="https://gitlab.example.com" class="field-control"></div>
         <section id="onboarding-options" class="connection-field-wide onboarding-options" aria-label="接入后使用方式">
           <div id="onboarding-targets" class="notification-settings-row">

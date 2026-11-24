@@ -89,6 +89,14 @@ func (m *roomManager) publicPlatformLocked(c platform.Platform) (managedPlatform
 				capabilities = &p
 			}
 			c = registry.Public(file, record)
+			if record.Provider == "gitlab" && record.CredentialID != "" && c.AuthorizationStatus != "logged_out" {
+				_, app, e := registry.OAuthRecord(file, record.CredentialID)
+				if e == nil && app.Source != "" {
+					if _, e = m.currentGitLabApplicationLocked(app); e != nil {
+						c.AuthorizationStatus = "application_unavailable"
+					}
+				}
+			}
 			break
 		}
 	}

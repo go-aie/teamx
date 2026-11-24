@@ -711,6 +711,10 @@ func (m *roomManager) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Content-Type", "application/json")
 	w.Header().Set("Cache-Control", "no-store")
+	if !m.gitlabEnabled() && (strings.HasPrefix(r.URL.Path, "/v1/platforms/gitlab/") || strings.HasPrefix(r.URL.Path, "/v1/platform/gitlab/")) {
+		writeAPIError(w, hostToolUnavailable("managed_gitlab"))
+		return
+	}
 	if r.URL.Path == gitlabCallbackPath || r.URL.Path == gitlabCompletePath {
 		m.serveGitLabAuth(w, r)
 		return

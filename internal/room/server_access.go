@@ -456,7 +456,16 @@ func (a *serverAccess) wrap(next http.Handler) http.Handler {
 			return
 		}
 		if r.URL.Path == gitlabCallbackPath || r.URL.Path == gitlabCompletePath {
-			r, err := a.bindSpaceRequest(r, a.subject())
+			subject := a.subject()
+			if auth.users != nil {
+				var ok bool
+				subject, ok = a.browserSubject(r)
+				if !ok {
+					accessError(w, 403, "identity_mismatch")
+					return
+				}
+			}
+			r, err := a.bindSpaceRequest(r, subject)
 			if err != nil {
 				accessError(w, 403, "identity_mismatch")
 				return

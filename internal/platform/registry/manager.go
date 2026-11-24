@@ -26,13 +26,14 @@ var (
 // NormalizeFunc validates the supported provider and canonicalizes configuration.
 type NormalizeFunc func(name, provider, origin string) (string, string, error)
 type Manager struct {
-	catalog          platform.Catalog
-	store            Store
-	normalize        NormalizeFunc
-	identityResolver func(string, string, platform.Validation) (platform.AccountIdentity, bool)
-	verifyProfile    func(context.Context, string, string, platform.CLIProfile) platform.Validation
-	profileOnly      func(string) bool
-	validProfile     func(string, string, platform.CLIProfile) bool
+	oauthOwnerUserID, oauthSpaceID string
+	catalog                        platform.Catalog
+	store                          Store
+	normalize                      NormalizeFunc
+	identityResolver               func(string, string, platform.Validation) (platform.AccountIdentity, bool)
+	verifyProfile                  func(context.Context, string, string, platform.CLIProfile) platform.Validation
+	profileOnly                    func(string) bool
+	validProfile                   func(string, string, platform.CLIProfile) bool
 }
 
 func New(store Store, normalize NormalizeFunc, catalog platform.Catalog) *Manager {
@@ -192,3 +193,7 @@ func newOpaqueID() (string, error) {
 	}
 	return hex.EncodeToString(b[:]), nil
 }
+
+// SetOAuthOwner binds service application references and their grants to this
+// existing Space writer. It neither imports nor copies a service secret.
+func (m *Manager) SetOAuthOwner(user, space string) { m.oauthOwnerUserID, m.oauthSpaceID = user, space }

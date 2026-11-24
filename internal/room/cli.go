@@ -421,6 +421,9 @@ func RunWithCatalog(args []string, stdout, stderr io.Writer, catalog *platforms.
 		case "upgrade":
 			return fmt.Errorf("请使用 teamx service upgrade；参数和示例见 teamx service upgrade --help")
 		case "access":
+			if len(args) > 1 && args[1] == "gitlab-applications" {
+				return runGitLabApplicationManagement(args[2:], stdout, stderr)
+			}
 			if len(args) > 1 && args[1] == "users" {
 				return runUserManagement(args[2:], stdout, stderr)
 			}

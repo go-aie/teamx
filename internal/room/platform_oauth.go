@@ -10,6 +10,7 @@ import (
 	"github.com/go-aie/teamx/internal/app/platforms"
 	"github.com/go-aie/teamx/internal/platform"
 	"github.com/go-aie/teamx/internal/platform/gitlab"
+	"github.com/go-aie/teamx/internal/platform/gitlaboauth"
 	"github.com/go-aie/teamx/internal/platform/registry"
 )
 
@@ -22,15 +23,19 @@ type oauthRefreshFlight struct {
 	err    error // published before closing done
 }
 type gitlabTokenLease struct {
-	credential platform.AccessCredential
-	account    registry.Account
-	ctx        context.Context
-	call       *platformCall
+	applicationUse *gitlaboauth.Use
+	credential     platform.AccessCredential
+	account        registry.Account
+	ctx            context.Context
+	call           *platformCall
 }
 
 // Requires manager.mu. This is authorization evidence only, with no synchronous
 // network work or raw token resolution under the service gate.
 func (m *roomManager) oauthAccountLocked(expected registry.Account) (registry.Account, registry.OAuthCredential, error) {
+	if err := m.withGitLabGrantOwnerLocked("", func() error { return nil }); err != nil {
+		return registry.Account{}, registry.OAuthCredential{}, err
+	}
 	if m.closing {
 		return registry.Account{}, registry.OAuthCredential{}, ErrClosing
 	}
@@ -52,7 +57,10 @@ func (m *roomManager) oauthAccountLocked(expected registry.Account) (registry.Ac
 		if a != expected || a.Authorization.CredentialID == "" {
 			return a, registry.OAuthCredential{}, ErrConflict
 		}
-		cred, _, err := registry.OAuthRecord(file, c.CredentialID)
+		cred, app, err := registry.OAuthRecord(file, c.CredentialID)
+		if err == nil {
+			_, err = m.currentGitLabApplicationLocked(app)
+		}
 		return a, cred, err
 	}
 	return registry.Account{}, registry.OAuthCredential{}, ErrConflict
@@ -98,9 +106,33 @@ func (m *roomManager) acquireGitLabToken(ctx context.Context, owner RoomIdentity
 		}
 		if cred.ExpiresAt.After(time.Now().Add(use + oauthRefreshWindow)) {
 			leaseCtx, cancel := context.WithTimeout(ctx, use)
+			file, e := m.platforms.Load()
+			if e != nil {
+				cancel()
+				m.mu.Unlock()
+				return nil, e
+			}
+			_, app, e := registry.OAuthRecord(file, id)
+			if e == nil {
+				app, e = m.currentGitLabApplicationLocked(app)
+			}
+			operation, eID := newOpaqueID()
+			if e == nil {
+				e = eID
+			}
+			var appUse *gitlaboauth.Use
+			if e == nil {
+				appUse, e = m.gitlabApplications().Begin(leaseCtx, app, operation, "")
+			}
+			if e != nil {
+				cancel()
+				m.mu.Unlock()
+				return nil, e
+			}
+			leaseCtx = appUse.Context()
 			call := &platformCall{owner: owner, platformID: account.PlatformID, tool: "gitlab-token"}
 			call.Call = m.platformCalls.Register(call, cancel)
-			lease := &gitlabTokenLease{credential: platform.AccessCredential{Kind: "oauth", Token: platform.NewSecret(cred.AccessToken)}, account: account, ctx: leaseCtx, call: call}
+			lease := &gitlabTokenLease{applicationUse: appUse, credential: platform.AccessCredential{Kind: "oauth", Token: platform.NewSecret(cred.AccessToken)}, account: account, ctx: leaseCtx, call: call}
 			if m.oauthLeases == nil {
 				m.oauthLeases = map[string]map[*gitlabTokenLease]bool{}
 			}
@@ -153,17 +185,38 @@ func (m *roomManager) refreshGitLabToken(ctx context.Context, expected registry.
 	if err == nil {
 		err = ctx.Err()
 	}
+	var appUse *gitlaboauth.Use
+	if err == nil {
+		file, e := m.platforms.Load()
+		err = e
+		if err == nil {
+			_, app, e := registry.OAuthRecord(file, expected.Authorization.CredentialID)
+			err = e
+			if err == nil {
+				app, err = m.currentGitLabApplicationLocked(app)
+			}
+			if err == nil {
+				operation, e := newOpaqueID()
+				err = e
+				if err == nil {
+					appUse, err = m.gitlabApplications().Begin(ctx, app, operation, "")
+				}
+			}
+		}
+	}
 	var ticket registry.OAuthRefresh
 	if err == nil {
 		ticket, err = m.platforms.BeginOAuthRefresh(expected.Authorization)
 	}
 	transport := m.platformHTTP
 	m.mu.Unlock()
+	if appUse != nil {
+		defer appUse.Close()
+	}
 	if err != nil {
 		return err
 	}
-	input := gitlab.OAuthRefreshRequest{Origin: ticket.Application.Origin, ClientID: ticket.Application.ClientID, ClientSecret: platform.NewSecret(ticket.Application.ClientSecret), RedirectURI: ticket.Application.RedirectURI, RefreshToken: ticket.RefreshToken, UserID: ticket.Evidence.UserID, Scopes: ticket.Evidence.Scopes}
-	tokens, queryErr := gitlab.RefreshOAuth(ctx, input, transport)
+	tokens, queryErr := appUse.Refresh(ticket.RefreshToken, ticket.Evidence.UserID, ticket.Evidence.Scopes, transport)
 	outcome := "active"
 	if queryErr != nil {
 		outcome = gitlab.OAuthRefreshState(queryErr)
@@ -172,7 +225,22 @@ func (m *roomManager) refreshGitLabToken(ctx context.Context, expected registry.
 	defer m.mu.Unlock()
 	// Shutdown may forbid a final save. Durable refresh_pending already blocks
 	// future admission and survives process termination without a POST replay.
-	if err := m.platforms.CompleteOAuthRefresh(ticket, tokens, outcome); err != nil {
+	// A stale application must not reactivate a grant. Preserve the destructive
+	// refresh result as unusable evidence, without replaying it after restart.
+	if queryErr == nil {
+		if e := appUse.Commit(func() error { return nil }); e != nil {
+			queryErr = e
+			outcome = "refresh_unknown"
+		}
+	}
+	commit := func() error { return m.platforms.CompleteOAuthRefresh(ticket, tokens, outcome) }
+	var commitErr error
+	if outcome == "active" {
+		commitErr = appUse.Commit(func() error { return m.withGitLabGrantOwnerLocked("", commit) })
+	} else {
+		commitErr = commit()
+	}
+	if err := commitErr; err != nil {
 		// Logout may have durably blocked the grant while the destructive POST was in flight. Keep its returned candidate solely for cleanup.
 		if tokens.AccessToken.Reveal() != "" {
 			_, _ = m.platforms.KeepOAuthCandidate(ticket.Application, tokens)
@@ -190,6 +258,12 @@ func (m *roomManager) finishGitLabToken(lease *gitlabTokenLease) error {
 	_, _, err := m.oauthAccountLocked(lease.account)
 	if err == nil {
 		err = lease.ctx.Err()
+	}
+	if lease.applicationUse != nil {
+		if e := lease.applicationUse.Commit(func() error { return nil }); err == nil {
+			err = e
+		}
+		lease.applicationUse.Close()
 	}
 	delete(m.oauthLeases[lease.account.Authorization.CredentialID], lease)
 	if len(m.oauthLeases[lease.account.Authorization.CredentialID]) == 0 {

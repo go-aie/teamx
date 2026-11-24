@@ -24,6 +24,10 @@ func (a *serverAccess) serveUserManagement(w http.ResponseWriter, r *http.Reques
 		accessError(w, 403, "forbidden")
 		return
 	}
+	if r.URL.Path == "/v1/deployment/gitlab-applications" {
+		a.serveGitLabApplications(w, r)
+		return
+	}
 	if r.URL.Path != "/v1/deployment/users" {
 		http.NotFound(w, r)
 		return

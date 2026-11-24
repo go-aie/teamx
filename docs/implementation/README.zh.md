@@ -14,6 +14,7 @@
 | [空间执行隔离路线验证](space-execution-isolation.zh.md) | 空间 S3a 历史探针：DSH／文件／Shell／CLI、UID／容器及取消恢复证据保留；每空间业务 worker 路线已被替代，下一步 S3a.1 验证 SRT |
 | [空间与执行资源准入](space-resource-admission.zh.md) | 空间 S3b 部分实现：共享核心中的空间／占有 Session 额度及结清释放保留；SRT 接入、工具链／硬资源与组合验收仍未完成 |
 | [Agent 执行环境接入与恢复](agent-execution.zh.md) | 空间 S3b.1 完成：原生／SRT 执行合同、非 root 真实 DSH 的 MCP／CLI 回调、取消／故障／重启恢复／轮换及资源结清；多用户仍关闭 |
+| [GitLab 服务应用与空间私有授权](gitlab-service-applications.zh.md) | 空间 S4b：共用授权编排、控制面应用与 Secret、按空间提交 grant、管理员轮换／停用及结清；真实 GitLab／Linux 发布验收留 S5 |
 | [共享服务与真实模型增量验收](shared-service-acceptance.zh.md) | 空间 S3b.3 增量通过：同服务双空间、真实模型 MCP／CLI、A 归档时 B 继续执行、原 Session 恢复及结清；正式出口仍等待 S3b.2a 真实飞书验收 |
 | [多空间创建、切换与独立运行](spaces-create-switch-s2a.zh.md) | 空间 S2a：创建／改名／切换、私有运行时与凭据、目录占用、后台恢复、双真实 DSH 与双 AIO 验收；归档／重开留 S2b |
 | [默认空间与正式身份](space-identity-s1a.zh.md) | 空间 S1a：可恢复 User／Space 登记、原地归属、统一默认空间授权、浏览器与执行身份；运行时装配见 S1b |

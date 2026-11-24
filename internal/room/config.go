@@ -52,7 +52,10 @@ type startupConfig struct {
 	Env        map[string]string `toml:"env"`
 	Computer   computerConfig    `toml:"computer"`
 	Deployment struct {
-		Mode           string             `toml:"mode"`
+		Mode   string `toml:"mode"`
+		GitLab struct {
+			Enabled bool `toml:"enabled"`
+		} `toml:"gitlab"`
 		Authentication externalAuthConfig `toml:"authentication"`
 		Execution      struct {
 			Kind     string `toml:"kind"`
@@ -112,6 +115,9 @@ func readStartupConfig(name string, required, validateRuntime bool) (startupConf
 	}
 	if config.Server.MaxTurns != nil {
 		return startupConfig{}, fmt.Errorf("%w: server.max_turns was removed; use server.session_max_turns: cumulative hard stop is now per-session rotation", ErrRequest)
+	}
+	if config.Deployment.GitLab.Enabled && config.Deployment.Mode != "multi-user" {
+		return startupConfig{}, fmt.Errorf("deployment.gitlab requires multi-user mode")
 	}
 	config.path = path
 	if err := config.Deployment.Resources.validate(); err != nil {

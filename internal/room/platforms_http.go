@@ -29,6 +29,10 @@ func (m *roomManager) servePlatforms(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if strings.HasPrefix(r.URL.Path, "/v1/platforms/gitlab/") {
+		if r.URL.Path == gitlabCookiePath+"applications" {
+			m.serveGitLabApplicationDirectory(w, r)
+			return
+		}
 		if r.URL.Path == gitlabCookiePath+"prepare" || r.URL.Path == gitlabCookiePath+"initialize" {
 			m.serveGitLabSetup(w, r)
 		} else {

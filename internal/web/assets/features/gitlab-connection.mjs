@@ -1,9 +1,11 @@
-import { spaceURL } from "../space-context.mjs";
+import { spaceURL, spaceCapabilities } from "../space-context.mjs";
 // GitLab application setup and OAuth authorization lifecycle.
 export function createGitLabConnection({ env, connectionsUI, runtime, settingsUI, onboardingUI, interactionsUI }) {
   const { document, window, Option, request } = env;
   const { state, $, setSelectOptions } = runtime;
 
+  const managedApplication = () => spaceCapabilities().gitlab_application_management === false || connectionsUI.platforms.gitlabSetup?.managed_application === true;
+  let serviceApplications = [];
   const returnKey="teamx.gitlab-authorization";
   function clearSavedAuthorization() {try{runtime.storage?.removeItem(returnKey);}catch{}}
   function saveAuthorization(auth) {
@@ -91,6 +93,17 @@ export function createGitLabConnection({ env, connectionsUI, runtime, settingsUI
     $("gitlab-initial-hint").hidden=hasApp;
     if (!hasApp && !connectionsUI.platforms.gitlabSetup) $("gitlab-setup").hidden=false;
     renderGitLabReuse();onboardingUI.renderOnboarding();
+    $("gitlab-service-application-row").hidden=!managedApplication() || !!item || !!connectionsUI.platforms.connectOperation;
+    if (managedApplication()) $("connection-url-row").hidden=!item && serviceApplications.length>0 && !connectionsUI.platforms.connectOperation;
+    if (managedApplication()) {
+      for (const id of ["gitlab-app-config-row","gitlab-setup","gitlab-client-fields","gitlab-edit-application","gitlab-edit-cancel","gitlab-repair-application"]) $(id).hidden=true;
+      if (spaceCapabilities().managed_repositories === false) { $("gitlab-scope-write-repository").checked=false; $("gitlab-scope-write-repository").disabled=true; }
+      $("connection-url").readOnly=true;
+      const ready=connectionsUI.platforms.gitlabSetup?.status === "ready";
+      $("gitlab-login").hidden=!ready || pending;
+      $("gitlab-reuse").hidden=!!item;
+      $("gitlab-reuse-summary").textContent=ready ? "使用服务提供的 GitLab 应用，请授权本人的账号。" : "此 GitLab 暂未接入，请联系管理员配置应用。";
+    }
     renderGitLabSave();
     connectionsUI.renderPlatformReferences();
     $("connection-verify").hidden = oauth || !item;
@@ -125,7 +138,7 @@ export function createGitLabConnection({ env, connectionsUI, runtime, settingsUI
   }
 
   function setGitLabScopes(scopes = null) {
-    for (const option of gitlabScopeOptions) $(option.id).checked=option.required || (Array.isArray(scopes) ? scopes.includes(option.scope) : option.defaultSelected);
+    for (const option of gitlabScopeOptions) $(option.id).checked=option.required || (!(managedApplication() && spaceCapabilities().managed_repositories === false) && (Array.isArray(scopes) ? scopes.includes(option.scope) : option.defaultSelected));
   }
 
   function gitlabPreparePayload() {
@@ -167,7 +180,23 @@ export function createGitLabConnection({ env, connectionsUI, runtime, settingsUI
   }
 
   async function discoverGitLabSetup() {
-    if (connectionsUI.connectionIsLark() || connectionsUI.connectionIsScion() || !$("connection-url").value.trim()) return;
+    if (connectionsUI.connectionIsLark() || connectionsUI.connectionIsScion()) return;
+    if (managedApplication() && !connectionsUI.platforms.selected && !$("connection-url").value.trim()) {
+      const version=connectionsUI.platforms.formVersion;
+      try {
+        const query=new URLSearchParams({service_epoch:state.catalog.service_epoch,caller_id:state.operator});
+        const result=await request(`/v1/platforms/gitlab/applications?${query}`);
+        if (version!==connectionsUI.platforms.formVersion || connectionsUI.connectionIsLark() || connectionsUI.connectionIsScion()) return;
+        serviceApplications=result.applications || [];
+        setSelectOptions("gitlab-service-application",[new Option("选择 GitLab 平台",""),...serviceApplications.map(app=>new Option(app.origin,app.application_id))],serviceApplications.length===1 ? serviceApplications[0].application_id : "");
+        if (serviceApplications.length===1) {
+          $("connection-url").value=serviceApplications[0].origin;
+          connectionsUI.platforms.gitlabApplicationID=serviceApplications[0].application_id;
+        }
+        renderGitLabAccount();
+      } catch {connectionsUI.connectionFeedback("读取 GitLab 平台失败，请返回后重试。","error");return;}
+    }
+    if (!$("connection-url").value.trim()) return;
     const version=connectionsUI.platforms.formVersion, origin=$("connection-url").value;
     try {if (await prepareGitLabPlatform()) {gitlabSetupFeedback();renderGitLabAccount();}}
     catch {if(version === connectionsUI.platforms.formVersion && origin === $("connection-url").value) gitlabSetupFeedback("读取失败，请核对实例地址后重新保存。", "error");}
@@ -242,7 +271,7 @@ export function createGitLabConnection({ env, connectionsUI, runtime, settingsUI
     try {
       const prepared = candidate || await prepareGitLabPlatform(); if (!prepared) return;
       if (version !== connectionsUI.platforms.formVersion) return;
-      if (!["ready", "owner_verification_required"].includes(prepared.status)) {
+      if (!["ready", "owner_verification_required"].includes(prepared.status) && !(action === "logout" && prepared.managed_application)) {
         $("gitlab-setup").hidden = false;
         renderGitLabReuse();connectionsUI.connectionFeedback(prepared.status==="application_selection_required" ? "请先选择一个兼容应用。" : prepared.status==="application_incompatible" ? "请先修改应用配置，再重新授权。" : "请先完成一次应用配置，然后登录 GitLab。", "error");return;
       }
@@ -391,6 +420,12 @@ export function createGitLabConnection({ env, connectionsUI, runtime, settingsUI
   function resetApplicationEditor() { gitlabEditingApplication = false; }
 
   function mount() {
+    $("gitlab-service-application").addEventListener("change",async()=>{
+      const app=serviceApplications.find(a=>a.application_id===$("gitlab-service-application").value);
+      $("connection-url").value=app?.origin || "";connectionsUI.platforms.gitlabApplicationID=app?.application_id || "";
+      connectionsUI.platforms.gitlabSetup=null;
+      if (app) await discoverGitLabSetup(); else renderGitLabAccount();
+    });
     $("gitlab-application").addEventListener("change",async()=>{connectionsUI.platforms.gitlabApplicationID=$("gitlab-application").value;await discoverGitLabSetup();});
 
     $("gitlab-login").addEventListener("click",()=>startGitLabAuth("login"));

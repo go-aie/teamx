@@ -48,6 +48,7 @@ type gitlabApplicationCandidate struct {
 	CallbackCompatible bool     `json:"callback_compatible"`
 }
 type gitlabSetupView struct {
+	Managed         bool                         `json:"managed_application,omitempty"`
 	Applications    []gitlabApplicationCandidate `json:"applications,omitempty"`
 	ClientID        string                       `json:"client_id,omitempty"`
 	Affected        []gitlabAuthPlatform         `json:"affected,omitempty"`
@@ -68,7 +69,7 @@ func (m *roomManager) gitlabRedirectLocked() (string, error) {
 	if err != nil || u.User != nil || u.Path != "" || u.RawQuery != "" || u.ForceQuery || u.Fragment != "" || u.Opaque != "" {
 		return "", ErrRequest
 	}
-	if m.config.access != nil && m.config.access.control != nil && m.config.access.space.SpaceID != m.config.access.control.space.SpaceID {
+	if !m.gitlabApplications().Managed() && m.config.access != nil && m.config.access.control != nil && m.config.access.space.SpaceID != m.config.access.control.space.SpaceID {
 		endpoint += spaceRoute(m.config.access.space.SpaceID)
 	}
 	value := endpoint + gitlabCallbackPath
@@ -109,6 +110,10 @@ func (m *roomManager) serveGitLabSetup(w http.ResponseWriter, r *http.Request) {
 	}
 	if (action == "initialize") != (req.Client != nil) || action == "prepare" && req.ClientImportID != "" {
 		writeAPIError(w, ErrRequest)
+		return
+	}
+	if m.gitlabApplications().Managed() && (req.Client != nil || req.ClientImportID != "" || req.EditApplication) {
+		writeAPIError(w, hostToolUnavailable("application_management"))
 		return
 	}
 	redirect, err := m.gitlabRedirectLocked()
@@ -155,6 +160,11 @@ func (m *roomManager) serveGitLabSetup(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
+	discovery, err := m.gitlabDiscoveryLocked(file)
+	if err != nil {
+		writeAPIError(w, err)
+		return
+	}
 	scopes := req.Scopes
 	if scopes == nil {
 		scopes = []string{"api"}
@@ -170,7 +180,10 @@ func (m *roomManager) serveGitLabSetup(w http.ResponseWriter, r *http.Request) {
 		writeAPIError(w, ErrRequest)
 		return
 	}
-	view := gitlabSetupView{Status: "configuration_required", RedirectURI: redirect, ApplicationsURL: origin + "/-/user_settings/applications", Scopes: scopes}
+	view := gitlabSetupView{Managed: m.gitlabApplications().Managed(), Status: "configuration_required", RedirectURI: redirect, ApplicationsURL: origin + "/-/user_settings/applications", Scopes: scopes}
+	if view.Managed {
+		view.ApplicationsURL = ""
+	}
 	if req.Client != nil {
 		input := req.Client
 		if input.RedirectURI != redirect || !slices.Equal(input.Scopes, scopes) {
@@ -210,7 +223,7 @@ func (m *roomManager) serveGitLabSetup(w http.ResponseWriter, r *http.Request) {
 		}
 	} else {
 		var apps []registry.OAuthApplication
-		for _, app := range file.OAuthApplications {
+		for _, app := range discovery.OAuthApplications {
 			if app.Origin != origin || currentApp.ID != "" && app.ID != currentApp.ID {
 				continue
 			}
@@ -264,6 +277,12 @@ func (m *roomManager) serveGitLabSetup(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
+	if view.Managed && view.Status == "configuration_required" {
+		view.Status = "administrator_required"
+	}
+	if view.Managed && currentApp.ID != "" && view.Status != "ready" {
+		view.ApplicationID = currentApp.ID
+	}
 	// A pending existing connection still participates in the authorization fence.
 	if len(view.Affected) == 0 && target.ID != "" {
 		view.Affected, _, err = m.gitlabAuthReferencesLocked([]registry.Record{target})
@@ -273,4 +292,27 @@ func (m *roomManager) serveGitLabSetup(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	_ = json.NewEncoder(w).Encode(view)
+}
+
+func (m *roomManager) serveGitLabApplicationDirectory(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		w.WriteHeader(405)
+		return
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if r.URL.Query().Get("service_epoch") != m.epoch || !validText(r.URL.Query().Get("caller_id")) {
+		writeAPIError(w, ErrIdentity)
+		return
+	}
+	apps, err := m.gitlabApplications().Applications()
+	if err != nil {
+		writeAPIError(w, err)
+		return
+	}
+	view := []map[string]string{}
+	for _, a := range apps {
+		view = append(view, map[string]string{"application_id": a.ID, "origin": a.Origin})
+	}
+	_ = writeJSON(w, map[string]any{"managed_application": m.gitlabApplications().Managed(), "applications": view})
 }

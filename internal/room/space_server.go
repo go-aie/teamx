@@ -15,6 +15,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/go-aie/teamx/internal/platform/gitlaboauth"
 	"github.com/go-aie/teamx/internal/web"
 )
 
@@ -28,23 +29,24 @@ type spaceRuntimeAssembly struct {
 }
 
 type spaceServer struct {
-	assembly     spaceRuntimeAssembly
-	adminMu      sync.Mutex // serializes local user status changes and settlement
-	mu           sync.Mutex
-	directory    spaceDirectory
-	writer       snapshotWriter
-	access       *serverAccess
-	initial      *SpaceRuntime
-	entries      map[string]*spaceServerEntry
-	ctx          context.Context
-	cancel       context.CancelFunc
-	stderr       io.Writer
-	homeLock     *os.File
-	registryLock *os.File
-	closeMu      sync.Mutex
-	closing      bool
-	lifecycle    sync.WaitGroup
-	claims       *spaceDirectoryClaims
+	gitlabApplications *gitlaboauth.Catalog
+	assembly           spaceRuntimeAssembly
+	adminMu            sync.Mutex // serializes local user status changes and settlement
+	mu                 sync.Mutex
+	directory          spaceDirectory
+	writer             snapshotWriter
+	access             *serverAccess
+	initial            *SpaceRuntime
+	entries            map[string]*spaceServerEntry
+	ctx                context.Context
+	cancel             context.CancelFunc
+	stderr             io.Writer
+	homeLock           *os.File
+	registryLock       *os.File
+	closeMu            sync.Mutex
+	closing            bool
+	lifecycle          sync.WaitGroup
+	claims             *spaceDirectoryClaims
 }
 
 type spaceServerEntry struct {
@@ -188,6 +190,9 @@ func openSpaceServer(ctx context.Context, initial *SpaceRuntime, assembly spaceR
 		return nil, err
 	}
 	if access.users != nil {
+		if err := s.openGitLabApplications(); err != nil {
+			return nil, err
+		}
 		access.users.mu.Lock()
 		reserved := append([]externalUser{}, access.users.saved.Users...)
 		access.users.mu.Unlock()
@@ -245,6 +250,14 @@ func (s *spaceServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	path := r.URL.Path
+	if path == gitlabCallbackPath && s.gitlabApplications != nil {
+		selected, ok := s.gitlabApplications.CallbackSpace(r.URL.Query().Get("state"))
+		if !ok {
+			accessError(w, 403, "identity_mismatch")
+			return
+		}
+		id = selected
+	}
 	prefix := ""
 	if strings.HasPrefix(path, "/s/") {
 		selected, suffix, ok := strings.Cut(strings.TrimPrefix(path, "/s/"), "/")
@@ -359,7 +372,7 @@ func (w *spaceResponseWriter) WriteHeader(status int) {
 		return
 	}
 	w.wrote = true
-	if location := w.Header().Get("Location"); strings.HasPrefix(location, "/") && !strings.HasPrefix(location, "//") {
+	if location := w.Header().Get("Location"); strings.HasPrefix(location, "/") && !strings.HasPrefix(location, "//") && !strings.HasPrefix(location, "/s/") {
 		w.Header().Set("Location", w.prefix+location)
 	}
 	// OAuth's transient cookie must be sent to this Space's callback only.
@@ -617,6 +630,11 @@ func (s *spaceServer) Close(ctx context.Context) error {
 	case <-ctx.Done():
 		return ctx.Err()
 	}
+	if s.gitlabApplications != nil {
+		if err := s.gitlabApplications.Close(ctx); err != nil {
+			return err
+		}
+	}
 	if err := s.writer.closeWriter(ctx); err != nil {
 		return err
 	}
@@ -666,6 +684,9 @@ func (s *spaceServer) assemble(record SpaceRecord) (*SpaceRuntime, error) {
 	}
 	config := s.assembly.config
 	config.access, config.settings = access, newSystemSettings(startup)
+	if s.gitlabApplications != nil {
+		config.gitlabApplications = s.gitlabApplications.ForSpace(record.OwnerUserID, record.ID)
+	}
 	config.endpoint = s.access.internal + spaceRoute(record.ID)
 	if record.ID == s.access.space.SpaceID {
 		config.endpoint = s.assembly.config.endpoint

@@ -42,16 +42,21 @@ type Snapshot struct {
 
 // Private OAuth records. Multiple platforms may share one authorization.
 type OAuthApplication struct {
+	Source       string   `json:"source,omitempty"`
+	Version      uint64   `json:"application_version,omitempty"`
 	ID           string   `json:"id"`
 	Origin       string   `json:"origin"`
 	OwnerID      int64    `json:"owner_id"`
 	ClientID     string   `json:"client_id"`
-	ClientSecret string   `json:"client_secret"`
+	ClientSecret string   `json:"client_secret,omitempty"`
 	RedirectURI  string   `json:"redirect_uri"`
 	Scopes       []string `json:"scopes"`
 }
 
 type OAuthCredential struct {
+	OwnerUserID      string    `json:"owner_user_id,omitempty"`
+	SpaceID          string    `json:"space_id,omitempty"`
+	OperationID      string    `json:"operation_id,omitempty"`
 	ID               string    `json:"id"`
 	ApplicationID    string    `json:"application_id"`
 	UserID           int64     `json:"user_id"`
