@@ -123,7 +123,7 @@ func (s *service) newMember(id MemberIdentity, runner RunnerConfig, restored *Ag
 	if s.models != nil {
 		gate = s.models.gate(id)
 	}
-	member := &MemberAgent{AdditionalWorkReady: func() bool { return s.additionalWorkReady(id) }, ObserveTurnFinished: s.calendarTurnFinished, ExecutionBinding: func(turn uint64) (turnExecution, error) { return s.executionBindingForTurn(id, turn) }, ObserveEnabled: func() bool { return s.updates.observesRoom(s.info) }, Observe: func() { s.invalidate("members", id); s.invalidate("activity", id) }, ModelGate: gate, Options: opts, Store: s.store, Room: s.room, Restored: restored,
+	member := &MemberAgent{CapabilityReady: func() bool { return s.computerReady(id) }, AdditionalWorkReady: func() bool { return s.additionalWorkReady(id) }, ObserveTurnFinished: s.calendarTurnFinished, ExecutionBinding: func(turn uint64) (turnExecution, error) { return s.executionBindingForTurn(id, turn) }, ObserveEnabled: func() bool { return s.updates.observesRoom(s.info) }, Observe: func() { s.invalidate("members", id); s.invalidate("activity", id) }, ModelGate: gate, Options: opts, Store: s.store, Room: s.room, Restored: restored,
 		Inbox:   func(ctx context.Context) (InboxStatus, error) { return s.memberInboxStatus(ctx, id) },
 		Backend: s.executionBackend(runner, resumeBackend), MergeWindow: s.mergeWindow, MaxTurns: s.maxTurns, SessionMaxTurns: s.maxTurns, RequestRotation: s.requestMemberRotation, RequestRecovery: s.requestMemberRecovery, RecoveryPending: recovery, BackendBlocked: blocked, PersistentScheduling: true, RestoredTurnsUsed: used, RestoredTurnLimit: limit, ExecutionFrozen: s.grantsFrozen}
 	if s.unifiedInputs {

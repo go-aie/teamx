@@ -1,0 +1,11 @@
+# Build context: a staged static teamx-computer binary and the two pinned locks.
+# The C0 Dockerfile remains a separate reproducible historical prototype.
+FROM enterprise-public-cn-beijing.cr.volces.com/vefaas-public/aio-computer@sha256:5c5a6949718f984cf60fec02d19436a0738d81d113e782f366a03936640f5f1d
+USER root
+LABEL org.opencontainers.image.source="https://github.com/go-aie/teamx"
+LABEL org.opencontainers.image.description="TeamX managed multi-screen AIO Computer Runtime"
+COPY teamx-computer /usr/local/bin/teamx-computer
+COPY tools.lock.json dependencies.lock.json /opt/teamx-computer/
+HEALTHCHECK NONE
+ENTRYPOINT ["/usr/local/bin/teamx-computer"]
+CMD ["-listen", "0.0.0.0:18090"]

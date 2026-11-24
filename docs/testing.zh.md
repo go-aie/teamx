@@ -331,3 +331,20 @@ make test-e2e-check
 ### Agent History 生产入口
 
 History 默认工具集与旧 Room 读取 CLI 退出的证据见 [H4 实施记录](implementation/agent-history-h4.zh.md)。`TestHistoryProductionServiceRealDSH` 在显式启用时通过正常服务构造、成员调度、真实 DSH／ACP 和模型核验两种 Inbox 模式的工具发现、图文、cursor 续页与消费边界；通知和图片下载使用 fixture。它与真实平台材料验收、日常运行服务的正式切换分别记录，不进入普通 CI。复跑需要现有模型目录和新绝对输出目录，命令见该记录。
+
+## 共享电脑
+
+本机 Docker 托管启停的显式验收为 `scripts/computer_managed_acceptance.py --run --output <新目录>`，可加 `--agent-config <配置>` 组合双真实 DSH／模型及实际请求 Schema 检查。正常回归不调用 Docker；本轮真实平台、镜像发布和失败尝试的边界见[托管启停记录](implementation/computer/docker-lifecycle.zh.md)。
+
+普通 Go／前端回归及 `make test-e2e-check` 不依赖运行中的 Computer。连接缺省关闭和已正常停用的无容器路径由核心测试覆盖；真实模型、供应方与浏览器始终需要显式开关，不因检测到 Docker 而自动执行。
+
+```sh
+go test -race ./internal/computer/... -timeout=3m
+go test -race -tags=integration ./internal/room \
+  -run 'TestComputer|TestEnvironment|TestRemovedMember' -timeout=8m
+python3 scripts/computer_view_acceptance.py --run --group \
+  --agent-config /absolute/path/to/config.toml \
+  --output .local/computer-combined-new
+```
+
+最后一个命令运行真实固定 AIO Runtime、TeamX HTTP、两个 DSH／模型 Agent 和 Chromium 接管交还，使用一次性虚构账号。省略 `--agent-config` 时 Agent 为受控后端；两种证据分别标记。`390x844` 只是移动视口模拟，不代表实际手机验收。图像任务、实际请求 Schema 卸载及无容器真实模型恢复另见[成员能力验收](implementation/computer/agent-capabilities.zh.md)。旧 `TEAMX_ENVIRONMENT_CONFIG` 裸网关验收已移除，历史证据保留。

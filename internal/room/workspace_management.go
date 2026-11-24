@@ -217,7 +217,7 @@ func (m *roomManager) startWorkspaceApply(req workspaceApplyRequest) (workspaceO
 	if err := m.store.check(true); err != nil {
 		return workspaceOperation{}, err
 	}
-	if m.roomBusyLocked(req.RoomIdentity) || m.pendingModelChangeLocked(req.RoomIdentity) {
+	if m.roomBusyLocked(req.RoomIdentity) || m.pendingModelChangeLocked(req.RoomIdentity) || m.pendingComputerChangeLocked(req.RoomIdentity) {
 		return workspaceOperation{}, ErrBusy
 	}
 	if len(m.index.WorkspaceOperations) >= maxWorkspaceOperations {

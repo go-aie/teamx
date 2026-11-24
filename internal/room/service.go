@@ -135,7 +135,6 @@ type service struct {
 	ownUpdates                bool
 	agentNames                *agentNameRegistry
 	models                    *modelExecution
-	agentMCP                  agentMCPBindings
 	modelTargets              map[string]modelSessionSnapshot
 	access                    *serverAccess
 	settings                  *systemSettings
@@ -322,7 +321,6 @@ func startConfiguredService(dir, roomID string, config serviceConfig, assemble f
 		grantsFrozen:         grantsFrozen,
 		dshProfiles:          config.dshProfiles,
 		models:               config.models, modelTargets: config.modelTargets,
-		agentMCP:   config.agentMCP,
 		uiProfiles: config.uiProfiles,
 	}
 	s.materialAttachments = s.roomMaterialAttachments(nil)
@@ -799,6 +797,11 @@ func (s *service) removeLocked(req apiRequest) (MemberInfo, error) {
 		}
 		defer release()
 	}
+	if x := s.computerMembers(); x != nil {
+		if err := x.retire(s.ctx, id); err != nil {
+			return MemberInfo{}, err
+		}
+	}
 	if err := s.closeSharedMember(s.ctx, id); err != nil {
 		return MemberInfo{}, err
 	}
@@ -890,6 +893,14 @@ func (s *service) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	if r.URL.Path == "/v1/settings" || r.URL.Path == "/v1/settings/save" {
 		serveSystemSettings(w, r, s.settings, s.info)
+		return
+	}
+	if r.URL.Path == "/v1/members/computer" && s.computerMembers() != nil {
+		serveMemberComputer(w, r, s.computerMembers())
+		return
+	}
+	if r.URL.Path == "/v1/computer" || strings.HasPrefix(r.URL.Path, "/v1/computer/") {
+		serveComputer(w, r, s.settings.computer)
 		return
 	}
 	if r.Method != http.MethodPost {

@@ -1,5 +1,6 @@
 import { createModels } from "./models.mjs";
 import { createAccessSettings } from "./access-settings.mjs";
+import { createComputerSettings } from "./computer-settings.mjs";
 import { compactViewport } from "../client.mjs";
 import { createSystemTime, createTimeInput } from "../time.mjs";
 import { captureReturnView } from "../view-return.mjs";
@@ -11,8 +12,9 @@ export function createSettings({ env, runtime, connectionsUI, conversationUI, ro
 
   const models = createModels({env, runtime, openSettings:() => openSettings("models"), onMemberStatus:status => membersUI.renderMemberModelStatus(status)});
   const access = createAccessSettings({env, runtime});
-  const settingsTabs = ["general", "models", "platforms", "security"];
-  const availableSettingsTabs = () => state.managed ? settingsTabs : ["general", "security"];
+  const computer = createComputerSettings({env, runtime});
+  const settingsTabs = ["general", "models", "platforms", "computer", "security"];
+  const availableSettingsTabs = () => state.managed ? settingsTabs : ["general", "computer", "security"];
   const systemTime = createSystemTime();
 
   const timeInputs = new Map(["lark-backfill-start", "gitlab-backfill-start", "onboarding-backfill-start", "policy-expires"].map(id => [id, createTimeInput(systemTime)]));
@@ -101,7 +103,7 @@ export function createSettings({ env, runtime, connectionsUI, conversationUI, ro
   }
 
   function settingsNavigationBusy() {
-    return access.saving || timezoneForm.saving || connectionsUI.platforms.sending || !!connectionsUI.platforms.auth || !!connectionsUI.platforms.gitlabAuth || !!connectionsUI.platforms.scionAuth ||
+    return computer.saving || access.saving || timezoneForm.saving || connectionsUI.platforms.sending || !!connectionsUI.platforms.auth || !!connectionsUI.platforms.gitlabAuth || !!connectionsUI.platforms.scionAuth ||
       !!connectionsUI.platforms.larkStarting || !!connectionsUI.platforms.gitlabStarting || !!connectionsUI.platforms.scionStarting;
   }
 
@@ -111,6 +113,7 @@ export function createSettings({ env, runtime, connectionsUI, conversationUI, ro
     $("model-settings").hidden = settingsTab !== "models";
     $("platform-settings").hidden = settingsTab !== "platforms";
     $("access-settings").hidden = settingsTab !== "security";
+    $("computer-settings").hidden = settingsTab !== "computer";
     $("settings-tab-models").hidden = !state.managed;
     $("settings-tab-platforms").hidden = !state.managed;
     $("settings-navigation").setAttribute("aria-orientation", compactViewport(window) ? "horizontal" : "vertical");
@@ -126,10 +129,11 @@ export function createSettings({ env, runtime, connectionsUI, conversationUI, ro
 
   function selectSettingsTab(tab) {
     if (settingsNavigationBusy() || !availableSettingsTabs().includes(tab)) return;
-    models.clearKey(); access.clear(); settingsTab = tab; timezonePicker.open = false; renderTimeZoneOptions(); renderSettingsNavigation();
+    models.clearKey(); access.clear(); computer.clear(); settingsTab = tab; timezonePicker.open = false; renderTimeZoneOptions(); renderSettingsNavigation();
     $("settings-panels").scrollTop = 0;
     if (tab === "models") void models.load();
     if (tab === "security") void access.load();
+    if (tab === "computer") void computer.load();
   }
 
   function applyTimeZone(data) {
@@ -175,11 +179,12 @@ export function createSettings({ env, runtime, connectionsUI, conversationUI, ro
     }
     connectionsUI.showPlatformList(); settingsTab = availableSettingsTabs().includes(tab) ? tab : "general";
     if (settingsTab === "security") void access.load();
+    if (settingsTab === "computer") void computer.load();
     timezonePicker.open = false; renderTimeZone(); $("settings-dialog").showModal(); if (settingsTab === "models") void models.load(); runtime.navigationChanged(); if(state.managed) {await connectionsUI.loadPlatforms();await onboardingUI.restoreOnboarding();}
   }
 
   async function closeSettings() {
-    if (access.saving) return;
+    if (access.saving || computer.saving) return;
     if ($("close-settings").disabled) return;
     access.clear();
     await connectionsUI.cancelPlatformAuth(); await onboardingUI.onboardingAction("status",{discardUnconnected:true}); $("settings-dialog").close();
@@ -202,6 +207,7 @@ export function createSettings({ env, runtime, connectionsUI, conversationUI, ro
     });
 
     models.mount();
+    computer.mount();
     access.mount();
     $("storage-copy").addEventListener("click", async () => {
       notice("storage-feedback", "");
@@ -302,7 +308,7 @@ export function createSettings({ env, runtime, connectionsUI, conversationUI, ro
       event.preventDefault(); void backSettings();
     });
 
-    $("settings-dialog").addEventListener("close", () => { access.clear(); models.clearKey(); timezonePicker.open = false; renderTimeZoneOptions(); void connectionsUI.cancelPlatformAuth(); $("gitlab-client-secret").value = ""; connectionsUI.platforms.formVersion++; connectionsUI.platforms.generation++;
+    $("settings-dialog").addEventListener("close", () => { access.clear(); computer.clear(); models.clearKey(); timezonePicker.open = false; renderTimeZoneOptions(); void connectionsUI.cancelPlatformAuth(); $("gitlab-client-secret").value = ""; connectionsUI.platforms.formVersion++; connectionsUI.platforms.generation++;
       let fallback = $(state.managed ? "user-menu-toggle" : "open-general-settings");
       if ($("notification-detail").open) { fallback = $(workspaceUI.workspaceView?.notificationChannel === "messages" ? "lark-manage-platforms" : "gitlab-manage-platforms"); void connectionsUI.refreshPlatformState(); }
       else if($("activity-dialog").open){fallback=$("member-notification-add-toggle");void connectionsUI.refreshPlatformState();}

@@ -71,6 +71,11 @@ func (h *sessionHost) PrepareOpen(ctx context.Context) (agent.Launch, error) {
 	if !filepath.IsAbs(opts.CLIPath) {
 		return agent.Launch{}, errors.Join(errBackendPaused, errors.New("absolute TeamX CLI path required"))
 	}
+	capability, capErr := b.computerMembers().prepare(ctx, opts, ref.Directory, slices.Contains(b.profile.Model.InputModalities, "image"), b.recover)
+	if capErr != nil {
+		return agent.Launch{}, capErr
+	}
+	s.computerCapability, s.computerGeneration = capability, ref.Directory
 	componentOpts, err := b.componentOptions(opts, ref)
 	if err != nil {
 		return agent.Launch{}, err
@@ -194,6 +199,15 @@ func (s *dshSession) prepareTurn(ctx context.Context, input UnreadChanged, capab
 	if err != nil {
 		return nil, dshFailure(err)
 	}
+	if err := s.backend.computerMembers().beginTurn(ctx, s.opts, s.computerGeneration, policy.CurrentTurn, s.computerCapability); err != nil {
+		return nil, err
+	}
+	s.computerTurn = policy.CurrentTurn
+	defer func() {
+		if err != nil {
+			err = errors.Join(err, s.backend.computerMembers().finish(s.opts.MemberIdentity, s.computerGeneration, policy.CurrentTurn))
+		}
+	}()
 	var supplied any = policy.policyContext
 	if s.policyToken != policy.PolicyToken {
 		supplied = policy
@@ -263,6 +277,7 @@ func (s *dshSession) prepareTurn(ctx context.Context, input UnreadChanged, capab
 			notification += "\nPending Calendar work (JSON):\n" + string(b) + "\nRead latest human intent, then read \"$TEAMX_CLI\" calendar --help and use calendar claim/finish with --turn current_turn. Claim at most one; never also send the report."
 		}
 	}
+	notification += s.backend.computerMembers().turnNotice(s.opts.MemberIdentity)
 	prompt := []dsh.ContentBlock{{Type: "text", Text: "Member policy context (JSON):\n" + string(body) + "\n\n" + dshTimeContext(settings, started, s.timeZone) + "\n" + notification}}
 	var materials *dshMaterials
 	if s.backend.prepare != nil {
@@ -322,6 +337,7 @@ func (s *dshSession) prepareTurn(ctx context.Context, input UnreadChanged, capab
 		releases = append(releases, func() { _ = os.Remove(path) })
 	}
 	return &agent.PreparedTurn{Prompt: prompt, Close: release, Finish: func(result agent.TurnResult, runErr error) error {
+		runErr = errors.Join(runErr, s.backend.computerMembers().finish(s.opts.MemberIdentity, s.computerGeneration, policy.CurrentTurn))
 		if s.input != nil {
 			runErr = errors.Join(runErr, s.input.confirmationError())
 		} else if s.inbox != nil {

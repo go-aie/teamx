@@ -109,6 +109,8 @@ type roomCreateRequest struct {
 
 // Freeze member roles and runtime configuration. Inherited credentials stay outside room data.
 type managedMember struct {
+	ComputerEnabled         bool   `json:"computer_enabled,omitempty"`
+	ComputerSettingsVersion uint64 `json:"computer_settings_version,omitempty"`
 	MemberState
 	ModelSelection        *modelSelection   `json:"model_selection,omitempty"`
 	ModelSelectionVersion uint64            `json:"model_selection_version,omitempty"`
@@ -743,6 +745,14 @@ func (m *roomManager) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	if strings.HasPrefix(r.URL.Path, "/v1/models") {
 		m.serveModels(w, r)
+		return
+	}
+	if r.URL.Path == "/v1/members/computer" {
+		m.serveMemberComputer(w, r)
+		return
+	}
+	if r.URL.Path == "/v1/computer" || strings.HasPrefix(r.URL.Path, "/v1/computer/") {
+		serveComputer(w, r, m.settings.computer)
 		return
 	}
 	if strings.HasPrefix(r.URL.Path, "/v1/actions/") {

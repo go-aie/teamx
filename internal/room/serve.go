@@ -322,7 +322,6 @@ func runServerOnce(ctx context.Context, args []string, stdout, stderr io.Writer,
 			workspaceProtected: []string{layout.Root, layout.Home},
 			unifiedInputs:      options.create == nil, inputUpgradeLog: stderr,
 			modelStartup: &startup, modelProbe: options.probe, models: models, access: access, settings: settings,
-			agentMCP: startup.agentMCP,
 			endpoint: internalAccessEndpoint(listener.Addr().String()), mergeWindow: *mergeWindow, maxTurns: *maxTurns,
 			dshTurnTimeout: *dshTurnTimeout, inboxExpiry: inboxExpiry, inboxMode: startup.Server.InboxMode, imageMaterials: startup.Server.ImageMaterials,
 		}
@@ -341,16 +340,48 @@ func runServerOnce(ctx context.Context, args []string, stdout, stderr io.Writer,
 		access: access, settings: settings, unifiedInputs: options.create == nil, inputUpgradeLog: stderr,
 		endpoint: internalAccessEndpoint(listener.Addr().String()), cliPath: cliPath, mergeWindow: *mergeWindow, maxTurns: *maxTurns,
 		dshProfiles: profiles, uiProfiles: uiProfiles, dshTurnTimeout: *dshTurnTimeout, inboxExpiry: inboxExpiry, inboxMode: startup.Server.InboxMode, imageMaterials: startup.Server.ImageMaterials,
-		agentMCP: startup.agentMCP,
 	})
 	if err != nil {
 		return err
 	}
 	defer func() {
-		// Also runs on readiness output or HTTP startup errors.
-		ctx, cancel := context.WithTimeout(context.Background(), serviceShutdownTimeout)
+		closeCtx, cancel := context.WithTimeout(context.Background(), serviceShutdownTimeout)
 		defer cancel()
-		runErr = errors.Join(runErr, svc.close(ctx))
+		runErr = errors.Join(runErr, svc.close(closeCtx))
+	}()
+	computerControl, err := newComputerController(ctx, startup, settings, svc.info, access.installationID, access.operator, func(member MemberIdentity) (bool, error) {
+		if member.RoomID != svc.info.RoomID || member.RoomInstance != svc.info.RoomInstance {
+			return false, nil
+		}
+		svc.store.mu.Lock()
+		defer svc.store.mu.Unlock()
+		state, err := svc.store.loadRoom()
+		if err != nil {
+			return false, err
+		}
+		for _, live := range state.Members {
+			if live.AgentID == member.AgentID && live.MembershipID == member.MembershipID {
+				return true, nil
+			}
+		}
+		return false, nil
+	})
+	if err != nil {
+		return err
+	}
+	computerControl.members, err = newComputerMembers(computerControl, nil, svc)
+	if err != nil {
+		computerControl.cancel()
+		_ = computerControl.writer.Close(context.Background())
+		_ = unlockDirectory(computerControl.lock)
+		return err
+	}
+	settings.computer = computerControl
+	computerControl.start()
+	defer func() {
+		closeCtx, cancel := context.WithTimeout(context.Background(), serviceShutdownTimeout)
+		defer cancel()
+		runErr = errors.Join(runErr, svc.close(closeCtx), computerControl.close())
 	}()
 	server := &http.Server{Handler: access.wrap(svc), ReadHeaderTimeout: 3 * time.Second, ReadTimeout: 5 * time.Second,
 		WriteTimeout: 15 * time.Second, IdleTimeout: 30 * time.Second, MaxHeaderBytes: 16 << 10}
@@ -446,6 +477,43 @@ func serveRoomManager(ctx context.Context, listener net.Listener, dir, teamsDir 
 		if err != nil {
 			return err
 		}
+	}
+	if config.modelStartup != nil && config.access != nil {
+		control, err := newComputerController(ctx, *config.modelStartup, manager.settings, ServiceInfo{ServiceEpoch: manager.epoch}, config.access.installationID, config.access.operator, func(member MemberIdentity) (bool, error) {
+			manager.mu.Lock()
+			defer manager.mu.Unlock()
+			for _, room := range manager.index.Rooms {
+				if room.RoomIdentity != member.RoomIdentity {
+					continue
+				}
+				var state RoomSnapshot
+				if err := readSnapshot(filepath.Join(manager.roomDir(room.RoomID), "room.json"), &state, maxRoomFileBytes); err != nil {
+					return false, err
+				}
+				if state.RoomIdentity != member.RoomIdentity {
+					return false, ErrIdentity
+				}
+				for _, live := range state.Members {
+					if live.AgentID == member.AgentID && live.MembershipID == member.MembershipID {
+						return true, nil
+					}
+				}
+			}
+			return false, nil
+		})
+		if err != nil {
+			return err
+		}
+		control.members, err = newComputerMembers(control, manager, nil)
+		if err != nil {
+			control.cancel()
+			_ = control.writer.Close(context.Background())
+			_ = unlockDirectory(control.lock)
+			return err
+		}
+		manager.settings.computer = control
+		control.start()
+		defer func() { runErr = errors.Join(runErr, manager.close(), control.close()) }()
 	}
 	if err := manager.startPlatformNotifications(); err != nil {
 		return err

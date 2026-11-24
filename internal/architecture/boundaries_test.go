@@ -37,7 +37,7 @@ func TestProductionImportBoundaries(t *testing.T) {
 		}
 		checked[pkg.ImportPath] = true
 		lower := false
-		for _, name := range []string{"inputstream", "agent/dsh", "platform", "workspace", "calendar", "conversation", "identity", "persistence"} {
+		for _, name := range []string{"inputstream", "agent/dsh", "platform", "workspace", "calendar", "conversation", "identity", "persistence", "computer"} {
 			lower = lower || within(pkg.ImportPath, root+name)
 		}
 		service := strings.HasPrefix(pkg.ImportPath, root+"app/")
@@ -66,6 +66,9 @@ func TestProductionImportBoundaries(t *testing.T) {
 						}
 					}
 				}
+			}
+			if pkg.ImportPath == root+"computer" || within(pkg.ImportPath, root+"room") {
+				forbidden = forbidden || within(dep, root+"computer/aio")
 			}
 			if within(pkg.ImportPath, root+"identity") {
 				forbidden = forbidden || strings.HasPrefix(dep, root)

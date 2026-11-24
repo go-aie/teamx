@@ -1,0 +1,54 @@
+name: Computer Runtime image
+
+on:
+  workflow_dispatch:
+    inputs:
+      publish:
+        description: Publish the built candidate to ghcr.io/go-aie/teamx/computer
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+  packages: write
+
+concurrency:
+  group: computer-image-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  image:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
+        with:
+          go-version-file: go.mod
+      - name: Check Runtime and local lifecycle adapter
+        run: go test ./internal/computer/...
+      - name: Build fixed amd64 candidate without publishing
+        run: python3 scripts/computer_image.py build --output "$RUNNER_TEMP/computer-candidate"
+      - name: Authenticate for explicit image publication
+        if: ${{ inputs.publish }}
+        env:
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: printf '%s' "$GHCR_TOKEN" | docker login ghcr.io --username "$GITHUB_ACTOR" --password-stdin
+      - name: Publish this candidate and record registry digest
+        if: ${{ inputs.publish }}
+        run: python3 scripts/computer_image.py publish --lock "$RUNNER_TEMP/computer-candidate/image.lock.json" --output "$RUNNER_TEMP/computer-candidate/publication.json"
+      - name: Drop registry login
+        if: ${{ always() && inputs.publish }}
+        run: docker logout ghcr.io
+      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: computer-image-${{ github.sha }}
+          path: |
+            ${{ runner.temp }}/computer-candidate/image.lock.json
+            ${{ runner.temp }}/computer-candidate/candidate.json
+            ${{ runner.temp }}/computer-candidate/publication.json
+            ${{ runner.temp }}/computer-candidate/published-image.lock.json
+            ${{ runner.temp }}/computer-candidate/build.log
+          if-no-files-found: error

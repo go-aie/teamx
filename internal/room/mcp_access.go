@@ -150,6 +150,7 @@ func (a *serverAccess) serveMCP(w http.ResponseWriter, r *http.Request) {
 		r.Body = io.NopCloser(strings.NewReader(string(data)))
 		ctx = context.WithValue(r.Context(), inputSessionKey{}, input.inputSession)
 		ctx = context.WithValue(ctx, inputCallKey{}, call)
+		ctx = context.WithValue(ctx, computerMCPKey{}, computerMCPContext{service:input.service,id:input.storage.id,generation:input.execution.Generation,turn:input.execution.Turn,images:input.images,call:call})
 		h := a.inputMCPFor(input.service.inboxMode == "cli")
 		h.ServeHTTP(w, r.WithContext(ctx))
 		return
@@ -172,6 +173,10 @@ func (a *serverAccess) serveMCP(w http.ResponseWriter, r *http.Request) {
 	}
 	ctx = context.WithValue(ctx, mcpIdentityKey{}, e.identity)
 	ctx = context.WithValue(ctx, mcpExecutionKey{}, e)
+	if e.inbox != nil {
+		id:=MemberIdentity{RoomIdentity:e.identity.RoomIdentity,AgentID:e.identity.Caller.ID,MembershipID:e.identity.Caller.MembershipID}
+		ctx=context.WithValue(ctx,computerMCPKey{},computerMCPContext{service:e.inbox.service,id:id,generation:e.identity.Generation,call:r.Header.Get("X-Teamx-Call")})
+	}
 	if e.inbox != nil && e.inbox.service.unifiedInputs {
 		h := a.inputMCPFor(e.inbox.service.inboxMode == "cli")
 		h.ServeHTTP(w, r.WithContext(ctx))

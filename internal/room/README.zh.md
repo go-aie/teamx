@@ -258,3 +258,7 @@ make test-e2e-check
 - 团队协作：串行调度在真实书店任务中的效果。
 
 平台工具和 Git 工作区的具体缺口分别见 [GitLab 工具验收](../../tools/gitlab/README.zh.md#真实验收)与 [Workspace 验收](../../docs/reference/workspace.zh.md#真实验收)。这些是现有链路的验证缺口；旧工具或旧协议的通过结果不能沿用到当前实现。
+
+## Computer 能力
+
+全局「设置 → 电脑」管理可选共享 Computer；成员档案只有「启用电脑」开关。每成员独立 screen 和登录态，原生网页／桌面工具经 TeamX 统一 MCP 调用，右侧「电脑」支持服务端只读观看及人工接管。文件交付和按需工具搜索尚未提供。能力变更沿执行结清与 Session 轮换路径应用，Room 历史和 profile 保留；缺省关闭时不构造或探测 Provider，普通启动与回归无需容器。旧 `server.agent_mcp_file` 只返回迁移错误。用户和升级步骤见 [Agent 电脑与 MCP](../../docs/agent-mcp.zh.md)。

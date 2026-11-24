@@ -1,103 +1,38 @@
-# 为指定 Agent 追加 HTTP MCP
+# Agent 的电脑与统一 MCP
 
-运维可以通过 `server.agent_mcp_file` 为指定成员追加 HTTP MCP。这是显式测试配置入口，没有成员设置 UI，也不管理远端环境的创建、停止或任务结清。
+TeamX 通过同一个 `/mcp` 向 Agent 提供输入、历史和已启用的 Computer 工具。Computer 连接在全局「设置 → 电脑」管理；成员详情「档案 → 启用电脑」决定该成员是否使用。全局和成员开关默认关闭，普通聊天不需要 Docker、AIO 或 `teamx-computer`。
 
-```toml
-[server]
-agent_mcp_file = 'agent-mcp.json'
-```
+## 接入与使用
 
-文件路径相对 `config.toml` 所在目录解析。文件必须属于运行 TeamX 的账户、是普通文件且权限为 `0600`，不接受符号链接。文件可以包含认证 Header，应放在 Agent 工作区之外，不提交到 Git，也不提供给模型读取。
+在「设置 → 电脑」选择运行方式并保存应用，再为需要的成员打开「启用电脑」。保存、更新或停用无需重启 TeamX。
 
-```json
-{
-  "version": 1,
-  "bindings": [
-    {
-      "room_id": "实际 Room ID",
-      "room_instance": "实际 Room 实例 ID",
-      "agent_id": "assistant",
-      "membership_id": "实际成员 Membership ID",
-      "servers": [
-        {
-          "type": "http",
-          "name": "sandbox",
-          "url": "http://127.0.0.1:18080/mcp",
-          "headers": [
-            {"name": "Authorization", "value": "Bearer <测试环境密钥>"}
-          ]
-        }
-      ]
-    }
-  ]
-}
-```
+- **本机 Docker 托管**：在 TeamX 服务所在的 macOS／Linux 宿主安装并启动 Docker，开启全局电脑后，TeamX 自动准备固定镜像、创建并启动容器，无需填写地址或密钥。首次准备可能需要下载镜像；可显式「检查环境」，此检查不会创建资源。关闭时先等待操作结清，再停止容器；再次开启复用登录状态和数据。
+- **手动连接**：部署方按 [AIO 打包与部署说明](../packaging/computer/aio/README.zh.md) 启动受管 Runtime，填写管理地址、密钥和容量，测试连接并保存应用。TeamX 只管理自有 screen，不启停部署方容器；已有连接升级后继续使用此方式。
 
-四个身份字段必须全部匹配，不按显示名或 Agent 名称复用能力。`teamx` 命名空间保留给内置输入/历史工具；每个绑定最多追加 8 个服务。未匹配的成员保持原有工具配置。
+托管模式只管理本机 Docker，不启动 Docker Desktop、不收编旧容器、不自动升级镜像或删除数据。当前镜像为 Linux amd64，Apple Silicon 使用架构模拟，实际支持条件见[托管实施与验收记录](implementation/computer/docker-lifecycle.zh.md)。客户端浏览器无需 Docker。服务端管理密钥不会回显给浏览器或模型。
 
-配置在服务启动时读取，修改后重启 TeamX。新建和正常恢复 Session 都保留追加的 MCP，TeamX 自身的临时凭据独立刷新。URL、名称或 Header 名称变化参与既有 DSH 恢复指纹，变更能力时应结清并轮换 Session；仅凭据值更新不改变恢复身份。不要通过原地更换上游工具集合来绕过能力变更检查。
+同一所有者共享一个 Computer，每个 Room 成员拥有独立 screen、Chromium profile 和登录态；不同 Room 中同名 Agent 不共享 screen。首次使用需分别登录。正常重启、Session 轮换及关闭后再启用保留本成员 profile。独立 screen 用于并行工作，同一容器仍是共同信任范围。
 
-这里只为 DSH 提供远端工具，DSH 的 Bash、文件和 TeamX CLI 仍在宿主执行。HTTP 取消或本地进程退出不证明远端任务已停止；正式 Sandbox 生命周期与产物交付仍需后续集成。网页搜索测试应使用独占的无登录浏览器，不复用个人浏览器登录态。
+首版支持网页／桌面操作、截图图片结果、状态查询、观看和人工接管。文件列表、宿主与 Computer 之间的文件导入／导出，以及 MCP search／按需加载尚未提供。不要把容器下载路径当作宿主 Workspace 链接。DSH、Bash、文件工具及 TeamX CLI 仍在宿主执行；网页浏览器和桌面运行在 Computer 容器。
 
-若将测试成员的独立 Workspace 挂载到 AIO，可以把浏览器下载目录设为该挂载下的 `downloads/`。AIO 1.11.0 的原生 `browser_screenshot` 只返回图片，不保存 PNG；[测试容器截图导出脚本](../scripts/agent_sandbox_browser_artifacts.py) 可在固定版本容器中安装一个显式补丁，设置 `TEAMX_BROWSER_ARTIFACT_ROOT` 后将截图写入 `screenshots/`，并在工具文本中返回相对路径，保留原图片结果与工具 Schema。只挂载该成员 Workspace，匹配宿主 UID，禁止把整个 TeamX 数据目录或个人目录挂进去。工作目录切换不会自动重建 Docker 挂载。
+Agent 只连接 TeamX，不持有上游 MCP 地址、密钥或可自行选择的 screen 身份。原生工具保留 Provider Schema 和结果语义；文本模型只获得适用工具，图像模型可使用桌面截图。工具只挂载到有效启用的成员，关闭完成后会从实际模型请求卸载。启用、关闭或工具合同变化会在执行结清后轮换相关 Session；Room 历史和登录态保留。
 
-## 在右侧观看环境
+## 观看与人工接管
 
-在同一成员绑定中增加 `environment`，即可从会话工具栏或菜单打开右侧 **环境** 面板。它与文件、日历共享侧栏，支持展开、调整宽度和重新连接；多个成员配置环境时可选择来源。没有绑定的会话显示未配置状态。
+会话工具栏／菜单「电脑」打开右侧面板，与文件、日历共用侧栏；多人 Room 可以选择已启用成员。普通观看在服务端限制键盘、鼠标和粘贴输入，关闭观看不暂停 Agent。
 
-```json
-{
-  "version": 1,
-  "bindings": [
-    {
-      "room_id": "实际 Room ID",
-      "room_instance": "实际 Room 实例 ID",
-      "agent_id": "assistant",
-      "membership_id": "实际成员 Membership ID",
-      "environment": {
-        "base_url": "http://127.0.0.1:18080",
-        "headers": [
-          {"name": "Authorization", "value": "Bearer <环境网关密钥>"}
-        ],
-        "vnc_path": "/vnc/",
-        "websocket_path": "/websockify"
-      }
-    }
-  ]
-}
-```
+「接管操作」暂停对应成员并等待当前执行结清，再向当前页面开放输入。可在画面中完成登录，无需把密码发到聊天。手机可打开画面内「键盘」。其他成员继续工作，其他页面保持只读。完成后点击「完成接管」，Agent 重新观察当前页面；原本暂停或后来被手动暂停的成员继续暂停。
 
-可以在已有的 `servers` 旁添加这个字段，也可以只配置 `environment`；画面入口和 MCP 工具入口彼此独立，观看不会增加或修改 Agent 的工具。配置在服务启动时读取。
+断线、关闭面板、租约失效或服务重启会收回输入并保留暂停。结果未知的动作必须先取得停止证明，才允许人工检查；交还后仍暂停，不自动补发动作。网页写入仍受原任务授权约束，接管和登录不会扩大授权。用户操作见[会话帮助](conversations.zh.md#电脑)。
 
-`base_url` 是 TeamX 服务端可达的 HTTP/HTTPS 网关地址，只含协议、主机和端口，不含路径、查询参数或用户密码。两个路径分别指向 noVNC 静态资源目录和 VNC WebSocket；默认值如上，`vnc_path` 必须以 `/` 结尾。上游密钥只由 TeamX 服务端使用，不出现在 iframe URL、消息或前端响应中。前端复用 TeamX 登录，通过同源 HTTP/WebSocket 访问，只转发指定环境的 noVNC 核心模块和画面连接。
+## 从旧试验接入升级
 
-默认使用 noVNC 客户端观看模式。点击 **接管操作** 后，服务端持久保存成员暂停状态，停止后续调度，等待当前回合自然结束；只有执行正常结束、环境归当前页面接管时，才开放鼠标和键盘。等待期间可取消接管。存在异常执行、Session 阻断或其他页面正在接管时，不开放输入。多个有效成员绑定共用同一环境网关及 VNC 连接时暂不支持接管，应使用成员独占环境。
+`server.agent_mcp_file`、成员外部 HTTP MCP 列表和裸 environment 网关已退出正式路径。旧字段即使为空也会阻止启动并给出迁移错误；不会继续加载旧文件，也不会静默忽略。
 
-可直接在远端网页完成登录，不需要把账号密码发到聊天。电脑可点击画面后使用键盘；也可以点击画面内的 **键盘** 后输入或粘贴文字，手机使用此入口唤起软键盘。临时输入不会写入 TeamX 消息或接管事件，不自动同步系统剪贴板。
+1. 列出当前所有 Session 的完整成员身份、运行与结清状态。输入桥和 MCP 声明参与恢复指纹，升级可能影响未启用 Computer 的既有 Session。
+2. 通过现有暂停／取消和结清入口停止当前执行，核实旧容器中任务已结束。保留旧二进制、私有配置、Room 数据及 Session 目录备份。
+3. 移除 `server.agent_mcp_file`，部署当前 TeamX 和配套受管 Runtime，正常启动。已有 Session 使用已验证的兼容／轮换路径，不修改指纹、不删除 Room 历史；阻断状态先核实再通过成员 Session 重置处理。
+4. 在全局设置保存新连接，按完整 `room_id`、`room_instance`、`agent_id`、`membership_id` 为目标成员显式启用。首次创建新 profile，不自动复制旧 Cookie、私有配置或宿主工作区。
+5. 核验网页／桌面工具、观看、接管及交还，确认其他成员可继续普通聊天。旧容器保留至新路线验收结束，由部署方处理；不要同时恢复旧 MCP 旁路。
 
-点击 **完成接管** 后收回输入，向该成员投递一条固定的完成事件，提示重新观察当前页面并继续任务。仅恢复接管前正在启用的成员；原本已暂停、接管期间被另行暂停或恢复失败的成员保持暂停。完成事件按接管 ID 去重，丢失响应后可以用原 ID 重试，不会重新发送登录输入，也不会从中断处重放原工具调用。
-
-关闭、切换侧栏、切换会话或页面暂停会收回输入、释放连接并取消接管，成员保持暂停；需要时可在成员设置中启用。页面定期核对接管归属；失联最多 20 秒后接管租约过期，服务重启也不会自动恢复成员。环境和浏览器本身继续运行。服务端限制同时最多 8 条画面连接，并在成员移除、会话身份失效或退出登录后结清对应连接。
-
-操作连接须经过服务端接管状态核验；普通观看仍使用 noVNC `viewOnly`。上游 VNC 是部署方信任的桌面，不能把客户端观看模式理解为对管理者实施的 RFB 协议只读隔离。
-
-传统 AIO 1.x、官方 `aio-daemon` 和 `aio-computer` 预制镜像均可使用 noVNC；迁移时重新核对网关地址、认证、路径以及 VNC 与 Agent 是否连接同一个显示环境。裸 `aiod` 仅提供 API，需要部署方另配 VNC 网关。此功能不依赖截图导出补丁，也不管理环境的创建、启动或回收。
-
-可选真实画面验收使用独立测试 Room，Agent 执行由受控替身提供，不调用真实模型，也不导航或修改上游页面：
-
-```sh
-TEAMX_ENVIRONMENT_CONFIG=/绝对路径/agent-mcp.json \
-NODE_PATH="$PWD/packaging/verifier/node_modules" \
-go test -tags=e2e ./internal/room -run '^TestEnvironmentBrowser$' -count=1 -v
-```
-
-配置文件须满足上述私有权限要求，并包含一个 `environment`。可通过 `TEAMX_ENVIRONMENT_ARTIFACTS` 指定本地截图目录。
-
-人工输入验收另设显式开关，使用临时 HTTP 表单和虚构账号，Agent 执行仍为受控替身。AIO 浏览器须可访问宿主的 `host.docker.internal`（其他部署可通过 `TEAMX_ENVIRONMENT_FIXTURE_HOST` 指定可达宿主）：
-
-```sh
-TEAMX_ENVIRONMENT_CONFIG=/绝对路径/agent-mcp.json \
-TEAMX_ENVIRONMENT_INPUT_BROWSER=1 \
-NODE_PATH="$PWD/packaging/verifier/node_modules" \
-go test -tags=e2e ./internal/room -run '^TestEnvironmentHandoffBrowser$' -count=1 -v
-```
+停用会保留成员偏好与 profile。有未结清执行时显示待处理，不以全局开关掩盖远端任务，也不强停共享容器伪造结清。正常停用后即使没有 Docker 或容器停止，TeamX 仍能启动和普通聊天。成员关闭或 Room 关闭只处理对应 screen；共享容器由全局开关控制。TeamX 服务退出不改全局启用意图，重启后异步恢复原托管容器。旧版本验收仅作历史证据，见[首版记录](implementation/computer/release-adoption.zh.md)。

@@ -2,6 +2,7 @@ package room
 
 import (
 	"context"
+	"errors"
 	"sync"
 	"time"
 )
@@ -26,24 +27,31 @@ type SessionOptions struct {
 // Lifecycle and discard can converge on the same resource after a panic.
 type ownedSession struct {
 	Session
-	once sync.Once
-	err  error
+	mu        sync.Mutex
+	attempted bool
+	err       error
 }
 
 func (s *ownedSession) close() error {
 	if s == nil {
 		return nil
 	}
-	s.once.Do(func() {
-		if session, ok := s.Session.(ownedSessionCloser); ok {
-			// The actor remains owned until the backend confirms cleanup. Service Wait
-			// has its own deadline and retains the Store if this is unfinished.
-			s.err = session.closeOwned()
-			return
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.attempted {
+		var pending *pendingBackendClose
+		if !errors.As(s.err, &pending) {
+			return s.err
 		}
+	}
+	s.attempted = true
+	if session, ok := s.Session.(ownedSessionCloser); ok {
+		s.err = session.closeOwned()
+	} else {
 		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 		defer cancel()
 		s.err = s.Close(ctx)
-	})
+	}
+
 	return s.err
 }

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Opt-in deployment patch for the pinned AIO 1.11.0 browser MCP.
+"""Historical reproduction only: patch for the retired AIO 1.11.0 trial.
 
 Run as the container operator, then restart mcp-server-browser. Set
 TEAMX_BROWSER_ARTIFACT_ROOT to the one member workspace mount. Upstream tool

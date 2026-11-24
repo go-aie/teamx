@@ -4,6 +4,7 @@ import { AsyncLocalStorage } from 'node:async_hooks';
 import { randomUUID, createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 export const name = 'teamx-input-bridge';
+const retryableTools = new Set(['inbox_list', 'inbox_read', 'history_list', 'history_read']);
 export const inject = ['tools', 'shellEnv', 'sessions'];
 
 function canonical(value) {
@@ -61,7 +62,7 @@ export function apply(ctx, config) {
     request.headers.set('Authorization', 'Bearer ' + execution.token);
     request.headers.set('X-Teamx-Call', execution.call);
     if (body.params?.name === 'inbox_read') execution.read = true;
-    return retryFetch(request);
+    return retryableTools.has(body.params?.name) ? retryFetch(request) : fetchOriginal(request);
   };
   ctx.on('dispose', () => { globalThis.fetch = fetchOriginal; shellRestore?.(); executions.clear(); });
   ctx.on('agent/request', async (event, next) => {

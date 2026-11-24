@@ -134,17 +134,13 @@ func TestEnvironmentHandoffHeartbeatDoesNotRefreshMemberUI(t *testing.T) {
 
 func TestEnvironmentHandoffHTTPCompletionIsTargetedAndIdempotent(t *testing.T) {
 	t.Setenv("USER", humanCaller.ID)
-	m := directTestManager(t, t.TempDir(), testTeamDefinition(t).Runtime)
+	m, _, x, _ := managedComputerFixture(t)
 	m.config.unifiedInputs = true
 	m.factory = controlledActivationFactory(nil, nil)
 	room := createDirectConversation(t, m, directSelection("handoff"))
 	saved, _ := readManagedRoom(t, m, room)
 	id := MemberIdentity{RoomIdentity: room.RoomIdentity, AgentID: saved.Members[0].AgentID, MembershipID: saved.Members[0].MembershipID}
-	c := &environmentConfig{BaseURL: "http://127.0.0.1:18080"}
-	if !c.valid() {
-		t.Fatal("configuration")
-	}
-	m.config.agentMCP = agentMCPBindings{id: {Environment: c}}
+	applyMemberComputer(t, x, id, true)
 	openRoomOK(t, m, room, "handoff-open")
 	m.mu.Lock()
 	svc, _ := m.runtimeServiceLocked(room.RoomIdentity)
@@ -241,13 +237,5 @@ func TestEnvironmentHandoffHTTPCompletionIsTargetedAndIdempotent(t *testing.T) {
 		if _, err := svc.room.Call[PostReceipt](svc.ctx, PostMessage{RoomIdentity: id.RoomIdentity, Caller: author, ClientMessageID: "after-handoff-" + author.Kind, Text: "continue after handoff"}); err != nil {
 			t.Fatal("completion prevented further conversation", author.Kind, err)
 		}
-	}
-	other := createDirectConversation(t, m, directSelection("shared-handoff"))
-	otherSaved, _ := readManagedRoom(t, m, other)
-	otherID := MemberIdentity{RoomIdentity: other.RoomIdentity, AgentID: otherSaved.Members[0].AgentID, MembershipID: otherSaved.Members[0].MembershipID}
-	m.config.agentMCP[otherID] = agentMCPBinding{Environment: c}
-	response := managerHTTP(m, endpoint, map[string]any{"room_id": id.RoomID, "room_instance": id.RoomInstance, "service_epoch": svc.info.ServiceEpoch, "caller": humanCaller, "client_id": owner, "control_id": strings.Repeat("d", 32), "action": "takeover"})
-	if response.Code != http.StatusConflict {
-		t.Fatal("shared desktop admitted takeover", response.Code, response.Body.String())
 	}
 }

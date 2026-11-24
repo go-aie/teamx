@@ -116,6 +116,12 @@ func (m *roomManager) runDeletion(target roomSummary, rt *roomRuntime) {
 			return
 		}
 	}
+	if x := m.settings.computer; x != nil && x.members != nil {
+		if err := x.members.stopRoom(context.Background(), target.RoomIdentity); err != nil {
+			runErr = err
+			return
+		}
+	}
 	if target.DeletionPhase != "removing" {
 		if err := m.checkDeletionSettled(target.RoomIdentity); err != nil {
 			runErr = err
@@ -273,9 +279,10 @@ func (m *roomManager) checkDeletionSettled(target RoomIdentity) error {
 			return err
 		}
 		for _, entry := range entries {
-			// Model snapshots live beside their Session generation. They are
-			// ordinary files, not execution directories requiring settlement.
-			if entry.Type().IsRegular() && strings.HasSuffix(entry.Name(), ".model.json") && validSessionGeneration(strings.TrimSuffix(entry.Name(), ".model.json")) {
+			// Model and capability snapshots are ordinary files beside a generation.
+			// The execution directory and external fence are checked separately.
+			metadata := strings.HasSuffix(entry.Name(), ".model.json") && validSessionGeneration(strings.TrimSuffix(entry.Name(), ".model.json")) || strings.HasSuffix(entry.Name(), ".computer.json") && validSessionGeneration(strings.TrimSuffix(entry.Name(), ".computer.json"))
+			if entry.Type().IsRegular() && metadata {
 				continue
 			}
 			if !isSessionGenerationEntry(entry.Name()) {

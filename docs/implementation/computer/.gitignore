@@ -1,0 +1,4 @@
+# Local acceptance output. Runtime and tool locks live outside this directory.
+*.log
+*.png
+*.json

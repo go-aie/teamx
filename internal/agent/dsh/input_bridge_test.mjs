@@ -153,3 +153,32 @@ test('CLI material blocks become durable native images within a private stdout b
     assert.deepEqual(receipts,[[bodyDigest(body)]]);
   }finally{events.get('dispose')?.();assert.equal(shell.resolve,originalResolve);globalThis.fetch=original;rmSync(dir,{recursive:true,force:true});}
 });
+
+test('native Computer operations never transparently replay network, 409 or 5xx failures', async () => {
+  for (const failure of ['network',409,500,503]) {
+    const dir=mkdtempSync(join(tmpdir(),'teamx-computer-no-retry-'));
+    const bindingPath=join(dir,'binding.json');
+    writeFileSync(bindingPath,JSON.stringify({token:'trusted-turn',endpoint:'http://localhost:1234'}));
+    const events=new Map();const original=globalThis.fetch;let calls=0;let receipts=0;
+    globalThis.fetch=async request=>{
+      const body=await request.clone().json();
+      if(body.method==='teamx/received')receipts++;
+      calls++;
+      assert.equal(request.headers.get('Authorization'),'Bearer trusted-turn');
+      assert.ok(request.headers.get('X-Teamx-Call'));
+      if(failure==='network')throw new Error('response lost after click');
+      return new Response('{}',{status:failure});
+    };
+    const agent={session:{}};
+    const ctx={on:(name,fn)=>events.set(name,fn),provide:()=>{},sessions:{flush:async()=>true},shellEnv:{register:()=>{},list:()=>[]}};
+    try {
+      apply(ctx,{bindingPath});await events.get('agent/request')({agent},async()=>{});
+      const execute=()=>events.get('tools/execute')({agent,token:{},name:'mcp__teamx__vendor_focus'},async()=>{
+        const response=await fetch('http://localhost:1234/mcp',{method:'POST',body:JSON.stringify({method:'tools/call',params:{name:'vendor_focus',arguments:{payload:'click'}}})});
+        await response.body?.cancel();return {isError:true,content:[]};
+      });
+      if(failure==='network')await assert.rejects(execute,/response lost/);else await execute();
+      assert.equal(calls,1);assert.equal(receipts,0);
+    } finally {events.get('dispose')?.();globalThis.fetch=original;rmSync(dir,{recursive:true,force:true});}
+  }
+});

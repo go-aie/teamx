@@ -7,7 +7,7 @@ export function createConversationTools({ env, runtime, roomsUI, layoutUI, files
   const tools = [
     {key:"files", label:"文件", shortcut:"conversation-files", action:"conversation-open-files", open:opener=>filesUI.open(opener), active:()=>filesUI.isOpen},
     {key:"calendar", label:"日历", shortcut:"conversation-calendar", action:"conversation-open-calendar", open:()=>calendarUI.open(), active:()=>calendarUI.visible()},
-    {key:"environment", label:"环境", shortcut:"conversation-environment", action:"conversation-open-environment", open:opener=>environmentUI.open(opener), active:()=>environmentUI.isOpen},
+    {key:"environment", label:"电脑", shortcut:"conversation-environment", action:"conversation-open-environment", open:opener=>environmentUI.open(opener), active:()=>environmentUI.isOpen},
     {key:"settings", label:"设置", shortcut:"conversation-details", action:"conversation-open-details", open:()=>layoutUI.toggleDetails(), active:()=>layoutUI.membersPanelOpen()},
   ];
   const preferences = new Map();

@@ -12,8 +12,9 @@ const rotationVersion = 1
 // The last confirmed phase is retained on failure. Directory names are the
 // generation identities; neither a retry nor recovery allocates another target.
 type rotationRecord struct {
-	ModelTarget *modelSessionSnapshot `json:"model_target,omitempty"`
-	Version     int                   `json:"version"`
+	PreserveIntent bool                  `json:"preserve_intent,omitempty"`
+	ModelTarget    *modelSessionSnapshot `json:"model_target,omitempty"`
+	Version        int                   `json:"version"`
 	MemberIdentity
 	OperationID string `json:"operation_id"`
 	Reason      string `json:"reason"`

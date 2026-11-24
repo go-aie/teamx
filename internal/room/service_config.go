@@ -26,7 +26,6 @@ type serviceConfig struct {
 	agentNames           *agentNameRegistry
 	scheduling           schedulingMode
 	modelStartup         *startupConfig
-	agentMCP             agentMCPBindings
 	modelProbe           func(context.Context, dsh.Options) (dsh.ProbeResult, error)
 	models               *modelExecution
 	modelTargets         map[string]modelSessionSnapshot

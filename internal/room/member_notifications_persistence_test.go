@@ -242,7 +242,7 @@ func TestMemberNotificationUpgradeInterruptedGroupBlocksStartupAndResumes(t *tes
 			}
 			store := &Store{dir: h.m.store.dir, lock: lock, snapshotWriter: snapshotWriter{ops: defaultSnapshotOps()}}
 			defer store.Close()
-			offline := &roomManager{store: store, index: h.m.index}
+			offline := &roomManager{store: store, index: h.m.index, platformCatalog: h.m.platformCatalog}
 			offline.initPlatform()
 			real := store.ops.rename
 			injected := errors.New("injected post-rename failure")
@@ -312,7 +312,7 @@ func TestMemberNotificationUpgradeRejectsUnassignableOldDataBeforeWriting(t *tes
 			if err != nil {
 				t.Fatal(err)
 			}
-			offline := &roomManager{store: &Store{dir: h.m.store.dir, lock: lock, snapshotWriter: snapshotWriter{ops: defaultSnapshotOps()}}, index: h.m.index}
+			offline := &roomManager{store: &Store{dir: h.m.store.dir, lock: lock, snapshotWriter: snapshotWriter{ops: defaultSnapshotOps()}}, index: h.m.index, platformCatalog: h.m.platformCatalog}
 			defer offline.store.Close()
 			offline.initPlatform()
 			switch mode {

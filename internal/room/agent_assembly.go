@@ -81,7 +81,7 @@ func launchOptions(o dsh.Options) agent.Launch {
 	return agent.Launch{BinaryPath: o.BinaryPath, BinaryArgs: o.BinaryArgs, Artifact: o.Artifact,
 		Workspace: o.Workspace, StateDir: o.StateDir, Instructions: o.Instructions,
 		Model: agent.ModelConfig(o.Model), Credential: credential, ToolEnv: o.ToolEnv,
-		ExecutionToken: o.ExecutionToken, MCPServers: o.MCPServers, InputBridge: o.InputBridge,
+		ExecutionToken: o.ExecutionToken, MCPServers: o.MCPServers, InputBridge: o.InputBridge, CapabilityDigest: o.CapabilityDigest,
 		ObserveActivity: o.ObserveActivity, TextBytes: o.Limits.TextBytes, TurnTimeout: o.Limits.TurnTimeout}
 }
 
@@ -93,7 +93,7 @@ func componentOptions(l agent.Launch) dsh.Options {
 	return dsh.Options{BinaryPath: l.BinaryPath, BinaryArgs: l.BinaryArgs, Artifact: l.Artifact,
 		Workspace: l.Workspace, StateDir: l.StateDir, Instructions: l.Instructions,
 		Model: dsh.ModelConfig(l.Model), Credential: credential, ToolEnv: l.ToolEnv,
-		ExecutionToken: l.ExecutionToken, MCPServers: l.MCPServers, InputBridge: l.InputBridge,
+		ExecutionToken: l.ExecutionToken, MCPServers: l.MCPServers, InputBridge: l.InputBridge, CapabilityDigest: l.CapabilityDigest,
 		ObserveActivity: l.ObserveActivity, Limits: dsh.Limits{TextBytes: l.TextBytes, TurnTimeout: l.TurnTimeout}}
 }
 

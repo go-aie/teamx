@@ -19,8 +19,8 @@ function connect(control = null) {
   current.viewOnly = !interactive; current.scaleViewport = true; current.resizeSession = false;
   current.addEventListener("connect", () => { if (rfb === current) report("connected", ""); });
   current.addEventListener("disconnect", () => { if (active && rfb === current) { interactive = false; keyboardButton.hidden = true; report("disconnected", "连接已断开，请点击面板中的重新连接。"); } });
-  current.addEventListener("credentialsrequired", () => { report("unavailable", "环境认证暂不可用。"); current.disconnect(); });
-  current.addEventListener("securityfailure", () => report("unavailable", "环境认证暂不可用。"));
+  current.addEventListener("credentialsrequired", () => { report("unavailable", "电脑认证暂不可用。"); current.disconnect(); });
+  current.addEventListener("securityfailure", () => report("unavailable", "电脑认证暂不可用。"));
 }
 window.addEventListener("message", event => {
   if (event.source !== parent || event.origin !== location.origin || event.data?.type !== "teamx-environment-mode") return;
@@ -41,4 +41,4 @@ keyboard.addEventListener("keydown", event => {
 });
 keyboard.addEventListener("beforeinput", event => { if (event.inputType === "deleteContentBackward" && interactive) { event.preventDefault(); rfb.sendKey(0xff08); } });
 try { ({default:RFB} = await import(new URL("vnc/core/rfb.js", base).href)); connect(); }
-catch { report("unavailable", "环境暂不可用，请点击面板中的重新连接。"); }
+catch { report("unavailable", "电脑暂不可用，请点击面板中的重新连接。"); }

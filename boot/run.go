@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"io"
 
+	_ "github.com/go-aie/teamx/builtin/computer"
+
 	"github.com/go-aie/teamx/extension"
 	"github.com/go-aie/teamx/internal/app/extensions"
 	"github.com/go-aie/teamx/internal/room"

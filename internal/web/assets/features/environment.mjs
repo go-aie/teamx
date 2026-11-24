@@ -7,12 +7,8 @@ export function createEnvironment({env, runtime, layoutUI, conversationToolsUI})
   let opened = false, generation = 0, identity = null, returnView = null, controller = null;
   let environments = [], selected = "", frame = null, connected = false, interactive = false;
   let handoff = null, controlAvailable = false, busy = false, polling = null, timer = null, pending = null, feedback = "";
-  let clientID;
-  try { clientID = env.sessionStorage?.getItem("teamx.environment-client"); } catch {}
-  if (!/^[a-f0-9]{32}$/.test(clientID || "")) {
-    clientID = randomUUID().replaceAll("-", "");
-    try { env.sessionStorage?.setItem("teamx.environment-client", clientID); } catch {}
-  }
+  // Each document owns a distinct lease, including duplicated browser tabs.
+  const clientID = randomUUID().replaceAll("-", "");
   const context = () => JSON.stringify([state.installationID, state.operator, state.catalog?.service_epoch, state.info?.room_id, state.info?.room_instance]);
   const currentEnvironment = () => environments.find(item => item.id === selected);
   const controlURL = () => currentEnvironment()?.viewer_url.replace(/\/viewer$/, "/control");
@@ -29,9 +25,11 @@ export function createEnvironment({env, runtime, layoutUI, conversationToolsUI})
     if (feedback) status(feedback);
     else if (owned && phase === "waiting") status("已暂停后续执行，正在等待当前回合结束…");
     else if (owned && phase === "blocked") status("当前执行未正常结束，暂不能操作。可取消接管后检查成员状态。");
+    else if (owned && phase === "ready" && handoff.review) status("仅供人工核验：先前操作结果未知，交还后 Agent 保持暂停。请勿重复提交。");
     else if (owned && phase === "ready") status(interactive ? "正在接管 · 可直接输入，完成后交还 Agent" : "正在连接操作画面…");
     else if (owned && phase === "finishing") status("完成结果待确认，请点击重试完成。");
     else if (!owned && ["waiting", "ready", "blocked", "finishing"].includes(phase)) status("其他页面正在接管，当前仅观看。");
+    else if (owned && phase === "completed" && handoff.resume_failed) status("接管已完成，但恢复 Agent 失败。成员保持暂停，请在成员设置检查后再启用。");
     else if (owned && phase === "completed") status(handoff.resumed ? "已交还 Agent，继续当前任务。" : "接管已完成，Agent 保持暂停，可在成员设置启用。");
     else if (owned && ["expired", "abandoned"].includes(phase)) status("接管已收回，Agent 保持暂停。");
     else if (connected) status("已连接 · 仅观看");
@@ -87,14 +85,14 @@ export function createEnvironment({env, runtime, layoutUI, conversationToolsUI})
     disconnect();
     const current = currentEnvironment();
     if (!current) return;
-    if (!/^\/v1\/environment\/[a-f0-9]{64}\/viewer$/.test(current.viewer_url)) { status("环境入口无效，请重新连接。"); return; }
-    frame = document.createElement("iframe"); frame.title = `${current.label}的环境画面`;
+    if (!/^\/v1\/environment\/[a-f0-9]{64}\/viewer$/.test(current.viewer_url)) { status("电脑入口无效，请重新连接。"); return; }
+    frame = document.createElement("iframe"); frame.title = `${current.label}的电脑画面`;
     frame.setAttribute("sandbox", "allow-scripts allow-same-origin"); frame.setAttribute("referrerpolicy", "no-referrer"); frame.src = current.viewer_url;
-    $("environment-screen").append(frame); status("正在连接环境…"); void inspectControl();
+    $("environment-screen").append(frame); status("正在连接电脑…"); void inspectControl();
   }
   async function refresh() {
-    disconnect(); feedback = ""; controlAvailable = false; renderControl(); status("正在读取环境…"); $("environment-source-field").hidden = true;
-    if (!state.managed || !state.info || !state.catalog) { status("此会话暂未配置可观看的环境。"); return; }
+    disconnect(); feedback = ""; controlAvailable = false; renderControl(); status("正在读取电脑…"); $("environment-source-field").hidden = true;
+    if (!state.managed || !state.info || !state.catalog) { status("此会话暂未配置可观看的电脑。请在全局设置连接电脑，并在成员设置中开启“启用电脑”。"); return; }
     const version = generation, key = context(); controller = new AbortController();
     const current = () => opened && generation === version && key === context();
     const q = new URLSearchParams({room_id:state.info.room_id, room_instance:state.info.room_instance, service_epoch:state.catalog.service_epoch, caller_id:state.operator});
@@ -107,9 +105,9 @@ export function createEnvironment({env, runtime, layoutUI, conversationToolsUI})
       $("environment-source-field").hidden = environments.length < 2;
       if (!environments.some(item => item.id === selected)) selected = environments[0]?.id || "";
       select.value = selected;
-      if (!selected) { status("此会话暂未配置可观看的环境。"); return; }
+      if (!selected) { status("此会话暂未配置可观看的电脑。请在全局设置连接电脑，并在成员设置中开启“启用电脑”。"); return; }
       connect();
-    } catch (error) { if (current()) status(error.code === "identity" ? "会话已变化，请重新打开环境面板。" : "环境暂不可用，请重新连接。"); }
+    } catch (error) { if (current()) status(error.code === "identity" ? "会话已变化，请重新打开电脑面板。" : "电脑暂不可用，请重新连接。"); }
   }
   function hide() { if (!opened) return; abandon(); disconnect(); opened = false; $("environment-page").hidden = true; }
   function close({focus = true} = {}) {
@@ -137,7 +135,7 @@ export function createEnvironment({env, runtime, layoutUI, conversationToolsUI})
     window.addEventListener("message", event => {
       if (!opened || !frame || event.source !== frame.contentWindow || event.origin !== window.location?.origin || event.data?.type !== "teamx-environment") return;
       connected = event.data.state === "connected"; interactive = connected && event.data.interactive === true;
-      const messages = {connecting:"正在连接环境…", disconnected:"连接已断开，请重新连接。", unavailable:"环境暂不可用，请重新连接。"};
+      const messages = {connecting:"正在连接电脑…", disconnected:"连接已断开，请重新连接。", unavailable:"电脑暂不可用，请重新连接。"};
       if (messages[event.data.state]) status(messages[event.data.state]);
       if (connected) applyMode(); renderControl();
     });

@@ -1,0 +1,6 @@
+{
+  "reference": "ghcr.io/go-aie/teamx/computer:runtime-a6ce189578019f83",
+  "image_id": "sha256:a6ce189578019f83b11346da28a5c3df9a1f44a8f0e3cb0b38272c63819a12b9",
+  "config_digest": "sha256:d4a7e89fc1bca9378583ae263cd55ffd70fadb67948dcf9e9c99ce6945ede7a9",
+  "platform": "linux/amd64"
+}

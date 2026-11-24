@@ -44,3 +44,5 @@ Agent 由 DSH 执行模型回合和工具；TeamX 管理会话、消息、调度
 | 构建分发包与发布版本 | [打包指南](../packaging/README.zh.md)、[正式发行指南](../packaging/releasing.zh.md) |
 
 后续规划见[后续方向](roadmap.zh.md)。阶段方案和[实施记录](implementation/)用于追溯设计及验证；当前使用方式以以上指南为准。
+
+共享电脑的接入、成员开关、观看与接管见 [Agent 电脑与 MCP](agent-mcp.zh.md)，可选运行环境的构建部署见 [AIO 打包说明](../packaging/computer/aio/README.zh.md)。

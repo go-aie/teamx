@@ -20,6 +20,7 @@ const defaultMaxTurns uint64 = 16
 //
 //actorx:actor
 type MemberAgent struct {
+	CapabilityReady     func() bool
 	AdditionalWorkReady func() bool
 	ExecutionBinding    func(uint64) (turnExecution, error)
 	ObserveTurnFinished func(MemberIdentity, turnExecution, TurnRecord, bool)
@@ -260,6 +261,11 @@ func (m *MemberAgent) Control(ctx actorx.Context, msg ControlMember) (MemberStat
 	if m.environmentHeld() && (msg.Action == "run" || msg.Action == "enable" || msg.Action == "rotate" || msg.modelGate != nil) {
 		return m.status(), ErrBusy
 	}
+	if msg.capabilitiesChanged {
+		m.withdrawTurn()
+		m.schedule()
+		return m.status(), nil
+	}
 	if msg.modelGate != nil {
 		if *msg.modelGate != "" && m.ModelGate != "" && m.ModelGate != *msg.modelGate {
 			return m.status(), ErrBusy
@@ -469,7 +475,7 @@ func (m *MemberAgent) BindScheduler(_ actorx.Context, msg bindTurnScheduler) (st
 }
 
 func (m *MemberAgent) ready() bool {
-	return m.ModelGate == "" && (m.ExecutionFrozen == nil || !m.ExecutionFrozen.Load()) && !m.active && !m.paused && !m.fault && m.BackendBlocked == "" &&
+	return (m.CapabilityReady == nil || m.CapabilityReady()) && m.ModelGate == "" && (m.ExecutionFrozen == nil || !m.ExecutionFrozen.Load()) && !m.active && !m.paused && !m.fault && m.BackendBlocked == "" &&
 		m.rotationWork == nil && (m.rotation == nil || (m.rotation.Status != "waiting" && m.rotation.Status != "closing")) &&
 		(m.rotationRecord == nil || m.rotationRecord.Phase == "completed") && (m.automaticRotation() || m.turnsUsed < m.turnLimit) && (m.roomReady() || m.inboxReady() || m.AdditionalWorkReady != nil && m.AdditionalWorkReady()) && !m.now().Before(m.due)
 }
@@ -603,6 +609,10 @@ func (m *MemberAgent) schedule() {
 		return
 	}
 	if m.ModelGate != "" {
+		m.withdrawTurn()
+		return
+	}
+	if m.CapabilityReady != nil && !m.CapabilityReady() {
 		m.withdrawTurn()
 		return
 	}

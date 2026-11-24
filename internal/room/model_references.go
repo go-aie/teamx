@@ -369,6 +369,10 @@ func equalWorkspaceRoomConfig(a, b managedRoomConfig) bool {
 		}
 		v.Members = append([]managedMember(nil), v.Members...)
 		for i := range v.Members {
+			v.Members[i].ComputerEnabled = false
+			v.Members[i].ComputerSettingsVersion = 0
+		}
+		for i := range v.Members {
 			v.Members[i].ModelSelection = nil
 			v.Members[i].ModelSelectionVersion = 0
 		}

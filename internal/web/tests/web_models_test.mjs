@@ -459,3 +459,21 @@ test("combined picker opens a separate model menu, dismisses one layer at a time
  assert.equal(ui.el("member-model-details").hidden,false);assert.match(ui.el("member-model-actual").textContent,/model-A/);
  assert.equal(api.calls.some(c=>["/v1/models/change","/v1/models/member-reasoning"].includes(c.path)),false);
 });
+
+test("member Computer switch binds identity/version, reconciles a lost receipt and preserves global preference",async()=>{
+ const api=fixture();let computer={computer_enabled:false,computer_settings_version:0,global_enabled:false,status:"completed"};
+ api.hook=(path,body)=>{
+  if(path.startsWith("/v1/members/computer?"))return structuredClone(computer);
+  if(path==="/v1/members/computer"){
+   assert.equal(body.room_id,"A");assert.equal(body.room_instance,"instance-A");assert.equal(body.agent_id,"assistant");assert.equal(body.membership_id,"member-A");assert.equal(body.service_epoch,"manager");assert.deepEqual(body.caller,{kind:"human",id:"tester"});assert.equal(body.expected_version,0);assert.match(body.operation_id,/^[a-f0-9]{32}$/);
+   computer={...computer,computer_enabled:true,computer_settings_version:1,operation_id:body.operation_id,status:"applying"};throw Error("receipt lost");
+  }
+ };
+ const ui=await launch(api);await openMember(ui);
+ assert.equal(ui.el("member-computer").hidden,false);assert.equal(ui.el("member-computer-enabled").checked,false);
+ ui.el("member-computer-enabled").checked=true;await ui.el("member-computer-enabled").emit("change");await settle();
+ assert.equal(ui.el("member-computer-enabled").checked,true);assert.equal(ui.el("member-computer-enabled").disabled,true);assert.match(ui.el("member-computer-status").textContent,/正在应用/);
+ computer={...computer,status:"completed",operation_id:undefined};await ui.refresh();await settle();
+ assert.equal(ui.el("member-computer-enabled").disabled,false);assert.equal(ui.el("member-computer-enabled").checked,true);assert.match(ui.el("member-computer-status").textContent,/等待全局/);
+ assert.equal(api.calls.filter(c=>c.path==="/v1/members/computer").length,1);assert.equal(api.calls.some(c=>c.path==="/v1/models/change"),false);
+});

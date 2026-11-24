@@ -81,6 +81,7 @@ function fixture(managed=true) {
       if(path==="/v1/member/list")return {members:[member]};
       if(path==="/v1/member/activity")return {member};
       if(path==="/v1/read")return {messages:api.messages.filter(m=>m.seq>(body.after || 0)),snapshot_seq:2,has_more:false};
+      if(path==="/v1/computer")return {...api.settings,installation_id:"install",enabled:false,provider:"aio",endpoint:"",max_screens:2,version:1,status:"disabled",operations:[]};
       if(path==="/v1/settings")return {...api.settings,...(!managed ? info : {})};
       if(path==="/v1/settings/save") {api.settings={...api.settings,time_zone:body.time_zone,settings_version:api.settings.settings_version+1};return {time_zone:api.settings.time_zone,settings_version:api.settings.settings_version};}
       if(path==="/v1/member/inbox/status")return {latest_seq:1,expired_through:0,retained_entries:1,bytes:0,limits:{bytes:1000}};
@@ -278,6 +279,9 @@ test("settings categories isolate panels and preserve both time-zone and connect
   assert.equal(ui.el("settings-tab-platforms").attributes["aria-selected"],"true");
   assert.equal(ui.el("general-settings").hidden,true);assert.equal(ui.el("platform-settings").hidden,false);
   await ui.el("settings-tab-platforms").emit("keydown",{key:"ArrowDown"});
+  assert.equal(ui.el("settings-tab-computer").attributes["aria-selected"],"true");
+  assert.equal(ui.el("computer-settings").hidden,false);
+  await ui.el("settings-tab-computer").emit("keydown",{key:"ArrowDown"});
   assert.equal(ui.el("settings-tab-security").attributes["aria-selected"],"true");
   assert.equal(ui.el("access-settings").hidden,false);assert.equal(ui.el("general-settings").hidden,true);
   await ui.el("settings-tab-platforms").emit("click");
@@ -342,4 +346,97 @@ test("Escape dismisses the time-zone picker from its toggle before closing setti
   await ui.el("settings-dialog").emit("cancel",{preventDefault(){prevented=true;}});
   assert.equal(prevented,true);assert.equal(ui.el("timezone-options").hidden,true);
   assert.equal(api.calls.some(c=>c.path==="/v1/settings/save"),false);
+});
+
+for (const managed of [true,false]) test(`computer settings validate/save online and recover a lost receipt (managed=${managed})`, async () => {
+  const api=fixture(managed),ui=await launch(api);
+  let data={...api.settings,...(!managed?{room_id:"A",room_instance:"instance-A"}:{}),installation_id:"install",enabled:false,provider:"aio",endpoint:"",max_screens:2,version:1,has_credential:false,status:"disabled",operations:[]};
+  api.hook=(path,body)=>{
+    if(path==="/v1/computer")return structuredClone(data);
+    if(path==="/v1/computer/validate")return {running_screens:0,max_screens:4};
+    if(path==="/v1/computer/save"){
+      assert.equal(body.credential_action,"replace");assert.equal(body.service_epoch,data.service_epoch);assert.equal(body.installation_id,"install");
+      assert.equal(body.room_id,managed?undefined:"A");assert.match(body.request_id,/^[a-f0-9]{32}$/);
+      data={...data,endpoint:body.endpoint,enabled:true,version:2,has_credential:true,status:"ready",operations:[{id:body.request_id,status:"completed",stage:"done",message:"已保存并应用。"}]};
+      throw Error("response lost after acceptance");
+    }
+  };
+  await ui.el("open-settings").emit("click");await ui.el("settings-tab-computer").emit("click");await settle();
+  assert.equal(ui.el("computer-enabled").checked,false);assert.equal(ui.el("computer-settings").hidden,false);
+  const key="test-runtime-private-management-credential";
+  ui.el("computer-enabled").checked=true;ui.el("computer-endpoint").value="http://127.0.0.1:18090";ui.el("computer-credential").value=key;
+  await ui.el("computer-test").emit("click");
+  assert.match(ui.el("computer-feedback").textContent,/核验通过/);assert.equal(ui.el("computer-credential").value,key);
+  assert.equal(api.calls.filter(c=>c.path==="/v1/computer/save").length,0);
+  await ui.el("computer-form").emit("submit");await settle();
+  assert.equal(ui.el("computer-credential").value,"");assert.match(ui.el("computer-progress").textContent,/已完成/);
+  assert.equal(api.calls.filter(c=>c.path==="/v1/computer/save").length,1);
+  await ui.el("computer-refresh").emit("click");await settle();
+  assert.equal(ui.el("computer-enabled").checked,true);assert.equal(ui.el("computer-credential").value,"");
+  assert.match(ui.el("computer-credential").placeholder,/留空保留/);
+  await ui.el("settings-tab-general").emit("click");assert.equal(ui.el("computer-credential").value,"");
+});
+
+test("computer settings keep one pending operation and never replay a failed connection test", async () => {
+  const api=fixture(),ui=await launch(api);
+  let data={...api.settings,installation_id:"install",enabled:false,provider:"aio",endpoint:"http://127.0.0.1:18090",max_screens:2,version:1,has_credential:true,status:"disabled",operations:[]};
+  api.hook=(path)=>{
+    if(path==="/v1/computer")return structuredClone(data);
+    if(path==="/v1/computer/validate")throw Error("连接不可用");
+  };
+  await ui.el("open-settings").emit("click");await ui.el("settings-tab-computer").emit("click");await settle();
+  await ui.el("computer-test").emit("click");assert.match(ui.el("computer-feedback").textContent,/连接不可用/);
+  assert.equal(api.calls.filter(c=>c.path==="/v1/computer/validate").length,1);
+  data.operations=[{id:"a".repeat(32),status:"waiting",stage:"settle",message:"等待原电脑结清"}];data.status="applying";
+  await ui.el("computer-refresh").emit("click");await settle();
+  assert.equal(ui.el("computer-save").disabled,true);assert.match(ui.el("computer-progress").textContent,/等待原电脑结清/);
+  await ui.el("settings-tab-general").emit("click");
+  assert.equal(ui.el("general-settings").hidden,false);
+});
+
+test("computer application observed from another page rebases the form together with its version", async () => {
+  const api=fixture(),ui=await launch(api);
+  let data={...api.settings,installation_id:"install",enabled:false,provider:"aio",endpoint:"",max_screens:2,version:1,status:"applying",operations:[{id:"b".repeat(32),status:"waiting",stage:"commit",message:"应用中"}]};
+  api.hook=path=>path==="/v1/computer"?structuredClone(data):undefined;
+  await ui.el("open-settings").emit("click");await ui.el("settings-tab-computer").emit("click");await settle();
+  assert.equal(ui.el("computer-save").disabled,true);assert.equal(ui.el("computer-enabled").checked,false);
+  data={...data,enabled:true,endpoint:"https://computer.example.test",max_screens:3,version:2,status:"ready",has_credential:true,operations:[{id:"b".repeat(32),status:"completed",stage:"done",message:"已保存并应用。"}]};
+  await ui.clock.advance(1500);await settle();
+  assert.equal(ui.el("computer-enabled").checked,true);assert.equal(ui.el("computer-endpoint").value,data.endpoint);
+  assert.equal(ui.el("computer-max-screens").value,"3");assert.equal(ui.el("computer-save").disabled,false);
+  assert.equal(api.calls.some(c=>c.path==="/v1/computer/save"),false);
+});
+
+test("managed computer settings prepare without manual connection fields and allow disable while preparing", async()=>{
+  const api=fixture(),ui=await launch(api);
+  let data={...api.settings,installation_id:"install",enabled:false,provider:"aio",endpoint:"",max_screens:2,version:1,runtime_mode:"manual",suggested_runtime_mode:"docker",docker_cpus:4,docker_memory_gib:6,status:"disabled",operations:[]};
+  api.hook=(path,body)=>{
+    if(path==="/v1/computer")return structuredClone(data);
+    if(path==="/v1/computer/check")return {emulated:true,architecture:"aarch64"};
+    if(path==="/v1/computer/save"){
+      assert.equal(body.runtime_mode,"docker");assert.equal(body.endpoint,"");assert.equal(body.credential,"");assert.equal(body.credential_action,"keep");
+      if(body.enabled){data={...data,can_disable:true,status:"applying",operations:[{id:body.request_id,status:"applying",stage:"runtime_prepare"}]};return data.operations[0];}
+      data={...data,version:2,can_disable:false,runtime_mode:"docker",suggested_runtime_mode:"docker",status:"disabled",operations:[{id:body.request_id,status:"completed",stage:"done"}]};return data.operations[0];
+    }
+  };
+  await ui.el("open-settings").emit("click");await ui.el("settings-tab-computer").emit("click");await settle();
+  assert.equal(ui.el("computer-runtime-mode").value,"docker");assert.equal(ui.el("computer-manual-fields").hidden,true);assert.equal(ui.el("computer-enabled").checked,false);
+  await ui.el("computer-test").emit("click");assert.match(ui.el("computer-feedback").textContent,/架构模拟/);
+  assert.equal(api.calls.filter(c=>c.path==="/v1/computer/save").length,0);
+  ui.el("computer-enabled").checked=true;await ui.el("computer-form").emit("submit");await settle();
+  assert.equal(ui.el("computer-enabled").disabled,false);assert.equal(ui.el("computer-runtime-mode").disabled,true);assert.equal(ui.el("computer-save").disabled,true);
+  ui.el("computer-enabled").checked=false;await ui.el("computer-enabled").emit("change");assert.equal(ui.el("computer-save").disabled,false);
+  await ui.el("computer-form").emit("submit");await settle();
+  assert.equal(ui.el("computer-enabled").checked,false);assert.equal(api.calls.filter(c=>c.path==="/v1/computer/save").length,2);
+});
+
+test("managed computer deployment limits stay fixed after creation and switching mode clears a draft key", async()=>{
+  const api=fixture(),ui=await launch(api);
+  const data={...api.settings,installation_id:"install",enabled:false,provider:"aio",endpoint:"",max_screens:2,version:3,runtime_mode:"docker",docker_cpus:4,docker_memory_gib:6,docker_created:true,status:"disabled",operations:[]};
+  api.hook=path=>path==="/v1/computer"?structuredClone(data):undefined;
+  await ui.el("open-settings").emit("click");await ui.el("settings-tab-computer").emit("click");await settle();
+  assert.equal(ui.el("computer-docker-cpus").disabled,true);assert.equal(ui.el("computer-docker-memory").disabled,true);
+  ui.el("computer-runtime-mode").value="manual";await ui.el("computer-runtime-mode").emit("change");assert.equal(ui.el("computer-manual-fields").hidden,false);
+  ui.el("computer-credential").value="draft-private-key";ui.el("computer-runtime-mode").value="docker";await ui.el("computer-runtime-mode").emit("change");
+  assert.equal(ui.el("computer-credential").value,"");assert.equal(ui.el("computer-endpoint").disabled,true);
 });

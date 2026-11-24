@@ -62,7 +62,8 @@ type Artifact = agent.Artifact
 
 type Options struct {
 	// InputBridge binds each framework tool invocation to an immutable Room turn.
-	InputBridge bool
+	InputBridge      bool
+	CapabilityDigest string
 	// ObserveActivity is an optional bounded signal; it must not query the Session.
 	ObserveActivity func() `json:"-"`
 	BinaryPath      string

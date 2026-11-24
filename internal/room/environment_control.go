@@ -3,7 +3,6 @@ package room
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"io"
 	"net/http"
 	"time"
@@ -68,10 +67,12 @@ func (m *roomManager) stopEnvironmentInputs(ctx context.Context, id MemberIdenti
 // A handoff is transient; the scheduling pause is durable. Losing a page or
 // restarting the service never silently enables the member again.
 type environmentHandoff struct {
+	Sequence      uint64    `json:"-"`
 	ID            string    `json:"id"`
 	Phase         string    `json:"phase"`
 	Owned         bool      `json:"owned"`
 	Resumed       bool      `json:"resumed"`
+	Review        bool      `json:"review,omitempty"`
 	ResumeFailed  bool      `json:"resume_failed,omitempty"`
 	Owner         string    `json:"-"`
 	Restore       bool      `json:"-"`
@@ -100,7 +101,7 @@ func (m *MemberAgent) environmentControlView() *environmentHandoff {
 		switch {
 		case m.active:
 			h.Phase = "waiting"
-		case m.fault || m.BackendBlocked != "" || m.ModelGate != "" || m.rotationWork != nil || m.state.Turn != nil && m.state.Turn.Status != "completed":
+		case m.ModelGate != "" || m.rotationWork != nil || !h.Review && (m.fault || m.BackendBlocked != "" || m.state.Turn != nil && m.state.Turn.Status != "completed"):
 			h.Phase = "blocked"
 		default:
 			h.Phase = "ready"
@@ -141,7 +142,11 @@ func (m *MemberAgent) controlEnvironment(ctx actorx.Context, msg ControlMember) 
 		}
 		m.paused, m.retry = true, false
 		m.withdrawTurn()
-		m.environmentControl = &environmentHandoff{ID: msg.environmentID, Owner: msg.environmentOwner, Phase: "holding", Restore: restore, PauseRevision: m.pauseRevision, Expires: m.now().Add(environmentControlLifetime)}
+		sequence := uint64(1)
+		if h != nil {
+			sequence = h.Sequence + 1
+		}
+		m.environmentControl = &environmentHandoff{Sequence: sequence, ID: msg.environmentID, Owner: msg.environmentOwner, Phase: "holding", Restore: restore, PauseRevision: m.pauseRevision, Expires: m.now().Add(environmentControlLifetime)}
 		return m.status(), nil
 	}
 	if h == nil || h.ID != msg.environmentID || h.Owner != msg.environmentOwner {
@@ -152,6 +157,12 @@ func (m *MemberAgent) controlEnvironment(ctx actorx.Context, msg ControlMember) 
 	} // Retried finish/abandon observes its terminal result.
 	h.Expires = m.now().Add(environmentControlLifetime)
 	switch msg.Action {
+	case "environment_review":
+		if m.active || m.rotationWork != nil {
+			return m.status(), ErrBusy
+		}
+		h.Review = true
+		h.Restore = false
 	case "environment_prepare":
 		if h.Phase == "finishing" {
 			return m.status(), nil
@@ -223,15 +234,6 @@ func (m *roomManager) serveEnvironmentControl(w http.ResponseWriter, r *http.Req
 		writeAPIError(w, ErrRequest)
 		return
 	}
-	if req.Action == "takeover" {
-		selected := m.config.agentMCP[id].Environment
-		for other, binding := range m.config.agentMCP {
-			if other != id && binding.Environment != nil && selected != nil && binding.Environment.BaseURL == selected.BaseURL && binding.Environment.WebSocketPath == selected.WebSocketPath && m.environmentMemberCurrent(other) {
-				writeAPIError(w, fmt.Errorf("%w: this desktop is shared by multiple members; takeover requires a dedicated environment", ErrConflict))
-				return
-			}
-		}
-	}
 	call := apiRequest{AgentID: id.AgentID, MembershipID: id.MembershipID, environmentID: req.ControlID, environmentOwner: req.ClientID}
 	action := "environment_" + req.Action
 	if req.Action == "finish" {
@@ -240,6 +242,11 @@ func (m *roomManager) serveEnvironmentControl(w http.ResponseWriter, r *http.Req
 	// Calls remain owned by the service when an HTTP reply is lost; a retry uses
 	// the same control ID and the same durable Room event receipt.
 	status, err := svc.control(svc.ctx, call, action)
+	if err == nil {
+		wait, cancel := context.WithTimeout(svc.ctx, 8*time.Second)
+		status, err = m.syncComputerControl(wait, svc, id, req.Action, call, status)
+		cancel()
+	}
 	if err == nil && req.Action == "finish" && status.EnvironmentControl != nil && status.EnvironmentControl.Phase == "finishing" {
 		h := status.EnvironmentControl
 		wait, cancel := context.WithTimeout(svc.ctx, 5*time.Second)
@@ -251,7 +258,7 @@ func (m *roomManager) serveEnvironmentControl(w http.ResponseWriter, r *http.Req
 		}
 		_, err = svc.room.Call[PostReceipt](svc.ctx, AppendRoomEvent{RoomIdentity: id.RoomIdentity,
 			Event:   RoomEvent{ID: "environment_" + h.ID, Kind: "environment_handoff_completed", OperationID: h.ID, ResultVersion: 1, ResultRef: "environment/" + h.ID, Targets: []string{id.MembershipID}, Actor: req.Caller.Author},
-			Summary: "人工环境操作已完成。请先核对最新用户指示：若仍有待继续的任务，重新查看当前页面并在原授权范围内继续；否则确认交还即可。不要重放登录步骤，也不要读取或回报密码。", CreatedAt: h.FinishedAt})
+			Summary: "人工电脑操作已完成。请先核对最新用户指示：若仍有待继续的任务，重新查看当前页面并在原授权范围内继续；否则确认交还即可。不要重放登录步骤，也不要读取或回报密码。", CreatedAt: h.FinishedAt})
 		if err == nil {
 			status, err = svc.control(svc.ctx, call, "environment_finish")
 		}

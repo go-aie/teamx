@@ -21,7 +21,6 @@ type startupConfig struct {
 	path           string
 	source         []byte
 	file           os.FileInfo
-	agentMCP       agentMCPBindings // Private startup capability bindings; never serialized.
 	Server         struct {
 		WorkspaceRoots       *[]string           `toml:"workspace_roots"`
 		TimeZone             *string             `toml:"time_zone"`
@@ -40,12 +39,13 @@ type startupConfig struct {
 		InboxSkipExpired     *bool               `toml:"inbox_skip_expired"`
 		ImageMaterials       imageMaterialConfig `toml:"image_materials"`
 		InboxMode            string              `toml:"inbox_mode"` // Empty/http: MCP; cli: explicit compatibility fallback.
-		AgentMCPFile         string              `toml:"agent_mcp_file"`
+		LegacyAgentMCPFile   *string             `toml:"agent_mcp_file"`
 	} `toml:"server"`
-	Access  accessConfig      `toml:"access"`
-	Runtime *teamRuntime      `toml:"runtime"`
-	Models  *modelCatalog     `toml:"models"`
-	Env     map[string]string `toml:"env"`
+	Access   accessConfig      `toml:"access"`
+	Runtime  *teamRuntime      `toml:"runtime"`
+	Models   *modelCatalog     `toml:"models"`
+	Env      map[string]string `toml:"env"`
+	Computer computerConfig    `toml:"computer"`
 }
 
 var configEnvName = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
@@ -93,10 +93,17 @@ func readStartupConfig(name string, required, validateRuntime bool) (startupConf
 		}
 		config.source = data
 	}
+	if config.Server.LegacyAgentMCPFile != nil {
+		return startupConfig{}, fmt.Errorf("%w: server.agent_mcp_file was removed; settle existing Sessions, remove the field, then connect in Settings > Computer and explicitly enable each member; see docs/agent-mcp.zh.md", ErrRequest)
+	}
 	if config.Server.MaxTurns != nil {
 		return startupConfig{}, fmt.Errorf("%w: server.max_turns was removed; use server.session_max_turns: cumulative hard stop is now per-session rotation", ErrRequest)
 	}
 	config.path = path
+	config.Computer = defaultComputerConfig(config.Computer)
+	if err := config.Computer.validate(); err != nil {
+		return startupConfig{}, err
+	}
 	if err := validateWorkspaceRoots(config.Server.WorkspaceRoots); err != nil {
 		return startupConfig{}, err
 	}
@@ -114,13 +121,6 @@ func readStartupConfig(name string, required, validateRuntime bool) (startupConf
 		return startupConfig{}, err
 	}
 	base := filepath.Dir(path)
-	if config.Server.AgentMCPFile != "" {
-		config.Server.AgentMCPFile = configPath(base, config.Server.AgentMCPFile)
-		config.agentMCP, err = loadAgentMCPBindings(config.Server.AgentMCPFile)
-		if err != nil {
-			return startupConfig{}, err
-		}
-	}
 	if config.Models != nil {
 		if err := config.Models.validate(); err != nil {
 			return startupConfig{}, err

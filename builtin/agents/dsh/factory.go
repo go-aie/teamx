@@ -83,6 +83,6 @@ func options(l agent.Launch) component.Options {
 	return component.Options{BinaryPath: l.BinaryPath, BinaryArgs: l.BinaryArgs, Artifact: l.Artifact,
 		Workspace: l.Workspace, StateDir: l.StateDir, Instructions: l.Instructions,
 		Model: component.ModelConfig(l.Model), Credential: credential, ToolEnv: l.ToolEnv,
-		ExecutionToken: l.ExecutionToken, MCPServers: l.MCPServers, InputBridge: l.InputBridge,
+		ExecutionToken: l.ExecutionToken, MCPServers: l.MCPServers, InputBridge: l.InputBridge, CapabilityDigest: l.CapabilityDigest,
 		ObserveActivity: l.ObserveActivity, Limits: component.Limits{TextBytes: l.TextBytes, TurnTimeout: l.TurnTimeout}}
 }

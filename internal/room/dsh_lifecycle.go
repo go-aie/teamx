@@ -35,6 +35,9 @@ func (b dshBackend) sessionGeneration(opts SessionOptions) (string, error) {
 	return initialSessionGeneration(opts), nil
 }
 func (b dshBackend) checkRotationClosed(opts SessionOptions, from string, ownedSettled bool) error {
+	if err := checkComputerSettled(opts, from); err != nil {
+		return err
+	}
 	_, exists, err := b.reference(opts)
 	if err != nil {
 		return err
@@ -185,7 +188,6 @@ func (s *service) memberBackend(runner RunnerConfig) dshBackend {
 		return nil
 	}
 	backend.isDirect, backend.access, backend.settings = s.isDirect, s.access, s.settings
-	backend.agentMCP = s.agentMCP
 	backend.profile, backend.turnTimeout = s.dshProfiles[runner.Profile], s.dshTurnTimeout
 	backend.prepare, backend.recoveryContext = s.prepareRoomMaterials, s.prepareDSHRecoveryContext
 
@@ -215,10 +217,10 @@ func (b dshBackend) switchPreparedSession(opts SessionOptions, from, to string, 
 }
 
 func (b dshBackend) checkResume(opts SessionOptions, generation string) error {
-	return b.selectedFactory().CheckResume(filepath.Join(filepath.Dir(opts.StatePath), generation))
+	return errors.Join(checkComputerSettled(opts, generation), b.selectedFactory().CheckResume(filepath.Join(filepath.Dir(opts.StatePath), generation)))
 }
 func (b dshBackend) checkReset(opts SessionOptions, generation string) error {
-	return b.selectedFactory().CheckReset(filepath.Join(filepath.Dir(opts.StatePath), generation))
+	return errors.Join(checkComputerSettled(opts, generation), b.selectedFactory().CheckReset(filepath.Join(filepath.Dir(opts.StatePath), generation)))
 }
 
 // Preserve both errors.Is diagnostics and the component's independent cleanup fact.
@@ -255,23 +257,29 @@ func (s *service) inspectBackendRecovery(opts SessionOptions, runner RunnerConfi
 	if _, ok := s.dshProfiles[runner.Profile]; !ok {
 		result.blocked = "DSH profile unavailable: " + runner.Profile
 	} else if exists {
-		if err := b.checkResume(opts, ref.Directory); err != nil {
+		// Local recovery eligibility and the external execution gate are
+		// independent facts. A remote pending scope must not permanently turn
+		// a resumable local Session into an unsupported backend. The member's
+		// capability gate keeps it idle until remote reconciliation completes.
+		path := filepath.Join(filepath.Dir(opts.StatePath), ref.Directory)
+		localReset := func() bool { return b.selectedFactory().CheckReset(path) == nil }
+		if err := b.selectedFactory().CheckResume(path); err != nil {
 			result.blocked = "DSH recovery blocked: " + err.Error()
 			if rotationReady && errors.Is(err, dsh.ErrRecoveryUnsupported) && recoverableDSHHistory(agent) {
-				result.recovery = b.checkReset(opts, ref.Directory) == nil
+				result.recovery = localReset()
 			}
 		} else {
 			result.resume = true
 			// For an already resumable Session the old failed-turn path does not
 			// require a completed rotation; the member's rotation gate still applies.
-			result.recovery = agent.Turn != nil && agent.Turn.Status == "failed" && recoverableDSHHistory(agent) && b.checkReset(opts, ref.Directory) == nil
+			result.recovery = agent.Turn != nil && agent.Turn.Status == "failed" && recoverableDSHHistory(agent) && localReset()
 			result.notice = "DSH original session will resume lazily using current tool identity"
 			opts.CLIPath, opts.CLIEnv = s.cliPath, s.toolEnv(opts.MemberIdentity)
 			if config, configErr := b.componentOptions(opts, ref); configErr == nil && config.BinaryPath != "" {
 				if configErr = b.selectedFactory().CheckResumeConfig(launchOptions(config)); configErr != nil {
 					result.blocked = "DSH configuration requires settled Session rotation: " + configErr.Error()
 					result.resume = false
-					result.recovery = rotationReady && recoverableDSHHistory(agent) && b.checkReset(opts, ref.Directory) == nil
+					result.recovery = rotationReady && recoverableDSHHistory(agent) && localReset()
 				}
 			}
 		}
@@ -332,7 +340,9 @@ func (s *dshSession) currentActivity() *backendDiagnostic {
 	return output
 }
 
-func checkSessionGenerationSettled(path string) error { return defaultBackendFactory.CheckReset(path) }
+func checkSessionGenerationSettled(path string) error {
+	return errors.Join(checkComputerFence(filepath.Join(filepath.Dir(path), "computer-execution.json"), filepath.Base(path)), defaultBackendFactory.CheckReset(path))
+}
 func isSessionGenerationEntry(name string) bool {
 	return name == "session.json.dsh" || strings.HasPrefix(name, "session.json.dsh-")
 }

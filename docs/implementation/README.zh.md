@@ -4,7 +4,14 @@
 
 | 记录 | 范围 |
 | --- | --- |
-| [右侧环境画面与人工接管](agent-sandbox/environment-viewer.zh.md) | noVNC 侧栏、独立网关配置、暂停与交还、成员与登录隔离；真实 AIO 输入／虚构登录和受控 Agent 恢复验收 |
+| [Computer 首版发布与采用](computer/release-adoption.zh.md) | C4：旧 MCP／environment 入口退出、可选 Runtime 打包、双真实 DSH 与 Chromium 组合、升级采用与无容器复核 |
+| [Computer 本机 Docker 托管启停](computer/docker-lifecycle.zh.md) | 本机固定镜像、全局创建／启动／结清停止、资源归属与重启恢复；发布与真实平台验收边界单列 |
+| [Computer 成员能力与 Agent 执行](computer/agent-capabilities.zh.md) | C2：统一 MCP、成员开关、Session 能力、外部执行结清／轮换；真实模型文本／像素任务、关闭后请求 Schema 和离线普通回合证据 |
+| [Computer 观看与人工接管](computer/view-control.zh.md) | C3a 统一电脑面板、服务端只读、排他接管、输入退出 Fence、暂停意图和真实双屏／浏览器验收；文件交付后置，日常采用另见 C4 记录 |
+| [Computer 全局设置与在线连接管理](computer/online-connection.zh.md) | C1b：在线接入、私有凭据、原子配置与单一应用操作、逐屏结清／重启、无容器路径及真实 AIO／浏览器组件；成员与 Agent 闭环留 C2 |
+| [受管 Computer 与 AIO Screen Runtime](computer/managed-runtime.zh.md) | C1a：Provider／Screen、认证管理入口、唯一原生调用、去重与 fencing、Drain／Stop、双屏真实 AIO 与 Runtime 崩溃恢复；设置和 Agent 接入留后续阶段 |
+| [共享 Computer 双屏运行可行性](computer/runtime-feasibility.zh.md) | C0：固定新版 AIO 派生镜像、独立登录与双屏操作、21 项原生工具、只读观看、单屏停止和容器重启；正式服务与 Agent 接入留后续阶段 |
+| [右侧环境画面与人工接管](agent-sandbox/environment-viewer.zh.md) | 历史旧入口，已由共享 Computer 替代；noVNC 侧栏、独立网关配置、暂停与交还、成员与登录隔离；真实 AIO 输入／虚构登录和受控 Agent 恢复验收 |
 | [Agent 工具目录精简投影](agent-tool-discovery.zh.md) | S3b：明确 Agent 字段、准确入口与配置授权、可用性及修复诊断；所选组合验证和八回合真实模型只读对照 |
 | [现有工具绑定总开关短路径](agent-tool-toggle.zh.md) | S3a：服务端冻结现有绑定和授权、稳定回执、休眠授权恢复、并发复核与撤权结清；完整编辑合同保留 |
 | [DSH 内部助手操作与生命周期验证](agent-collaboration-boundaries.zh.md) | S2a：打包版本、子 Agent 实际工具与成员边界、取消／关闭及恢复／轮换证据；逐项兼容限制与修复单，不代表完整 S2／P4b |

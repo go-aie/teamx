@@ -177,7 +177,7 @@ func (m *MemberAgent) prepareRotation(msg ControlMember) error {
 		if !reflect.DeepEqual(r.ModelTarget, retryTarget) {
 			return ErrConflict
 		}
-		if r.From != from || r.Reason != reason || r.Cancel != msg.Cancel || r.Resume != msg.Resume || r.Replenish != msg.Replenish {
+		if r.PreserveIntent != msg.preserveIntent || r.From != from || r.Reason != reason || r.Cancel != msg.Cancel || r.Resume != msg.Resume || r.Replenish != msg.Replenish {
 			return ErrConflict
 		}
 		if r.Phase == "completed" || m.rotationWork != nil || m.rotation.Status == "waiting" || !msg.ContinueRotation {
@@ -226,7 +226,7 @@ func (m *MemberAgent) prepareRotation(msg ControlMember) error {
 	if err != nil {
 		return err
 	}
-	r := &rotationRecord{Version: rotationVersion, MemberIdentity: m.Options.MemberIdentity, OperationID: operationID, Reason: reason, From: from, To: sessionGenerationForOperation(target), BaseUsed: m.turnsUsed, Phase: "prepared", Cancel: msg.Cancel, Resume: msg.Resume, Replenish: msg.Replenish}
+	r := &rotationRecord{PreserveIntent: msg.preserveIntent, Version: rotationVersion, MemberIdentity: m.Options.MemberIdentity, OperationID: operationID, Reason: reason, From: from, To: sessionGenerationForOperation(target), BaseUsed: m.turnsUsed, Phase: "prepared", Cancel: msg.Cancel, Resume: msg.Resume, Replenish: msg.Replenish}
 	if msg.modelTarget != nil {
 		snapshot := msg.modelTarget.clone()
 		snapshot.Generation = r.To
@@ -250,7 +250,7 @@ func (m *MemberAgent) prepareRotation(msg ControlMember) error {
 	// Default manual pause must already be durable if prepared commits and the
 	// process stops before the next write. A later explicit run intent is saved
 	// only after prepared has durably frozen this operation.
-	if !msg.automatic && msg.modelTarget == nil && !msg.Resume {
+	if !msg.preserveIntent && !msg.automatic && msg.modelTarget == nil && !msg.Resume {
 		if err := m.persistScheduling(false, m.turnsUsed); err != nil {
 			m.rotationFailure("intent_before_prepare", err)
 			return err
@@ -267,7 +267,7 @@ func (m *MemberAgent) prepareRotation(msg ControlMember) error {
 			return err
 		}
 	}
-	if !msg.automatic && msg.modelTarget == nil {
+	if !msg.preserveIntent && !msg.automatic && msg.modelTarget == nil {
 		m.paused, m.retry = !msg.Resume, false
 		m.RecoveryPending, m.recoveryArmed = false, false
 	}
@@ -366,7 +366,7 @@ func (m *MemberAgent) rotate() {
 		m.currentGeneration = record.To
 		m.Backend = r.backend
 		m.schedulingVersion, m.sessionGeneration, m.sessionStartUsed = schedulingVersion, record.To, record.BaseUsed
-		if record.Recovery {
+		if record.Recovery || record.PreserveIntent {
 			// A newer explicit pause always wins over asynchronous cleanup.
 			m.paused = !m.enabled
 			m.retry = m.enabled

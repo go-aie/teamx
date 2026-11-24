@@ -14,6 +14,7 @@ import (
 
 	"github.com/go-aie/teamx/agent"
 	"github.com/go-aie/teamx/internal/agent/dsh"
+	"github.com/go-aie/teamx/internal/computer"
 	"github.com/go-aie/teamx/internal/inputstream"
 )
 
@@ -96,7 +97,6 @@ type dshBackend struct {
 	models         *modelExecution
 	model          *modelSessionSnapshot
 	credentials    *modelCredentials
-	agentMCP       agentMCPBindings
 	access         *serverAccess
 	// Nil only for explicit CLI compatibility or isolated adapter tests.
 	inboxMCP        *service
@@ -254,7 +254,6 @@ func (b dshBackend) componentOptions(opts SessionOptions, ref sessionReference) 
 	component := dsh.Options{BinaryPath: p.BinaryPath, BinaryArgs: p.BinaryArgs, Artifact: p.Artifact, Workspace: p.Workspace,
 		StateDir: filepath.Join(filepath.Dir(opts.StatePath), ref.Directory), Instructions: instructions, Model: p.Model.Clone(), ToolEnv: toolEnv, Limits: dsh.Limits{TextBytes: 64 << 10, TurnTimeout: b.turnTimeout}}
 	component.InputBridge = b.inputService != nil
-	component.MCPServers = b.agentMCP.servers(opts.MemberIdentity)
 	if b.store.observe != nil {
 		component.ObserveActivity = func() { b.store.changed("activity", opts.MemberIdentity) }
 	}
@@ -270,6 +269,14 @@ func (b dshBackend) componentOptions(opts SessionOptions, ref sessionReference) 
 		if b.model.Legacy {
 			component.Credential.Ref = ""
 		} // Original config fingerprint predates managed refs.
+	}
+	capability, err := loadComputerCapability(opts, ref.Directory)
+	if err != nil {
+		return component, err
+	}
+	component.CapabilityDigest = capability.digest()
+	if capability.Enabled {
+		component.Instructions += computerAgentGuide
 	}
 	return component, nil
 }
@@ -315,13 +322,16 @@ func dshNotification(input UnreadChanged) string {
 }
 
 type dshSession struct {
-	runtime   *agent.Session
-	input     *inputSession
-	revoke    func()
-	inbox     *mcpInboxSession
-	component dshComponent
-	backend   dshBackend
-	opts      SessionOptions
+	computerCapability computerCapability
+	computerGeneration string
+	computerTurn       uint64
+	runtime            *agent.Session
+	input              *inputSession
+	revoke             func()
+	inbox              *mcpInboxSession
+	component          dshComponent
+	backend            dshBackend
+	opts               SessionOptions
 	// In-memory only: opening, resuming or rotating creates a new supply scope.
 	policyToken      string
 	recoverySupplied bool   // Only a successful RunPrompt clears first-supply work.
@@ -379,13 +389,20 @@ func saveDSHDiagnostic(path string, value any) error {
 }
 
 func (s *dshSession) Close(ctx context.Context) error {
+	var local error
 	if s.runtime != nil {
-		return dshCloseResult(s.runtime.Close(ctx))
+		local = dshCloseResult(s.runtime.Close(ctx))
+	} else {
+		if s.revoke != nil {
+			s.revoke()
+		}
+		local = dshCloseResult(s.component.Close(ctx))
 	}
-	if s.revoke != nil {
-		s.revoke()
+	remote := s.backend.computerMembers().settleScope(ctx, s.opts.MemberIdentity, computer.Scope{Session: s.computerGeneration}, false)
+	if remote != nil {
+		return &pendingBackendClose{errors.Join(local, remote)}
 	}
-	return dshCloseResult(s.component.Close(ctx))
+	return local
 }
 
 func (s *dshSession) closeOwned() error {

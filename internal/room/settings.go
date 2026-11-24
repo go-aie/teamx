@@ -33,6 +33,7 @@ type settingsSnapshot struct {
 }
 
 type systemSettings struct {
+	computer  *computerController
 	committed atomic.Pointer[settingsSnapshot]
 	observe   func()
 	*configDocument

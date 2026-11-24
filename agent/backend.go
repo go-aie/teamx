@@ -40,6 +40,7 @@ type Launch struct {
 	ToolEnv                                       map[string]string
 	ExecutionToken                                string          `json:"-"`
 	MCPServers                                    []MCPHTTPServer `json:"-"`
+	CapabilityDigest                              string
 	InputBridge                                   bool
 	ObserveActivity                               func() `json:"-"`
 	TurnTimeout                                   time.Duration

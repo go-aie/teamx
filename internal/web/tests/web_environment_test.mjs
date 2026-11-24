@@ -158,3 +158,15 @@ test("uncertain finish retries the same handoff and a failed heartbeat drops inp
   assert.equal(frame.contentWindow.messages.at(-1).interactive,false);
   assert.match(ui.el("environment-status").textContent,/停止输入/);
 });
+
+test("unknown outcome review and failed restoration keep an explicit pause message", async () => {
+  const api = environmentFixture(), ui = await launch(api);
+  api.control = {id:"a".repeat(32),owned:true,phase:"ready",review:true,resumed:false};
+  await open(ui); const frame = await connect(ui,true);
+  assert.match(ui.el("environment-status").textContent,/仅供人工核验/);
+  assert.match(ui.el("environment-status").textContent,/交还后 Agent 保持暂停/);
+  api.control = {...api.control,phase:"completed",resume_failed:true};
+  await ui.clock.advance(2000);
+  assert.match(ui.el("environment-status").textContent,/恢复 Agent 失败/);
+  assert.equal(frame.contentWindow.messages.at(-1).interactive,false);
+});

@@ -97,6 +97,12 @@ func (h *mcpHTTP) addOutputTool(tool mcp.Tool, prepare func(context.Context, mcp
 }
 
 func (h *mcpHTTP) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	if h.serveComputerMCP(w, r) {
+		return
+	}
+	h.serveBase(w, r)
+}
+func (h *mcpHTTP) serveBase(w http.ResponseWriter, r *http.Request) {
 	d := &mcpDelivery{header: w.Header()}
 	defer func() {
 		if d.release != nil {

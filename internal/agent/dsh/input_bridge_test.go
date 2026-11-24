@@ -1,9 +1,12 @@
 package dsh
 
 import (
+	"bytes"
 	"context"
+	"errors"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"testing"
 	"time"
 )
@@ -44,5 +47,53 @@ func TestInputBridgeCredentialsAndImplementationIdentity(t *testing.T) {
 	defer func() { inputBridgePlugin = original }()
 	if before == configDigest(opts) {
 		t.Fatal("changed bridge accepted as old Session")
+	}
+}
+
+func TestInputBridgeUpgradeRequiresSettledRotationForExistingPlainSession(t *testing.T) {
+	opts := fixtureOptions(t)
+	opts.InputBridge = true
+	// Reproduce the former retry rule in an isolated saved Session. This member
+	// has never had Computer: upgrading the bridge still changes its fingerprint.
+	current := inputBridgePlugin
+	legacy, err := os.ReadFile("testdata/input_bridge_legacy.mjs")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if bytes.Equal(legacy, current) {
+		t.Fatal("legacy bridge fixture no longer matches the changed seam")
+	}
+	inputBridgePlugin = legacy
+	session := openFixture(t, opts)
+	inputBridgePlugin = current
+	defer func() { inputBridgePlugin = current; _ = session.Close(context.Background()) }()
+	if err := CheckReset(opts.StateDir); !errors.Is(err, ErrLocked) {
+		t.Fatal("unsettled old Session allowed reset", err)
+	}
+	if err := session.Close(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	before, err := os.ReadFile(filepath.Join(opts.StateDir, "backend.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = CheckResumeConfig(opts); !errors.Is(err, ErrRecoveryUnsupported) {
+		t.Fatal("old retry bridge resumed silently", err)
+	}
+	if err = CheckReset(opts.StateDir); err != nil {
+		t.Fatal("normally closed old Session cannot rotate", err)
+	}
+	after, err := os.ReadFile(filepath.Join(opts.StateDir, "backend.json"))
+	if err != nil || !bytes.Equal(before, after) {
+		t.Fatal("preflight consumed original saved Session", err)
+	}
+	fresh := opts
+	fresh.StateDir = filepath.Join(t.TempDir(), "new-generation")
+	next := openFixture(t, fresh)
+	if err = next.Close(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if next.id == session.id {
+		t.Fatal("settled rotation reused private Session identity")
 	}
 }

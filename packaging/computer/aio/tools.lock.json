@@ -1,0 +1,518 @@
+{
+  "base_image": "enterprise-public-cn-beijing.cr.volces.com/vefaas-public/aio-computer@sha256:5c5a6949718f984cf60fec02d19436a0738d81d113e782f366a03936640f5f1d",
+  "platform": "linux/amd64",
+  "selected_names": [
+    "browser_gui_screenshot",
+    "browser_gui_execute_action",
+    "browser_navigate",
+    "browser_go_back",
+    "browser_go_forward",
+    "browser_form_input_fill",
+    "browser_get_markdown",
+    "browser_get_text",
+    "browser_read_links",
+    "browser_new_tab",
+    "browser_tab_list",
+    "browser_switch_tab",
+    "browser_close_tab",
+    "browser_get_download_list",
+    "browser_screenshot",
+    "browser_click",
+    "browser_select",
+    "browser_hover",
+    "browser_get_clickable_elements",
+    "browser_scroll",
+    "browser_press_key"
+  ],
+  "selected_tools": [
+    {
+      "description": "Capture a full display screenshot, including every browser tab — unlike the page screenshot, which captures only the active tab.",
+      "inputSchema": {
+        "properties": {},
+        "required": [],
+        "type": "object"
+      },
+      "name": "browser_gui_screenshot"
+    },
+    {
+      "description": "Execute a browser action on the current display. `action_type` decides the other fields. Action types: MOVE_TO, MOVE_REL, CLICK, MOUSE_DOWN, MOUSE_UP, RIGHT_CLICK, DOUBLE_CLICK, DRAG_TO, DRAG_REL, SCROLL, TYPING, PRESS, KEY_DOWN, KEY_UP, HOTKEY, WAIT, SET_CLIPBOARD, WINDOW_ACTIVATE, WINDOW_MINIMIZE, NODE_FOCUS, NODE_INVOKE, NODE_SET_VALUE.",
+      "inputSchema": {
+        "properties": {
+          "action": {
+            "description": "Action object: `action_type` plus the fields that action type needs",
+            "type": "object"
+          }
+        },
+        "required": [
+          "action"
+        ],
+        "type": "object"
+      },
+      "name": "browser_gui_execute_action"
+    },
+    {
+      "description": "Navigate to a URL",
+      "inputSchema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "additionalProperties": false,
+        "properties": {
+          "url": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "url"
+        ],
+        "type": "object"
+      },
+      "name": "browser_navigate"
+    },
+    {
+      "description": "Go back to the previous page",
+      "inputSchema": {
+        "properties": {},
+        "type": "object"
+      },
+      "name": "browser_go_back"
+    },
+    {
+      "description": "Go forward to the next page",
+      "inputSchema": {
+        "properties": {},
+        "type": "object"
+      },
+      "name": "browser_go_forward"
+    },
+    {
+      "description": "Fill out an input field, before using the tool, Either 'index' or 'selector' must be provided",
+      "inputSchema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "additionalProperties": false,
+        "properties": {
+          "clear": {
+            "default": false,
+            "description": "Whether to clear existing text before filling",
+            "type": "boolean"
+          },
+          "index": {
+            "description": "Index of the element to fill",
+            "type": "number"
+          },
+          "selector": {
+            "description": "CSS selector for input field, priority use index, if index is not provided, use selector",
+            "type": "string"
+          },
+          "value": {
+            "description": "Value to fill",
+            "type": "string"
+          }
+        },
+        "required": [
+          "value"
+        ],
+        "type": "object"
+      },
+      "name": "browser_form_input_fill"
+    },
+    {
+      "description": "Get the markdown content of the current page",
+      "inputSchema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "additionalProperties": false,
+        "properties": {},
+        "type": "object"
+      },
+      "name": "browser_get_markdown"
+    },
+    {
+      "description": "Get the text content of the current page",
+      "inputSchema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "additionalProperties": false,
+        "properties": {},
+        "type": "object"
+      },
+      "name": "browser_get_text"
+    },
+    {
+      "description": "Get all links on the current page",
+      "inputSchema": {
+        "properties": {},
+        "type": "object"
+      },
+      "name": "browser_read_links",
+      "outputSchema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "additionalProperties": false,
+        "properties": {
+          "links": {
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "href": {
+                  "type": "string"
+                },
+                "text": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "text",
+                "href"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "links"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "description": "Open a new tab",
+      "inputSchema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "additionalProperties": false,
+        "properties": {
+          "url": {
+            "description": "URL to open in the new tab",
+            "type": "string"
+          }
+        },
+        "required": [
+          "url"
+        ],
+        "type": "object"
+      },
+      "name": "browser_new_tab"
+    },
+    {
+      "description": "Get the list of tabs",
+      "inputSchema": {
+        "properties": {},
+        "type": "object"
+      },
+      "name": "browser_tab_list",
+      "outputSchema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "additionalProperties": false,
+        "properties": {
+          "tabList": {
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "active": {
+                  "type": "boolean"
+                },
+                "index": {
+                  "type": "number"
+                },
+                "title": {
+                  "type": "string"
+                },
+                "url": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "index",
+                "active",
+                "title",
+                "url"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "tabList"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "description": "Switch to a specific tab",
+      "inputSchema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "additionalProperties": false,
+        "properties": {
+          "index": {
+            "description": "Tab index to switch to",
+            "type": "number"
+          }
+        },
+        "required": [
+          "index"
+        ],
+        "type": "object"
+      },
+      "name": "browser_switch_tab"
+    },
+    {
+      "description": "Close the current tab",
+      "inputSchema": {
+        "properties": {},
+        "type": "object"
+      },
+      "name": "browser_close_tab"
+    },
+    {
+      "description": "Get the list of downloaded files",
+      "inputSchema": {
+        "properties": {},
+        "type": "object"
+      },
+      "name": "browser_get_download_list",
+      "outputSchema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "additionalProperties": false,
+        "properties": {
+          "list": {
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "createdAt": {
+                  "type": "string"
+                },
+                "guid": {
+                  "type": "string"
+                },
+                "progress": {
+                  "type": "number"
+                },
+                "resourceUri": {
+                  "type": "string"
+                },
+                "state": {
+                  "type": "string"
+                },
+                "suggestedFilename": {
+                  "type": "string"
+                },
+                "url": {
+                  "type": "string"
+                }
+              },
+              "type": "object"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "list"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "description": "Take a screenshot of the current page or a specific element",
+      "inputSchema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "additionalProperties": false,
+        "properties": {
+          "fullPage": {
+            "description": "Full page screenshot (default: false)",
+            "type": "boolean"
+          },
+          "height": {
+            "description": "Height in pixels (default: viewport height)",
+            "type": "number"
+          },
+          "highlight": {
+            "default": false,
+            "description": "Highlight the element",
+            "type": "boolean"
+          },
+          "index": {
+            "description": "index of the element to screenshot",
+            "type": "number"
+          },
+          "name": {
+            "description": "Name for the screenshot",
+            "type": "string"
+          },
+          "selector": {
+            "description": "CSS selector for element to screenshot",
+            "type": "string"
+          },
+          "width": {
+            "description": "Width in pixels (default: viewport width)",
+            "type": "number"
+          }
+        },
+        "type": "object"
+      },
+      "name": "browser_screenshot"
+    },
+    {
+      "description": "Click an element on the page, before using the tool, use `browser_get_clickable_elements` to get the index of the element, but not call `browser_get_clickable_elements` multiple times",
+      "inputSchema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "additionalProperties": false,
+        "properties": {
+          "index": {
+            "description": "Index of the element to click",
+            "type": "number"
+          }
+        },
+        "type": "object"
+      },
+      "name": "browser_click"
+    },
+    {
+      "description": "Select an element on the page with index, Either 'index' or 'selector' must be provided",
+      "inputSchema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "additionalProperties": false,
+        "properties": {
+          "index": {
+            "description": "Index of the element to select",
+            "type": "number"
+          },
+          "selector": {
+            "description": "CSS selector for element to select",
+            "type": "string"
+          },
+          "value": {
+            "description": "Value to select",
+            "type": "string"
+          }
+        },
+        "required": [
+          "value"
+        ],
+        "type": "object"
+      },
+      "name": "browser_select"
+    },
+    {
+      "description": "Hover an element on the page, Either 'index' or 'selector' must be provided",
+      "inputSchema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "additionalProperties": false,
+        "properties": {
+          "index": {
+            "description": "Index of the element to hover",
+            "type": "number"
+          },
+          "selector": {
+            "description": "CSS selector for element to hover",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "name": "browser_hover"
+    },
+    {
+      "description": "Get the clickable or hoverable or selectable elements on the current page, don't call this tool multiple times",
+      "inputSchema": {
+        "properties": {},
+        "type": "object"
+      },
+      "name": "browser_get_clickable_elements"
+    },
+    {
+      "description": "Scroll the page",
+      "inputSchema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "additionalProperties": false,
+        "properties": {
+          "amount": {
+            "description": "Pixels to scroll (positive for down, negative for up), if the amount is not provided, scroll to the bottom of the page",
+            "type": "number"
+          }
+        },
+        "type": "object"
+      },
+      "name": "browser_scroll"
+    },
+    {
+      "description": "Press a key on the keyboard",
+      "inputSchema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "additionalProperties": false,
+        "properties": {
+          "key": {
+            "description": "Name of the key to press or a character to generate, such as Enter, Tab, Escape, Backspace, Delete, Insert, F1, F2, F3, F4, F5, F6, F7, F8, F9, F10, F11, F12, ArrowLeft, ArrowRight, ArrowUp, ArrowDown, PageUp, PageDown, Home, End, ShiftLeft, ShiftRight, ControlLeft, ControlRight, AltLeft, AltRight, MetaLeft, MetaRight, CapsLock, PrintScreen, ScrollLock, Pause, ContextMenu",
+            "enum": [
+              "Enter",
+              "Tab",
+              "Escape",
+              "Backspace",
+              "Delete",
+              "Insert",
+              "F1",
+              "F2",
+              "F3",
+              "F4",
+              "F5",
+              "F6",
+              "F7",
+              "F8",
+              "F9",
+              "F10",
+              "F11",
+              "F12",
+              "ArrowLeft",
+              "ArrowRight",
+              "ArrowUp",
+              "ArrowDown",
+              "PageUp",
+              "PageDown",
+              "Home",
+              "End",
+              "ShiftLeft",
+              "ShiftRight",
+              "ControlLeft",
+              "ControlRight",
+              "AltLeft",
+              "AltRight",
+              "MetaLeft",
+              "MetaRight",
+              "CapsLock",
+              "PrintScreen",
+              "ScrollLock",
+              "Pause",
+              "ContextMenu"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "key"
+        ],
+        "type": "object"
+      },
+      "name": "browser_press_key"
+    }
+  ],
+  "gui_action_policy": {
+    "allowed_action_types": [
+      "MOVE_TO",
+      "MOVE_REL",
+      "CLICK",
+      "RIGHT_CLICK",
+      "DOUBLE_CLICK",
+      "MOUSE_DOWN",
+      "MOUSE_UP",
+      "DRAG_TO",
+      "DRAG_REL",
+      "SCROLL",
+      "TYPING",
+      "PRESS",
+      "KEY_DOWN",
+      "KEY_UP",
+      "HOTKEY",
+      "WAIT",
+      "WINDOW_ACTIVATE",
+      "WINDOW_MINIMIZE"
+    ],
+    "default": "deny",
+    "note": "Future managed admission must enforce this list without changing the native action schema. Prototype is not an Agent tool gateway."
+  }
+}

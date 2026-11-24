@@ -1,3 +1,4 @@
+import { createMemberComputer } from "./member-computer.mjs";
 import { agentName } from "../agent-names.mjs";
 import { randomUUID } from "../random-id.mjs";
 import { createNavigationIcon } from "../icons.mjs";
@@ -13,6 +14,7 @@ export function createModels({env, runtime, openSettings, onMemberStatus}) {
   let data, editor, saving = false, read = 0, memberView, memberSaving = false, defaultReview;
   let lastOperation, operationRenderKey, listRenderKey, restoredKey;
   let editorReturn;
+  const memberComputer = createMemberComputer({env,runtime,current:currentMemberView});
   const memberPicker = createMemberModelPicker({document, window, $, onChange:saveMemberReasoning, onModelChange:saveMemberModel, onDetails:showMemberDetails});
   const operationRows = new Map();
   const draftKey = () => JSON.stringify(["teamx.model-draft",state.installationID || "",state.operator]);
@@ -275,6 +277,7 @@ export function createModels({env, runtime, openSettings, onMemberStatus}) {
     $("member-reasoning-feedback").hidden = true;
     $("member-model-details").hidden = true; $("member-model-progress").setAttribute("aria-expanded", "false");
     onMemberStatus({});
+    memberComputer.open(memberView);
     await load();
   }
   function renderMember() {
@@ -282,6 +285,7 @@ export function createModels({env, runtime, openSettings, onMemberStatus}) {
     if (!v || !currentMemberView(v) || !data) return;
     const member = data.members.find(m => m.room_id === v.room_id && m.room_instance === v.room_instance && m.agent_id === v.agent_id && m.membership_id === v.membership_id);
     if (!member) {memberPicker.close();$("member-model").hidden = true; onMemberStatus({}); return;}
+    void memberComputer.refresh();
     v.member = member;
     v.expectedVersion = member.version; v.catalogVersion = data.catalog.version;
     $("member-model").hidden = false;
@@ -324,6 +328,7 @@ export function createModels({env, runtime, openSettings, onMemberStatus}) {
 
   function mount() {
     memberPicker.mount();
+    memberComputer.mount();
     for (const id of modelDraftFields) {
       field(id).addEventListener("input",persist); field(id).addEventListener("change",persist);
     }

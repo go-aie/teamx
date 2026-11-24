@@ -221,15 +221,17 @@ type ControlMember struct {
 	environmentID    string
 	environmentOwner string
 	// Internal lifecycle controls; never decoded from Agent requests.
-	expectedBinding *turnExecution
-	modelGate       *string
-	modelTarget     *modelSessionSnapshot
-	ExecutionID     uint64
-	automatic       bool
-	recovering      bool
-	automaticInbox  *InboxStatus
-	internalPause   bool
-	expectedPause   *uint64
+	expectedBinding     *turnExecution
+	preserveIntent      bool
+	capabilitiesChanged bool
+	modelGate           *string
+	modelTarget         *modelSessionSnapshot
+	ExecutionID         uint64
+	automatic           bool
+	recovering          bool
+	automaticInbox      *InboxStatus
+	internalPause       bool
+	expectedPause       *uint64
 	MemberIdentity
 	Action           string
 	ContinueRotation bool
