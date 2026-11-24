@@ -24,9 +24,15 @@ func connectFixture(t *testing.T) (*roomManager, *service, MemberState, platform
 
 func connectFixtureWithSource(t *testing.T, unified bool, text string) (*roomManager, *service, MemberState, platformConnectRequest) {
 	t.Helper()
+	return connectFixtureWithMembers(t, unified, text, 1)
+}
+
+// Most connection flows act on one member; isolation scenarios opt into more.
+func connectFixtureWithMembers(t *testing.T, unified bool, text string, count int) (*roomManager, *service, MemberState, platformConnectRequest) {
+	t.Helper()
 	m := testManager(t, t.TempDir(), managerTestProfiles(t))
 	m.config.unifiedInputs = unified
-	r := managerCreate(t, m, "connect")
+	r := managerCreateWithMembers(t, m, "connect", count)
 	_, snap := readManagedRoom(t, m, r)
 	svc := eventLiveService(t, &eventHarness{m: m, room: r})
 	source, err := svc.room.Call[PostReceipt](context.Background(), PostMessage{RoomIdentity: r.RoomIdentity, Caller: humanCaller, ClientMessageID: "connect-source", Text: text})

@@ -86,44 +86,45 @@ printf '%s' "$1"
 }
 
 func TestLocalGitFetchPushAndExactSHA(t *testing.T) {
+	parallelFixtureTest(t)
 	f := newWorkspaceFixture(t)
 	f.config.Workspace.Binding = testGitLabWorkspace().Binding
 	bare := filepath.Join(t.TempDir(), "remote.git")
-	workspaceGit(t, f.source, "clone", "--bare", f.source, bare)
+	f.git(t, f.source, "clone", "--bare", f.source, bare)
 	f.source = bare
 	prepared, err := f.ensure(true)
 	if err != nil {
 		t.Fatal(err)
 	}
 	dir := f.member(0)
-	base := workspaceGit(t, dir, "rev-parse", "HEAD")
-	workspaceGit(t, dir, "checkout", "-b", "workspace-regression")
+	base := f.git(t, dir, "rev-parse", "HEAD")
+	f.git(t, dir, "checkout", "-b", "workspace-regression")
 	if err := os.WriteFile(filepath.Join(dir, "change"), []byte("new commit"), 0600); err != nil {
 		t.Fatal(err)
 	}
-	workspaceGit(t, dir, "add", "change")
-	workspaceGit(t, dir, "commit", "-m", "local regression")
-	head := workspaceGit(t, dir, "rev-parse", "HEAD")
+	f.git(t, dir, "add", "change")
+	f.git(t, dir, "commit", "-m", "local regression")
+	head := f.git(t, dir, "rev-parse", "HEAD")
 	// Git transport stays entirely local. Keep canonical HTTPS origin and the
 	// prepared environment; Go askpass is exercised separately by the production Git askpass binary test.
 	rewrite := "url.file://" + bare + ".insteadOf=https://gitlab.invalid/group/project.git"
-	if _, err := runPreparation(context.Background(), dir, prepared.ToolEnv, "git", "-c", rewrite, "push", "origin", "HEAD:refs/heads/workspace-regression"); err != nil {
+	if _, err := runPreparation(context.Background(), dir, f.environment(prepared.ToolEnv), "git", "-c", rewrite, "push", "origin", "HEAD:refs/heads/workspace-regression"); err != nil {
 		t.Fatal("local Git push", err)
 	}
 	// Fetch into the other independent clone, which does not yet have head.
 	dir = f.member(1)
-	if _, err := runPreparation(context.Background(), dir, prepared.ToolEnv, "git", "cat-file", "-e", head); err == nil {
+	if _, err := runPreparation(context.Background(), dir, f.environment(prepared.ToolEnv), "git", "cat-file", "-e", head); err == nil {
 		t.Fatal("fetch fixture already contains the new commit")
 	}
 	for _, args := range [][]string{{"fetch", "origin", "workspace-regression"}, {"checkout", "--detach", base}, {"checkout", "--detach", head}} {
-		if _, err := runPreparation(context.Background(), dir, prepared.ToolEnv, "git", append([]string{"-c", rewrite}, args...)...); err != nil {
+		if _, err := runPreparation(context.Background(), dir, f.environment(prepared.ToolEnv), "git", append([]string{"-c", rewrite}, args...)...); err != nil {
 			t.Fatal("local Git regression", args, err)
 		}
-		if len(args) == 3 && args[0] == "checkout" && workspaceGit(t, dir, "rev-parse", "HEAD") != args[2] {
+		if len(args) == 3 && args[0] == "checkout" && f.git(t, dir, "rev-parse", "HEAD") != args[2] {
 			t.Fatal("checkout did not select the exact SHA")
 		}
 	}
-	if workspaceGit(t, bare, "rev-parse", "refs/heads/workspace-regression") != head {
+	if f.git(t, bare, "rev-parse", "refs/heads/workspace-regression") != head {
 		t.Fatal("push did not reach local remote")
 	}
 	if err := os.WriteFile(filepath.Join(dir, "README"), []byte("dirty retained"), 0600); err != nil {
@@ -132,7 +133,7 @@ func TestLocalGitFetchPushAndExactSHA(t *testing.T) {
 	if _, err := f.ensure(false); err != nil {
 		t.Fatal(err)
 	}
-	if workspaceGit(t, dir, "rev-parse", "HEAD") != head || string(readCapabilityFile(t, filepath.Join(dir, "README"))) != "dirty retained" {
+	if f.git(t, dir, "rev-parse", "HEAD") != head || string(readCapabilityFile(t, filepath.Join(dir, "README"))) != "dirty retained" {
 		t.Fatal("Workspace revisit changed reviewed SHA or local files")
 	}
 }

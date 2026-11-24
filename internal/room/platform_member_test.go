@@ -11,16 +11,23 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/go-aie/teamx/internal/platform/lark"
+	"github.com/go-aie/teamx/internal/platform/notification"
 )
 
 func TestPlatformMemberNotificationPatchPreservesRangeAndStart(t *testing.T) {
-	m, _, _, req := connectFixture(t)
+	req := memberConfigurationRequest()
+	now := time.Unix(100, 123456789).UTC()
+	notifications := notification.New(notification.Host{}, &lark.SearchSource{})
+	notifications.Clock = func() time.Time { return now }
+	m := &roomManager{notifications: notifications}
 	id := MemberIdentity{RoomIdentity: req.RoomIdentity, AgentID: req.Caller.ID, MembershipID: req.Caller.MembershipID}
 	platformID := strings.Repeat("c", 32)
 	in := platformMemberInput{PlatformID: platformID, PlatformVersion: 2, AddChatIDs: []string{"oc_selected"}}
 	v := platformMemberView{MemberIdentity: id}
 	cfg, err := memberNotificationConfig(m, v, in)
-	if err != nil || !cfg.Enabled || !cfg.Groups.Enabled || cfg.Private.Enabled || cfg.Groups.Scope != "specified" || cfg.Groups.MessageMode != "all" || cfg.Groups.AtMe || cfg.Groups.AtAll || cfg.BackfillStart.IsZero() || cfg.Target != inboxTarget(id) {
+	if err != nil || !cfg.Enabled || !cfg.Groups.Enabled || cfg.Private.Enabled || cfg.Groups.Scope != "specified" || cfg.Groups.MessageMode != "all" || cfg.Groups.AtMe || cfg.Groups.AtAll || !cfg.BackfillStart.Equal(now.Truncate(time.Second)) || cfg.Target != inboxTarget(id) {
 		t.Fatal("unexpected opt-in", cfg, err)
 	}
 	in.GroupMessageMode = "mentions"
@@ -181,7 +188,7 @@ func TestPlatformMemberUnknownSubmissionNeverReplays(t *testing.T) {
 }
 
 func TestPlatformMemberRejectsFabricatedAuthorityAndUnsupportedInput(t *testing.T) {
-	m, svc, member, req := memberToolFixture(t)
+	m, svc, member, req := memberInputRejectionFixture(t)
 	posted, err := svc.room.Call[PostReceipt](context.Background(), PostMessage{RoomIdentity: req.RoomIdentity, Caller: req.Caller, ClientMessageID: "agent-config-source", Text: "开启工具"})
 	if err != nil {
 		t.Fatal(err)
@@ -208,7 +215,7 @@ func TestPlatformMemberRejectsFabricatedAuthorityAndUnsupportedInput(t *testing.
 	if w.Code != 403 {
 		t.Fatal("browser invoked Agent endpoint", w.Code)
 	}
-	client, endpoint := toolPipeServer(t, m)
+	client, endpoint := memberRequestRejectionServer(t, m)
 	for _, args := range [][]string{
 		{"member", "tool", "--notification-version", "1"},
 		{"member", "notifications", "--tool-revision", "1"},

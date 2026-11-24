@@ -4,6 +4,11 @@
 
 | 记录 | 范围 |
 | --- | --- |
+| [测试改造最终验收](test-suite-final-validation.zh.md) | F5：固定快照完整 integration／race、身份与时序夹具修正、成本分布及停止决策；CLI／Space 失败与未达预算保留 |
+| [Workspace 夹具隔离](workspace-fixture-isolation.zh.md) | F4：私有 Git／HOME 环境、真实准备与重启边界、四槽并行和局部成本对照 |
+| [动作 ledger 恢复分工](action-ledger-recovery.zh.md) | 测试 F3：四类真实落盘故障改由新组件重读，保留文本／图片真实进程恢复；回执与身份补强、健康修复和局部收益判断 |
+| [Lark 配置族编译 CLI 夹具](lark-configuration-cli.zh.md) | F2 首族：只读原生协议、私有身份／scope／门闩、真实进程取消；整族对照、构建复用与扩散门槛 |
+| [平台配置规则减装配](platform-configuration-rules.zh.md) | F1：补丁规则最小依赖、单成员连接夹具、请求拒绝及正式访问身份修复；相关族对照与未验边界 |
 | [Computer 首版发布与采用](computer/release-adoption.zh.md) | C4：旧 MCP／environment 入口退出、可选 Runtime 打包、双真实 DSH 与 Chromium 组合、升级采用与无容器复核 |
 | [Computer 本机 Docker 托管启停](computer/docker-lifecycle.zh.md) | 本机固定镜像、全局创建／启动／结清停止、资源归属与重启恢复；发布与真实平台验收边界单列 |
 | [Computer 成员能力与 Agent 执行](computer/agent-capabilities.zh.md) | C2：统一 MCP、成员开关、Session 能力、外部执行结清／轮换；真实模型文本／像素任务、关闭后请求 Schema 和离线普通回合证据 |

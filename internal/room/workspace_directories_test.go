@@ -34,6 +34,7 @@ func directoryPolicyFixture(t *testing.T) (*roomManager, string) {
 }
 
 func TestWorkspaceMemberDirectoryNormalizationAndOwnership(t *testing.T) {
+	parallelFixtureTest(t)
 	if !equalWorkspaceRoomConfig(managedRoomConfig{Workspace: &workspaceConfig{Root: "workspaces"}}, managedRoomConfig{Workspace: &workspaceConfig{Root: "workspaces", MemberDirectories: map[string]string{}}}) {
 		t.Fatal("empty directory map differs from absent map in snapshot comparison")
 	}
@@ -75,6 +76,7 @@ func TestWorkspaceMemberDirectoryNormalizationAndOwnership(t *testing.T) {
 }
 
 func TestWorkspaceRootsConfigurationDistinguishesDefaultAndDisabled(t *testing.T) {
+	parallelFixtureTest(t)
 	for _, value := range []string{"", "workspace_roots = []", "workspace_roots = ['/srv/projects', '/missing']"} {
 		config, err := loadStartupConfig(writeStartupConfig(t, t.TempDir(), "[server]\n"+value+"\n"), true)
 		if err != nil {
@@ -153,6 +155,7 @@ func TestWorkspaceDirectoryPolicyCanonicalizationAndRevalidation(t *testing.T) {
 }
 
 func TestWorkspaceDirectorySnapshotDoesNotRequireLivePath(t *testing.T) {
+	parallelFixtureTest(t)
 	w := workspaceConfig{Root: "workspaces", MemberDirectories: map[string]string{"generation-A": "/unavailable/mount/project"}}
 	c := managedRoomConfig{Workspace: &w, WorkspaceVersion: 1, Members: []managedMember{{MemberState: historyRoom(0, "").Members[0], Workspace: "workspaces/generation-A"}}}
 	if err := validateWorkspaceSnapshot(c); err != nil {
@@ -174,6 +177,7 @@ func TestWorkspaceDirectorySnapshotDoesNotRequireLivePath(t *testing.T) {
 }
 
 func TestWorkspaceDirectoryRequiresReadAndSearchPermission(t *testing.T) {
+	parallelFixtureTest(t)
 	if os.Geteuid() == 0 {
 		t.Skip("root bypasses directory permissions")
 	}
@@ -200,6 +204,7 @@ func TestWorkspaceDirectoryRequiresReadAndSearchPermission(t *testing.T) {
 }
 
 func TestExternalWorkspaceOmitsManagedRepositoryGuidanceAndCredentials(t *testing.T) {
+	parallelFixtureTest(t)
 	w := workspaceConfig{Binding: &workspaceBinding{Provider: "gitlab"}, MemberDirectories: map[string]string{"member": "/project"}}
 	member := managedMember{MemberState: MemberState{MembershipID: "member"}, Instructions: "member role\n\nWorkspace 提供本地 Git 与限定仓库路径的 askpass；GitLab API 工具需要成员显式启用。\n\nOAuth 仓库网络操作使用 workspace-git。", ToolEnv: map[string]string{"GIT_ASKPASS": "/managed", "TEAMX_GITLAB_TOOLS": "/private", "GIT_TERMINAL_PROMPT": "0", "ROLE": "developer"}}
 	if got := memberWorkspaceInstructions(w, member); got != "member role" {
@@ -219,6 +224,7 @@ func TestExternalWorkspaceOmitsManagedRepositoryGuidanceAndCredentials(t *testin
 
 // The picker must use the Room's frozen execution mode, including while closed.
 func TestWorkspaceDirectoryStatusExposesFrozenScheduling(t *testing.T) {
+	parallelFixtureTest(t)
 	for _, mode := range []schedulingMode{schedulingSerial, schedulingParallel} {
 		t.Run(string(mode), func(t *testing.T) {
 			m, _ := directoryTestManager(t)

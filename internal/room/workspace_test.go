@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"maps"
 	"net/http"
 	"os"
 	"os/exec"
@@ -16,10 +17,11 @@ import (
 	"github.com/go-aie/teamx/internal/platform/gitlab"
 )
 
-func workspaceGit(t *testing.T, dir string, args ...string) string {
+func (f *workspaceFixture) git(t *testing.T, dir string, args ...string) string {
 	t.Helper()
 	cmd := exec.Command("git", args...)
 	cmd.Dir = dir
+	cmd.Env = preparationEnvironment(f.env)
 	data, err := cmd.CombinedOutput()
 	if err != nil {
 		t.Fatalf("git %v: %v %s", args, err, data)
@@ -31,6 +33,7 @@ type workspaceFixture struct {
 	p            workspacePreparer
 	dir, source  string
 	config       managedRoomConfig
+	env          map[string]string
 	calls        []string
 	failClone    bool
 	projectError bool
@@ -39,23 +42,36 @@ type workspaceFixture struct {
 func newWorkspaceFixture(t *testing.T) *workspaceFixture {
 	t.Helper()
 	f := newWorkspacePreflightFixture(t)
-	workspaceGit(t, f.source, "init", "--initial-branch=main")
-	workspaceGit(t, f.source, "config", "user.name", "Source")
-	workspaceGit(t, f.source, "config", "user.email", "source@example.test")
+	f.git(t, f.source, "init", "--initial-branch=main")
+	f.git(t, f.source, "config", "user.name", "Source")
+	f.git(t, f.source, "config", "user.email", "source@example.test")
 	if err := os.WriteFile(filepath.Join(f.source, "README"), []byte("initial\n"), 0600); err != nil {
 		t.Fatal(err)
 	}
-	workspaceGit(t, f.source, "add", "README")
-	workspaceGit(t, f.source, "commit", "-m", "initial")
+	f.git(t, f.source, "add", "README")
+	f.git(t, f.source, "commit", "-m", "initial")
 	return f
 }
 
 func newWorkspacePreflightFixture(t *testing.T) *workspaceFixture {
 	t.Helper()
 	home := t.TempDir()
-	t.Setenv("HOME", home)
-	t.Setenv("XDG_CONFIG_HOME", home)
-	f := &workspaceFixture{dir: t.TempDir(), source: t.TempDir()}
+	// Own all Git configuration and initialization material. Never mutate the
+	// process environment: these fixtures also run alongside other workspaces.
+	empty := filepath.Join(home, "empty")
+	if err := os.Mkdir(empty, 0700); err != nil {
+		t.Fatal(err)
+	}
+	config := filepath.Join(home, ".gitconfig")
+	if err := os.WriteFile(config, []byte("[core]\n\thooksPath = "+filepath.ToSlash(empty)+"\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	f := &workspaceFixture{dir: t.TempDir(), source: t.TempDir(), env: map[string]string{
+		"HOME": home, "XDG_CONFIG_HOME": home,
+		"GIT_CONFIG_GLOBAL": config, "GIT_CONFIG_SYSTEM": os.DevNull,
+		"GIT_CONFIG_NOSYSTEM": "1", "GIT_ATTR_NOSYSTEM": "1",
+		"GIT_TEMPLATE_DIR": empty,
+	}}
 	f.config = managedRoomConfig{WorkspaceVersion: 1, Workspace: &workspaceConfig{Root: "workspaces/repos/stable", Repository: &workspaceRepository{URL: "https://gitlab.invalid/group/project.git", Branch: "main"}}, RoomIdentity: RoomIdentity{RoomID: "room", RoomInstance: "generation"}}
 	for _, id := range []string{"member-one", "member-two"} {
 		f.config.Members = append(f.config.Members, managedMember{MemberState: MemberState{MembershipID: id}, Workspace: workspaceMemberPath(*f.config.Workspace, id)})
@@ -83,7 +99,20 @@ func newWorkspacePreflightFixture(t *testing.T) *workspaceFixture {
 	return f
 }
 
+// Preserve the real preparer's credentials and options while pinning home and
+// Git configuration to this fixture. Each command receives its own map.
+func (f *workspaceFixture) environment(env map[string]string) map[string]string {
+	result := maps.Clone(f.env)
+	for key, value := range env {
+		if _, private := f.env[key]; !private {
+			result[key] = value
+		}
+	}
+	return result
+}
+
 func (f *workspaceFixture) run(ctx context.Context, dir string, env map[string]string, program string, args ...string) ([]byte, error) {
+	env = f.environment(env)
 	f.calls = append(f.calls, program+" "+strings.Join(args, " "))
 	for _, arg := range args {
 		if arg == "clone" {

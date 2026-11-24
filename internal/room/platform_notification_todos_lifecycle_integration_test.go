@@ -92,6 +92,20 @@ func TestTodosCredentialRotationWaitsBeforeSavingReplacement(t *testing.T) {
 	done := make(chan error, 1)
 	go func() { _, err := testReauthorizePlatform(h.m, req); done <- err }()
 	awaitEventSignal(t, b.canceled, "rotation did not cancel personal query")
+	// Cancellation starts settlement; the source pause is committed afterwards.
+	// Observe that durable boundary before checking the pending replacement.
+	deadline := time.Now().Add(5 * time.Second)
+	for h.state().Status != "credentials_invalid" {
+		select {
+		case err := <-done:
+			t.Fatal("rotation returned before query settlement", err)
+		default:
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("rotation did not durably pause the old subscription")
+		}
+		time.Sleep(time.Millisecond)
+	}
 	// The public read may proceed while settlement is pending, but credentials
 	// have not been replaced and the old subscription is durably paused.
 	h.m.mu.Lock()
@@ -102,6 +116,11 @@ func TestTodosCredentialRotationWaitsBeforeSavingReplacement(t *testing.T) {
 	}
 	if file.Platforms[0].CredentialVersion != h.connection.CredentialVersion || h.state().Status != "credentials_invalid" {
 		t.Fatal("credential replaced before settlement")
+	}
+	select {
+	case err := <-done:
+		t.Fatal("rotation returned before query settlement", err)
+	default:
 	}
 	b.finish()
 	awaitEventSignal(t, b.done, "rotation query did not settle")

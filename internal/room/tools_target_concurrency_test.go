@@ -318,19 +318,10 @@ func TestLarkPermissionGapRechecksExactTargetAfterRemoteRead(t *testing.T) {
 		t.Run(mutation, func(t *testing.T) {
 			h := larkToolConfigurationHarness(t)
 			writeJSONFixture(t, h.dir+"/missing-scopes.json", []string{"im:message:readonly"})
-			script, err := os.ReadFile(h.dir + "/lark-cli")
-			if err != nil {
-				t.Fatal(err)
-			}
-			gate := `if a==['auth','scopes','--json']:
- import time
- open(base+'/permission-ready','w').close()
- while not os.path.exists(base+'/permission-release'):time.sleep(0.01)
-`
-			script = bytes.Replace(script, []byte("if a==['auth','scopes','--json']:\n"), []byte(gate), 1)
-			if err = os.WriteFile(h.dir+"/lark-cli", script, 0700); err != nil {
-				t.Fatal(err)
-			}
+			state := defaultLarkConfigurationState()
+			state.Gate = "permission"
+			writeJSONFixture(t, h.dir+"/native-fixture.json", state)
+			var err error
 			change := larkConfigurationChange(h)
 			change.ExpectedBindingRevision = nil
 			done := make(chan error, 1)

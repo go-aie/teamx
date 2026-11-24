@@ -16,6 +16,14 @@ node --test internal/web/tests/web*_test.mjs
 
 保留 Go 默认的构建和结果缓存。需要确认修改后的真实耗时或排查偶发问题时，加 `-count=1` 强制执行；日常入口不强制清缓存或禁用结果缓存。
 
+Makefile 支持 `TEST_FLAGS`，只将选项传给本次顶层 `go test`。例如保留逐项计时日志：
+
+```sh
+make test-integration TEST_FLAGS='-json -count=1' TEST_TIMEOUT=25m > /tmp/teamx-integration.jsonl
+```
+
+不要用全局 `GOFLAGS=-json` 采集测试日志：夹具中的 `go list`、`go mod edit` 等子命令也会受影响，可能改变协议输出。诊断时放宽 `TEST_TIMEOUT` 只为收齐结果，不表示达到核心三分钟／完整集成八分钟的目标。
+
 按改动模块执行 integration，无需每次覆盖整个仓库：
 
 ```sh
@@ -24,7 +32,7 @@ make test-integration TEST_PACKAGES=./internal/platform/lark
 make test-integration TEST_PACKAGES='./internal/room ./internal/platform/gitlab' TEST_RUN='GitLab|ReferenceAction'
 ```
 
-`TEST_RUN` 是 Go 的测试名正则。未匹配的测试不会运行；按模块的验证不能描述为全仓通过。
+`TEST_RUN` 是 Go 的测试名正则。未匹配的测试不会运行；按模块的验证不能描述为全仓通过。通过 Make 指定结尾锚点时写 `$$`，例如 `TEST_RUN='^TestName$$'`，展开后 Go 才会收到单个 `$`。
 
 ## 分层约定
 

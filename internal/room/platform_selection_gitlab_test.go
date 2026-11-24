@@ -283,7 +283,8 @@ func TestGitLabProjectConfigurationRejectsMismatchedIDAndPreservesSources(t *tes
 }
 
 func TestGitLabMemberSourceAndFilterPatches(t *testing.T) {
-	m, _, _, req := gitlabMemberFixture(t)
+	req := memberConfigurationRequest()
+	m := &roomManager{}
 	n := gitlabNotificationView{Version: 5, Config: gitlab.NotificationConfig{Enabled: true, PlatformID: req.Input.PlatformID, Target: platformMemberTarget(req.member()), IntervalSeconds: 61, Events: gitlab.EventSettings{Enabled: true, Project: "team/old", Filter: gitlab.EventsFilter{Types: []string{"push"}}}, Todos: gitlab.TodoSettings{Enabled: true, Filter: gitlab.TodosFilter{Reasons: []string{"assigned"}, Types: []string{"work_item"}}}}}
 	v := platformMemberView{MemberIdentity: req.member(), PlatformID: req.Input.PlatformID, GitLab: &n}
 	in := *req.Input
@@ -294,9 +295,7 @@ func TestGitLabMemberSourceAndFilterPatches(t *testing.T) {
 	in.EventsFilter = &gitlab.EventsFilter{Types: []string{"note"}}
 	in.TodosFilter = &gitlab.TodosFilter{Reasons: []string{"mentioned"}}
 	req.Input = &in
-	m.mu.Lock()
 	cfg, err := m.gitlabMemberNotificationConfigLocked(v, req)
-	m.mu.Unlock()
 	if err != nil || cfg.Events.Project != "team/project" || cfg.Events.Filter.Types[0] != "note" || !cfg.Todos.Enabled || cfg.Todos.Filter.Reasons[0] != "mentioned" || cfg.Todos.Filter.Types[0] != "work_item" || cfg.IntervalSeconds != 61 {
 		t.Fatal(cfg, err)
 	}

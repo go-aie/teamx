@@ -29,7 +29,7 @@ func testGitLabSelectionBrowser(t *testing.T, realRead func(*testing.T, *httptes
 	t.Helper()
 	t.Setenv("USER", humanCaller.ID)
 	m, svc, member, settings, req := gitlabProjectSelectionFixtureFor(t, func(t *testing.T) (*roomManager, *service, MemberState, platformConnectRequest) {
-		return connectFixtureWithSource(t, true, "请在 GitLab 选择用于只读检查的项目。不要评论、合并或更改通知。")
+		return connectFixtureWithMembers(t, true, "请在 GitLab 选择用于只读检查的项目。不要评论、合并或更改通知。", 2)
 	})
 	server := browserTestServer(t, m)
 	defer server.Close()

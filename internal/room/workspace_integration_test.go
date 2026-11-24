@@ -15,6 +15,7 @@ import (
 )
 
 func TestWorkspaceGitLabBrowserURLUsesCanonicalCloneURL(t *testing.T) {
+	parallelFixtureTest(t)
 	for name, bound := range map[string]bool{"git-only": false, "gitlab": true} {
 		t.Run(name, func(t *testing.T) {
 			f := newWorkspaceFixture(t)
@@ -43,7 +44,7 @@ func TestWorkspaceGitLabBrowserURLUsesCanonicalCloneURL(t *testing.T) {
 				t.Fatal("clone count or saved configuration changed")
 			}
 			for i := range f.config.Members {
-				if workspaceGit(t, f.member(i), "remote", "get-url", "origin") != cloneURL {
+				if f.git(t, f.member(i), "remote", "get-url", "origin") != cloneURL {
 					t.Fatal("unexpected origin")
 				}
 			}
@@ -57,11 +58,11 @@ func TestWorkspaceGitLabBrowserURLUsesCanonicalCloneURL(t *testing.T) {
 				}
 			}
 			// Previously created origins remain valid; unrelated projects do not.
-			workspaceGit(t, f.member(0), "remote", "set-url", "origin", browserURL)
+			f.git(t, f.member(0), "remote", "set-url", "origin", browserURL)
 			if _, err := f.ensure(false); err != nil {
 				t.Fatal(err)
 			}
-			workspaceGit(t, f.member(0), "remote", "set-url", "--push", "origin", "https://gitlab.invalid/other/project.git")
+			f.git(t, f.member(0), "remote", "set-url", "--push", "origin", "https://gitlab.invalid/other/project.git")
 			if _, err := f.ensure(false); err == nil {
 				t.Fatal("accepted a different push project")
 			}
@@ -70,6 +71,7 @@ func TestWorkspaceGitLabBrowserURLUsesCanonicalCloneURL(t *testing.T) {
 }
 
 func TestWorkspaceIndependentClonesPreserveOldFilesAndRevisit(t *testing.T) {
+	parallelFixtureTest(t)
 	f := newWorkspaceFixture(t)
 	old := filepath.Join(f.dir, "workspaces", f.config.Members[0].MembershipID)
 	os.MkdirAll(old, 0700)
@@ -82,21 +84,21 @@ func TestWorkspaceIndependentClonesPreserveOldFilesAndRevisit(t *testing.T) {
 		t.Fatal("Git-only workspace enabled a platform")
 	}
 	for i := range f.config.Members {
-		if workspaceGit(t, f.member(i), "branch", "--show-current") != "main" {
+		if f.git(t, f.member(i), "branch", "--show-current") != "main" {
 			t.Fatal("initial branch")
 		}
 	}
 	if data, _ := os.ReadFile(filepath.Join(old, "discussion.txt")); string(data) != "old files" {
 		t.Fatal("old files lost")
 	}
-	workspaceGit(t, f.member(0), "checkout", "-b", "task")
+	f.git(t, f.member(0), "checkout", "-b", "task")
 	os.WriteFile(filepath.Join(f.member(0), "README"), []byte("dirty\n"), 0600)
-	before := workspaceGit(t, f.member(0), "status", "--porcelain")
+	before := f.git(t, f.member(0), "status", "--porcelain")
 	f.calls = nil
 	if _, err = f.ensure(false); err != nil {
 		t.Fatal(err)
 	}
-	if before != workspaceGit(t, f.member(0), "status", "--porcelain") || workspaceGit(t, f.member(0), "branch", "--show-current") != "task" {
+	if before != f.git(t, f.member(0), "status", "--porcelain") || f.git(t, f.member(0), "branch", "--show-current") != "task" {
 		t.Fatal("revisit changed branch or files")
 	}
 	for _, call := range f.calls {
@@ -110,6 +112,7 @@ func TestWorkspaceIndependentClonesPreserveOldFilesAndRevisit(t *testing.T) {
 }
 
 func TestWorkspaceRejectsUnsafeOrIncompleteTargets(t *testing.T) {
+	parallelFixtureTest(t)
 	for _, kind := range []string{"foreign-origin", "foreign-push", "non-repository", "partial-git", "pending-clone", "missing-on-visit", "symlink", "overlap"} {
 		t.Run(kind, func(t *testing.T) {
 			var f *workspaceFixture
@@ -124,12 +127,12 @@ func TestWorkspaceRejectsUnsafeOrIncompleteTargets(t *testing.T) {
 				if _, err := f.ensure(true); err != nil {
 					t.Fatal(err)
 				}
-				workspaceGit(t, f.member(0), "remote", "set-url", "origin", "https://gitlab.invalid/other/project.git")
+				f.git(t, f.member(0), "remote", "set-url", "origin", "https://gitlab.invalid/other/project.git")
 			case "foreign-push":
 				if _, err := f.ensure(true); err != nil {
 					t.Fatal(err)
 				}
-				workspaceGit(t, f.member(0), "config", "remote.origin.pushurl", "https://gitlab.invalid/other/project.git")
+				f.git(t, f.member(0), "config", "remote.origin.pushurl", "https://gitlab.invalid/other/project.git")
 			case "non-repository":
 				os.MkdirAll(f.member(0), 0700)
 				os.WriteFile(filepath.Join(f.member(0), "keep"), []byte("evidence"), 0600)
@@ -165,6 +168,7 @@ func TestWorkspaceRejectsUnsafeOrIncompleteTargets(t *testing.T) {
 }
 
 func TestWorkspaceCloneFailureRetainsEvidenceAndBlocksReplay(t *testing.T) {
+	parallelFixtureTest(t)
 	f := newWorkspaceFixture(t)
 	f.failClone = true
 	if _, err := f.ensure(true); err == nil {
@@ -189,24 +193,25 @@ func TestWorkspaceCloneFailureRetainsEvidenceAndBlocksReplay(t *testing.T) {
 }
 
 func TestWorkspaceSupplementGitLabAndFrozenResources(t *testing.T) {
+	parallelFixtureTest(t)
 	f := newWorkspaceFixture(t)
 	if _, err := f.ensure(true); err != nil {
 		t.Fatal(err)
 	}
-	workspaceGit(t, f.member(0), "checkout", "-b", "task")
+	f.git(t, f.member(0), "checkout", "-b", "task")
 	os.WriteFile(filepath.Join(f.member(0), "README"), []byte("dirty\n"), 0600)
-	workspaceGit(t, f.member(0), "config", "user.name", "Existing Author")
-	workspaceGit(t, f.member(0), "config", "user.email", "existing@example.test")
+	f.git(t, f.member(0), "config", "user.name", "Existing Author")
+	f.git(t, f.member(0), "config", "user.email", "existing@example.test")
 	f.config.Workspace.Binding = testGitLabWorkspace().Binding
 	f.calls = nil
 	result, err := f.ensure(true)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if workspaceGit(t, f.member(0), "branch", "--show-current") != "task" || workspaceGit(t, f.member(0), "config", "user.name") != "Existing Author" {
+	if f.git(t, f.member(0), "branch", "--show-current") != "task" || f.git(t, f.member(0), "config", "user.name") != "Existing Author" {
 		t.Fatal("supplement changed branch/author")
 	}
-	if workspaceGit(t, f.member(1), "config", "user.name") != "Bound User" {
+	if f.git(t, f.member(1), "config", "user.name") != "Bound User" {
 		t.Fatal("did not fill missing author")
 	}
 	if len(result.ToolEnv) == 0 || !strings.Contains(result.Instructions, "tools run ENTRY --help") {
@@ -286,12 +291,13 @@ subprocess.Popen([sys.executable,"-c","import time; from pathlib import Path; ti
 }
 
 func TestWorkspaceReturnRejectsChangedAuthenticationWithoutRemote(t *testing.T) {
+	parallelFixtureTest(t)
 	f := newWorkspaceFixture(t)
 	f.config.Workspace.Binding = testGitLabWorkspace().Binding
 	if _, err := f.ensure(true); err != nil {
 		t.Fatal(err)
 	}
-	workspaceGit(t, f.member(0), "config", "--replace-all", "credential.helper", "store")
+	f.git(t, f.member(0), "config", "--replace-all", "credential.helper", "store")
 	f.calls = nil
 	if _, err := f.ensure(false); err == nil {
 		t.Fatal("accepted a different credential helper")
@@ -301,21 +307,22 @@ func TestWorkspaceReturnRejectsChangedAuthenticationWithoutRemote(t *testing.T) 
 			t.Fatal("authentication check queried remote")
 		}
 	}
-	workspaceGit(t, f.member(0), "config", "--replace-all", "credential.helper", "")
-	workspaceGit(t, f.member(0), "config", "--replace-all", "core.askPass", "/other/room/askpass")
+	f.git(t, f.member(0), "config", "--replace-all", "credential.helper", "")
+	f.git(t, f.member(0), "config", "--replace-all", "core.askPass", "/other/room/askpass")
 	if _, err := f.ensure(false); err == nil {
 		t.Fatal("accepted another room's askpass")
 	}
 }
 
 func TestWorkspaceExistingAuthorsAvoidUserQuery(t *testing.T) {
+	parallelFixtureTest(t)
 	f := newWorkspaceFixture(t)
 	if _, err := f.ensure(true); err != nil {
 		t.Fatal(err)
 	}
 	for i := range f.config.Members {
-		workspaceGit(t, f.member(i), "config", "user.name", "Local Author")
-		workspaceGit(t, f.member(i), "config", "user.email", "local@example.test")
+		f.git(t, f.member(i), "config", "user.name", "Local Author")
+		f.git(t, f.member(i), "config", "user.email", "local@example.test")
 	}
 	f.config.Workspace.Binding = testGitLabWorkspace().Binding
 	f.calls = nil

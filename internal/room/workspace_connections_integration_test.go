@@ -19,6 +19,7 @@ import (
 )
 
 func TestWorkspaceSharedPlatformReuseFailureAndLateProjectCheck(t *testing.T) {
+	parallelFixtureTest(t)
 	m, _ := sharedWorkspaceManager(t)
 	a, b := managerCreate(t, m, "A"), managerCreate(t, m, "B")
 	req := platformTestRequest(m)
@@ -159,13 +160,25 @@ func TestGitLabEventsSharedRotationJoinsOldWorkerBeforeCredentialCommit(t *testi
 		}
 		finished <- r
 	}()
-	<-blocked.canceled
-	h.m.mu.Lock()
-	file, err := h.m.readPlatforms()
-	busy := h.m.busy
-	h.m.mu.Unlock()
-	if err != nil || file.Platforms[0].CredentialVersion != c.CredentialVersion || !busy {
-		t.Error("credential committed before old worker settled")
+	awaitEventSignal(t, blocked.canceled, "old query was not canceled")
+	// Cancellation is signaled during invalidation, before the rotation enters
+	// its settlement gate. Wait for that gate rather than racing its publication.
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		h.m.mu.Lock()
+		file, err := h.m.readPlatforms()
+		busy := h.m.busy
+		h.m.mu.Unlock()
+		if err != nil || file.Platforms[0].CredentialVersion != c.CredentialVersion {
+			t.Fatal("credential committed before old worker settled", err)
+		}
+		if busy {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("rotation did not enter the settlement gate")
+		}
+		time.Sleep(time.Millisecond)
 	}
 	select {
 	case <-finished:

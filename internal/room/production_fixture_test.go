@@ -41,5 +41,8 @@ func TestMain(m *testing.M) {
 	if productionFixtureBuild.dir != "" {
 		_ = os.RemoveAll(productionFixtureBuild.dir)
 	}
+	if larkConfigurationBuild.dir != "" {
+		_ = os.RemoveAll(larkConfigurationBuild.dir)
+	}
 	os.Exit(code)
 }

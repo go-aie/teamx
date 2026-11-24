@@ -333,7 +333,7 @@ func TestGitlabImagesPreflightAndPolicy(t *testing.T) {
 			case "unknown-field":
 				_ = json.Unmarshal([]byte(`{"images":[{"message_seq":1,"attachment_id":"img_0123456789abcdef0123456789abcdef","extra":true}]}`), &f.action.Input)
 			case "bad-id":
-				f.setInput(t, "", []gitlab.ImageRef{{1, "/tmp/image.png"}})
+				f.setInput(t, "", []gitlab.ImageRef{{MessageSeq: 1, AttachmentID: "/tmp/image.png"}})
 			case "fraction":
 				_ = json.Unmarshal([]byte(`{"images":[{"message_seq":1.5,"attachment_id":"img_0123456789abcdef0123456789abcdef"}]}`), &f.action.Input)
 			case "duplicate":

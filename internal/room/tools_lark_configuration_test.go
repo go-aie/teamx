@@ -28,35 +28,14 @@ func sameJSON(a, b any) bool {
 }
 func larkToolConfigurationHarness(t *testing.T) *larkHarness {
 	t.Helper()
-	return configureLarkToolFixture(t, newLarkHarness(t))
+	return larkConfigurationHarness(t, 0)
 }
 
 func larkToolConfigurationHarnessWithMembers(t *testing.T, count int) *larkHarness {
 	t.Helper()
-	return configureLarkToolFixture(t, newLarkHarnessWithMembers(t, count))
+	return larkConfigurationHarness(t, count)
 }
 
-func configureLarkToolFixture(t *testing.T, h *larkHarness) *larkHarness {
-	t.Helper()
-	script := strings.Replace(larkFixtureScript(), "path=a[2]", `if a==['config','show']:
- print(json.dumps({'profile':'fixture','appId':'cli_fixture','brand':'feishu','dpopMode':'required'}));sys.exit()
-if a==['auth','scopes','--json']:
- scopes=json.load(open(base+'/application-scopes.json'))
- print(json.dumps({'appId':'cli_fixture','tokenType':'user','userScopes':scopes}));sys.exit()
-if a[:2]==['auth','check']:
- scopes=a[a.index('--scope')+1].split();missing=json.load(open(base+'/missing-scopes.json'))
- print(json.dumps({'ok':not bool(missing),'granted':[s for s in scopes if s not in missing],'missing':missing}));sys.exit(1 if missing else 0)
-if a==['auth','status','--json']:
- print(json.dumps({'appId':'cli_fixture','identities':{'user':{'openId':'ou_reader','tokenStatus':'valid','refreshExpiresAt':'2099-01-01T00:00:00Z'}}}));sys.exit()
-assert a[:2]==['api','GET'] or a[:3] in [['api','POST','/open-apis/contact/v3/users/basic_batch'],['api','POST','/open-apis/im/v1/chat_p2p/batch_query']],a
-path=a[2]`, 1)
-	if err := os.WriteFile(filepath.Join(h.dir, "lark-cli"), []byte(script), 0700); err != nil {
-		t.Fatal(err)
-	}
-	writeJSONFixture(t, filepath.Join(h.dir, "application-scopes.json"), lark.DefaultScopes())
-	writeJSONFixture(t, filepath.Join(h.dir, "missing-scopes.json"), []string{})
-	return h
-}
 func writeJSONFixture(t *testing.T, path string, v any) {
 	t.Helper()
 	b, err := json.Marshal(v)
@@ -302,16 +281,9 @@ func TestLarkToolConfigurationNativeSelfEvidenceRefreshAndForgery(t *testing.T) 
 		t.Skip("fixed-account self evidence requires macOS")
 	}
 	h := larkToolConfigurationHarnessWithMembers(t, 1)
-	bin := filepath.Join(h.dir, "lark-cli")
-	raw, err := os.ReadFile(bin)
-	if err != nil {
-		t.Fatal(err)
-	}
-	script := strings.Replace(string(raw), "{'member_id':'ou_reader','member_id_type':'open_id','tenant_key':'account_tenant'},{'member_id':'ou_sender','member_id_type':'open_id','tenant_key':'external_tenant'}", "{'member_id':'ou_reader','member_id_type':'open_id','tenant_key':'account_tenant'}", 1)
-	script = strings.ReplaceAll(script, "'tenant_key':'external_tenant'", "'tenant_key':'account_tenant'")
-	if err = os.WriteFile(bin, []byte(script), 0700); err != nil {
-		t.Fatal(err)
-	}
+	state := defaultLarkConfigurationState()
+	state.Self = true
+	writeJSONFixture(t, filepath.Join(h.dir, "native-fixture.json"), state)
 	req := larkMemberToolRequest(t, h, 0)
 	op, err := h.m.configurePlatformMember(t.Context(), "tool", req)
 	if err != nil || op.Status != "completed" {

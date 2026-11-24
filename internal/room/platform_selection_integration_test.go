@@ -3,7 +3,9 @@
 package room
 
 import (
+	"bytes"
 	"encoding/json"
+	"net/http"
 	"net/http/httptest"
 	"os"
 	"os/exec"
@@ -14,6 +16,26 @@ import (
 	"testing"
 	"time"
 )
+
+// Exercise the same access/Space admission as the browser server. Bare manager
+// component requests have a different synthetic Space and cannot enter it.
+func platformOnboardingHTTP(t *testing.T, m *roomManager, path string, body any, token string) *httptest.ResponseRecorder {
+	t.Helper()
+	data, err := json.Marshal(body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	r := httptest.NewRequest(http.MethodPost, m.config.endpoint+path, bytes.NewReader(data))
+	r.RemoteAddr = "127.0.0.1:45000"
+	if token != "" {
+		r.Header.Set("Authorization", "Bearer "+token)
+	} else {
+		r.Header.Set("Origin", m.config.endpoint)
+	}
+	w := httptest.NewRecorder()
+	m.config.access.wrap(m).ServeHTTP(w, r)
+	return w
+}
 
 // Real TeamX CLI/HTTP; official Feishu CLI is synthetic.
 func TestPlatformSelectionConversationAndMemberConfiguration(t *testing.T) {
@@ -48,22 +70,27 @@ func defaultAssistantPlatformOnboarding(t *testing.T, mode string, choose ...pla
 		t.Fatal(err)
 	}
 	member.ServiceInfo, member.Caller, member.SourceSeq = h.svc.info, agentCaller(h.members[0].AgentID, h.members[0].MembershipID), source.Seq
-	platformSelectionConversation(t, h, member, mode, choose...)
 	// Another DM can reuse the global account without inheriting settings,
 	// receipts or the source message of the default assistant.
 	other := createDirectConversation(t, h.m, directSelection("other-onboarding-assistant"))
 	_, state := readManagedRoom(t, h.m, other)
 	svc := eventLiveService(t, &eventHarness{m: h.m, room: other})
+	platformSelectionConversation(t, h, member, mode, choose...)
 	foreign := member
 	foreign.ServiceInfo, foreign.Caller = svc.info, agentCaller(state.Members[0].AgentID, state.Members[0].MembershipID)
 	foreign.OperationID, foreign.SourceSeq = "", 0
 	foreign.Input = &platformMemberInput{PlatformID: h.c.ID, PlatformVersion: h.c.Version}
-	w := managerHTTP(h.m, "/v1/platforms/member/get", foreign)
+	token, revoke, err := h.m.config.access.issueExecution(executionBinding{ServiceInfo: svc.info, Caller: foreign.Caller})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer revoke()
+	w := platformOnboardingHTTP(t, h.m, "/v1/platforms/member/get", foreign, token)
 	var current platformMemberView
 	if w.Code != 200 || json.Unmarshal(w.Body.Bytes(), &current) != nil || current.Config != nil || current.ToolEnabled {
 		t.Fatal("independent DM inherited member settings", w.Code, w.Body.String())
 	}
-	if w := managerHTTP(h.m, "/v1/platforms/member/status", platformMemberRequest{ServiceInfo: svc.info, Caller: foreign.Caller, OperationID: member.OperationID}); w.Code == 200 {
+	if w := platformOnboardingHTTP(t, h.m, "/v1/platforms/member/status", platformMemberRequest{ServiceInfo: svc.info, Caller: foreign.Caller, OperationID: member.OperationID}, token); w.Code != http.StatusForbidden {
 		t.Fatal("independent DM inherited operation receipt")
 	}
 }
@@ -113,16 +140,27 @@ func platformSelectionConversation(t *testing.T, h *larkHarness, member platform
 	if !pending.Pending {
 		t.Fatal("wait cancelled selection")
 	}
+	// The browser server owns a real Space identity. Human submissions must
+	// cross its access middleware, just like the CLI's bound execution token.
+	submit := func(req platformSelectionRequest) platformSelectionView {
+		t.Helper()
+		w := platformOnboardingHTTP(t, h.m, "/v1/platforms/selection-interactions/submit", req, "")
+		var view platformSelectionView
+		if w.Code != http.StatusOK || json.Unmarshal(w.Body.Bytes(), &view) != nil {
+			t.Fatal("submit", req.RoomID, req.OperationID, w.Code, w.Body.String())
+		}
+		return view
+	}
 	if len(choose) != 0 {
 		choose[0](t, server.URL, accountID, groupID, h)
 	} else {
 		run([]string{"selection", "update", "--operation-id", accountID, "--version", "1", "--selected-platform-id", h.c.ID, "--selected-platform-version", strconv.FormatUint(h.c.Version, 10), "--name", h.c.Name}, &account)
 		human := platformSelectionRequest{ServiceInfo: member.ServiceInfo, Caller: humanCaller, OperationID: accountID, Version: account.Version}
-		account = selectionCall(t, h.m, "submit", human, true)
+		account = submit(human)
 		run([]string{"selection", "update", "--operation-id", groupID, "--version", "1", "--chat-id", "oc_group_two"}, &group)
 		human.OperationID = groupID
 		human.Version = group.Version
-		group = selectionCall(t, h.m, "submit", human, true)
+		group = submit(human)
 	}
 	if mode == "human" {
 		if _, err := h.svc.room.Call[PostReceipt](t.Context(), PostMessage{

@@ -3,12 +3,55 @@ package room
 import (
 	"encoding/json"
 	"errors"
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/go-aie/teamx/internal/platform/registry"
 )
+
+// Configuration rules need immutable identity/input only, with no saved account,
+// source message, Room, service or OAuth exchange.
+func memberConfigurationRequest() platformMemberRequest {
+	return platformMemberRequest{
+		ServiceInfo: ServiceInfo{RoomIdentity: RoomIdentity{RoomID: "room", RoomInstance: strings.Repeat("a", 32)}},
+		Caller:      agentCaller("agent", strings.Repeat("b", 32)),
+		OperationID: strings.Repeat("d", 32), SourceSeq: 1,
+		Input: &platformMemberInput{PlatformID: strings.Repeat("c", 32), PlatformVersion: 2, TodosEnabled: boolPointer(true)},
+	}
+}
+
+// Request rejection still crosses the real CLI/HTTP and member admission, but
+// must finish before account lookup or any native permission acquisition.
+func memberInputRejectionFixture(t *testing.T) (*roomManager, *service, MemberState, platformMemberRequest) {
+	t.Helper()
+	m, svc, member, connect := connectFixture(t)
+	req := memberConfigurationRequest()
+	req.ServiceInfo, req.Caller = connect.ServiceInfo, connect.Caller
+	req.OperationID, req.SourceSeq = connect.OperationID, connect.SourceSeq
+	req.Input.TodosEnabled = nil
+	req.Input.Enabled = boolPointer(true)
+	req.Input.ExpectedBindingRevision = new(uint64(0))
+	return m, svc, member, req
+}
+
+// A malformed CLI command may fail in parsing or at HTTP validation. If it
+// reaches the server, require the request error rather than an unrelated
+// credential, account, transport or membership failure.
+func memberRequestRejectionServer(t *testing.T, m *roomManager) (*http.Client, string) {
+	t.Helper()
+	return toolPipeServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		reply := httptest.NewRecorder()
+		m.ServeHTTP(reply, r)
+		if reply.Code != http.StatusBadRequest {
+			t.Errorf("malformed request reached another boundary: %s: %d %s", r.URL.Path, reply.Code, reply.Body.String())
+		}
+		w.WriteHeader(reply.Code)
+		_, _ = w.Write(reply.Body.Bytes())
+	}))
+}
 
 func TestPlatformMemberCurrentRequestFields(t *testing.T) {
 	const get = "/v1/platforms/member/get"

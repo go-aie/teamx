@@ -50,6 +50,7 @@ func workspaceMemberReferences(t *testing.T, m *roomManager, room roomSummary) m
 }
 
 func TestWorkspaceDirectoryLifecycleRetainsOtherSessionsAndFiles(t *testing.T) {
+	parallelFixtureTest(t)
 	m, root := directoryTestManager(t)
 	room := managerCreate(t, m, "directory-lifecycle")
 	svc := openRoomOK(t, m, room, "initial")
@@ -126,6 +127,7 @@ func TestWorkspaceDirectoryLifecycleRetainsOtherSessionsAndFiles(t *testing.T) {
 }
 
 func TestWorkspaceDirectoryUnavailableCanRepairWithoutOpeningService(t *testing.T) {
+	parallelFixtureTest(t)
 	m, root := directoryTestManager(t)
 	room := managerCreate(t, m, "repair-directory")
 	openRoomOK(t, m, room, "initial")
@@ -158,6 +160,7 @@ func TestWorkspaceDirectoryUnavailableCanRepairWithoutOpeningService(t *testing.
 }
 
 func TestWorkspaceDirectoryClaimsRejectOverlapAndSurviveRestart(t *testing.T) {
+	parallelFixtureTest(t)
 	m, root := directoryTestManager(t)
 	first, second := managerCreate(t, m, "first"), managerCreate(t, m, "second")
 	openRoomOK(t, m, first, "initial")
@@ -189,6 +192,7 @@ func TestWorkspaceDirectoryClaimsRejectOverlapAndSurviveRestart(t *testing.T) {
 }
 
 func TestWorkspaceDirectoryParallelAndParentChildAdmission(t *testing.T) {
+	parallelFixtureTest(t)
 	for _, mode := range []schedulingMode{schedulingSerial, schedulingParallel} {
 		t.Run(string(mode), func(t *testing.T) {
 			m, root := directoryTestManager(t)
@@ -206,6 +210,7 @@ func TestWorkspaceDirectoryParallelAndParentChildAdmission(t *testing.T) {
 }
 
 func TestWorkspaceDirectoryRetryFreezesSymlinkTargetAndRetainsSessions(t *testing.T) {
+	parallelFixtureTest(t)
 	for _, boundary := range []string{"config", "member-progress"} {
 		t.Run(boundary, func(t *testing.T) {
 			m, root := directoryTestManager(t)
@@ -276,6 +281,7 @@ func TestWorkspaceDirectoryRetryFreezesSymlinkTargetAndRetainsSessions(t *testin
 }
 
 func TestWorkspaceDirectoryToolsUseEffectiveCWDAndManagedGitRejectsExternal(t *testing.T) {
+	parallelFixtureTest(t)
 	m, room, svc, connection, members := cliToolFixture(t, "pwd\n")
 	root, err := filepath.EvalSymlinks(t.TempDir())
 	if err != nil {
@@ -308,6 +314,7 @@ func TestWorkspaceDirectoryToolsUseEffectiveCWDAndManagedGitRejectsExternal(t *t
 }
 
 func TestWorkspaceDirectoryPendingOperationKeepsPreviousClaimUntilSettlement(t *testing.T) {
+	parallelFixtureTest(t)
 	m, root := directoryTestManager(t)
 	first, other := managerCreate(t, m, "claim-owner"), managerCreate(t, m, "claim-contender")
 	openRoomOK(t, m, first, "initial")
@@ -354,6 +361,7 @@ func TestWorkspaceDirectoryPendingOperationKeepsPreviousClaimUntilSettlement(t *
 }
 
 func TestWorkspaceDirectoryApplyIsLocalEvenWithManagedRepository(t *testing.T) {
+	parallelFixtureTest(t)
 	m, root := directoryTestManager(t)
 	f := newWorkspaceFixture(t)
 	m.workspaceRun, m.platformHTTP = f.run, workspaceHTTPFunc(f.http)
@@ -383,6 +391,7 @@ func TestWorkspaceDirectoryApplyIsLocalEvenWithManagedRepository(t *testing.T) {
 }
 
 func TestWorkspaceDirectoryModelProfileAndDeletionKeepExternalFiles(t *testing.T) {
+	parallelFixtureTest(t)
 	m, root := directoryTestManager(t)
 	room := managerCreate(t, m, "directory-delete")
 	openRoomOK(t, m, room, "initial")
@@ -428,6 +437,7 @@ func TestWorkspaceDirectoryModelProfileAndDeletionKeepExternalFiles(t *testing.T
 }
 
 func TestWorkspaceDirectoryModelChangeUsesEffectiveProfile(t *testing.T) {
+	parallelFixtureTest(t)
 	m, controller, _ := onlineModelManager(t)
 	root, err := filepath.EvalSymlinks(t.TempDir())
 	if err != nil {
@@ -453,6 +463,7 @@ func TestWorkspaceDirectoryModelChangeUsesEffectiveProfile(t *testing.T) {
 }
 
 func TestWorkspaceDirectoryRotationFreezesManagedModelBeforeNextTurn(t *testing.T) {
+	parallelFixtureTest(t)
 	m, controller, _ := onlineModelManager(t)
 	root, err := filepath.EvalSymlinks(t.TempDir())
 	if err != nil {
@@ -530,6 +541,7 @@ func TestWorkspaceDirectoryRotationFreezesManagedModelBeforeNextTurn(t *testing.
 }
 
 func TestWorkspaceDirectoryRequestIdentityVersionAndLocalPolicy(t *testing.T) {
+	parallelFixtureTest(t)
 	m, root := directoryTestManager(t)
 	room := managerCreate(t, m, "directory-admission")
 	openRoomOK(t, m, room, "initial")

@@ -12,6 +12,7 @@ import (
 )
 
 func TestWorkspaceOpaqueRepositoryAndLocalRevisit(t *testing.T) {
+	parallelFixtureTest(t)
 	f, r, _ := backendWorkspaceFixture(t)
 	before, _ := json.Marshal(f.config)
 	prepared, err := f.ensure(true)
@@ -45,6 +46,7 @@ func TestWorkspaceOpaqueRepositoryAndLocalRevisit(t *testing.T) {
 }
 
 func TestWorkspaceBackendPreflightBeforePlatformOrMutation(t *testing.T) {
+	parallelFixtureTest(t)
 	f, r, accessCalls := backendWorkspaceFixture(t)
 	if err := os.MkdirAll(filepath.Dir(f.member(1)), 0700); err != nil {
 		t.Fatal(err)
@@ -64,6 +66,7 @@ func TestWorkspaceBackendPreflightBeforePlatformOrMutation(t *testing.T) {
 }
 
 func TestWorkspaceBackendFailureMarkerSurvivesMissingOrWrongTarget(t *testing.T) {
+	parallelFixtureTest(t)
 	for _, wrong := range []bool{false, true} {
 		t.Run(map[bool]string{false: "missing", true: "wrong-identity"}[wrong], func(t *testing.T) {
 			f, r, _ := backendWorkspaceFixture(t)

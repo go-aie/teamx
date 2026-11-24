@@ -75,13 +75,21 @@ func newLarkHarnessWithMembers(t *testing.T, count int) *larkHarness {
 
 func newLarkHarnessForRoom(t *testing.T, m *roomManager, r roomSummary, svc *service, members []MemberState) *larkHarness {
 	t.Helper()
-	m.toolCatalog = append(m.toolCatalog, tool.Definition{Name: "lark", Provider: "lark", InternalOnly: true})
-	m.bindPlatformReferences(svc)
 	dir := t.TempDir()
 	bin := filepath.Join(dir, "lark-cli")
 	if e := os.WriteFile(bin, []byte(larkFixtureScript()), 0700); e != nil {
 		t.Fatal(e)
 	}
+	return newLarkHarnessForRoomCLI(t, m, r, svc, members, dir)
+}
+
+// Both native fixture implementations use the same real registry verification,
+// Room bindings and service. The directory owns the installed CLI and data.
+func newLarkHarnessForRoomCLI(t *testing.T, m *roomManager, r roomSummary, svc *service, members []MemberState, dir string) *larkHarness {
+	t.Helper()
+	m.toolCatalog = append(m.toolCatalog, tool.Definition{Name: "lark", Provider: "lark", InternalOnly: true})
+	m.bindPlatformReferences(svc)
+	bin := filepath.Join(dir, "lark-cli")
 	c := platformTestSave(t, m, managedPlatformRequest{ServiceEpoch: m.epoch, Caller: humanCaller, ID: strings.Repeat("c", 32), Name: "飞书", Provider: "lark", URL: lark.Origin("feishu"), CLIProfile: &platform.CLIProfile{Version: 1, Executable: bin, Profile: "fixture", Brand: "feishu", CLIVersion: lark.CLIVersion}})
 	c, e := m.verifyPlatform(context.Background(), managedPlatformRequest{ID: c.ID, Version: c.Version})
 	if e != nil || c.Validation.Status != "valid" {

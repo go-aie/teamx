@@ -1,0 +1,2157 @@
+{
+  "date": "2026-11-24",
+  "head": "479e79f35157cf15b8f60c793a7840b59d07647c",
+  "environment": "go version go1.27.1 darwin/arm64",
+  "scope": {
+    "files": [
+      "internal/room/platform_connect_gitlab_setup_test.go",
+      "internal/room/platform_connect_gitlab_test.go",
+      "internal/room/platform_connect_integration_test.go",
+      "internal/room/platform_connect_interaction_test.go",
+      "internal/room/platform_connect_model_test.go",
+      "internal/room/platform_connect_notifications_test.go",
+      "internal/room/platform_connect_test.go",
+      "internal/room/platform_connection_rules_test.go",
+      "internal/room/platform_member_current_test.go",
+      "internal/room/platform_member_gitlab_test.go",
+      "internal/room/platform_member_integration_test.go",
+      "internal/room/platform_member_lark_integration_test.go",
+      "internal/room/platform_member_lark_test.go",
+      "internal/room/platform_member_notification_toggle_test.go",
+      "internal/room/platform_member_private_integration_test.go",
+      "internal/room/platform_member_test.go",
+      "internal/room/platform_member_tool_toggle_test.go",
+      "internal/room/platform_selection_gitlab_test.go",
+      "internal/room/platform_selection_integration_test.go",
+      "internal/room/platform_selection_test.go",
+      "internal/room/tools_configuration_decisions_test.go",
+      "internal/room/ui_update_sources_test.go",
+      "internal/room/input_stream_event_delivery_test.go"
+    ],
+    "top_level_count": 133,
+    "selection": "Names extracted from current file family; no added tests, deleted tests or build-tag changes.",
+    "cwd": "internal/room",
+    "arguments": [
+      "go tool test2json -t -p room <compiled test binary>",
+      "-test.v",
+      "-test.count=1",
+      "-test.timeout=6m",
+      "-test.run=<anchored alternation of names extracted from scope files>"
+    ]
+  },
+  "comparison": {
+    "before": "Eight optimization files restored with Go overlay from pre-task contents.",
+    "shared_health_fix": "Both snapshots include the same current Space/access correction in platform_selection_integration_test.go.",
+    "includes": "Test execution, cleanup and one production TeamX CLI build per process.",
+    "excludes": "Room test binary compilation. Builds completed before paired execution; before and after ran sequentially.",
+    "limitation": "One paired local sample; 5.9 seconds is below the tens-of-seconds target and does not establish a stable or full-suite improvement."
+  },
+  "results": {
+    "before-healthy": {
+      "measurement": {
+        "wall_seconds": 112.72168774995953,
+        "returncode": 0
+      },
+      "top_level": {
+        "pass": 133
+      },
+      "including_subtests": {
+        "pass": 324
+      },
+      "package_seconds": 112.566,
+      "serial_span_seconds": 85.107413,
+      "parallel_tail_seconds": 26.863189,
+      "tests": [
+        {
+          "name": "TestUnifiedConnectionCancellationAndExpiryRemainPageOnly",
+          "result": "pass",
+          "reported_seconds": 1.18
+        },
+        {
+          "name": "TestSelectionSubmitPublishesRoomEventBeforeAgentRead",
+          "result": "pass",
+          "reported_seconds": 0.53
+        },
+        {
+          "name": "TestUnifiedOperationEventIntentReceiptRetryAndNoInboxDoubleWrite",
+          "result": "pass",
+          "reported_seconds": 0.91
+        },
+        {
+          "name": "TestRoomClearProtectsAnEventBeforeItsFirstRead",
+          "result": "pass",
+          "reported_seconds": 0.54
+        },
+        {
+          "name": "TestGitLabConnectFirstApplicationReturnAndContinuation",
+          "result": "pass",
+          "reported_seconds": 2.66
+        },
+        {
+          "name": "TestGitLabConnectApplicationSetupBoundaries",
+          "result": "pass",
+          "reported_seconds": 1.09
+        },
+        {
+          "name": "TestGitLabConnectApplicationCorrectionKeepsOriginalOperation",
+          "result": "pass",
+          "reported_seconds": 0.32
+        },
+        {
+          "name": "TestGitLabConnectCallbackReceiptInboxAndCLI",
+          "result": "pass",
+          "reported_seconds": 0.56
+        },
+        {
+          "name": "TestGitLabConnectBrowserAndAccountBoundaries",
+          "result": "pass",
+          "reported_seconds": 2.61
+        },
+        {
+          "name": "TestGitLabConnectMissingApplicationAndFixedInputs",
+          "result": "pass",
+          "reported_seconds": 0.17
+        },
+        {
+          "name": "TestGitLabConnectRestartReconcilesOnlyExactSavedTarget",
+          "result": "pass",
+          "reported_seconds": 0.49
+        },
+        {
+          "name": "TestGitLabConnectCancelledDuringExchangeCannotCommit",
+          "result": "pass",
+          "reported_seconds": 0.29
+        },
+        {
+          "name": "TestGitLabConnectReceiptInterruptionDoesNotReplayOrRevokeSavedToken",
+          "result": "pass",
+          "reported_seconds": 0.5
+        },
+        {
+          "name": "TestGitLabConnectCallbackAutomaticallyContinuesThroughOrdinaryInbox",
+          "result": "pass",
+          "reported_seconds": 0.66
+        },
+        {
+          "name": "TestDefaultAssistantGitLabConnectBrowserBridge",
+          "result": "pass",
+          "reported_seconds": 0.24
+        },
+        {
+          "name": "TestGitLabConnectBridgeIdentifiesStalePageAndNoncanonicalOrigin",
+          "result": "pass",
+          "reported_seconds": 0.42
+        },
+        {
+          "name": "TestGitLabCompletionReturnsOnlyBoundOriginalOperation",
+          "result": "pass",
+          "reported_seconds": 0.22
+        },
+        {
+          "name": "TestPlatformConnectNativeSetupAndCLIProcessLifetime",
+          "result": "pass",
+          "reported_seconds": 4.64
+        },
+        {
+          "name": "TestPlatformConnectNativePartialExpiryAndCancellation",
+          "result": "pass",
+          "reported_seconds": 4.3
+        },
+        {
+          "name": "TestPlatformConnectInteractionProjectionAndBoundaries",
+          "result": "pass",
+          "reported_seconds": 0.13
+        },
+        {
+          "name": "TestPlatformConnectInteractionVersionedCancellationAndDuplicateReceipt",
+          "result": "pass",
+          "reported_seconds": 0.23
+        },
+        {
+          "name": "TestPlatformConnectInteractionReplacementCannotInheritLiveAuthorization",
+          "result": "pass",
+          "reported_seconds": 0.3
+        },
+        {
+          "name": "TestPlatformAuthorizationSurvivesModelRotationAndPause",
+          "result": "pass",
+          "reported_seconds": 7.74
+        },
+        {
+          "name": "TestPlatformConnectSavedReceiptIdempotenceAndReadOnlyStatus",
+          "result": "pass",
+          "reported_seconds": 0.26
+        },
+        {
+          "name": "TestPlatformConnectCancelledLateSuccessPreservesPartialEffects",
+          "result": "pass",
+          "reported_seconds": 0.2
+        },
+        {
+          "name": "TestPlatformConnectExpiryFailureAndUnknownRecovery",
+          "result": "pass",
+          "reported_seconds": 0.62
+        },
+        {
+          "name": "TestPlatformConnectSkillIdentityAndHumanBoundary",
+          "result": "pass",
+          "reported_seconds": 0.25
+        },
+        {
+          "name": "TestPlatformConnectWaitTimeoutAndInterruptionDoNotCancel",
+          "result": "pass",
+          "reported_seconds": 0.26
+        },
+        {
+          "name": "TestPlatformConnectRestartReconcilesSavedConnectionWithoutWritingAgain",
+          "result": "pass",
+          "reported_seconds": 0.35
+        },
+        {
+          "name": "TestPlatformConnectReuseRequiresExactVerifiedVersion",
+          "result": "pass",
+          "reported_seconds": 1.13
+        },
+        {
+          "name": "TestPlatformConnectSaveUnknownNeverReplaysConnection",
+          "result": "pass",
+          "reported_seconds": 0.53
+        },
+        {
+          "name": "TestPlatformConnectMembershipRemovedBeforeAuthorizationCompletes",
+          "result": "pass",
+          "reported_seconds": 0.33
+        },
+        {
+          "name": "TestPlatformMemberCurrentRequestFields",
+          "result": "pass",
+          "reported_seconds": 0
+        },
+        {
+          "name": "TestPlatformMemberSwitchIdentityPreservesNotificationReceipts",
+          "result": "pass",
+          "reported_seconds": 0
+        },
+        {
+          "name": "TestConnectApplicationImportAuthority",
+          "result": "pass",
+          "reported_seconds": 0
+        },
+        {
+          "name": "TestPlatformMemberCurrentCLIRejectsMixedModes",
+          "result": "pass",
+          "reported_seconds": 0
+        },
+        {
+          "name": "TestPlatformMemberToggleIdentityScope",
+          "result": "pass",
+          "reported_seconds": 0
+        },
+        {
+          "name": "TestGitLabMemberPersonalTodosWithoutToolsOrWorkspace",
+          "result": "pass",
+          "reported_seconds": 0.38
+        },
+        {
+          "name": "TestGitLabMemberPatchPreservesOtherSourcesFiltersAndStart",
+          "result": "pass",
+          "reported_seconds": 0.29
+        },
+        {
+          "name": "TestGitLabMemberUnknownSubmissionRestartNeverReplays",
+          "result": "pass",
+          "reported_seconds": 0.35
+        },
+        {
+          "name": "TestGitLabMemberVersionsAndReplacementAreRejected",
+          "result": "pass",
+          "reported_seconds": 1.08
+        },
+        {
+          "name": "TestGitLabMemberPartialNotificationsAndIndependentTool",
+          "result": "pass",
+          "reported_seconds": 0.53
+        },
+        {
+          "name": "TestGitLabMemberExistingSubscriptionsPreserveProgressAndSibling",
+          "result": "pass",
+          "reported_seconds": 0.5
+        },
+        {
+          "name": "TestDefaultAssistantGitLabConnectAutomaticallyConfiguresPersonalTodos",
+          "result": "pass",
+          "reported_seconds": 1.03
+        },
+        {
+          "name": "TestGitLabMemberDormantProjectActivityRequiresExplicitChoice",
+          "result": "pass",
+          "reported_seconds": 0.81
+        },
+        {
+          "name": "TestGitLabMemberAccountChangeAfterDesiredSaveStopsCollectorWrite",
+          "result": "pass",
+          "reported_seconds": 0.33
+        },
+        {
+          "name": "TestPlatformMemberRejectsChangesDuringGroupVerification",
+          "result": "pass",
+          "reported_seconds": 0
+        },
+        {
+          "name": "TestPlatformMemberNotificationUnknownReceiptAndRestart",
+          "result": "pass",
+          "reported_seconds": 0
+        },
+        {
+          "name": "TestPlatformMemberLarkRangeAndConditionChanges",
+          "result": "pass",
+          "reported_seconds": 0.16
+        },
+        {
+          "name": "TestPlatformMemberLarkConflictingIntent",
+          "result": "pass",
+          "reported_seconds": 0.17
+        },
+        {
+          "name": "TestPlatformMemberLarkInputAndEmptyListPersistence",
+          "result": "pass",
+          "reported_seconds": 0
+        },
+        {
+          "name": "TestPlatformMemberLarkCLIRejectsAmbiguousAndUnsupportedFields",
+          "result": "pass",
+          "reported_seconds": 0.58
+        },
+        {
+          "name": "TestPlatformMemberLarkAbsentDisableDoesNotCreateSubscription",
+          "result": "pass",
+          "reported_seconds": 0.64
+        },
+        {
+          "name": "TestPlatformMemberChatTypeBoundary",
+          "result": "pass",
+          "reported_seconds": 0.93
+        },
+        {
+          "name": "TestPlatformMemberNotificationToggleDefaultsAndPreservedReceipts",
+          "result": "pass",
+          "reported_seconds": 1
+        },
+        {
+          "name": "TestPlatformMemberNotificationToggleRestoresSavedSources",
+          "result": "pass",
+          "reported_seconds": 1.42
+        },
+        {
+          "name": "TestGitLabMemberNotificationToggleRequiresSourcesAndSettledApplication",
+          "result": "pass",
+          "reported_seconds": 0.38
+        },
+        {
+          "name": "TestGitLabMemberCustomizationAndTotalSwitch",
+          "result": "pass",
+          "reported_seconds": 0.25
+        },
+        {
+          "name": "TestGitLabMemberNotificationTogglePreservesLegacyCollector",
+          "result": "pass",
+          "reported_seconds": 0.4
+        },
+        {
+          "name": "TestPlatformMemberPrivateRejectsUnverifiableTargets",
+          "result": "pass",
+          "reported_seconds": 0
+        },
+        {
+          "name": "TestPlatformMemberPrivateRejectsChangesDuringVerification",
+          "result": "pass",
+          "reported_seconds": 0
+        },
+        {
+          "name": "TestPlatformMemberNotificationPatchPreservesRangeAndStart",
+          "result": "pass",
+          "reported_seconds": 0.12
+        },
+        {
+          "name": "TestPlatformMemberToolReceiptsIdentityAndIndependentVersions",
+          "result": "pass",
+          "reported_seconds": 3.51
+        },
+        {
+          "name": "TestPlatformMemberUnknownSubmissionNeverReplays",
+          "result": "pass",
+          "reported_seconds": 2.45
+        },
+        {
+          "name": "TestPlatformMemberRejectsFabricatedAuthorityAndUnsupportedInput",
+          "result": "pass",
+          "reported_seconds": 0.53
+        },
+        {
+          "name": "TestGitLabProjectSelectionAndMemberCLIExactTarget",
+          "result": "pass",
+          "reported_seconds": 0.34
+        },
+        {
+          "name": "TestGitLabProjectSelectionRejectsStaleOrUnauthorizedCandidates",
+          "result": "pass",
+          "reported_seconds": 1.97
+        },
+        {
+          "name": "TestGitLabAccountSelectionSameInstanceMultipleAccounts",
+          "result": "pass",
+          "reported_seconds": 0.45
+        },
+        {
+          "name": "TestGitLabProjectSelectionAutomaticallyContinues",
+          "result": "pass",
+          "reported_seconds": 0.72
+        },
+        {
+          "name": "TestGitLabProjectConfigurationRejectsMismatchedIDAndPreservesSources",
+          "result": "pass",
+          "reported_seconds": 0.34
+        },
+        {
+          "name": "TestGitLabMemberSourceAndFilterPatches",
+          "result": "pass",
+          "reported_seconds": 0.33
+        },
+        {
+          "name": "TestGitLabProjectSelectionReceiptSurvivesRestart",
+          "result": "pass",
+          "reported_seconds": 0.3
+        },
+        {
+          "name": "TestPlatformSelectionConversationAndMemberConfiguration",
+          "result": "pass",
+          "reported_seconds": 2.47
+        },
+        {
+          "name": "TestDefaultAssistantPlatformOnboarding",
+          "result": "pass",
+          "reported_seconds": 7.96
+        },
+        {
+          "name": "TestPlatformSelectionRejectsDraftChangedDuringGroupVerification",
+          "result": "pass",
+          "reported_seconds": 0.9
+        },
+        {
+          "name": "TestPlatformSelectionDraftConflictAndImmutableReceipt",
+          "result": "pass",
+          "reported_seconds": 0.19
+        },
+        {
+          "name": "TestPlatformSelectionIdentityExpiryCancellationAndRecovery",
+          "result": "pass",
+          "reported_seconds": 0.26
+        },
+        {
+          "name": "TestPlatformSelectionExpirationAndNotificationDeduplication",
+          "result": "pass",
+          "reported_seconds": 0.44
+        },
+        {
+          "name": "TestPlatformSelectionSourceLookupAndMalformedRequests",
+          "result": "pass",
+          "reported_seconds": 0.19
+        },
+        {
+          "name": "TestPlatformSelectionVerifiedAccountVersionAndMemberReplacement",
+          "result": "pass",
+          "reported_seconds": 0.57
+        },
+        {
+          "name": "TestPlatformSelectionAutomaticallyContinuesThroughInbox",
+          "result": "pass",
+          "reported_seconds": 0.49
+        },
+        {
+          "name": "TestDefaultAssistantSelectionAutomaticContinuation",
+          "result": "pass",
+          "reported_seconds": 0.49
+        },
+        {
+          "name": "TestPlatformSelectionResultDeliverySurvivesUnknownHandoff",
+          "result": "pass",
+          "reported_seconds": 0.87
+        },
+        {
+          "name": "TestPlatformSelectionMultipleVerifiedAccountsKeepExactTarget",
+          "result": "pass",
+          "reported_seconds": 0.62
+        },
+        {
+          "name": "TestLarkToolGrantPlan",
+          "result": "pass",
+          "reported_seconds": 0
+        },
+        {
+          "name": "TestPlatformMemberIntentNormalizationRetainsObservation",
+          "result": "pass",
+          "reported_seconds": 0
+        },
+        {
+          "name": "TestToolBindingRevisionMatchesExactTarget",
+          "result": "pass",
+          "reported_seconds": 0
+        },
+        {
+          "name": "TestToolCommittedCapabilityProjection",
+          "result": "pass",
+          "reported_seconds": 0
+        },
+        {
+          "name": "TestUIUpdateSourcesSharedReadingAcrossHTTPClients",
+          "result": "pass",
+          "reported_seconds": 0.36
+        },
+        {
+          "name": "TestUIUpdateSourcesPolicyInstallAgentAndExpiry",
+          "result": "pass",
+          "reported_seconds": 0.37
+        },
+        {
+          "name": "TestUIUpdateSourcesInboxInstallConsumeReclaimAndQuietReads",
+          "result": "pass",
+          "reported_seconds": 0.54
+        },
+        {
+          "name": "TestUIUpdateSourcesInboxUnknownCommitPreservesFailure",
+          "result": "pass",
+          "reported_seconds": 0.12
+        },
+        {
+          "name": "TestUIUpdateSourcesMemberTransitionsAndObserverParity",
+          "result": "pass",
+          "reported_seconds": 0.41
+        },
+        {
+          "name": "TestUIUpdateSourcesMemberWaiting",
+          "result": "pass",
+          "reported_seconds": 0.06
+        },
+        {
+          "name": "TestUIUpdateSourcesModelProgressAndWorkspaceProgress",
+          "result": "pass",
+          "reported_seconds": 0.6
+        },
+        {
+          "name": "TestUIUpdateSourcesInteractionAndAuthorizationProgress",
+          "result": "pass",
+          "reported_seconds": 0.31
+        },
+        {
+          "name": "TestUIUpdateSourcesSettingsPlatformsBindingsAndNotificationWorker",
+          "result": "pass",
+          "reported_seconds": 0.46
+        },
+        {
+          "name": "TestUIUpdateSourcesAutomaticRecoveryAndRotation",
+          "result": "pass",
+          "reported_seconds": 1.59
+        },
+        {
+          "name": "TestToolIndependentBindingSaveOrders",
+          "result": "pass",
+          "reported_seconds": 1.29
+        },
+        {
+          "name": "TestPlatformConnectNotificationCapacityRetainsPendingAndRetriesAfterReclamation",
+          "result": "pass",
+          "reported_seconds": 2.46
+        },
+        {
+          "name": "TestPlatformConnectNotificationSubscriptionHandoffAndLateCompletion",
+          "result": "pass",
+          "reported_seconds": 2.68
+        },
+        {
+          "name": "TestPlatformMemberToolToggleMemberAccountAndSourceBoundaries",
+          "result": "pass",
+          "reported_seconds": 2.84
+        },
+        {
+          "name": "TestPlatformMemberCurrentAdoptsSavedScopeBeforeAdmission",
+          "result": "pass",
+          "reported_seconds": 3.76
+        },
+        {
+          "name": "TestPlatformMemberCurrentReadAndHistoricalReceipt",
+          "result": "pass",
+          "reported_seconds": 4.01
+        },
+        {
+          "name": "TestPlatformMemberCurrentHTTPRejectsExpandedShapes",
+          "result": "pass",
+          "reported_seconds": 4.63
+        },
+        {
+          "name": "TestPlatformMemberCurrentSourceFences",
+          "result": "pass",
+          "reported_seconds": 6.04
+        },
+        {
+          "name": "TestPlatformConnectNotificationContinuesAcrossSessionRotation",
+          "result": "pass",
+          "reported_seconds": 5.16
+        },
+        {
+          "name": "TestPlatformMemberCurrentCLIUsesOneBusinessRequest",
+          "result": "pass",
+          "reported_seconds": 7.05
+        },
+        {
+          "name": "TestDefaultAssistantConnectionCannotBypassAdmission",
+          "result": "pass",
+          "reported_seconds": 4.97
+        },
+        {
+          "name": "TestPlatformConnectNotificationCannotBypassAdmissionOrMemberRemoval",
+          "result": "pass",
+          "reported_seconds": 5.42
+        },
+        {
+          "name": "TestPlatformMemberCurrentConcurrentReservationAndFrozenAdmission",
+          "result": "pass",
+          "reported_seconds": 9.01
+        },
+        {
+          "name": "TestDefaultAssistantConnectionAutomaticContinuationAndFailure",
+          "result": "pass",
+          "reported_seconds": 5.41
+        },
+        {
+          "name": "TestPlatformConnectNotificationAutomaticallyContinuesWithoutChatAndDoesNotRetryFailure",
+          "result": "pass",
+          "reported_seconds": 5.93
+        },
+        {
+          "name": "TestPlatformConnectNotificationUnsubscribeAcknowledgmentAndIdentity",
+          "result": "pass",
+          "reported_seconds": 7.23
+        },
+        {
+          "name": "TestPlatformMemberPrivateUnknownReceiptSurvivesRestart",
+          "result": "pass",
+          "reported_seconds": 5.75
+        },
+        {
+          "name": "TestPlatformConnectNotificationTerminalFailuresAndRestartResult",
+          "result": "pass",
+          "reported_seconds": 8.11
+        },
+        {
+          "name": "TestPlatformConnectNotificationCrashRecoveryUsesOriginalDelivery",
+          "result": "pass",
+          "reported_seconds": 7.22
+        },
+        {
+          "name": "TestPlatformMemberToolToggleRevocationWaitsForCallSettlement",
+          "result": "pass",
+          "reported_seconds": 6.23
+        },
+        {
+          "name": "TestPlatformMemberToolToggleUnknownSurvivesRestart",
+          "result": "pass",
+          "reported_seconds": 5.96
+        },
+        {
+          "name": "TestPlatformMemberToolToggleRejectsMissingIntentAndMixedModes",
+          "result": "pass",
+          "reported_seconds": 5.6
+        },
+        {
+          "name": "TestPlatformMemberLarkCLIConfiguresRangesAndConditions",
+          "result": "pass",
+          "reported_seconds": 7.19
+        },
+        {
+          "name": "TestPlatformMemberToolToggleCLIAndSavedGrants",
+          "result": "pass",
+          "reported_seconds": 8.87
+        },
+        {
+          "name": "TestPlatformMemberToolToggleMissingAuthorizationAndOAuthRepair",
+          "result": "pass",
+          "reported_seconds": 10.57
+        },
+        {
+          "name": "TestPlatformMemberLarkReplacementRejectsPrivateTarget",
+          "result": "pass",
+          "reported_seconds": 6.98
+        },
+        {
+          "name": "TestPlatformMemberLarkReplacementUnknownReceiptSurvivesRestart",
+          "result": "pass",
+          "reported_seconds": 7.33
+        },
+        {
+          "name": "TestPlatformMemberToolToggleRechecksConcurrentEdits",
+          "result": "pass",
+          "reported_seconds": 14.22
+        },
+        {
+          "name": "TestPlatformConnectNotificationStartPolicyIsIndependentOfBusinessInput",
+          "result": "pass",
+          "reported_seconds": 6.68
+        },
+        {
+          "name": "TestPlatformMemberSubscriptionPatchVersionsAndHumanEvidence",
+          "result": "pass",
+          "reported_seconds": 8.39
+        },
+        {
+          "name": "TestPlatformConnectNotificationReusedConnectionPublishesSavedResult",
+          "result": "pass",
+          "reported_seconds": 5.47
+        },
+        {
+          "name": "TestPlatformMemberCLISelectedGroupAndSeparateTool",
+          "result": "pass",
+          "reported_seconds": 9.73
+        },
+        {
+          "name": "TestDefaultAssistantConnectionPauseAndLateCompletion",
+          "result": "pass",
+          "reported_seconds": 4.64
+        },
+        {
+          "name": "TestPlatformMemberCurrentStorageFailuresAndRestart",
+          "result": "pass",
+          "reported_seconds": 7.4
+        },
+        {
+          "name": "TestPlatformMemberPrivateCLIQueriesAndReplacesVerifiedPersonnel",
+          "result": "pass",
+          "reported_seconds": 14.66
+        }
+      ]
+    },
+    "after": {
+      "measurement": {
+        "wall_seconds": 106.85400716681033,
+        "returncode": 0
+      },
+      "top_level": {
+        "pass": 133
+      },
+      "including_subtests": {
+        "pass": 324
+      },
+      "package_seconds": 106.612,
+      "serial_span_seconds": 80.443737,
+      "parallel_tail_seconds": 25.543596,
+      "tests": [
+        {
+          "name": "TestUnifiedConnectionCancellationAndExpiryRemainPageOnly",
+          "result": "pass",
+          "reported_seconds": 1.04
+        },
+        {
+          "name": "TestSelectionSubmitPublishesRoomEventBeforeAgentRead",
+          "result": "pass",
+          "reported_seconds": 0.34
+        },
+        {
+          "name": "TestUnifiedOperationEventIntentReceiptRetryAndNoInboxDoubleWrite",
+          "result": "pass",
+          "reported_seconds": 0.33
+        },
+        {
+          "name": "TestRoomClearProtectsAnEventBeforeItsFirstRead",
+          "result": "pass",
+          "reported_seconds": 0.28
+        },
+        {
+          "name": "TestGitLabConnectFirstApplicationReturnAndContinuation",
+          "result": "pass",
+          "reported_seconds": 2.34
+        },
+        {
+          "name": "TestGitLabConnectApplicationSetupBoundaries",
+          "result": "pass",
+          "reported_seconds": 1.12
+        },
+        {
+          "name": "TestGitLabConnectApplicationCorrectionKeepsOriginalOperation",
+          "result": "pass",
+          "reported_seconds": 0.26
+        },
+        {
+          "name": "TestGitLabConnectCallbackReceiptInboxAndCLI",
+          "result": "pass",
+          "reported_seconds": 0.43
+        },
+        {
+          "name": "TestGitLabConnectBrowserAndAccountBoundaries",
+          "result": "pass",
+          "reported_seconds": 2.42
+        },
+        {
+          "name": "TestGitLabConnectMissingApplicationAndFixedInputs",
+          "result": "pass",
+          "reported_seconds": 0.15
+        },
+        {
+          "name": "TestGitLabConnectRestartReconcilesOnlyExactSavedTarget",
+          "result": "pass",
+          "reported_seconds": 0.42
+        },
+        {
+          "name": "TestGitLabConnectCancelledDuringExchangeCannotCommit",
+          "result": "pass",
+          "reported_seconds": 0.21
+        },
+        {
+          "name": "TestGitLabConnectReceiptInterruptionDoesNotReplayOrRevokeSavedToken",
+          "result": "pass",
+          "reported_seconds": 0.56
+        },
+        {
+          "name": "TestGitLabConnectCallbackAutomaticallyContinuesThroughOrdinaryInbox",
+          "result": "pass",
+          "reported_seconds": 0.65
+        },
+        {
+          "name": "TestDefaultAssistantGitLabConnectBrowserBridge",
+          "result": "pass",
+          "reported_seconds": 0.25
+        },
+        {
+          "name": "TestGitLabConnectBridgeIdentifiesStalePageAndNoncanonicalOrigin",
+          "result": "pass",
+          "reported_seconds": 0.35
+        },
+        {
+          "name": "TestGitLabCompletionReturnsOnlyBoundOriginalOperation",
+          "result": "pass",
+          "reported_seconds": 0.26
+        },
+        {
+          "name": "TestPlatformConnectNativeSetupAndCLIProcessLifetime",
+          "result": "pass",
+          "reported_seconds": 4.43
+        },
+        {
+          "name": "TestPlatformConnectNativePartialExpiryAndCancellation",
+          "result": "pass",
+          "reported_seconds": 3.42
+        },
+        {
+          "name": "TestPlatformConnectInteractionProjectionAndBoundaries",
+          "result": "pass",
+          "reported_seconds": 0.15
+        },
+        {
+          "name": "TestPlatformConnectInteractionVersionedCancellationAndDuplicateReceipt",
+          "result": "pass",
+          "reported_seconds": 0.21
+        },
+        {
+          "name": "TestPlatformConnectInteractionReplacementCannotInheritLiveAuthorization",
+          "result": "pass",
+          "reported_seconds": 0.21
+        },
+        {
+          "name": "TestPlatformAuthorizationSurvivesModelRotationAndPause",
+          "result": "pass",
+          "reported_seconds": 7.16
+        },
+        {
+          "name": "TestPlatformConnectSavedReceiptIdempotenceAndReadOnlyStatus",
+          "result": "pass",
+          "reported_seconds": 0.24
+        },
+        {
+          "name": "TestPlatformConnectCancelledLateSuccessPreservesPartialEffects",
+          "result": "pass",
+          "reported_seconds": 0.19
+        },
+        {
+          "name": "TestPlatformConnectExpiryFailureAndUnknownRecovery",
+          "result": "pass",
+          "reported_seconds": 0.61
+        },
+        {
+          "name": "TestPlatformConnectSkillIdentityAndHumanBoundary",
+          "result": "pass",
+          "reported_seconds": 0.16
+        },
+        {
+          "name": "TestPlatformConnectWaitTimeoutAndInterruptionDoNotCancel",
+          "result": "pass",
+          "reported_seconds": 0.18
+        },
+        {
+          "name": "TestPlatformConnectRestartReconcilesSavedConnectionWithoutWritingAgain",
+          "result": "pass",
+          "reported_seconds": 0.32
+        },
+        {
+          "name": "TestPlatformConnectReuseRequiresExactVerifiedVersion",
+          "result": "pass",
+          "reported_seconds": 2.61
+        },
+        {
+          "name": "TestPlatformConnectSaveUnknownNeverReplaysConnection",
+          "result": "pass",
+          "reported_seconds": 0.4
+        },
+        {
+          "name": "TestPlatformConnectMembershipRemovedBeforeAuthorizationCompletes",
+          "result": "pass",
+          "reported_seconds": 0.16
+        },
+        {
+          "name": "TestPlatformMemberCurrentRequestFields",
+          "result": "pass",
+          "reported_seconds": 0
+        },
+        {
+          "name": "TestPlatformMemberSwitchIdentityPreservesNotificationReceipts",
+          "result": "pass",
+          "reported_seconds": 0
+        },
+        {
+          "name": "TestConnectApplicationImportAuthority",
+          "result": "pass",
+          "reported_seconds": 0
+        },
+        {
+          "name": "TestPlatformMemberCurrentCLIRejectsMixedModes",
+          "result": "pass",
+          "reported_seconds": 0
+        },
+        {
+          "name": "TestPlatformMemberToggleIdentityScope",
+          "result": "pass",
+          "reported_seconds": 0
+        },
+        {
+          "name": "TestGitLabMemberPersonalTodosWithoutToolsOrWorkspace",
+          "result": "pass",
+          "reported_seconds": 0.41
+        },
+        {
+          "name": "TestGitLabMemberPatchPreservesOtherSourcesFiltersAndStart",
+          "result": "pass",
+          "reported_seconds": 0
+        },
+        {
+          "name": "TestGitLabMemberUnknownSubmissionRestartNeverReplays",
+          "result": "pass",
+          "reported_seconds": 0.37
+        },
+        {
+          "name": "TestGitLabMemberVersionsAndReplacementAreRejected",
+          "result": "pass",
+          "reported_seconds": 1.02
+        },
+        {
+          "name": "TestGitLabMemberPartialNotificationsAndIndependentTool",
+          "result": "pass",
+          "reported_seconds": 0.5
+        },
+        {
+          "name": "TestGitLabMemberExistingSubscriptionsPreserveProgressAndSibling",
+          "result": "pass",
+          "reported_seconds": 0.48
+        },
+        {
+          "name": "TestDefaultAssistantGitLabConnectAutomaticallyConfiguresPersonalTodos",
+          "result": "pass",
+          "reported_seconds": 0.83
+        },
+        {
+          "name": "TestGitLabMemberDormantProjectActivityRequiresExplicitChoice",
+          "result": "pass",
+          "reported_seconds": 0.31
+        },
+        {
+          "name": "TestGitLabMemberAccountChangeAfterDesiredSaveStopsCollectorWrite",
+          "result": "pass",
+          "reported_seconds": 0.38
+        },
+        {
+          "name": "TestPlatformMemberRejectsChangesDuringGroupVerification",
+          "result": "pass",
+          "reported_seconds": 0
+        },
+        {
+          "name": "TestPlatformMemberNotificationUnknownReceiptAndRestart",
+          "result": "pass",
+          "reported_seconds": 0
+        },
+        {
+          "name": "TestPlatformMemberLarkRangeAndConditionChanges",
+          "result": "pass",
+          "reported_seconds": 0
+        },
+        {
+          "name": "TestPlatformMemberLarkConflictingIntent",
+          "result": "pass",
+          "reported_seconds": 0
+        },
+        {
+          "name": "TestPlatformMemberLarkInputAndEmptyListPersistence",
+          "result": "pass",
+          "reported_seconds": 0
+        },
+        {
+          "name": "TestPlatformMemberLarkCLIRejectsAmbiguousAndUnsupportedFields",
+          "result": "pass",
+          "reported_seconds": 0.14
+        },
+        {
+          "name": "TestPlatformMemberLarkAbsentDisableDoesNotCreateSubscription",
+          "result": "pass",
+          "reported_seconds": 0.77
+        },
+        {
+          "name": "TestPlatformMemberChatTypeBoundary",
+          "result": "pass",
+          "reported_seconds": 0.14
+        },
+        {
+          "name": "TestPlatformMemberNotificationToggleDefaultsAndPreservedReceipts",
+          "result": "pass",
+          "reported_seconds": 1.09
+        },
+        {
+          "name": "TestPlatformMemberNotificationToggleRestoresSavedSources",
+          "result": "pass",
+          "reported_seconds": 1.4
+        },
+        {
+          "name": "TestGitLabMemberNotificationToggleRequiresSourcesAndSettledApplication",
+          "result": "pass",
+          "reported_seconds": 0.3
+        },
+        {
+          "name": "TestGitLabMemberCustomizationAndTotalSwitch",
+          "result": "pass",
+          "reported_seconds": 0
+        },
+        {
+          "name": "TestGitLabMemberNotificationTogglePreservesLegacyCollector",
+          "result": "pass",
+          "reported_seconds": 0.39
+        },
+        {
+          "name": "TestPlatformMemberPrivateRejectsUnverifiableTargets",
+          "result": "pass",
+          "reported_seconds": 0
+        },
+        {
+          "name": "TestPlatformMemberPrivateRejectsChangesDuringVerification",
+          "result": "pass",
+          "reported_seconds": 0
+        },
+        {
+          "name": "TestPlatformMemberNotificationPatchPreservesRangeAndStart",
+          "result": "pass",
+          "reported_seconds": 0
+        },
+        {
+          "name": "TestPlatformMemberToolReceiptsIdentityAndIndependentVersions",
+          "result": "pass",
+          "reported_seconds": 4.33
+        },
+        {
+          "name": "TestPlatformMemberUnknownSubmissionNeverReplays",
+          "result": "pass",
+          "reported_seconds": 2.16
+        },
+        {
+          "name": "TestPlatformMemberRejectsFabricatedAuthorityAndUnsupportedInput",
+          "result": "pass",
+          "reported_seconds": 0.12
+        },
+        {
+          "name": "TestGitLabProjectSelectionAndMemberCLIExactTarget",
+          "result": "pass",
+          "reported_seconds": 0.38
+        },
+        {
+          "name": "TestGitLabProjectSelectionRejectsStaleOrUnauthorizedCandidates",
+          "result": "pass",
+          "reported_seconds": 2.2
+        },
+        {
+          "name": "TestGitLabAccountSelectionSameInstanceMultipleAccounts",
+          "result": "pass",
+          "reported_seconds": 0.4
+        },
+        {
+          "name": "TestGitLabProjectSelectionAutomaticallyContinues",
+          "result": "pass",
+          "reported_seconds": 0.66
+        },
+        {
+          "name": "TestGitLabProjectConfigurationRejectsMismatchedIDAndPreservesSources",
+          "result": "pass",
+          "reported_seconds": 0.34
+        },
+        {
+          "name": "TestGitLabMemberSourceAndFilterPatches",
+          "result": "pass",
+          "reported_seconds": 0
+        },
+        {
+          "name": "TestGitLabProjectSelectionReceiptSurvivesRestart",
+          "result": "pass",
+          "reported_seconds": 0.42
+        },
+        {
+          "name": "TestPlatformSelectionConversationAndMemberConfiguration",
+          "result": "pass",
+          "reported_seconds": 2.41
+        },
+        {
+          "name": "TestDefaultAssistantPlatformOnboarding",
+          "result": "pass",
+          "reported_seconds": 8.38
+        },
+        {
+          "name": "TestPlatformSelectionRejectsDraftChangedDuringGroupVerification",
+          "result": "pass",
+          "reported_seconds": 0.85
+        },
+        {
+          "name": "TestPlatformSelectionDraftConflictAndImmutableReceipt",
+          "result": "pass",
+          "reported_seconds": 0.16
+        },
+        {
+          "name": "TestPlatformSelectionIdentityExpiryCancellationAndRecovery",
+          "result": "pass",
+          "reported_seconds": 0.21
+        },
+        {
+          "name": "TestPlatformSelectionExpirationAndNotificationDeduplication",
+          "result": "pass",
+          "reported_seconds": 0.36
+        },
+        {
+          "name": "TestPlatformSelectionSourceLookupAndMalformedRequests",
+          "result": "pass",
+          "reported_seconds": 0.16
+        },
+        {
+          "name": "TestPlatformSelectionVerifiedAccountVersionAndMemberReplacement",
+          "result": "pass",
+          "reported_seconds": 0.99
+        },
+        {
+          "name": "TestPlatformSelectionAutomaticallyContinuesThroughInbox",
+          "result": "pass",
+          "reported_seconds": 0.48
+        },
+        {
+          "name": "TestDefaultAssistantSelectionAutomaticContinuation",
+          "result": "pass",
+          "reported_seconds": 0.62
+        },
+        {
+          "name": "TestPlatformSelectionResultDeliverySurvivesUnknownHandoff",
+          "result": "pass",
+          "reported_seconds": 0.74
+        },
+        {
+          "name": "TestPlatformSelectionMultipleVerifiedAccountsKeepExactTarget",
+          "result": "pass",
+          "reported_seconds": 1.01
+        },
+        {
+          "name": "TestLarkToolGrantPlan",
+          "result": "pass",
+          "reported_seconds": 0
+        },
+        {
+          "name": "TestPlatformMemberIntentNormalizationRetainsObservation",
+          "result": "pass",
+          "reported_seconds": 0
+        },
+        {
+          "name": "TestToolBindingRevisionMatchesExactTarget",
+          "result": "pass",
+          "reported_seconds": 0
+        },
+        {
+          "name": "TestToolCommittedCapabilityProjection",
+          "result": "pass",
+          "reported_seconds": 0
+        },
+        {
+          "name": "TestUIUpdateSourcesSharedReadingAcrossHTTPClients",
+          "result": "pass",
+          "reported_seconds": 0.45
+        },
+        {
+          "name": "TestUIUpdateSourcesPolicyInstallAgentAndExpiry",
+          "result": "pass",
+          "reported_seconds": 0.35
+        },
+        {
+          "name": "TestUIUpdateSourcesInboxInstallConsumeReclaimAndQuietReads",
+          "result": "pass",
+          "reported_seconds": 0.53
+        },
+        {
+          "name": "TestUIUpdateSourcesInboxUnknownCommitPreservesFailure",
+          "result": "pass",
+          "reported_seconds": 0.13
+        },
+        {
+          "name": "TestUIUpdateSourcesMemberTransitionsAndObserverParity",
+          "result": "pass",
+          "reported_seconds": 0.41
+        },
+        {
+          "name": "TestUIUpdateSourcesMemberWaiting",
+          "result": "pass",
+          "reported_seconds": 0.11
+        },
+        {
+          "name": "TestUIUpdateSourcesModelProgressAndWorkspaceProgress",
+          "result": "pass",
+          "reported_seconds": 0.58
+        },
+        {
+          "name": "TestUIUpdateSourcesInteractionAndAuthorizationProgress",
+          "result": "pass",
+          "reported_seconds": 0.24
+        },
+        {
+          "name": "TestUIUpdateSourcesSettingsPlatformsBindingsAndNotificationWorker",
+          "result": "pass",
+          "reported_seconds": 0.54
+        },
+        {
+          "name": "TestUIUpdateSourcesAutomaticRecoveryAndRotation",
+          "result": "pass",
+          "reported_seconds": 1.6
+        },
+        {
+          "name": "TestPlatformConnectNotificationSubscriptionHandoffAndLateCompletion",
+          "result": "pass",
+          "reported_seconds": 1.73
+        },
+        {
+          "name": "TestPlatformMemberLarkReplacementUnknownReceiptSurvivesRestart",
+          "result": "pass",
+          "reported_seconds": 2.41
+        },
+        {
+          "name": "TestPlatformMemberCurrentReadAndHistoricalReceipt",
+          "result": "pass",
+          "reported_seconds": 3.52
+        },
+        {
+          "name": "TestPlatformMemberToolToggleCLIAndSavedGrants",
+          "result": "pass",
+          "reported_seconds": 4.42
+        },
+        {
+          "name": "TestPlatformMemberCurrentSourceFences",
+          "result": "pass",
+          "reported_seconds": 4.89
+        },
+        {
+          "name": "TestPlatformMemberPrivateUnknownReceiptSurvivesRestart",
+          "result": "pass",
+          "reported_seconds": 5.27
+        },
+        {
+          "name": "TestPlatformMemberCurrentAdoptsSavedScopeBeforeAdmission",
+          "result": "pass",
+          "reported_seconds": 6
+        },
+        {
+          "name": "TestPlatformMemberLarkReplacementRejectsPrivateTarget",
+          "result": "pass",
+          "reported_seconds": 6.28
+        },
+        {
+          "name": "TestPlatformMemberCurrentHTTPRejectsExpandedShapes",
+          "result": "pass",
+          "reported_seconds": 4.96
+        },
+        {
+          "name": "TestPlatformMemberCurrentConcurrentReservationAndFrozenAdmission",
+          "result": "pass",
+          "reported_seconds": 7.25
+        },
+        {
+          "name": "TestPlatformMemberCurrentCLIUsesOneBusinessRequest",
+          "result": "pass",
+          "reported_seconds": 5.78
+        },
+        {
+          "name": "TestDefaultAssistantConnectionCannotBypassAdmission",
+          "result": "pass",
+          "reported_seconds": 3.84
+        },
+        {
+          "name": "TestPlatformConnectNotificationContinuesAcrossSessionRotation",
+          "result": "pass",
+          "reported_seconds": 4.82
+        },
+        {
+          "name": "TestPlatformConnectNotificationCannotBypassAdmissionOrMemberRemoval",
+          "result": "pass",
+          "reported_seconds": 4.46
+        },
+        {
+          "name": "TestPlatformConnectNotificationCapacityRetainsPendingAndRetriesAfterReclamation",
+          "result": "pass",
+          "reported_seconds": 4.28
+        },
+        {
+          "name": "TestDefaultAssistantConnectionAutomaticContinuationAndFailure",
+          "result": "pass",
+          "reported_seconds": 3.58
+        },
+        {
+          "name": "TestPlatformConnectNotificationAutomaticallyContinuesWithoutChatAndDoesNotRetryFailure",
+          "result": "pass",
+          "reported_seconds": 4.2
+        },
+        {
+          "name": "TestPlatformConnectNotificationUnsubscribeAcknowledgmentAndIdentity",
+          "result": "pass",
+          "reported_seconds": 3.98
+        },
+        {
+          "name": "TestPlatformConnectNotificationTerminalFailuresAndRestartResult",
+          "result": "pass",
+          "reported_seconds": 6.02
+        },
+        {
+          "name": "TestPlatformConnectNotificationStartPolicyIsIndependentOfBusinessInput",
+          "result": "pass",
+          "reported_seconds": 4.79
+        },
+        {
+          "name": "TestPlatformConnectNotificationCrashRecoveryUsesOriginalDelivery",
+          "result": "pass",
+          "reported_seconds": 6.49
+        },
+        {
+          "name": "TestPlatformConnectNotificationReusedConnectionPublishesSavedResult",
+          "result": "pass",
+          "reported_seconds": 5.69
+        },
+        {
+          "name": "TestPlatformMemberPrivateCLIQueriesAndReplacesVerifiedPersonnel",
+          "result": "pass",
+          "reported_seconds": 13.97
+        },
+        {
+          "name": "TestToolIndependentBindingSaveOrders",
+          "result": "pass",
+          "reported_seconds": 5.47
+        },
+        {
+          "name": "TestPlatformMemberToolToggleRevocationWaitsForCallSettlement",
+          "result": "pass",
+          "reported_seconds": 5.69
+        },
+        {
+          "name": "TestDefaultAssistantConnectionPauseAndLateCompletion",
+          "result": "pass",
+          "reported_seconds": 6.25
+        },
+        {
+          "name": "TestPlatformMemberToolToggleMemberAccountAndSourceBoundaries",
+          "result": "pass",
+          "reported_seconds": 6.13
+        },
+        {
+          "name": "TestPlatformMemberToolToggleUnknownSurvivesRestart",
+          "result": "pass",
+          "reported_seconds": 4.49
+        },
+        {
+          "name": "TestPlatformMemberSubscriptionPatchVersionsAndHumanEvidence",
+          "result": "pass",
+          "reported_seconds": 4.11
+        },
+        {
+          "name": "TestPlatformMemberToolToggleRejectsMissingIntentAndMixedModes",
+          "result": "pass",
+          "reported_seconds": 4.56
+        },
+        {
+          "name": "TestPlatformMemberLarkCLIConfiguresRangesAndConditions",
+          "result": "pass",
+          "reported_seconds": 5.79
+        },
+        {
+          "name": "TestPlatformMemberToolToggleMissingAuthorizationAndOAuthRepair",
+          "result": "pass",
+          "reported_seconds": 8.04
+        },
+        {
+          "name": "TestPlatformMemberCLISelectedGroupAndSeparateTool",
+          "result": "pass",
+          "reported_seconds": 7.94
+        },
+        {
+          "name": "TestPlatformMemberCurrentStorageFailuresAndRestart",
+          "result": "pass",
+          "reported_seconds": 7.82
+        },
+        {
+          "name": "TestPlatformMemberToolToggleRechecksConcurrentEdits",
+          "result": "pass",
+          "reported_seconds": 13.36
+        }
+      ]
+    },
+    "race": {
+      "measurement": {
+        "wall_seconds": 141.86110237520188,
+        "returncode": 0
+      },
+      "top_level": {
+        "pass": 133
+      },
+      "including_subtests": {
+        "pass": 324
+      },
+      "package_seconds": 141.562,
+      "serial_span_seconds": 87.935597,
+      "parallel_tail_seconds": 52.791249,
+      "tests": [
+        {
+          "name": "TestUnifiedConnectionCancellationAndExpiryRemainPageOnly",
+          "result": "pass",
+          "reported_seconds": 1.5
+        },
+        {
+          "name": "TestSelectionSubmitPublishesRoomEventBeforeAgentRead",
+          "result": "pass",
+          "reported_seconds": 0.35
+        },
+        {
+          "name": "TestUnifiedOperationEventIntentReceiptRetryAndNoInboxDoubleWrite",
+          "result": "pass",
+          "reported_seconds": 0.37
+        },
+        {
+          "name": "TestRoomClearProtectsAnEventBeforeItsFirstRead",
+          "result": "pass",
+          "reported_seconds": 0.4
+        },
+        {
+          "name": "TestGitLabConnectFirstApplicationReturnAndContinuation",
+          "result": "pass",
+          "reported_seconds": 2.7
+        },
+        {
+          "name": "TestGitLabConnectApplicationSetupBoundaries",
+          "result": "pass",
+          "reported_seconds": 1.2
+        },
+        {
+          "name": "TestGitLabConnectApplicationCorrectionKeepsOriginalOperation",
+          "result": "pass",
+          "reported_seconds": 0.27
+        },
+        {
+          "name": "TestGitLabConnectCallbackReceiptInboxAndCLI",
+          "result": "pass",
+          "reported_seconds": 0.61
+        },
+        {
+          "name": "TestGitLabConnectBrowserAndAccountBoundaries",
+          "result": "pass",
+          "reported_seconds": 2.7
+        },
+        {
+          "name": "TestGitLabConnectMissingApplicationAndFixedInputs",
+          "result": "pass",
+          "reported_seconds": 0.22
+        },
+        {
+          "name": "TestGitLabConnectRestartReconcilesOnlyExactSavedTarget",
+          "result": "pass",
+          "reported_seconds": 0.54
+        },
+        {
+          "name": "TestGitLabConnectCancelledDuringExchangeCannotCommit",
+          "result": "pass",
+          "reported_seconds": 0.32
+        },
+        {
+          "name": "TestGitLabConnectReceiptInterruptionDoesNotReplayOrRevokeSavedToken",
+          "result": "pass",
+          "reported_seconds": 0.66
+        },
+        {
+          "name": "TestGitLabConnectCallbackAutomaticallyContinuesThroughOrdinaryInbox",
+          "result": "pass",
+          "reported_seconds": 0.64
+        },
+        {
+          "name": "TestDefaultAssistantGitLabConnectBrowserBridge",
+          "result": "pass",
+          "reported_seconds": 0.3
+        },
+        {
+          "name": "TestGitLabConnectBridgeIdentifiesStalePageAndNoncanonicalOrigin",
+          "result": "pass",
+          "reported_seconds": 0.35
+        },
+        {
+          "name": "TestGitLabCompletionReturnsOnlyBoundOriginalOperation",
+          "result": "pass",
+          "reported_seconds": 0.18
+        },
+        {
+          "name": "TestPlatformConnectNativeSetupAndCLIProcessLifetime",
+          "result": "pass",
+          "reported_seconds": 4.37
+        },
+        {
+          "name": "TestPlatformConnectNativePartialExpiryAndCancellation",
+          "result": "pass",
+          "reported_seconds": 2.95
+        },
+        {
+          "name": "TestPlatformConnectInteractionProjectionAndBoundaries",
+          "result": "pass",
+          "reported_seconds": 0.13
+        },
+        {
+          "name": "TestPlatformConnectInteractionVersionedCancellationAndDuplicateReceipt",
+          "result": "pass",
+          "reported_seconds": 0.2
+        },
+        {
+          "name": "TestPlatformConnectInteractionReplacementCannotInheritLiveAuthorization",
+          "result": "pass",
+          "reported_seconds": 0.26
+        },
+        {
+          "name": "TestPlatformAuthorizationSurvivesModelRotationAndPause",
+          "result": "pass",
+          "reported_seconds": 7.72
+        },
+        {
+          "name": "TestPlatformConnectSavedReceiptIdempotenceAndReadOnlyStatus",
+          "result": "pass",
+          "reported_seconds": 0.28
+        },
+        {
+          "name": "TestPlatformConnectCancelledLateSuccessPreservesPartialEffects",
+          "result": "pass",
+          "reported_seconds": 0.21
+        },
+        {
+          "name": "TestPlatformConnectExpiryFailureAndUnknownRecovery",
+          "result": "pass",
+          "reported_seconds": 0.61
+        },
+        {
+          "name": "TestPlatformConnectSkillIdentityAndHumanBoundary",
+          "result": "pass",
+          "reported_seconds": 0.18
+        },
+        {
+          "name": "TestPlatformConnectWaitTimeoutAndInterruptionDoNotCancel",
+          "result": "pass",
+          "reported_seconds": 0.25
+        },
+        {
+          "name": "TestPlatformConnectRestartReconcilesSavedConnectionWithoutWritingAgain",
+          "result": "pass",
+          "reported_seconds": 0.3
+        },
+        {
+          "name": "TestPlatformConnectReuseRequiresExactVerifiedVersion",
+          "result": "pass",
+          "reported_seconds": 1.07
+        },
+        {
+          "name": "TestPlatformConnectSaveUnknownNeverReplaysConnection",
+          "result": "pass",
+          "reported_seconds": 0.52
+        },
+        {
+          "name": "TestPlatformConnectMembershipRemovedBeforeAuthorizationCompletes",
+          "result": "pass",
+          "reported_seconds": 0.18
+        },
+        {
+          "name": "TestPlatformMemberCurrentRequestFields",
+          "result": "pass",
+          "reported_seconds": 0
+        },
+        {
+          "name": "TestPlatformMemberSwitchIdentityPreservesNotificationReceipts",
+          "result": "pass",
+          "reported_seconds": 0
+        },
+        {
+          "name": "TestConnectApplicationImportAuthority",
+          "result": "pass",
+          "reported_seconds": 0
+        },
+        {
+          "name": "TestPlatformMemberCurrentCLIRejectsMixedModes",
+          "result": "pass",
+          "reported_seconds": 0
+        },
+        {
+          "name": "TestPlatformMemberToggleIdentityScope",
+          "result": "pass",
+          "reported_seconds": 0
+        },
+        {
+          "name": "TestGitLabMemberPersonalTodosWithoutToolsOrWorkspace",
+          "result": "pass",
+          "reported_seconds": 0.47
+        },
+        {
+          "name": "TestGitLabMemberPatchPreservesOtherSourcesFiltersAndStart",
+          "result": "pass",
+          "reported_seconds": 0
+        },
+        {
+          "name": "TestGitLabMemberUnknownSubmissionRestartNeverReplays",
+          "result": "pass",
+          "reported_seconds": 0.49
+        },
+        {
+          "name": "TestGitLabMemberVersionsAndReplacementAreRejected",
+          "result": "pass",
+          "reported_seconds": 0.96
+        },
+        {
+          "name": "TestGitLabMemberPartialNotificationsAndIndependentTool",
+          "result": "pass",
+          "reported_seconds": 0.44
+        },
+        {
+          "name": "TestGitLabMemberExistingSubscriptionsPreserveProgressAndSibling",
+          "result": "pass",
+          "reported_seconds": 0.42
+        },
+        {
+          "name": "TestDefaultAssistantGitLabConnectAutomaticallyConfiguresPersonalTodos",
+          "result": "pass",
+          "reported_seconds": 0.9
+        },
+        {
+          "name": "TestGitLabMemberDormantProjectActivityRequiresExplicitChoice",
+          "result": "pass",
+          "reported_seconds": 0.44
+        },
+        {
+          "name": "TestGitLabMemberAccountChangeAfterDesiredSaveStopsCollectorWrite",
+          "result": "pass",
+          "reported_seconds": 0.51
+        },
+        {
+          "name": "TestPlatformMemberRejectsChangesDuringGroupVerification",
+          "result": "pass",
+          "reported_seconds": 0
+        },
+        {
+          "name": "TestPlatformMemberNotificationUnknownReceiptAndRestart",
+          "result": "pass",
+          "reported_seconds": 0
+        },
+        {
+          "name": "TestPlatformMemberLarkRangeAndConditionChanges",
+          "result": "pass",
+          "reported_seconds": 0.01
+        },
+        {
+          "name": "TestPlatformMemberLarkConflictingIntent",
+          "result": "pass",
+          "reported_seconds": 0
+        },
+        {
+          "name": "TestPlatformMemberLarkInputAndEmptyListPersistence",
+          "result": "pass",
+          "reported_seconds": 0
+        },
+        {
+          "name": "TestPlatformMemberLarkCLIRejectsAmbiguousAndUnsupportedFields",
+          "result": "pass",
+          "reported_seconds": 0.16
+        },
+        {
+          "name": "TestPlatformMemberLarkAbsentDisableDoesNotCreateSubscription",
+          "result": "pass",
+          "reported_seconds": 0.74
+        },
+        {
+          "name": "TestPlatformMemberChatTypeBoundary",
+          "result": "pass",
+          "reported_seconds": 0.15
+        },
+        {
+          "name": "TestPlatformMemberNotificationToggleDefaultsAndPreservedReceipts",
+          "result": "pass",
+          "reported_seconds": 1.09
+        },
+        {
+          "name": "TestPlatformMemberNotificationToggleRestoresSavedSources",
+          "result": "pass",
+          "reported_seconds": 1.65
+        },
+        {
+          "name": "TestGitLabMemberNotificationToggleRequiresSourcesAndSettledApplication",
+          "result": "pass",
+          "reported_seconds": 0.23
+        },
+        {
+          "name": "TestGitLabMemberCustomizationAndTotalSwitch",
+          "result": "pass",
+          "reported_seconds": 0
+        },
+        {
+          "name": "TestGitLabMemberNotificationTogglePreservesLegacyCollector",
+          "result": "pass",
+          "reported_seconds": 0.47
+        },
+        {
+          "name": "TestPlatformMemberPrivateRejectsUnverifiableTargets",
+          "result": "pass",
+          "reported_seconds": 0
+        },
+        {
+          "name": "TestPlatformMemberPrivateRejectsChangesDuringVerification",
+          "result": "pass",
+          "reported_seconds": 0
+        },
+        {
+          "name": "TestPlatformMemberNotificationPatchPreservesRangeAndStart",
+          "result": "pass",
+          "reported_seconds": 0
+        },
+        {
+          "name": "TestPlatformMemberToolReceiptsIdentityAndIndependentVersions",
+          "result": "pass",
+          "reported_seconds": 4.7
+        },
+        {
+          "name": "TestPlatformMemberUnknownSubmissionNeverReplays",
+          "result": "pass",
+          "reported_seconds": 2.81
+        },
+        {
+          "name": "TestPlatformMemberRejectsFabricatedAuthorityAndUnsupportedInput",
+          "result": "pass",
+          "reported_seconds": 0.13
+        },
+        {
+          "name": "TestGitLabProjectSelectionAndMemberCLIExactTarget",
+          "result": "pass",
+          "reported_seconds": 0.46
+        },
+        {
+          "name": "TestGitLabProjectSelectionRejectsStaleOrUnauthorizedCandidates",
+          "result": "pass",
+          "reported_seconds": 2.58
+        },
+        {
+          "name": "TestGitLabAccountSelectionSameInstanceMultipleAccounts",
+          "result": "pass",
+          "reported_seconds": 0.38
+        },
+        {
+          "name": "TestGitLabProjectSelectionAutomaticallyContinues",
+          "result": "pass",
+          "reported_seconds": 0.74
+        },
+        {
+          "name": "TestGitLabProjectConfigurationRejectsMismatchedIDAndPreservesSources",
+          "result": "pass",
+          "reported_seconds": 0.38
+        },
+        {
+          "name": "TestGitLabMemberSourceAndFilterPatches",
+          "result": "pass",
+          "reported_seconds": 0
+        },
+        {
+          "name": "TestGitLabProjectSelectionReceiptSurvivesRestart",
+          "result": "pass",
+          "reported_seconds": 0.4
+        },
+        {
+          "name": "TestPlatformSelectionConversationAndMemberConfiguration",
+          "result": "pass",
+          "reported_seconds": 2.66
+        },
+        {
+          "name": "TestDefaultAssistantPlatformOnboarding",
+          "result": "pass",
+          "reported_seconds": 9.28
+        },
+        {
+          "name": "TestPlatformSelectionRejectsDraftChangedDuringGroupVerification",
+          "result": "pass",
+          "reported_seconds": 0.95
+        },
+        {
+          "name": "TestPlatformSelectionDraftConflictAndImmutableReceipt",
+          "result": "pass",
+          "reported_seconds": 0.17
+        },
+        {
+          "name": "TestPlatformSelectionIdentityExpiryCancellationAndRecovery",
+          "result": "pass",
+          "reported_seconds": 0.25
+        },
+        {
+          "name": "TestPlatformSelectionExpirationAndNotificationDeduplication",
+          "result": "pass",
+          "reported_seconds": 0.57
+        },
+        {
+          "name": "TestPlatformSelectionSourceLookupAndMalformedRequests",
+          "result": "pass",
+          "reported_seconds": 0.2
+        },
+        {
+          "name": "TestPlatformSelectionVerifiedAccountVersionAndMemberReplacement",
+          "result": "pass",
+          "reported_seconds": 0.68
+        },
+        {
+          "name": "TestPlatformSelectionAutomaticallyContinuesThroughInbox",
+          "result": "pass",
+          "reported_seconds": 0.67
+        },
+        {
+          "name": "TestDefaultAssistantSelectionAutomaticContinuation",
+          "result": "pass",
+          "reported_seconds": 0.68
+        },
+        {
+          "name": "TestPlatformSelectionResultDeliverySurvivesUnknownHandoff",
+          "result": "pass",
+          "reported_seconds": 0.89
+        },
+        {
+          "name": "TestPlatformSelectionMultipleVerifiedAccountsKeepExactTarget",
+          "result": "pass",
+          "reported_seconds": 0.67
+        },
+        {
+          "name": "TestLarkToolGrantPlan",
+          "result": "pass",
+          "reported_seconds": 0
+        },
+        {
+          "name": "TestPlatformMemberIntentNormalizationRetainsObservation",
+          "result": "pass",
+          "reported_seconds": 0
+        },
+        {
+          "name": "TestToolBindingRevisionMatchesExactTarget",
+          "result": "pass",
+          "reported_seconds": 0
+        },
+        {
+          "name": "TestToolCommittedCapabilityProjection",
+          "result": "pass",
+          "reported_seconds": 0
+        },
+        {
+          "name": "TestUIUpdateSourcesSharedReadingAcrossHTTPClients",
+          "result": "pass",
+          "reported_seconds": 0.38
+        },
+        {
+          "name": "TestUIUpdateSourcesPolicyInstallAgentAndExpiry",
+          "result": "pass",
+          "reported_seconds": 0.36
+        },
+        {
+          "name": "TestUIUpdateSourcesInboxInstallConsumeReclaimAndQuietReads",
+          "result": "pass",
+          "reported_seconds": 0.63
+        },
+        {
+          "name": "TestUIUpdateSourcesInboxUnknownCommitPreservesFailure",
+          "result": "pass",
+          "reported_seconds": 0.19
+        },
+        {
+          "name": "TestUIUpdateSourcesMemberTransitionsAndObserverParity",
+          "result": "pass",
+          "reported_seconds": 0.45
+        },
+        {
+          "name": "TestUIUpdateSourcesMemberWaiting",
+          "result": "pass",
+          "reported_seconds": 0.09
+        },
+        {
+          "name": "TestUIUpdateSourcesModelProgressAndWorkspaceProgress",
+          "result": "pass",
+          "reported_seconds": 0.71
+        },
+        {
+          "name": "TestUIUpdateSourcesInteractionAndAuthorizationProgress",
+          "result": "pass",
+          "reported_seconds": 0.33
+        },
+        {
+          "name": "TestUIUpdateSourcesSettingsPlatformsBindingsAndNotificationWorker",
+          "result": "pass",
+          "reported_seconds": 0.66
+        },
+        {
+          "name": "TestUIUpdateSourcesAutomaticRecoveryAndRotation",
+          "result": "pass",
+          "reported_seconds": 1.7
+        },
+        {
+          "name": "TestDefaultAssistantConnectionAutomaticContinuationAndFailure",
+          "result": "pass",
+          "reported_seconds": 1.22
+        },
+        {
+          "name": "TestToolIndependentBindingSaveOrders",
+          "result": "pass",
+          "reported_seconds": 1.28
+        },
+        {
+          "name": "TestPlatformMemberCurrentAdoptsSavedScopeBeforeAdmission",
+          "result": "pass",
+          "reported_seconds": 1.88
+        },
+        {
+          "name": "TestPlatformConnectNotificationCannotBypassAdmissionOrMemberRemoval",
+          "result": "pass",
+          "reported_seconds": 2.14
+        },
+        {
+          "name": "TestPlatformMemberToolToggleMemberAccountAndSourceBoundaries",
+          "result": "pass",
+          "reported_seconds": 3.03
+        },
+        {
+          "name": "TestPlatformMemberToolToggleRevocationWaitsForCallSettlement",
+          "result": "pass",
+          "reported_seconds": 3.46
+        },
+        {
+          "name": "TestPlatformMemberCurrentReadAndHistoricalReceipt",
+          "result": "pass",
+          "reported_seconds": 4.56
+        },
+        {
+          "name": "TestPlatformMemberCurrentSourceFences",
+          "result": "pass",
+          "reported_seconds": 5.72
+        },
+        {
+          "name": "TestPlatformMemberToolToggleUnknownSurvivesRestart",
+          "result": "pass",
+          "reported_seconds": 7.71
+        },
+        {
+          "name": "TestPlatformMemberCurrentCLIUsesOneBusinessRequest",
+          "result": "pass",
+          "reported_seconds": 8.76
+        },
+        {
+          "name": "TestPlatformConnectNotificationReusedConnectionPublishesSavedResult",
+          "result": "pass",
+          "reported_seconds": 9.44
+        },
+        {
+          "name": "TestPlatformConnectNotificationStartPolicyIsIndependentOfBusinessInput",
+          "result": "pass",
+          "reported_seconds": 8.86
+        },
+        {
+          "name": "TestPlatformMemberCurrentConcurrentReservationAndFrozenAdmission",
+          "result": "pass",
+          "reported_seconds": 13.38
+        },
+        {
+          "name": "TestDefaultAssistantConnectionPauseAndLateCompletion",
+          "result": "pass",
+          "reported_seconds": 12.51
+        },
+        {
+          "name": "TestPlatformMemberToolToggleMissingAuthorizationAndOAuthRepair",
+          "result": "pass",
+          "reported_seconds": 16.92
+        },
+        {
+          "name": "TestPlatformMemberToolToggleRechecksConcurrentEdits",
+          "result": "pass",
+          "reported_seconds": 19.4
+        },
+        {
+          "name": "TestPlatformMemberPrivateUnknownReceiptSurvivesRestart",
+          "result": "pass",
+          "reported_seconds": 14.77
+        },
+        {
+          "name": "TestDefaultAssistantConnectionCannotBypassAdmission",
+          "result": "pass",
+          "reported_seconds": 10.84
+        },
+        {
+          "name": "TestPlatformMemberToolToggleCLIAndSavedGrants",
+          "result": "pass",
+          "reported_seconds": 17.61
+        },
+        {
+          "name": "TestPlatformConnectNotificationAutomaticallyContinuesWithoutChatAndDoesNotRetryFailure",
+          "result": "pass",
+          "reported_seconds": 11.04
+        },
+        {
+          "name": "TestPlatformMemberCurrentHTTPRejectsExpandedShapes",
+          "result": "pass",
+          "reported_seconds": 8.02
+        },
+        {
+          "name": "TestPlatformConnectNotificationSubscriptionHandoffAndLateCompletion",
+          "result": "pass",
+          "reported_seconds": 15.61
+        },
+        {
+          "name": "TestPlatformConnectNotificationUnsubscribeAcknowledgmentAndIdentity",
+          "result": "pass",
+          "reported_seconds": 8.19
+        },
+        {
+          "name": "TestPlatformConnectNotificationContinuesAcrossSessionRotation",
+          "result": "pass",
+          "reported_seconds": 6.58
+        },
+        {
+          "name": "TestPlatformConnectNotificationTerminalFailuresAndRestartResult",
+          "result": "pass",
+          "reported_seconds": 14.8
+        },
+        {
+          "name": "TestPlatformConnectNotificationCapacityRetainsPendingAndRetriesAfterReclamation",
+          "result": "pass",
+          "reported_seconds": 7.4
+        },
+        {
+          "name": "TestPlatformConnectNotificationCrashRecoveryUsesOriginalDelivery",
+          "result": "pass",
+          "reported_seconds": 10.27
+        },
+        {
+          "name": "TestPlatformMemberLarkReplacementRejectsPrivateTarget",
+          "result": "pass",
+          "reported_seconds": 8.82
+        },
+        {
+          "name": "TestPlatformMemberToolToggleRejectsMissingIntentAndMixedModes",
+          "result": "pass",
+          "reported_seconds": 7.58
+        },
+        {
+          "name": "TestPlatformMemberSubscriptionPatchVersionsAndHumanEvidence",
+          "result": "pass",
+          "reported_seconds": 10.14
+        },
+        {
+          "name": "TestPlatformMemberLarkReplacementUnknownReceiptSurvivesRestart",
+          "result": "pass",
+          "reported_seconds": 8.21
+        },
+        {
+          "name": "TestPlatformMemberLarkCLIConfiguresRangesAndConditions",
+          "result": "pass",
+          "reported_seconds": 12.71
+        },
+        {
+          "name": "TestPlatformMemberCurrentStorageFailuresAndRestart",
+          "result": "pass",
+          "reported_seconds": 11.13
+        },
+        {
+          "name": "TestPlatformMemberCLISelectedGroupAndSeparateTool",
+          "result": "pass",
+          "reported_seconds": 16.09
+        },
+        {
+          "name": "TestPlatformMemberPrivateCLIQueriesAndReplacesVerifiedPersonnel",
+          "result": "pass",
+          "reported_seconds": 29.41
+        }
+      ]
+    }
+  },
+  "compile_and_static_checks": {
+    "default_room": "passed: go test -run ^$ ./internal/room",
+    "integration_room": "passed: go test -tags=integration -c ./internal/room",
+    "e2e_room": "passed: go test -tags=e2e -run ^$ ./internal/room",
+    "vet": "passed: go vet ./...",
+    "diff_check": "passed: git diff --check"
+  },
+  "not_run": [
+    "complete core",
+    "complete integration",
+    "repository-wide race",
+    "live model or platform acceptance",
+    "browser execution"
+  ],
+  "scope_sha256": {
+    "internal/room/platform_connect_gitlab_setup_test.go": "b850c26ebd65a58d8890a9043a120607e4ccbf7b9ee63f90ded4c3e8c0ad58b5",
+    "internal/room/platform_connect_gitlab_test.go": "18ee94cd9f6aa510b6a49a63e15d641faf5c8bc473807c5e4d3e07cfea987195",
+    "internal/room/platform_connect_integration_test.go": "d315916bf888816fdeda016984421852fc55f86706323f3046243c7c46f3a4cc",
+    "internal/room/platform_connect_interaction_test.go": "b5e6f619a79cfe1c952c449d43260595e460ad6f35210efaa47e5abb4087b489",
+    "internal/room/platform_connect_model_test.go": "557d78e6e372e47dd46b13f3b75bdefa379f40451859f330c8f25501a9d0cebc",
+    "internal/room/platform_connect_notifications_test.go": "5d89392c9ce0c9efa341ee18638c541888aaf2545001a256006e9a9622352b27",
+    "internal/room/platform_connect_test.go": "2d6fd1414a3eebc2f06193c12993642c17e31342fc7c1467f4da57582fb7745e",
+    "internal/room/platform_connection_rules_test.go": "fa21ad4f6653b5c7e9599088cfcc69cdc02e4202688402cd6355496ec8c08d4f",
+    "internal/room/platform_member_current_test.go": "fca51cb96a515fbcd5dc64970996e455574529b0190355b6d371d5db30fe416c",
+    "internal/room/platform_member_gitlab_test.go": "5ddc0b67dbf5e432c7d661c306ed1dd1f4b734c7f30f6675af28a14dcb00d377",
+    "internal/room/platform_member_integration_test.go": "b43a65b5ca2e5edd944acf6002ba0ca2986a7753f9310540f0fedadcf58303c6",
+    "internal/room/platform_member_lark_integration_test.go": "d469187147acb27069f5e8eb1a4bee0ef60e1d10075e1d882c60d43f261d9b26",
+    "internal/room/platform_member_lark_test.go": "5cad5bba4be0e13e3fc8cf18ea1192a3bc7c4196983af515d7a8bc7e08f6d487",
+    "internal/room/platform_member_notification_toggle_test.go": "ac85e89d69c4b6ad47f688513d3b6c6fe724742950acc5446ece392135fe9176",
+    "internal/room/platform_member_private_integration_test.go": "bdb5b6191bf6b5f2b08c4fad6bc6864c259b24e01e47d91329e34c3b4742eb48",
+    "internal/room/platform_member_test.go": "d140d7aed2149b97699fc2d66a21ec0614fef5418ac92c991df1995dd486a6e7",
+    "internal/room/platform_member_tool_toggle_test.go": "af9eecb38037704a6324981b3897cbee4aff1760be2a294b80aeeb06302ef5d6",
+    "internal/room/platform_selection_gitlab_test.go": "90bcee1a8f019c87843fc71c5dfdd2d53c5684ae9233d12b0045d2079b002a9e",
+    "internal/room/platform_selection_integration_test.go": "13897dc6f7c5e6ae36cab432d625920e120202c2a5ea98c1899bac5cfd0c00fc",
+    "internal/room/platform_selection_test.go": "65a43f8305e308bd5d72d4db16bc82c5e54b2781edff797ba98b7d4032dc377f",
+    "internal/room/tools_configuration_decisions_test.go": "2b136e2312757ad292254d4fa4de5f915b29ebda7cf8bfcf63c8ef0d22d5e7cc",
+    "internal/room/ui_update_sources_test.go": "efe0ea36a1d15b4e77c87ead83cf5d8008a3037d0ac3fd14fd2e762835bdefcf",
+    "internal/room/input_stream_event_delivery_test.go": "1906f4ecb39ffa27c1ac41597252fd542e8299c808a5d58318a7470990d265b6"
+  },
+  "changed_test_sha256": {
+    "internal/room/platform_connect_test.go": "2d6fd1414a3eebc2f06193c12993642c17e31342fc7c1467f4da57582fb7745e",
+    "internal/room/platform_connection_rules_test.go": "fa21ad4f6653b5c7e9599088cfcc69cdc02e4202688402cd6355496ec8c08d4f",
+    "internal/room/platform_member_gitlab_test.go": "5ddc0b67dbf5e432c7d661c306ed1dd1f4b734c7f30f6675af28a14dcb00d377",
+    "internal/room/platform_member_lark_test.go": "5cad5bba4be0e13e3fc8cf18ea1192a3bc7c4196983af515d7a8bc7e08f6d487",
+    "internal/room/platform_member_notification_toggle_test.go": "ac85e89d69c4b6ad47f688513d3b6c6fe724742950acc5446ece392135fe9176",
+    "internal/room/platform_member_test.go": "d140d7aed2149b97699fc2d66a21ec0614fef5418ac92c991df1995dd486a6e7",
+    "internal/room/platform_selection_gitlab_browser_test.go": "270354b54c98c9256ebdcd99092ce7f1f97400b38ba7e81cab44a1068a1b937e",
+    "internal/room/platform_selection_gitlab_test.go": "90bcee1a8f019c87843fc71c5dfdd2d53c5684ae9233d12b0045d2079b002a9e",
+    "internal/room/platform_selection_integration_test.go": "13897dc6f7c5e6ae36cab432d625920e120202c2a5ea98c1899bac5cfd0c00fc"
+  },
+  "overlay_original_sha256": {
+    "platform_connect_test.go": "852d54c5538cdbe59f978a84b4d2bfe8472e9213c4e11ee9209047745554b8a9",
+    "platform_connection_rules_test.go": "3599acaeca915d0200f5c3f90e69fab719fa48e2710b6f6cd1880c7018238701",
+    "platform_member_gitlab_test.go": "3ca0fb8d82b4a0cc0fc49ccabe6df206ff6afd5d8eeeb1192b7b604b6a5e6e17",
+    "platform_member_lark_test.go": "82727c0c439aa5a11f2e031ea67caf9f4b7cf92519cc4d5fd532662090963915",
+    "platform_member_notification_toggle_test.go": "94aaad48095c375d5afedc29e1f06a80f421d912a285b5ffedd10098ccaae837",
+    "platform_member_test.go": "82282fdfb4a23a94e1f2b201cd576bbbb7cbb2b737a02fc9421bca7fe47bc332",
+    "platform_selection_gitlab_browser_test.go": "9f418509848b6077f81c606f748fa7ea2e84296b672235aa686dc5574ccbd997",
+    "platform_selection_gitlab_test.go": "c15f14f958dc5b1c89f534fa8bbded2746e8426b4a5ca66e662e7dc18d4da168"
+  }
+}

@@ -21,7 +21,7 @@ func memberPatchIDs(ids ...string) *[]string {
 }
 
 func TestPlatformMemberLarkRangeAndConditionChanges(t *testing.T) {
-	m, _, _, req := connectFixture(t)
+	req := memberConfigurationRequest()
 	base := lark.Config{
 		Enabled: true, PlatformID: "connection", Target: platformMemberTarget(MemberIdentity{RoomIdentity: req.RoomIdentity, AgentID: req.Caller.ID, MembershipID: req.Caller.MembershipID}),
 		Private:         lark.PrivateConfig{Enabled: true, Scope: "specified", ChatIDs: []string{"oc_private"}},
@@ -70,7 +70,7 @@ func TestPlatformMemberLarkRangeAndConditionChanges(t *testing.T) {
 			tc.want(&want)
 			input := tc.input
 			input.PlatformID = initial.PlatformID
-			got, err := memberNotificationConfig(m, platformMemberView{Config: &initial}, input)
+			got, err := memberNotificationConfig(nil, platformMemberView{Config: &initial}, input)
 			if err != nil || !reflect.DeepEqual(got, want) {
 				t.Fatalf("got %#v, err %v; want %#v", got, err, want)
 			}
@@ -83,7 +83,7 @@ func TestPlatformMemberLarkRangeAndConditionChanges(t *testing.T) {
 }
 
 func TestPlatformMemberLarkConflictingIntent(t *testing.T) {
-	m, _, _, req := connectFixture(t)
+	req := memberConfigurationRequest()
 	base := lark.Config{Enabled: false, PlatformID: "connection", Target: platformMemberTarget(MemberIdentity{RoomIdentity: req.RoomIdentity, AgentID: req.Caller.ID, MembershipID: req.Caller.MembershipID}), Private: lark.PrivateConfig{Enabled: true, Scope: "specified", ChatIDs: []string{"oc_private"}}, Groups: lark.GroupConfig{Enabled: true, Scope: "all", ChatIDs: []string{"oc_group"}, MessageMode: "mentions", AtMe: true}, IntervalSeconds: 10}
 	for _, in := range []platformMemberInput{
 		{RemoveChatIDs: []string{"oc_group"}},
@@ -94,13 +94,13 @@ func TestPlatformMemberLarkConflictingIntent(t *testing.T) {
 		{Groups: &platformMemberGroupPatch{Scope: "specified", Enabled: memberPatchBool(true), ChatIDs: memberPatchIDs()}},
 		{Private: &platformMemberPrivatePatch{Enabled: memberPatchBool(true), ChatIDs: memberPatchIDs()}},
 	} {
-		if _, err := memberNotificationConfig(m, platformMemberView{Config: &base}, in); err == nil {
+		if _, err := memberNotificationConfig(nil, platformMemberView{Config: &base}, in); err == nil {
 			t.Fatalf("accepted ambiguous or contradictory intent: %#v", in)
 		}
 	}
 	allPrivate := base
 	allPrivate.Private.Scope = "all"
-	if _, err := memberNotificationConfig(m, platformMemberView{Config: &allPrivate}, platformMemberInput{Private: &platformMemberPrivatePatch{Scope: "specified"}}); err == nil {
+	if _, err := memberNotificationConfig(nil, platformMemberView{Config: &allPrivate}, platformMemberInput{Private: &platformMemberPrivatePatch{Scope: "specified"}}); err == nil {
 		t.Fatal("switched all private to specified without a complete list")
 	}
 	empty := base
@@ -110,7 +110,7 @@ func TestPlatformMemberLarkConflictingIntent(t *testing.T) {
 		{Private: &platformMemberPrivatePatch{Enabled: memberPatchBool(true)}},
 		{Enabled: memberPatchBool(true)},
 	} {
-		if _, err := memberNotificationConfig(m, platformMemberView{Config: &empty}, in); err == nil {
+		if _, err := memberNotificationConfig(nil, platformMemberView{Config: &empty}, in); err == nil {
 			t.Fatal("enabled an empty specified range")
 		}
 	}
@@ -164,8 +164,8 @@ func TestPlatformMemberLarkInputAndEmptyListPersistence(t *testing.T) {
 }
 
 func TestPlatformMemberLarkCLIRejectsAmbiguousAndUnsupportedFields(t *testing.T) {
-	m, svc, member, req := memberToolFixture(t)
-	client, endpoint := toolPipeServer(t, m)
+	m, svc, member, req := memberInputRejectionFixture(t)
+	client, endpoint := memberRequestRejectionServer(t, m)
 	env := cliToolEnv(endpoint, svc, member)
 	base := []string{"member", "notifications", "--platform-id", req.Input.PlatformID, "--platform-version", strconv.FormatUint(req.Input.PlatformVersion, 10), "--notification-version", "0", "--operation-id", req.OperationID, "--source-seq", strconv.FormatUint(req.SourceSeq, 10)}
 	for _, flags := range [][]string{
@@ -258,8 +258,8 @@ func TestPlatformMemberLarkAbsentDisableDoesNotCreateSubscription(t *testing.T) 
 }
 
 func TestPlatformMemberChatTypeBoundary(t *testing.T) {
-	m, svc, member, req := memberToolFixture(t)
-	client, endpoint := toolPipeServer(t, m)
+	m, svc, member, req := memberInputRejectionFixture(t)
+	client, endpoint := memberRequestRejectionServer(t, m)
 	env := cliToolEnv(endpoint, svc, member)
 	base := []string{"--platform-id", req.Input.PlatformID, "--platform-version", strconv.FormatUint(req.Input.PlatformVersion, 10)}
 	for _, args := range [][]string{

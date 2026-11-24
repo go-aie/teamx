@@ -21,6 +21,7 @@ import (
 )
 
 func TestWorkspaceApplyPreparationFailureAndExplicitRetry(t *testing.T) {
+	parallelFixtureTest(t)
 	f := newWorkspaceFixture(t)
 	f.failClone = true
 	m := activationTestManager(t)
@@ -66,6 +67,7 @@ func TestWorkspaceApplyPreparationFailureAndExplicitRetry(t *testing.T) {
 }
 
 func TestWorkspaceApplyRevisesSettledPreparationFailure(t *testing.T) {
+	parallelFixtureTest(t)
 	for _, repository := range []bool{false, true} {
 		t.Run(map[bool]string{false: "plain", true: "repository"}[repository], func(t *testing.T) {
 			f := newWorkspaceFixture(t)
@@ -182,6 +184,7 @@ func TestWorkspaceApplyRevisesSettledPreparationFailure(t *testing.T) {
 }
 
 func TestWorkspaceApplySupplementBindingPreservesCheckout(t *testing.T) {
+	parallelFixtureTest(t)
 	f := newWorkspaceFixture(t)
 	m := activationTestManager(t)
 	m.factory = controlledActivationFactory(nil, nil)
@@ -197,7 +200,7 @@ func TestWorkspaceApplySupplementBindingPreservesCheckout(t *testing.T) {
 	}
 	saved, _ := readManagedRoom(t, m, room)
 	dir := filepath.Join(m.roomDir(room.RoomID), saved.Members[0].Workspace)
-	workspaceGit(t, dir, "checkout", "-b", "my-work")
+	f.git(t, dir, "checkout", "-b", "my-work")
 	os.WriteFile(filepath.Join(dir, "README"), []byte("local edits"), 0600)
 	f.calls = nil
 	next := workspaceRequest(t, m, room, cloneWorkspaceOperation(op).Target)
@@ -211,7 +214,7 @@ func TestWorkspaceApplySupplementBindingPreservesCheckout(t *testing.T) {
 	if op.Status != "completed" {
 		t.Fatal(op)
 	}
-	if workspaceGit(t, dir, "branch", "--show-current") != "my-work" {
+	if f.git(t, dir, "branch", "--show-current") != "my-work" {
 		t.Fatal("checkout changed")
 	}
 	if data, _ := os.ReadFile(filepath.Join(dir, "README")); string(data) != "local edits" {
@@ -225,6 +228,7 @@ func TestWorkspaceApplySupplementBindingPreservesCheckout(t *testing.T) {
 }
 
 func TestWorkspaceRetryRequiresPreparationProcessSettlement(t *testing.T) {
+	parallelFixtureTest(t)
 	for _, phase := range []string{"starting", "running"} {
 		t.Run(phase, func(t *testing.T) {
 			f := newWorkspaceFixture(t)

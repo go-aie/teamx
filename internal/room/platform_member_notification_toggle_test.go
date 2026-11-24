@@ -264,8 +264,10 @@ func TestGitLabMemberNotificationToggleRequiresSourcesAndSettledApplication(t *t
 }
 
 func TestGitLabMemberCustomizationAndTotalSwitch(t *testing.T) {
-	m, _, req := memberNotificationToggleFixture(t, "gitlab")
-	v := gitlabMemberGet(t, m, req)
+	req := memberConfigurationRequest()
+	m := &roomManager{}
+	v := platformMemberView{MemberIdentity: req.member(), PlatformID: req.Input.PlatformID, GitLab: &gitlabNotificationView{Config: gitlab.DefaultNotificationConfig(req.Input.PlatformID)}}
+	v.GitLab.Config.Target = platformMemberTarget(req.member())
 	for _, enabled := range []bool{true, false} {
 		in := platformMemberInput{PlatformID: req.Input.PlatformID, PlatformVersion: req.Input.PlatformVersion, Enabled: boolPointer(enabled), EventsEnabled: boolPointer(true), ProjectID: 7, ProjectPath: "group/project"}
 		if !validPlatformMemberInput("notifications", in) || !validPlatformMemberProviderInput("gitlab", "notifications", in) || validPlatformMemberProviderInput("lark", "notifications", in) {

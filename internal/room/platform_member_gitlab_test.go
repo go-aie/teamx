@@ -122,13 +122,10 @@ func TestGitLabMemberPersonalTodosWithoutToolsOrWorkspace(t *testing.T) {
 func boolPointer(v bool) *bool { return &v }
 
 func TestGitLabMemberPatchPreservesOtherSourcesFiltersAndStart(t *testing.T) {
-	m, _, _, req := gitlabMemberFixture(t)
-	m.mu.Lock()
-	n, err := m.gitlabNotificationViewForTargetLocked(req.RoomIdentity, req.Input.PlatformID, platformMemberTarget(req.member()))
-	m.mu.Unlock()
-	if err != nil {
-		t.Fatal(err)
-	}
+	req := memberConfigurationRequest()
+	m := &roomManager{}
+	n := gitlabNotificationView{Config: gitlab.DefaultNotificationConfig(req.Input.PlatformID)}
+	n.Config.Target = platformMemberTarget(req.member())
 	n.Version = 7
 	n.Config.Enabled, n.Config.Todos.Enabled = true, false
 	n.Config.Events.Enabled, n.Config.Events.Project = true, "group/project"
@@ -137,9 +134,7 @@ func TestGitLabMemberPatchPreservesOtherSourcesFiltersAndStart(t *testing.T) {
 	n.Config.BackfillStart, n.Config.IntervalSeconds = time.Unix(1000, 0).UTC(), 61
 	v := platformMemberView{MemberIdentity: req.member(), PlatformID: req.Input.PlatformID, GitLab: &n}
 	before, _ := json.Marshal(n.Config)
-	m.mu.Lock()
 	cfg, err := m.gitlabMemberNotificationConfigLocked(v, req)
-	m.mu.Unlock()
 	if err != nil || !cfg.Todos.Enabled || !reflect.DeepEqual(cfg.Events, n.Config.Events) || !reflect.DeepEqual(cfg.Todos.Filter, n.Config.Todos.Filter) || cfg.BackfillStart != n.Config.BackfillStart || cfg.IntervalSeconds != 61 {
 		t.Fatal("patch replaced existing settings", cfg, err)
 	}
@@ -148,17 +143,13 @@ func TestGitLabMemberPatchPreservesOtherSourcesFiltersAndStart(t *testing.T) {
 		t.Fatal("patch mutated input")
 	}
 	n.Config.Enabled = false
-	m.mu.Lock()
 	_, err = m.gitlabMemberNotificationConfigLocked(v, req)
-	m.mu.Unlock()
 	if !errors.Is(err, ErrConflict) {
 		t.Fatal("enabled dormant project activity", err)
 	}
 	// Disabling todos leaves the global switch and project activity untouched.
 	req.Input.TodosEnabled = boolPointer(false)
-	m.mu.Lock()
 	cfg, err = m.gitlabMemberNotificationConfigLocked(v, req)
-	m.mu.Unlock()
 	if err != nil || cfg.Enabled || cfg.Todos.Enabled || !cfg.Events.Enabled {
 		t.Fatal(cfg, err)
 	}

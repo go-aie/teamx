@@ -1,0 +1,4562 @@
+{
+  "date": "2026-11-24",
+  "phase": "F3",
+  "scope": "Lark self-send ledger recovery; retain independent text and image process matrices",
+  "environment": {
+    "go": "go1.27.1",
+    "os": "darwin",
+    "arch": "arm64",
+    "head": "479e79f35157cf15b8f60c793a7840b59d07647c",
+    "working_tree": "Existing unrelated modifications preserved; no commit created."
+  },
+  "selection": {
+    "comparison": {
+      "files": [
+        "platform_lark_self_send_recovery_integration_test.go",
+        "platform_lark_self_send_integration_test.go",
+        "actions_test.go",
+        "action_dispatch_test.go",
+        "actions_recovery_integration_test.go",
+        "platform_lark_image_recovery_integration_test.go",
+        "platform_gitlab_image_recovery_integration_test.go"
+      ],
+      "tests": [
+        "TestLarkSelfSendIndependentProcessRecovery",
+        "TestLarkSelfSendLedgerFailures",
+        "TestLarkSelfSendBindingViewExpires",
+        "TestLarkSelfSendConcurrentRoomsAndMembers",
+        "TestLarkSelfSendRevocationRaces",
+        "TestLarkSelfSendManagedCapability",
+        "TestActionsLedgerFailureNeverReplays",
+        "TestActionsLegacyReceiptAndSchemaPreflight",
+        "TestActionsAdapterInputAndMessageTargetAreGeneric",
+        "TestActionDispatchFrozenContentAndExactRecord",
+        "TestActionInputCanonicalNestedContent",
+        "TestActionLedgerReadableDuringSessionRecovery",
+        "TestLarkImagesIndependentProcessRecovery",
+        "TestGitlabImagesIndependentProcessRecovery"
+      ]
+    },
+    "room_verification": {
+      "files": [
+        "platform_lark_self_send_recovery_integration_test.go",
+        "platform_lark_self_send_integration_test.go",
+        "actions_test.go",
+        "action_dispatch_test.go",
+        "actions_recovery_integration_test.go",
+        "platform_lark_image_recovery_integration_test.go",
+        "platform_gitlab_image_recovery_integration_test.go",
+        "platform_gitlab_image_actions_integration_test.go"
+      ],
+      "tests": [
+        "TestLarkSelfSendIndependentProcessRecovery",
+        "TestLarkSelfSendLedgerFailures",
+        "TestLarkSelfSendBindingViewExpires",
+        "TestLarkSelfSendConcurrentRoomsAndMembers",
+        "TestLarkSelfSendRevocationRaces",
+        "TestLarkSelfSendManagedCapability",
+        "TestActionsLedgerFailureNeverReplays",
+        "TestActionsLegacyReceiptAndSchemaPreflight",
+        "TestActionsAdapterInputAndMessageTargetAreGeneric",
+        "TestActionDispatchFrozenContentAndExactRecord",
+        "TestActionInputCanonicalNestedContent",
+        "TestActionLedgerReadableDuringSessionRecovery",
+        "TestLarkImagesIndependentProcessRecovery",
+        "TestGitlabImagesIndependentProcessRecovery",
+        "TestGitlabImagesManagedCLI",
+        "TestGitlabImagesPreflightAndPolicy",
+        "TestGitlabImagesFinalDispatchAndDeadline",
+        "TestGitlabImageReceiptPolicyPreservation",
+        "TestGitlabImagesHelpAndDiagnostics",
+        "TestGitlabImageAgentContractEvidence",
+        "TestGitlabImagesRevocationStopsRemainingRequests",
+        "TestGitlabImagesPolicyChangeBeforeAttempt",
+        "TestGitlabImagesSelectionsCLI",
+        "TestGitlabImagesExistingMatterContext"
+      ]
+    },
+    "lark_provider_verification": {
+      "files": [
+        "self_send_test.go",
+        "send_test.go",
+        "actions_test.go"
+      ],
+      "tests": [
+        "TestSelfSendExactIdentityAndReceipt",
+        "TestSelfSendAccountCapacity",
+        "TestAcceptedActionsSeparateGroupSendsFromPendingUserSends",
+        "TestSendAdapterAndResolution",
+        "TestSendRejectsBeforeDispatch",
+        "TestSendUncertainReceiptNeverRetries",
+        "TestReplyAdapterExactTargetAndReceipt",
+        "TestReplyAdapterRejectsBeforeDispatch",
+        "TestReplyAdapterUnknownNeverGuessesNotApplied",
+        "TestReplyTargetResolutionKeepsRootAndExactMessage"
+      ]
+    },
+    "method": "Automatically enumerated top-level tests from the listed current files; subprocess helper entry points excluded."
+  },
+  "source_snapshot_at_comparison_and_full_race": {
+    "internal/platform/lark/actions_test.go": "21e59aa6243475f6ac821427f43ce3c3de37310c7f077badf36db8017c450464",
+    "internal/platform/lark/self_send_test.go": "62659b82dd93ddc090710dfc65d65e784f0d1cd233503094439b42170d713c04",
+    "internal/platform/lark/send_test.go": "ba4033684857aa4f0987f2e92ca1044de6ece5a364b0c145862bd1767f517264",
+    "internal/room/action_dispatch_test.go": "49e682c1a9ab32d95114e6a9842b97c10d30065cea86b9a8f7b055d1705a7677",
+    "internal/room/actions_recovery_integration_test.go": "2d792fa59f12f4f5be470a2b58b8bba3261b70378dde8554018357c25f7acc48",
+    "internal/room/actions_store.go": "a7372935142a050e53d6001a000d868ca6bee2056b85808a86a7cc29a8e5861f",
+    "internal/room/actions_test.go": "9d7b7e7466b06d02d893bb4b6bfd35efd43ccaca1adc5fca2555416b75ab1908",
+    "internal/room/followups_actions_service.go": "f715f6f72078f60bb82765bb14e3ca364b1a9869387d650a83cf230daa0302ba",
+    "internal/room/platform_gitlab_image_actions_integration_test.go": "568b91a94f2a9d8361f0406b473538f545d64d893741fb2d542d9a692027f9ac",
+    "internal/room/platform_gitlab_image_recovery_integration_test.go": "75ef9dc642cf0b25861b627666e172f6b6a3ff2f005d2952f78dee5a53a8ea47",
+    "internal/room/platform_lark_image_recovery_integration_test.go": "945c021cfc80a90f599ca37a646e32b5e7771d0133792ee22f182d4db72d40c9",
+    "internal/room/platform_lark_self_send_integration_test.go": "01b7ef1a16c4a2cb10e044c9167d9e8e1e5d4b4345f8d54772059f1daeea732f",
+    "internal/room/platform_lark_self_send_recovery_integration_test.go": "7951fd970b3a7ea7dcff34cb4eab69bf374180cc65049b5a2ca7362d6ae5c5a0",
+    "internal/room/platform_lark_self_send_recovery_test.go": "b37ef71a599f8a63c7d7306be0f35e417b222b7bc2e0064c852272915240b2b7"
+  },
+  "sources": {
+    "internal/platform/lark/actions_test.go": "21e59aa6243475f6ac821427f43ce3c3de37310c7f077badf36db8017c450464",
+    "internal/platform/lark/self_send_test.go": "62659b82dd93ddc090710dfc65d65e784f0d1cd233503094439b42170d713c04",
+    "internal/platform/lark/send_test.go": "ba4033684857aa4f0987f2e92ca1044de6ece5a364b0c145862bd1767f517264",
+    "internal/room/action_dispatch_test.go": "49e682c1a9ab32d95114e6a9842b97c10d30065cea86b9a8f7b055d1705a7677",
+    "internal/room/actions_recovery_integration_test.go": "2d792fa59f12f4f5be470a2b58b8bba3261b70378dde8554018357c25f7acc48",
+    "internal/room/actions_store.go": "a7372935142a050e53d6001a000d868ca6bee2056b85808a86a7cc29a8e5861f",
+    "internal/room/actions_test.go": "9d7b7e7466b06d02d893bb4b6bfd35efd43ccaca1adc5fca2555416b75ab1908",
+    "internal/room/followups_actions_service.go": "f715f6f72078f60bb82765bb14e3ca364b1a9869387d650a83cf230daa0302ba",
+    "internal/room/platform_gitlab_image_actions_integration_test.go": "7d203930abc4e3ff792801773f791b4a0459edc1177b6554be93c82fe03f8a86",
+    "internal/room/platform_gitlab_image_recovery_integration_test.go": "75ef9dc642cf0b25861b627666e172f6b6a3ff2f005d2952f78dee5a53a8ea47",
+    "internal/room/platform_lark_image_recovery_integration_test.go": "945c021cfc80a90f599ca37a646e32b5e7771d0133792ee22f182d4db72d40c9",
+    "internal/room/platform_lark_self_send_integration_test.go": "01b7ef1a16c4a2cb10e044c9167d9e8e1e5d4b4345f8d54772059f1daeea732f",
+    "internal/room/platform_lark_self_send_recovery_integration_test.go": "7951fd970b3a7ea7dcff34cb4eab69bf374180cc65049b5a2ca7362d6ae5c5a0",
+    "internal/room/platform_lark_self_send_recovery_test.go": "b37ef71a599f8a63c7d7306be0f35e417b222b7bc2e0064c852272915240b2b7"
+  },
+  "final_source_note": "After the full race, vet required changing only an existing two-field ImageRef literal to named fields with identical values; bad-id race, integration vet and e2e compilation reran on that final source.",
+  "comparison_baseline_recovery_source_sha256": "e5bed95d06340401d2a4bd0fc04190b7af4837de9b6f6eec86d3745a91d4742f",
+  "comparison_basis": "Both binaries include fixture subject repairs and original-record/remote-message assertions. Baseline uses four recovery OS processes; after uses fresh real manager/service/Store components and asserts the injected fault was reached. Room test binary compilation excluded from execution comparison; shutdown and TestMain cleanup included.",
+  "original_health_check": {
+    "wall_seconds": 131.62905108276755,
+    "exit_code": 1,
+    "args": [
+      "go",
+      "tool",
+      "test2json",
+      "-t",
+      "-p",
+      "github.com/go-aie/teamx/internal/room",
+      "/tmp/teamx-recovery-matrix/before.test",
+      "-test.run=^(TestLarkSelfSendIndependentProcessRecovery|TestLarkSelfSendLedgerFailures|TestLarkSelfSendBindingViewExpires|TestLarkSelfSendConcurrentRoomsAndMembers|TestLarkSelfSendRevocationRaces|TestLarkSelfSendManagedCapability|TestActionsLedgerFailureNeverReplays|TestActionsLegacyReceiptAndSchemaPreflight|TestActionsAdapterInputAndMessageTargetAreGeneric|TestActionDispatchFrozenContentAndExactRecord|TestActionInputCanonicalNestedContent|TestActionLedgerReadableDuringSessionRecovery|TestLarkImagesIndependentProcessRecovery|TestGitlabImagesIndependentProcessRecovery)$",
+      "-test.count=1",
+      "-test.timeout=6m"
+    ],
+    "comparable": false,
+    "reason": "GitLab image recovery failed with HTTP 403 identity during attachment setup; no speed claim uses this failed run.",
+    "failing_outputs": [
+      "platform_gitlab_image_recovery_integration_test.go:82: 403 {\"error\":\"snapshot identity mismatch\",\"code\":\"identity\",\"message\":\"snapshot identity mismatch\",\"hint\":\"Check the current Room/member binding and caller permission; do not reuse another membership.\"}",
+      "platform_gitlab_image_recovery_integration_test.go:82: 403 {\"error\":\"snapshot identity mismatch\",\"code\":\"identity\",\"message\":\"snapshot identity mismatch\",\"hint\":\"Check the current Room/member binding and caller permission; do not reuse another membership.\"}",
+      "platform_gitlab_image_recovery_integration_test.go:82: 403 {\"error\":\"snapshot identity mismatch\",\"code\":\"identity\",\"message\":\"snapshot identity mismatch\",\"hint\":\"Check the current Room/member binding and caller permission; do not reuse another membership.\"}",
+      "platform_gitlab_image_recovery_integration_test.go:82: 403 {\"error\":\"snapshot identity mismatch\",\"code\":\"identity\",\"message\":\"snapshot identity mismatch\",\"hint\":\"Check the current Room/member binding and caller permission; do not reuse another membership.\"}",
+      "platform_gitlab_image_recovery_integration_test.go:82: 403 {\"error\":\"snapshot identity mismatch\",\"code\":\"identity\",\"message\":\"snapshot identity mismatch\",\"hint\":\"Check the current Room/member binding and caller permission; do not reuse another membership.\"}",
+      "platform_gitlab_image_recovery_integration_test.go:82: 403 {\"error\":\"snapshot identity mismatch\",\"code\":\"identity\",\"message\":\"snapshot identity mismatch\",\"hint\":\"Check the current Room/member binding and caller permission; do not reuse another membership.\"}",
+      "platform_gitlab_image_recovery_integration_test.go:82: 403 {\"error\":\"snapshot identity mismatch\",\"code\":\"identity\",\"message\":\"snapshot identity mismatch\",\"hint\":\"Check the current Room/member binding and caller permission; do not reuse another membership.\"}",
+      "platform_gitlab_image_recovery_integration_test.go:82: 403 {\"error\":\"snapshot identity mismatch\",\"code\":\"identity\",\"message\":\"snapshot identity mismatch\",\"hint\":\"Check the current Room/member binding and caller permission; do not reuse another membership.\"}"
+    ]
+  },
+  "comparisons": {
+    "complete_before": {
+      "wall_seconds": 130.5726999999024,
+      "exit_code": 0,
+      "args": [
+        "go",
+        "tool",
+        "test2json",
+        "-t",
+        "-p",
+        "github.com/go-aie/teamx/internal/room",
+        "/tmp/teamx-recovery-matrix/healthy-before.test",
+        "-test.v=test2json",
+        "-test.run=^(TestLarkSelfSendIndependentProcessRecovery|TestLarkSelfSendLedgerFailures|TestLarkSelfSendBindingViewExpires|TestLarkSelfSendConcurrentRoomsAndMembers|TestLarkSelfSendRevocationRaces|TestLarkSelfSendManagedCapability|TestActionsLedgerFailureNeverReplays|TestActionsLegacyReceiptAndSchemaPreflight|TestActionsAdapterInputAndMessageTargetAreGeneric|TestActionDispatchFrozenContentAndExactRecord|TestActionInputCanonicalNestedContent|TestActionLedgerReadableDuringSessionRecovery|TestLarkImagesIndependentProcessRecovery|TestGitlabImagesIndependentProcessRecovery)$",
+        "-test.count=1",
+        "-test.timeout=6m"
+      ],
+      "counts": {
+        "pass": 58
+      },
+      "top_level": [
+        {
+          "Time": "2026-11-24T16:00:05.83453+08:00",
+          "Action": "pass",
+          "Package": "github.com/go-aie/teamx/internal/room",
+          "Test": "TestActionDispatchFrozenContentAndExactRecord",
+          "Elapsed": 4.92
+        },
+        {
+          "Time": "2026-11-24T16:00:05.834631+08:00",
+          "Action": "pass",
+          "Package": "github.com/go-aie/teamx/internal/room",
+          "Test": "TestActionInputCanonicalNestedContent",
+          "Elapsed": 0
+        },
+        {
+          "Time": "2026-11-24T16:00:16.000752+08:00",
+          "Action": "pass",
+          "Package": "github.com/go-aie/teamx/internal/room",
+          "Test": "TestActionLedgerReadableDuringSessionRecovery",
+          "Elapsed": 0
+        },
+        {
+          "Time": "2026-11-24T16:00:18.552314+08:00",
+          "Action": "pass",
+          "Package": "github.com/go-aie/teamx/internal/room",
+          "Test": "TestActionsLedgerFailureNeverReplays",
+          "Elapsed": 2.55
+        },
+        {
+          "Time": "2026-11-24T16:00:19.300815+08:00",
+          "Action": "pass",
+          "Package": "github.com/go-aie/teamx/internal/room",
+          "Test": "TestActionsLegacyReceiptAndSchemaPreflight",
+          "Elapsed": 0.75
+        },
+        {
+          "Time": "2026-11-24T16:00:19.705468+08:00",
+          "Action": "pass",
+          "Package": "github.com/go-aie/teamx/internal/room",
+          "Test": "TestActionsAdapterInputAndMessageTargetAreGeneric",
+          "Elapsed": 0.4
+        },
+        {
+          "Time": "2026-11-24T16:00:36.73516+08:00",
+          "Action": "pass",
+          "Package": "github.com/go-aie/teamx/internal/room",
+          "Test": "TestGitlabImagesIndependentProcessRecovery",
+          "Elapsed": 17.03
+        },
+        {
+          "Time": "2026-11-24T16:01:20.550297+08:00",
+          "Action": "pass",
+          "Package": "github.com/go-aie/teamx/internal/room",
+          "Test": "TestLarkImagesIndependentProcessRecovery",
+          "Elapsed": 0
+        },
+        {
+          "Time": "2026-11-24T16:01:37.00655+08:00",
+          "Action": "pass",
+          "Package": "github.com/go-aie/teamx/internal/room",
+          "Test": "TestLarkSelfSendRevocationRaces",
+          "Elapsed": 0
+        },
+        {
+          "Time": "2026-11-24T16:01:49.094465+08:00",
+          "Action": "pass",
+          "Package": "github.com/go-aie/teamx/internal/room",
+          "Test": "TestLarkSelfSendBindingViewExpires",
+          "Elapsed": 7.51
+        },
+        {
+          "Time": "2026-11-24T16:01:56.418629+08:00",
+          "Action": "pass",
+          "Package": "github.com/go-aie/teamx/internal/room",
+          "Test": "TestLarkSelfSendManagedCapability",
+          "Elapsed": 16.35
+        },
+        {
+          "Time": "2026-11-24T16:02:09.678771+08:00",
+          "Action": "pass",
+          "Package": "github.com/go-aie/teamx/internal/room",
+          "Test": "TestLarkSelfSendLedgerFailures",
+          "Elapsed": 26.54
+        },
+        {
+          "Time": "2026-11-24T16:02:10.454568+08:00",
+          "Action": "pass",
+          "Package": "github.com/go-aie/teamx/internal/room",
+          "Test": "TestLarkSelfSendIndependentProcessRecovery",
+          "Elapsed": 32.68
+        },
+        {
+          "Time": "2026-11-24T16:02:10.454623+08:00",
+          "Action": "pass",
+          "Package": "github.com/go-aie/teamx/internal/room",
+          "Test": "TestLarkSelfSendConcurrentRoomsAndMembers",
+          "Elapsed": 33.45
+        }
+      ],
+      "cases": [
+        {
+          "package": "github.com/go-aie/teamx/internal/room",
+          "test": "TestActionDispatchFrozenContentAndExactRecord/unchanged",
+          "status": "pass",
+          "elapsed_seconds": 0.64
+        },
+        {
+          "package": "github.com/go-aie/teamx/internal/room",
+          "test": "TestActionDispatchFrozenContentAndExactRecord/body",
+          "status": "pass",
+          "elapsed_seconds": 0.76
+        },
+        {
+          "package": "github.com/go-aie/teamx/internal/room",
+          "test": "TestActionDispatchFrozenContentAndExactRecord/target",
+          "status": "pass",
+          "elapsed_seconds": 0.74
+        },
+        {
+          "package": "github.com/go-aie/teamx/internal/room",
+          "test": "TestActionDispatchFrozenContentAndExactRecord/key",
+          "status": "pass",
+          "elapsed_seconds": 0.77
+        },
+        {
+          "package": "github.com/go-aie/teamx/internal/room",
+          "test": "TestActionDispatchFrozenContentAndExactRecord/operation",
+          "status": "pass",
+          "elapsed_seconds": 0.71
+        },
+        {
+          "package": "github.com/go-aie/teamx/internal/room",
+          "test": "TestActionDispatchFrozenContentAndExactRecord/digest",
+          "status": "pass",
+          "elapsed_seconds": 0.57
+        },
+        {
+          "package": "github.com/go-aie/teamx/internal/room",
+          "test": "TestActionDispatchFrozenContentAndExactRecord/account",
+          "status": "pass",
+          "elapsed_seconds": 0.73
+        },
+        {
+          "package": "github.com/go-aie/teamx/internal/room",
+          "test": "TestActionDispatchFrozenContentAndExactRecord",
+          "status": "pass",
+          "elapsed_seconds": 4.92
+        },
+        {
+          "package": "github.com/go-aie/teamx/internal/room",
+          "test": "TestActionInputCanonicalNestedContent",
+          "status": "pass",
+          "elapsed_seconds": 0
+        },
+        {
+          "package": "github.com/go-aie/teamx/internal/room",
+          "test": "TestActionLedgerReadableDuringSessionRecovery/failed",
+          "status": "pass",
+          "elapsed_seconds": 9.64
+        },
+        {
+          "package": "github.com/go-aie/teamx/internal/room",
+          "test": "TestActionLedgerReadableDuringSessionRecovery/closing",
+          "status": "pass",
+          "elapsed_seconds": 10.01
+        },
+        {
+          "package": "github.com/go-aie/teamx/internal/room",
+          "test": "TestActionLedgerReadableDuringSessionRecovery/waiting",
+          "status": "pass",
+          "elapsed_seconds": 10.18
+        },
+        {
+          "package": "github.com/go-aie/teamx/internal/room",
+          "test": "TestActionLedgerReadableDuringSessionRecovery",
+          "status": "pass",
+          "elapsed_seconds": 0
+        },
+        {
+          "package": "github.com/go-aie/teamx/internal/room",
+          "test": "TestActionsLedgerFailureNeverReplays/intent",
+          "status": "pass",
+          "elapsed_seconds": 0.65
+        },
+        {
+          "package": "github.com/go-aie/teamx/internal/room",
+          "test": "TestActionsLedgerFailureNeverReplays/attempt",
+          "status": "pass",
+          "elapsed_seconds": 0.66
+        },
+        {
+          "package": "github.com/go-aie/teamx/internal/room",
+          "test": "TestActionsLedgerFailureNeverReplays/result",
+          "status": "pass",
+          "elapsed_seconds": 0.66
+        },
+        {
+          "package": "github.com/go-aie/teamx/internal/room",
+          "test": "TestActionsLedgerFailureNeverReplays/projection",
+          "status": "pass",
+          "elapsed_seconds": 0.58
+        },
+        {
+          "package": "github.com/go-aie/teamx/internal/room",
+          "test": "TestActionsLedgerFailureNeverReplays",
+          "status": "pass",
+          "elapsed_seconds": 2.55
+        },
+        {
+          "package": "github.com/go-aie/teamx/internal/room",
+          "test": "TestActionsLegacyReceiptAndSchemaPreflight",
+          "status": "pass",
+          "elapsed_seconds": 0.75
+        },
+        {
+          "package": "github.com/go-aie/teamx/internal/room",
+          "test": "TestActionsAdapterInputAndMessageTargetAreGeneric",
+          "status": "pass",
+          "elapsed_seconds": 0.4
+        },
+        {
+          "package": "github.com/go-aie/teamx/internal/room",
+          "test": "TestGitlabImagesIndependentProcessRecovery/comment/settled",
+          "status": "pass",
+          "elapsed_seconds": 2.32
+        },
+        {
+          "package": "github.com/go-aie/teamx/internal/room",
+          "test": "TestGitlabImagesIndependentProcessRecovery/comment/during_upload",
+          "status": "pass",
+          "elapsed_seconds": 2.07
+        },
+        {
+          "package": "github.com/go-aie/teamx/internal/room",
+          "test": "TestGitlabImagesIndependentProcessRecovery/comment/after_dispatch",
+          "status": "pass",
+          "elapsed_seconds": 2.12
+        },
+        {
+          "package": "github.com/go-aie/teamx/internal/room",
+          "test": "TestGitlabImagesIndependentProcessRecovery/comment/before_verification",
+          "status": "pass",
+          "elapsed_seconds": 2.09
+        },
+        {
+          "package": "github.com/go-aie/teamx/internal/room",
+          "test": "TestGitlabImagesIndependentProcessRecovery/thread/settled",
+          "status": "pass",
+          "elapsed_seconds": 2.22
+        },
+        {
+          "package": "github.com/go-aie/teamx/internal/room",
+          "test": "TestGitlabImagesIndependentProcessRecovery/thread/during_upload",
+          "status": "pass",
+          "elapsed_seconds": 2.03
+        },
+        {
+          "package": "github.com/go-aie/teamx/internal/room",
+          "test": "TestGitlabImagesIndependentProcessRecovery/thread/after_dispatch",
+          "status": "pass",
+          "elapsed_seconds": 2.15
+        },
+        {
+          "package": "github.com/go-aie/teamx/internal/room",
+          "test": "TestGitlabImagesIndependentProcessRecovery/thread/before_verification",
+          "status": "pass",
+          "elapsed_seconds": 2.03
+        },
+        {
+          "package": "github.com/go-aie/teamx/internal/room",
+          "test": "TestGitlabImagesIndependentProcessRecovery",
+          "status": "pass",
+          "elapsed_seconds": 17.03
+        },
+        {
+          "package": "github.com/go-aie/teamx/internal/room",
+          "test": "TestLarkImagesIndependentProcessRecovery/input-log/group/after_dispatch",
+          "status": "pass",
+          "elapsed_seconds": 13.71
+        },
+        {
+          "package": "github.com/go-aie/teamx/internal/room",
+          "test": "TestLarkImagesIndependentProcessRecovery/input-log/group/before_verification",
+          "status": "pass",
+          "elapsed_seconds": 14.23
+        },
+        {
+          "package": "github.com/go-aie/teamx/internal/room",
+          "test": "TestLarkImagesIndependentProcessRecovery/input-log/group/settled",
+          "status": "pass",
+          "elapsed_seconds": 14.31
+        },
+        {
+          "package": "github.com/go-aie/teamx/internal/room",
+          "test": "TestLarkImagesIndependentProcessRecovery/embedded/self/settled",
+          "status": "pass",
+          "elapsed_seconds": 18.29
+        },
+        {
+          "package": "github.com/go-aie/teamx/internal/room",
+          "test": "TestLarkImagesIndependentProcessRecovery/embedded/group/during_upload",
+          "status": "pass",
+          "elapsed_seconds": 24.54
+        },
+        {
+          "package": "github.com/go-aie/teamx/internal/room",
+          "test": "TestLarkImagesIndependentProcessRecovery/embedded/group/settled",
+          "status": "pass",
+          "elapsed_seconds": 27.33
+        },
+        {
+          "package": "github.com/go-aie/teamx/internal/room",
+          "test": "TestLarkImagesIndependentProcessRecovery/input-log/self/during_upload",
+          "status": "pass",
+          "elapsed_seconds": 31.34
+        },
+        {
+          "package": "github.com/go-aie/teamx/internal/room",
+          "test": "TestLarkImagesIndependentProcessRecovery/embedded/self/before_verification",
+          "status": "pass",
+          "elapsed_seconds": 31.4
+        },
+        {
+          "package": "github.com/go-aie/teamx/internal/room",
+          "test": "TestLarkImagesIndependentProcessRecovery/embedded/self/after_dispatch",
+          "status": "pass",
+          "elapsed_seconds": 40.05
+        },
+        {
+          "package": "github.com/go-aie/teamx/internal/room",
+          "test": "TestLarkImagesIndependentProcessRecovery/input-log/self/settled",
+          "status": "pass",
+          "elapsed_seconds": 43.81
+        },
+        {
+          "package": "github.com/go-aie/teamx/internal/room",
+          "test": "TestLarkImagesIndependentProcessRecovery",
+          "status": "pass",
+          "elapsed_seconds": 0
+        },
+        {
+          "package": "github.com/go-aie/teamx/internal/room",
+          "test": "TestLarkSelfSendRevocationRaces/remove",
+          "status": "pass",
+          "elapsed_seconds": 7.56
+        },
+        {
+          "package": "github.com/go-aie/teamx/internal/room",
+          "test": "TestLarkSelfSendRevocationRaces/disable",
+          "status": "pass",
+          "elapsed_seconds": 10.73
+        },
+        {
+          "package": "github.com/go-aie/teamx/internal/room",
+          "test": "TestLarkSelfSendRevocationRaces/unbind",
+          "status": "pass",
+          "elapsed_seconds": 14.27
+        },
+        {
+          "package": "github.com/go-aie/teamx/internal/room",
+          "test": "TestLarkSelfSendRevocationRaces/rotate",
+          "status": "pass",
+          "elapsed_seconds": 15.48
+        },
+        {
+          "package": "github.com/go-aie/teamx/internal/room",
+          "test": "TestLarkSelfSendRevocationRaces/account",
+          "status": "pass",
+          "elapsed_seconds": 16.45
+        },
+        {
+          "package": "github.com/go-aie/teamx/internal/room",
+          "test": "TestLarkSelfSendRevocationRaces",
+          "status": "pass",
+          "elapsed_seconds": 0
+        },
+        {
+          "package": "github.com/go-aie/teamx/internal/room",
+          "test": "TestLarkSelfSendLedgerFailures/intent",
+          "status": "pass",
+          "elapsed_seconds": 6.26
+        },
+        {
+          "package": "github.com/go-aie/teamx/internal/room",
+          "test": "TestLarkSelfSendBindingViewExpires",
+          "status": "pass",
+          "elapsed_seconds": 7.51
+        },
+        {
+          "package": "github.com/go-aie/teamx/internal/room",
+          "test": "TestLarkSelfSendLedgerFailures/attempt",
+          "status": "pass",
+          "elapsed_seconds": 5.83
+        },
+        {
+          "package": "github.com/go-aie/teamx/internal/room",
+          "test": "TestLarkSelfSendIndependentProcessRecovery/settled",
+          "status": "pass",
+          "elapsed_seconds": 12.35
+        },
+        {
+          "package": "github.com/go-aie/teamx/internal/room",
+          "test": "TestLarkSelfSendManagedCapability",
+          "status": "pass",
+          "elapsed_seconds": 16.35
+        },
+        {
+          "package": "github.com/go-aie/teamx/internal/room",
+          "test": "TestLarkSelfSendLedgerFailures/result",
+          "status": "pass",
+          "elapsed_seconds": 7.32
+        },
+        {
+          "package": "github.com/go-aie/teamx/internal/room",
+          "test": "TestLarkSelfSendIndependentProcessRecovery/before_dispatch",
+          "status": "pass",
+          "elapsed_seconds": 10.31
+        },
+        {
+          "package": "github.com/go-aie/teamx/internal/room",
+          "test": "TestLarkSelfSendLedgerFailures/result_commit_unknown",
+          "status": "pass",
+          "elapsed_seconds": 7.13
+        },
+        {
+          "package": "github.com/go-aie/teamx/internal/room",
+          "test": "TestLarkSelfSendLedgerFailures",
+          "status": "pass",
+          "elapsed_seconds": 26.54
+        },
+        {
+          "package": "github.com/go-aie/teamx/internal/room",
+          "test": "TestLarkSelfSendIndependentProcessRecovery/after_dispatch",
+          "status": "pass",
+          "elapsed_seconds": 10.02
+        },
+        {
+          "package": "github.com/go-aie/teamx/internal/room",
+          "test": "TestLarkSelfSendIndependentProcessRecovery",
+          "status": "pass",
+          "elapsed_seconds": 32.68
+        },
+        {
+          "package": "github.com/go-aie/teamx/internal/room",
+          "test": "TestLarkSelfSendConcurrentRoomsAndMembers",
+          "status": "pass",
+          "elapsed_seconds": 33.45
+        }
+      ],
+      "fixture_slots": [
+        {
+          "test": "TestActionLedgerReadableDuringSessionRecovery/failed",
+          "observation": "parallel_test.go:22: fixture slot: wait=291ns held=9.637861334s"
+        },
+        {
+          "test": "TestActionLedgerReadableDuringSessionRecovery/closing",
+          "observation": "parallel_test.go:22: fixture slot: wait=167ns held=10.00526775s"
+        },
+        {
+          "test": "TestActionLedgerReadableDuringSessionRecovery/waiting",
+          "observation": "parallel_test.go:22: fixture slot: wait=500ns held=10.176244833s"
+        },
+        {
+          "test": "TestLarkImagesIndependentProcessRecovery/input-log/group/after_dispatch",
+          "observation": "parallel_test.go:22: fixture slot: wait=208ns held=13.708594917s"
+        },
+        {
+          "test": "TestLarkImagesIndependentProcessRecovery/input-log/group/before_verification",
+          "observation": "parallel_test.go:22: fixture slot: wait=125ns held=14.226368833s"
+        },
+        {
+          "test": "TestLarkImagesIndependentProcessRecovery/input-log/group/settled",
+          "observation": "parallel_test.go:22: fixture slot: wait=250ns held=14.311306s"
+        },
+        {
+          "test": "TestLarkImagesIndependentProcessRecovery/embedded/self/settled",
+          "observation": "parallel_test.go:22: fixture slot: wait=334ns held=18.290853708s"
+        },
+        {
+          "test": "TestLarkImagesIndependentProcessRecovery/embedded/group/during_upload",
+          "observation": "parallel_test.go:22: fixture slot: wait=13.708622875s held=10.827459666s"
+        },
+        {
+          "test": "TestLarkImagesIndependentProcessRecovery/embedded/group/settled",
+          "observation": "parallel_test.go:22: fixture slot: wait=14.311245s held=13.020367916s"
+        },
+        {
+          "test": "TestLarkImagesIndependentProcessRecovery/input-log/self/during_upload",
+          "observation": "parallel_test.go:22: fixture slot: wait=18.290802834s held=13.049941958s"
+        },
+        {
+          "test": "TestLarkImagesIndependentProcessRecovery/embedded/self/before_verification",
+          "observation": "parallel_test.go:22: fixture slot: wait=14.226374292s held=17.169063s"
+        },
+        {
+          "test": "TestLarkImagesIndependentProcessRecovery/embedded/self/after_dispatch",
+          "observation": "parallel_test.go:22: fixture slot: wait=24.536083666s held=15.517120417s"
+        },
+        {
+          "test": "TestLarkImagesIndependentProcessRecovery/input-log/self/settled",
+          "observation": "parallel_test.go:22: fixture slot: wait=27.331625208s held=16.483006542s"
+        },
+        {
+          "test": "TestLarkSelfSendRevocationRaces/remove",
+          "observation": "parallel_test.go:22: fixture slot: wait=125ns held=7.559325625s"
+        },
+        {
+          "test": "TestLarkSelfSendRevocationRaces/disable",
+          "observation": "parallel_test.go:22: fixture slot: wait=167ns held=10.727313625s"
+        },
+        {
+          "test": "TestLarkSelfSendRevocationRaces/unbind",
+          "observation": "parallel_test.go:22: fixture slot: wait=7.559305708s held=6.713420625s"
+        },
+        {
+          "test": "TestLarkSelfSendRevocationRaces/rotate",
+          "observation": "parallel_test.go:22: fixture slot: wait=583ns held=15.480705958s"
+        },
+        {
+          "test": "TestLarkSelfSendRevocationRaces/account",
+          "observation": "parallel_test.go:22: fixture slot: wait=125ns held=16.451950542s"
+        },
+        {
+          "test": "TestLarkSelfSendBindingViewExpires",
+          "observation": "parallel_test.go:22: fixture slot: wait=417ns held=7.506535792s"
+        },
+        {
+          "test": "TestLarkSelfSendManagedCapability",
+          "observation": "parallel_test.go:22: fixture slot: wait=83ns held=16.351377042s"
+        },
+        {
+          "test": "TestLarkSelfSendLedgerFailures",
+          "observation": "parallel_test.go:22: fixture slot: wait=792ns held=26.542049791s"
+        },
+        {
+          "test": "TestLarkSelfSendIndependentProcessRecovery",
+          "observation": "parallel_test.go:22: fixture slot: wait=416ns held=32.675249084s"
+        },
+        {
+          "test": "TestLarkSelfSendConcurrentRoomsAndMembers",
+          "observation": "parallel_test.go:22: fixture slot: wait=7.506735125s held=25.944124166s"
+        }
+      ]
+    },
+    "complete_after": {
+      "wall_seconds": 161.78689033398405,
+      "exit_code": 0,
+      "args": [
+        "go",
+        "tool",
+        "test2json",
+        "-t",
+        "-p",
+        "github.com/go-aie/teamx/internal/room",
+        "/tmp/teamx-recovery-matrix/after.test",
+        "-test.v=test2json",
+        "-test.run=^(TestLarkSelfSendIndependentProcessRecovery|TestLarkSelfSendLedgerFailures|TestLarkSelfSendBindingViewExpires|TestLarkSelfSendConcurrentRoomsAndMembers|TestLarkSelfSendRevocationRaces|TestLarkSelfSendManagedCapability|TestActionsLedgerFailureNeverReplays|TestActionsLegacyReceiptAndSchemaPreflight|TestActionsAdapterInputAndMessageTargetAreGeneric|TestActionDispatchFrozenContentAndExactRecord|TestActionInputCanonicalNestedContent|TestActionLedgerReadableDuringSessionRecovery|TestLarkImagesIndependentProcessRecovery|TestGitlabImagesIndependentProcessRecovery)$",
+        "-test.count=1",
+        "-test.timeout=6m"
+      ],
+      "counts": {
+        "pass": 58
+      },
+      "top_level": [
+        {
+          "Time": "2026-11-24T16:04:38.748848+08:00",
+          "Action": "pass",
+          "Package": "github.com/go-aie/teamx/internal/room",
+          "Test": "TestActionDispatchFrozenContentAndExactRecord",
+          "Elapsed": 7.58
+        },
+        {
+          "Time": "2026-11-24T16:04:38.748918+08:00",
+          "Action": "pass",
+          "Package": "github.com/go-aie/teamx/internal/room",
+          "Test": "TestActionInputCanonicalNestedContent",
+          "Elapsed": 0
+        },
+        {
+          "Time": "2026-11-24T16:04:52.83529+08:00",
+          "Action": "pass",
+          "Package": "github.com/go-aie/teamx/internal/room",
+          "Test": "TestActionLedgerReadableDuringSessionRecovery",
+          "Elapsed": 0
+        },
+        {
+          "Time": "2026-11-24T16:04:57.845404+08:00",
+          "Action": "pass",
+          "Package": "github.com/go-aie/teamx/internal/room",
+          "Test": "TestActionsLedgerFailureNeverReplays",
+          "Elapsed": 5.01
+        },
+        {
+          "Time": "2026-11-24T16:04:59.184307+08:00",
+          "Action": "pass",
+          "Package": "github.com/go-aie/teamx/internal/room",
+          "Test": "TestActionsLegacyReceiptAndSchemaPreflight",
+          "Elapsed": 1.34
+        },
+        {
+          "Time": "2026-11-24T16:04:59.87643+08:00",
+          "Action": "pass",
+          "Package": "github.com/go-aie/teamx/internal/room",
+          "Test": "TestActionsAdapterInputAndMessageTargetAreGeneric",
+          "Elapsed": 0.68
+        },
+        {
+          "Time": "2026-11-24T16:05:29.755559+08:00",
+          "Action": "pass",
+          "Package": "github.com/go-aie/teamx/internal/room",
+          "Test": "TestGitlabImagesIndependentProcessRecovery",
+          "Elapsed": 29.88
+        },
+        {
+          "Time": "2026-11-24T16:06:20.385252+08:00",
+          "Action": "pass",
+          "Package": "github.com/go-aie/teamx/internal/room",
+          "Test": "TestLarkImagesIndependentProcessRecovery",
+          "Elapsed": 0
+        },
+        {
+          "Time": "2026-11-24T16:06:40.203222+08:00",
+          "Action": "pass",
+          "Package": "github.com/go-aie/teamx/internal/room",
+          "Test": "TestLarkSelfSendRevocationRaces",
+          "Elapsed": 0
+        },
+        {
+          "Time": "2026-11-24T16:06:47.504421+08:00",
+          "Action": "pass",
+          "Package": "github.com/go-aie/teamx/internal/room",
+          "Test": "TestLarkSelfSendBindingViewExpires",
+          "Elapsed": 7.3
+        },
+        {
+          "Time": "2026-11-24T16:06:58.615524+08:00",
+          "Action": "pass",
+          "Package": "github.com/go-aie/teamx/internal/room",
+          "Test": "TestLarkSelfSendManagedCapability",
+          "Elapsed": 16.59
+        },
+        {
+          "Time": "2026-11-24T16:07:11.038164+08:00",
+          "Action": "pass",
+          "Package": "github.com/go-aie/teamx/internal/room",
+          "Test": "TestLarkSelfSendConcurrentRoomsAndMembers",
+          "Elapsed": 28.27
+        },
+        {
+          "Time": "2026-11-24T16:07:12.215037+08:00",
+          "Action": "pass",
+          "Package": "github.com/go-aie/teamx/internal/room",
+          "Test": "TestLarkSelfSendLedgerFailures",
+          "Elapsed": 30.83
+        },
+        {
+          "Time": "2026-11-24T16:07:12.215114+08:00",
+          "Action": "pass",
+          "Package": "github.com/go-aie/teamx/internal/room",
+          "Test": "TestLarkSelfSendIndependentProcessRecovery",
+          "Elapsed": 32.01
+        }
+      ],
+      "cases": [
+        {
+          "package": "github.com/go-aie/teamx/internal/room",
+          "test": "TestActionDispatchFrozenContentAndExactRecord/unchanged",
+          "status": "pass",
+          "elapsed_seconds": 1.45
+        },
+        {
+          "package": "github.com/go-aie/teamx/internal/room",
+          "test": "TestActionDispatchFrozenContentAndExactRecord/body",
+          "status": "pass",
+          "elapsed_seconds": 1.45
+        },
+        {
+          "package": "github.com/go-aie/teamx/internal/room",
+          "test": "TestActionDispatchFrozenContentAndExactRecord/target",
+          "status": "pass",
+          "elapsed_seconds": 1.27
+        },
+        {
+          "package": "github.com/go-aie/teamx/internal/room",
+          "test": "TestActionDispatchFrozenContentAndExactRecord/key",
+          "status": "pass",
+          "elapsed_seconds": 0.88
+        },
+        {
+          "package": "github.com/go-aie/teamx/internal/room",
+          "test": "TestActionDispatchFrozenContentAndExactRecord/operation",
+          "status": "pass",
+          "elapsed_seconds": 0.9
+        },
+        {
+          "package": "github.com/go-aie/teamx/internal/room",
+          "test": "TestActionDispatchFrozenContentAndExactRecord/digest",
+          "status": "pass",
+          "elapsed_seconds": 0.88
+        },
+        {
+          "package": "github.com/go-aie/teamx/internal/room",
+          "test": "TestActionDispatchFrozenContentAndExactRecord/account",
+          "status": "pass",
+          "elapsed_seconds": 0.74
+        },
+        {
+          "package": "github.com/go-aie/teamx/internal/room",
+          "test": "TestActionDispatchFrozenContentAndExactRecord",
+          "status": "pass",
+          "elapsed_seconds": 7.58
+        },
+        {
+          "package": "github.com/go-aie/teamx/internal/room",
+          "test": "TestActionInputCanonicalNestedContent",
+          "status": "pass",
+          "elapsed_seconds": 0
+        },
+        {
+          "package": "github.com/go-aie/teamx/internal/room",
+          "test": "TestActionLedgerReadableDuringSessionRecovery/closing",
+          "status": "pass",
+          "elapsed_seconds": 14.01
+        },
+        {
+          "package": "github.com/go-aie/teamx/internal/room",
+          "test": "TestActionLedgerReadableDuringSessionRecovery/failed",
+          "status": "pass",
+          "elapsed_seconds": 14.05
+        },
+        {
+          "package": "github.com/go-aie/teamx/internal/room",
+          "test": "TestActionLedgerReadableDuringSessionRecovery/waiting",
+          "status": "pass",
+          "elapsed_seconds": 14.07
+        },
+        {
+          "package": "github.com/go-aie/teamx/internal/room",
+          "test": "TestActionLedgerReadableDuringSessionRecovery",
+          "status": "pass",
+          "elapsed_seconds": 0
+        },
+        {
+          "package": "github.com/go-aie/teamx/internal/room",
+          "test": "TestActionsLedgerFailureNeverReplays/intent",
+          "status": "pass",
+          "elapsed_seconds": 1.37
+        },
+        {
+          "package": "github.com/go-aie/teamx/internal/room",
+          "test": "TestActionsLedgerFailureNeverReplays/attempt",
+          "status": "pass",
+          "elapsed_seconds": 1.14
+        },
+        {
+          "package": "github.com/go-aie/teamx/internal/room",
+          "test": "TestActionsLedgerFailureNeverReplays/result",
+          "status": "pass",
+          "elapsed_seconds": 1.1
+        },
+        {
+          "package": "github.com/go-aie/teamx/internal/room",
+          "test": "TestActionsLedgerFailureNeverReplays/projection",
+          "status": "pass",
+          "elapsed_seconds": 1.4
+        },
+        {
+          "package": "github.com/go-aie/teamx/internal/room",
+          "test": "TestActionsLedgerFailureNeverReplays",
+          "status": "pass",
+          "elapsed_seconds": 5.01
+        },
+        {
+          "package": "github.com/go-aie/teamx/internal/room",
+          "test": "TestActionsLegacyReceiptAndSchemaPreflight",
+          "status": "pass",
+          "elapsed_seconds": 1.34
+        },
+        {
+          "package": "github.com/go-aie/teamx/internal/room",
+          "test": "TestActionsAdapterInputAndMessageTargetAreGeneric",
+          "status": "pass",
+          "elapsed_seconds": 0.68
+        },
+        {
+          "package": "github.com/go-aie/teamx/internal/room",
+          "test": "TestGitlabImagesIndependentProcessRecovery/comment/settled",
+          "status": "pass",
+          "elapsed_seconds": 3.47
+        },
+        {
+          "package": "github.com/go-aie/teamx/internal/room",
+          "test": "TestGitlabImagesIndependentProcessRecovery/comment/during_upload",
+          "status": "pass",
+          "elapsed_seconds": 2.69
+        },
+        {
+          "package": "github.com/go-aie/teamx/internal/room",
+          "test": "TestGitlabImagesIndependentProcessRecovery/comment/after_dispatch",
+          "status": "pass",
+          "elapsed_seconds": 3.32
+        },
+        {
+          "package": "github.com/go-aie/teamx/internal/room",
+          "test": "TestGitlabImagesIndependentProcessRecovery/comment/before_verification",
+          "status": "pass",
+          "elapsed_seconds": 3.67
+        },
+        {
+          "package": "github.com/go-aie/teamx/internal/room",
+          "test": "TestGitlabImagesIndependentProcessRecovery/thread/settled",
+          "status": "pass",
+          "elapsed_seconds": 3.81
+        },
+        {
+          "package": "github.com/go-aie/teamx/internal/room",
+          "test": "TestGitlabImagesIndependentProcessRecovery/thread/during_upload",
+          "status": "pass",
+          "elapsed_seconds": 4.61
+        },
+        {
+          "package": "github.com/go-aie/teamx/internal/room",
+          "test": "TestGitlabImagesIndependentProcessRecovery/thread/after_dispatch",
+          "status": "pass",
+          "elapsed_seconds": 4.13
+        },
+        {
+          "package": "github.com/go-aie/teamx/internal/room",
+          "test": "TestGitlabImagesIndependentProcessRecovery/thread/before_verification",
+          "status": "pass",
+          "elapsed_seconds": 4.18
+        },
+        {
+          "package": "github.com/go-aie/teamx/internal/room",
+          "test": "TestGitlabImagesIndependentProcessRecovery",
+          "status": "pass",
+          "elapsed_seconds": 29.88
+        },
+        {
+          "package": "github.com/go-aie/teamx/internal/room",
+          "test": "TestLarkImagesIndependentProcessRecovery/input-log/group/after_dispatch",
+          "status": "pass",
+          "elapsed_seconds": 17.41
+        },
+        {
+          "package": "github.com/go-aie/teamx/internal/room",
+          "test": "TestLarkImagesIndependentProcessRecovery/input-log/group/before_verification",
+          "status": "pass",
+          "elapsed_seconds": 17.87
+        },
+        {
+          "package": "github.com/go-aie/teamx/internal/room",
+          "test": "TestLarkImagesIndependentProcessRecovery/input-log/self/settled",
+          "status": "pass",
+          "elapsed_seconds": 21.31
+        },
+        {
+          "package": "github.com/go-aie/teamx/internal/room",
+          "test": "TestLarkImagesIndependentProcessRecovery/embedded/self/settled",
+          "status": "pass",
+          "elapsed_seconds": 21.44
+        },
+        {
+          "package": "github.com/go-aie/teamx/internal/room",
+          "test": "TestLarkImagesIndependentProcessRecovery/embedded/group/settled",
+          "status": "pass",
+          "elapsed_seconds": 32.7
+        },
+        {
+          "package": "github.com/go-aie/teamx/internal/room",
+          "test": "TestLarkImagesIndependentProcessRecovery/input-log/group/settled",
+          "status": "pass",
+          "elapsed_seconds": 33.58
+        },
+        {
+          "package": "github.com/go-aie/teamx/internal/room",
+          "test": "TestLarkImagesIndependentProcessRecovery/embedded/group/during_upload",
+          "status": "pass",
+          "elapsed_seconds": 35.3
+        },
+        {
+          "package": "github.com/go-aie/teamx/internal/room",
+          "test": "TestLarkImagesIndependentProcessRecovery/input-log/self/during_upload",
+          "status": "pass",
+          "elapsed_seconds": 36.91
+        },
+        {
+          "package": "github.com/go-aie/teamx/internal/room",
+          "test": "TestLarkImagesIndependentProcessRecovery/embedded/self/before_verification",
+          "status": "pass",
+          "elapsed_seconds": 50.42
+        },
+        {
+          "package": "github.com/go-aie/teamx/internal/room",
+          "test": "TestLarkImagesIndependentProcessRecovery/embedded/self/after_dispatch",
+          "status": "pass",
+          "elapsed_seconds": 50.64
+        },
+        {
+          "package": "github.com/go-aie/teamx/internal/room",
+          "test": "TestLarkImagesIndependentProcessRecovery",
+          "status": "pass",
+          "elapsed_seconds": 0
+        },
+        {
+          "package": "github.com/go-aie/teamx/internal/room",
+          "test": "TestLarkSelfSendRevocationRaces/remove",
+          "status": "pass",
+          "elapsed_seconds": 10.55
+        },
+        {
+          "package": "github.com/go-aie/teamx/internal/room",
+          "test": "TestLarkSelfSendRevocationRaces/disable",
+          "status": "pass",
+          "elapsed_seconds": 12.48
+        },
+        {
+          "package": "github.com/go-aie/teamx/internal/room",
+          "test": "TestLarkSelfSendRevocationRaces/rotate",
+          "status": "pass",
+          "elapsed_seconds": 17.94
+        },
+        {
+          "package": "github.com/go-aie/teamx/internal/room",
+          "test": "TestLarkSelfSendRevocationRaces/account",
+          "status": "pass",
+          "elapsed_seconds": 18.16
+        },
+        {
+          "package": "github.com/go-aie/teamx/internal/room",
+          "test": "TestLarkSelfSendRevocationRaces/unbind",
+          "status": "pass",
+          "elapsed_seconds": 19.82
+        },
+        {
+          "package": "github.com/go-aie/teamx/internal/room",
+          "test": "TestLarkSelfSendRevocationRaces",
+          "status": "pass",
+          "elapsed_seconds": 0
+        },
+        {
+          "package": "github.com/go-aie/teamx/internal/room",
+          "test": "TestLarkSelfSendBindingViewExpires",
+          "status": "pass",
+          "elapsed_seconds": 7.3
+        },
+        {
+          "package": "github.com/go-aie/teamx/internal/room",
+          "test": "TestLarkSelfSendIndependentProcessRecovery/settled",
+          "status": "pass",
+          "elapsed_seconds": 11.84
+        },
+        {
+          "package": "github.com/go-aie/teamx/internal/room",
+          "test": "TestLarkSelfSendLedgerFailures/intent",
+          "status": "pass",
+          "elapsed_seconds": 5.47
+        },
+        {
+          "package": "github.com/go-aie/teamx/internal/room",
+          "test": "TestLarkSelfSendManagedCapability",
+          "status": "pass",
+          "elapsed_seconds": 16.59
+        },
+        {
+          "package": "github.com/go-aie/teamx/internal/room",
+          "test": "TestLarkSelfSendLedgerFailures/attempt",
+          "status": "pass",
+          "elapsed_seconds": 5.64
+        },
+        {
+          "package": "github.com/go-aie/teamx/internal/room",
+          "test": "TestLarkSelfSendIndependentProcessRecovery/before_dispatch",
+          "status": "pass",
+          "elapsed_seconds": 10.74
+        },
+        {
+          "package": "github.com/go-aie/teamx/internal/room",
+          "test": "TestLarkSelfSendLedgerFailures/result",
+          "status": "pass",
+          "elapsed_seconds": 6.12
+        },
+        {
+          "package": "github.com/go-aie/teamx/internal/room",
+          "test": "TestLarkSelfSendConcurrentRoomsAndMembers",
+          "status": "pass",
+          "elapsed_seconds": 28.27
+        },
+        {
+          "package": "github.com/go-aie/teamx/internal/room",
+          "test": "TestLarkSelfSendLedgerFailures/result_commit_unknown",
+          "status": "pass",
+          "elapsed_seconds": 6.3
+        },
+        {
+          "package": "github.com/go-aie/teamx/internal/room",
+          "test": "TestLarkSelfSendLedgerFailures",
+          "status": "pass",
+          "elapsed_seconds": 30.83
+        },
+        {
+          "package": "github.com/go-aie/teamx/internal/room",
+          "test": "TestLarkSelfSendIndependentProcessRecovery/after_dispatch",
+          "status": "pass",
+          "elapsed_seconds": 9.43
+        },
+        {
+          "package": "github.com/go-aie/teamx/internal/room",
+          "test": "TestLarkSelfSendIndependentProcessRecovery",
+          "status": "pass",
+          "elapsed_seconds": 32.01
+        }
+      ],
+      "fixture_slots": [
+        {
+          "test": "TestActionLedgerReadableDuringSessionRecovery/closing",
+          "observation": "parallel_test.go:22: fixture slot: wait=125ns held=14.006174292s"
+        },
+        {
+          "test": "TestActionLedgerReadableDuringSessionRecovery/failed",
+          "observation": "parallel_test.go:22: fixture slot: wait=458ns held=14.050443875s"
+        },
+        {
+          "test": "TestActionLedgerReadableDuringSessionRecovery/waiting",
+          "observation": "parallel_test.go:22: fixture slot: wait=333ns held=14.071987042s"
+        },
+        {
+          "test": "TestLarkImagesIndependentProcessRecovery/input-log/group/after_dispatch",
+          "observation": "parallel_test.go:22: fixture slot: wait=250ns held=17.414544167s"
+        },
+        {
+          "test": "TestLarkImagesIndependentProcessRecovery/input-log/group/before_verification",
+          "observation": "parallel_test.go:22: fixture slot: wait=250ns held=17.867652375s"
+        },
+        {
+          "test": "TestLarkImagesIndependentProcessRecovery/input-log/self/settled",
+          "observation": "parallel_test.go:22: fixture slot: wait=334ns held=21.31348225s"
+        },
+        {
+          "test": "TestLarkImagesIndependentProcessRecovery/embedded/self/settled",
+          "observation": "parallel_test.go:22: fixture slot: wait=667ns held=21.43739975s"
+        },
+        {
+          "test": "TestLarkImagesIndependentProcessRecovery/embedded/group/settled",
+          "observation": "parallel_test.go:22: fixture slot: wait=17.414468416s held=15.2843025s"
+        },
+        {
+          "test": "TestLarkImagesIndependentProcessRecovery/input-log/group/settled",
+          "observation": "parallel_test.go:22: fixture slot: wait=17.86763725s held=15.716139041s"
+        },
+        {
+          "test": "TestLarkImagesIndependentProcessRecovery/embedded/group/during_upload",
+          "observation": "parallel_test.go:22: fixture slot: wait=21.437133s held=13.864499s"
+        },
+        {
+          "test": "TestLarkImagesIndependentProcessRecovery/input-log/self/during_upload",
+          "observation": "parallel_test.go:22: fixture slot: wait=21.313324792s held=15.596116917s"
+        },
+        {
+          "test": "TestLarkImagesIndependentProcessRecovery/embedded/self/before_verification",
+          "observation": "parallel_test.go:22: fixture slot: wait=32.698826084s held=17.721940166s"
+        },
+        {
+          "test": "TestLarkImagesIndependentProcessRecovery/embedded/self/after_dispatch",
+          "observation": "parallel_test.go:22: fixture slot: wait=33.583843833s held=17.053180333s"
+        },
+        {
+          "test": "TestLarkSelfSendRevocationRaces/remove",
+          "observation": "parallel_test.go:22: fixture slot: wait=291ns held=10.548135s"
+        },
+        {
+          "test": "TestLarkSelfSendRevocationRaces/disable",
+          "observation": "parallel_test.go:22: fixture slot: wait=250ns held=12.4787175s"
+        },
+        {
+          "test": "TestLarkSelfSendRevocationRaces/rotate",
+          "observation": "parallel_test.go:22: fixture slot: wait=500ns held=17.944083416s"
+        },
+        {
+          "test": "TestLarkSelfSendRevocationRaces/account",
+          "observation": "parallel_test.go:22: fixture slot: wait=167ns held=18.160244667s"
+        },
+        {
+          "test": "TestLarkSelfSendRevocationRaces/unbind",
+          "observation": "parallel_test.go:22: fixture slot: wait=10.548198375s held=9.268487083s"
+        },
+        {
+          "test": "TestLarkSelfSendBindingViewExpires",
+          "observation": "parallel_test.go:22: fixture slot: wait=167ns held=7.301026958s"
+        },
+        {
+          "test": "TestLarkSelfSendManagedCapability",
+          "observation": "parallel_test.go:22: fixture slot: wait=83ns held=16.591669083s"
+        },
+        {
+          "test": "TestLarkSelfSendConcurrentRoomsAndMembers",
+          "observation": "parallel_test.go:22: fixture slot: wait=166ns held=28.272642084s"
+        },
+        {
+          "test": "TestLarkSelfSendLedgerFailures",
+          "observation": "parallel_test.go:22: fixture slot: wait=7.300973875s held=23.533543625s"
+        },
+        {
+          "test": "TestLarkSelfSendIndependentProcessRecovery",
+          "observation": "parallel_test.go:22: fixture slot: wait=125ns held=32.011400125s"
+        }
+      ]
+    },
+    "ledger_before": {
+      "wall_seconds": 21.04793866723776,
+      "exit_code": 0,
+      "args": [
+        "go",
+        "tool",
+        "test2json",
+        "-t",
+        "-p",
+        "github.com/go-aie/teamx/internal/room",
+        "/tmp/teamx-recovery-matrix/healthy-before.test",
+        "-test.v=test2json",
+        "-test.run=^TestLarkSelfSendLedgerFailures$",
+        "-test.count=1",
+        "-test.timeout=2m"
+      ],
+      "counts": {
+        "pass": 5
+      },
+      "results": [
+        {
+          "Time": "2026-11-24T16:07:45.258422+08:00",
+          "Action": "pass",
+          "Package": "github.com/go-aie/teamx/internal/room",
+          "Test": "TestLarkSelfSendLedgerFailures/intent",
+          "Elapsed": 4.37
+        },
+        {
+          "Time": "2026-11-24T16:07:49.836239+08:00",
+          "Action": "pass",
+          "Package": "github.com/go-aie/teamx/internal/room",
+          "Test": "TestLarkSelfSendLedgerFailures/attempt",
+          "Elapsed": 4.58
+        },
+        {
+          "Time": "2026-11-24T16:07:55.940377+08:00",
+          "Action": "pass",
+          "Package": "github.com/go-aie/teamx/internal/room",
+          "Test": "TestLarkSelfSendLedgerFailures/result",
+          "Elapsed": 6.1
+        },
+        {
+          "Time": "2026-11-24T16:08:01.620686+08:00",
+          "Action": "pass",
+          "Package": "github.com/go-aie/teamx/internal/room",
+          "Test": "TestLarkSelfSendLedgerFailures/result_commit_unknown",
+          "Elapsed": 5.68
+        },
+        {
+          "Time": "2026-11-24T16:08:01.621781+08:00",
+          "Action": "pass",
+          "Package": "github.com/go-aie/teamx/internal/room",
+          "Test": "TestLarkSelfSendLedgerFailures",
+          "Elapsed": 20.73
+        },
+        {
+          "Time": "2026-11-24T16:08:01.622706+08:00",
+          "Action": "pass",
+          "Package": "github.com/go-aie/teamx/internal/room",
+          "Elapsed": 20.805
+        }
+      ],
+      "cases": [
+        {
+          "package": "github.com/go-aie/teamx/internal/room",
+          "test": "TestLarkSelfSendLedgerFailures/intent",
+          "status": "pass",
+          "elapsed_seconds": 4.37
+        },
+        {
+          "package": "github.com/go-aie/teamx/internal/room",
+          "test": "TestLarkSelfSendLedgerFailures/attempt",
+          "status": "pass",
+          "elapsed_seconds": 4.58
+        },
+        {
+          "package": "github.com/go-aie/teamx/internal/room",
+          "test": "TestLarkSelfSendLedgerFailures/result",
+          "status": "pass",
+          "elapsed_seconds": 6.1
+        },
+        {
+          "package": "github.com/go-aie/teamx/internal/room",
+          "test": "TestLarkSelfSendLedgerFailures/result_commit_unknown",
+          "status": "pass",
+          "elapsed_seconds": 5.68
+        },
+        {
+          "package": "github.com/go-aie/teamx/internal/room",
+          "test": "TestLarkSelfSendLedgerFailures",
+          "status": "pass",
+          "elapsed_seconds": 20.73
+        }
+      ],
+      "fixture_slots": [
+        {
+          "test": "TestLarkSelfSendLedgerFailures",
+          "observation": "parallel_test.go:22: fixture slot: wait=959ns held=20.728039125s"
+        }
+      ]
+    },
+    "ledger_after": {
+      "wall_seconds": 20.39326045801863,
+      "exit_code": 0,
+      "args": [
+        "go",
+        "tool",
+        "test2json",
+        "-t",
+        "-p",
+        "github.com/go-aie/teamx/internal/room",
+        "/tmp/teamx-recovery-matrix/after.test",
+        "-test.v=test2json",
+        "-test.run=^TestLarkSelfSendLedgerFailures$",
+        "-test.count=1",
+        "-test.timeout=2m"
+      ],
+      "counts": {
+        "pass": 5
+      },
+      "results": [
+        {
+          "Time": "2026-11-24T16:08:06.397479+08:00",
+          "Action": "pass",
+          "Package": "github.com/go-aie/teamx/internal/room",
+          "Test": "TestLarkSelfSendLedgerFailures/intent",
+          "Elapsed": 4.35
+        },
+        {
+          "Time": "2026-11-24T16:08:10.568908+08:00",
+          "Action": "pass",
+          "Package": "github.com/go-aie/teamx/internal/room",
+          "Test": "TestLarkSelfSendLedgerFailures/attempt",
+          "Elapsed": 4.17
+        },
+        {
+          "Time": "2026-11-24T16:08:16.346983+08:00",
+          "Action": "pass",
+          "Package": "github.com/go-aie/teamx/internal/room",
+          "Test": "TestLarkSelfSendLedgerFailures/result",
+          "Elapsed": 5.78
+        },
+        {
+          "Time": "2026-11-24T16:08:22.015778+08:00",
+          "Action": "pass",
+          "Package": "github.com/go-aie/teamx/internal/room",
+          "Test": "TestLarkSelfSendLedgerFailures/result_commit_unknown",
+          "Elapsed": 5.67
+        },
+        {
+          "Time": "2026-11-24T16:08:22.017065+08:00",
+          "Action": "pass",
+          "Package": "github.com/go-aie/teamx/internal/room",
+          "Test": "TestLarkSelfSendLedgerFailures",
+          "Elapsed": 19.97
+        },
+        {
+          "Time": "2026-11-24T16:08:22.017811+08:00",
+          "Action": "pass",
+          "Package": "github.com/go-aie/teamx/internal/room",
+          "Elapsed": 20.039
+        }
+      ],
+      "cases": [
+        {
+          "package": "github.com/go-aie/teamx/internal/room",
+          "test": "TestLarkSelfSendLedgerFailures/intent",
+          "status": "pass",
+          "elapsed_seconds": 4.35
+        },
+        {
+          "package": "github.com/go-aie/teamx/internal/room",
+          "test": "TestLarkSelfSendLedgerFailures/attempt",
+          "status": "pass",
+          "elapsed_seconds": 4.17
+        },
+        {
+          "package": "github.com/go-aie/teamx/internal/room",
+          "test": "TestLarkSelfSendLedgerFailures/result",
+          "status": "pass",
+          "elapsed_seconds": 5.78
+        },
+        {
+          "package": "github.com/go-aie/teamx/internal/room",
+          "test": "TestLarkSelfSendLedgerFailures/result_commit_unknown",
+          "status": "pass",
+          "elapsed_seconds": 5.67
+        },
+        {
+          "package": "github.com/go-aie/teamx/internal/room",
+          "test": "TestLarkSelfSendLedgerFailures",
+          "status": "pass",
+          "elapsed_seconds": 19.97
+        }
+      ],
+      "fixture_slots": [
+        {
+          "test": "TestLarkSelfSendLedgerFailures",
+          "observation": "parallel_test.go:22: fixture slot: wait=375ns held=19.968741917s"
+        }
+      ]
+    }
+  },
+  "room_test_binary_build_wall_seconds": {
+    "original_diagnostic": 25.08,
+    "healthy_before": 20.23,
+    "after": 39.33
+  },
+  "process_matrix": {
+    "count_method": "Derived from executed matrix and startActionRecoveryProcess call sites; excludes native CLI children.",
+    "before": {
+      "text": 6,
+      "ledger": 4,
+      "lark_images": 30,
+      "gitlab_images": 24,
+      "total": 64
+    },
+    "after": {
+      "text": 6,
+      "ledger": 0,
+      "lark_images": 30,
+      "gitlab_images": 24,
+      "total": 60
+    },
+    "removed_fault_modes": 0,
+    "retired_tests": 0,
+    "moved_tests": 0,
+    "native_cli_fixture_migrated": false
+  },
+  "race": {
+    "wall_seconds": 239.70871162507683,
+    "exit_code": 0,
+    "args": [
+      "go",
+      "test",
+      "-race",
+      "-json",
+      "-tags=integration",
+      "-count=1",
+      "-timeout=8m",
+      "-run",
+      "^(TestLarkSelfSendIndependentProcessRecovery|TestLarkSelfSendLedgerFailures|TestLarkSelfSendBindingViewExpires|TestLarkSelfSendConcurrentRoomsAndMembers|TestLarkSelfSendRevocationRaces|TestLarkSelfSendManagedCapability|TestActionsLedgerFailureNeverReplays|TestActionsLegacyReceiptAndSchemaPreflight|TestActionsAdapterInputAndMessageTargetAreGeneric|TestActionDispatchFrozenContentAndExactRecord|TestActionInputCanonicalNestedContent|TestActionLedgerReadableDuringSessionRecovery|TestLarkImagesIndependentProcessRecovery|TestGitlabImagesIndependentProcessRecovery|TestGitlabImagesManagedCLI|TestGitlabImagesPreflightAndPolicy|TestGitlabImagesFinalDispatchAndDeadline|TestGitlabImageReceiptPolicyPreservation|TestGitlabImagesHelpAndDiagnostics|TestGitlabImageAgentContractEvidence|TestGitlabImagesRevocationStopsRemainingRequests|TestGitlabImagesPolicyChangeBeforeAttempt|TestGitlabImagesSelectionsCLI|TestGitlabImagesExistingMatterContext|TestSelfSendExactIdentityAndReceipt|TestSelfSendAccountCapacity|TestAcceptedActionsSeparateGroupSendsFromPendingUserSends|TestSendAdapterAndResolution|TestSendRejectsBeforeDispatch|TestSendUncertainReceiptNeverRetries|TestReplyAdapterExactTargetAndReceipt|TestReplyAdapterRejectsBeforeDispatch|TestReplyAdapterUnknownNeverGuessesNotApplied|TestReplyTargetResolutionKeepsRootAndExactMessage)$",
+      "./internal/room",
+      "./internal/platform/lark"
+    ],
+    "counts": {
+      "pass": 200
+    },
+    "top_level": [
+      {
+        "Time": "2026-11-24T16:09:19.344495+08:00",
+        "Action": "pass",
+        "Package": "github.com/go-aie/teamx/internal/platform/lark",
+        "Test": "TestReplyAdapterExactTargetAndReceipt",
+        "Elapsed": 0
+      },
+      {
+        "Time": "2026-11-24T16:09:19.345663+08:00",
+        "Action": "pass",
+        "Package": "github.com/go-aie/teamx/internal/platform/lark",
+        "Test": "TestReplyAdapterRejectsBeforeDispatch",
+        "Elapsed": 0
+      },
+      {
+        "Time": "2026-11-24T16:09:19.349318+08:00",
+        "Action": "pass",
+        "Package": "github.com/go-aie/teamx/internal/platform/lark",
+        "Test": "TestReplyAdapterUnknownNeverGuessesNotApplied",
+        "Elapsed": 0
+      },
+      {
+        "Time": "2026-11-24T16:09:19.349432+08:00",
+        "Action": "pass",
+        "Package": "github.com/go-aie/teamx/internal/platform/lark",
+        "Test": "TestReplyTargetResolutionKeepsRootAndExactMessage",
+        "Elapsed": 0
+      },
+      {
+        "Time": "2026-11-24T16:09:19.355425+08:00",
+        "Action": "pass",
+        "Package": "github.com/go-aie/teamx/internal/platform/lark",
+        "Test": "TestSelfSendExactIdentityAndReceipt",
+        "Elapsed": 0
+      },
+      {
+        "Time": "2026-11-24T16:09:19.35546+08:00",
+        "Action": "pass",
+        "Package": "github.com/go-aie/teamx/internal/platform/lark",
+        "Test": "TestSelfSendAccountCapacity",
+        "Elapsed": 0
+      },
+      {
+        "Time": "2026-11-24T16:09:19.355514+08:00",
+        "Action": "pass",
+        "Package": "github.com/go-aie/teamx/internal/platform/lark",
+        "Test": "TestAcceptedActionsSeparateGroupSendsFromPendingUserSends",
+        "Elapsed": 0
+      },
+      {
+        "Time": "2026-11-24T16:09:19.355566+08:00",
+        "Action": "pass",
+        "Package": "github.com/go-aie/teamx/internal/platform/lark",
+        "Test": "TestSendAdapterAndResolution",
+        "Elapsed": 0
+      },
+      {
+        "Time": "2026-11-24T16:09:19.360212+08:00",
+        "Action": "pass",
+        "Package": "github.com/go-aie/teamx/internal/platform/lark",
+        "Test": "TestSendRejectsBeforeDispatch",
+        "Elapsed": 0
+      },
+      {
+        "Time": "2026-11-24T16:09:19.361552+08:00",
+        "Action": "pass",
+        "Package": "github.com/go-aie/teamx/internal/platform/lark",
+        "Test": "TestSendUncertainReceiptNeverRetries",
+        "Elapsed": 0
+      },
+      {
+        "Time": "2026-11-24T16:09:22.244365+08:00",
+        "Action": "pass",
+        "Package": "github.com/go-aie/teamx/internal/room",
+        "Test": "TestActionDispatchFrozenContentAndExactRecord",
+        "Elapsed": 3.12
+      },
+      {
+        "Time": "2026-11-24T16:09:22.244854+08:00",
+        "Action": "pass",
+        "Package": "github.com/go-aie/teamx/internal/room",
+        "Test": "TestActionInputCanonicalNestedContent",
+        "Elapsed": 0
+      },
+      {
+        "Time": "2026-11-24T16:09:33.259322+08:00",
+        "Action": "pass",
+        "Package": "github.com/go-aie/teamx/internal/room",
+        "Test": "TestActionLedgerReadableDuringSessionRecovery",
+        "Elapsed": 0
+      },
+      {
+        "Time": "2026-11-24T16:09:34.758487+08:00",
+        "Action": "pass",
+        "Package": "github.com/go-aie/teamx/internal/room",
+        "Test": "TestActionsLedgerFailureNeverReplays",
+        "Elapsed": 1.5
+      },
+      {
+        "Time": "2026-11-24T16:09:35.25091+08:00",
+        "Action": "pass",
+        "Package": "github.com/go-aie/teamx/internal/room",
+        "Test": "TestActionsLegacyReceiptAndSchemaPreflight",
+        "Elapsed": 0.49
+      },
+      {
+        "Time": "2026-11-24T16:09:35.51893+08:00",
+        "Action": "pass",
+        "Package": "github.com/go-aie/teamx/internal/room",
+        "Test": "TestActionsAdapterInputAndMessageTargetAreGeneric",
+        "Elapsed": 0.27
+      },
+      {
+        "Time": "2026-11-24T16:09:52.693788+08:00",
+        "Action": "pass",
+        "Package": "github.com/go-aie/teamx/internal/room",
+        "Test": "TestGitlabImagesManagedCLI",
+        "Elapsed": 17.16
+      },
+      {
+        "Time": "2026-11-24T16:10:04.960504+08:00",
+        "Action": "pass",
+        "Package": "github.com/go-aie/teamx/internal/room",
+        "Test": "TestGitlabImagesPreflightAndPolicy",
+        "Elapsed": 12.27
+      },
+      {
+        "Time": "2026-11-24T16:10:09.470084+08:00",
+        "Action": "pass",
+        "Package": "github.com/go-aie/teamx/internal/room",
+        "Test": "TestGitlabImagesFinalDispatchAndDeadline",
+        "Elapsed": 4.51
+      },
+      {
+        "Time": "2026-11-24T16:10:10.684819+08:00",
+        "Action": "pass",
+        "Package": "github.com/go-aie/teamx/internal/room",
+        "Test": "TestGitlabImageReceiptPolicyPreservation",
+        "Elapsed": 1.21
+      },
+      {
+        "Time": "2026-11-24T16:10:11.956409+08:00",
+        "Action": "pass",
+        "Package": "github.com/go-aie/teamx/internal/room",
+        "Test": "TestGitlabImagesHelpAndDiagnostics",
+        "Elapsed": 1.27
+      },
+      {
+        "Time": "2026-11-24T16:10:13.424623+08:00",
+        "Action": "pass",
+        "Package": "github.com/go-aie/teamx/internal/room",
+        "Test": "TestGitlabImageAgentContractEvidence",
+        "Elapsed": 1.47
+      },
+      {
+        "Time": "2026-11-24T16:10:16.723398+08:00",
+        "Action": "pass",
+        "Package": "github.com/go-aie/teamx/internal/room",
+        "Test": "TestGitlabImagesRevocationStopsRemainingRequests",
+        "Elapsed": 3.3
+      },
+      {
+        "Time": "2026-11-24T16:10:17.811766+08:00",
+        "Action": "pass",
+        "Package": "github.com/go-aie/teamx/internal/room",
+        "Test": "TestGitlabImagesPolicyChangeBeforeAttempt",
+        "Elapsed": 1.09
+      },
+      {
+        "Time": "2026-11-24T16:10:22.376014+08:00",
+        "Action": "pass",
+        "Package": "github.com/go-aie/teamx/internal/room",
+        "Test": "TestGitlabImagesSelectionsCLI",
+        "Elapsed": 4.56
+      },
+      {
+        "Time": "2026-11-24T16:10:24.86976+08:00",
+        "Action": "pass",
+        "Package": "github.com/go-aie/teamx/internal/room",
+        "Test": "TestGitlabImagesExistingMatterContext",
+        "Elapsed": 2.49
+      },
+      {
+        "Time": "2026-11-24T16:10:57.740519+08:00",
+        "Action": "pass",
+        "Package": "github.com/go-aie/teamx/internal/room",
+        "Test": "TestGitlabImagesIndependentProcessRecovery",
+        "Elapsed": 32.87
+      },
+      {
+        "Time": "2026-11-24T16:11:48.051354+08:00",
+        "Action": "pass",
+        "Package": "github.com/go-aie/teamx/internal/room",
+        "Test": "TestLarkImagesIndependentProcessRecovery",
+        "Elapsed": 0
+      },
+      {
+        "Time": "2026-11-24T16:12:10.072668+08:00",
+        "Action": "pass",
+        "Package": "github.com/go-aie/teamx/internal/room",
+        "Test": "TestLarkSelfSendRevocationRaces",
+        "Elapsed": 0
+      },
+      {
+        "Time": "2026-11-24T16:12:28.699575+08:00",
+        "Action": "pass",
+        "Package": "github.com/go-aie/teamx/internal/room",
+        "Test": "TestLarkSelfSendManagedCapability",
+        "Elapsed": 15.27
+      },
+      {
+        "Time": "2026-11-24T16:12:35.757394+08:00",
+        "Action": "pass",
+        "Package": "github.com/go-aie/teamx/internal/room",
+        "Test": "TestLarkSelfSendBindingViewExpires",
+        "Elapsed": 22.4
+      },
+      {
+        "Time": "2026-11-24T16:12:38.746241+08:00",
+        "Action": "pass",
+        "Package": "github.com/go-aie/teamx/internal/room",
+        "Test": "TestLarkSelfSendLedgerFailures",
+        "Elapsed": 25.95
+      },
+      {
+        "Time": "2026-11-24T16:12:46.744769+08:00",
+        "Action": "pass",
+        "Package": "github.com/go-aie/teamx/internal/room",
+        "Test": "TestLarkSelfSendConcurrentRoomsAndMembers",
+        "Elapsed": 28.66
+      },
+      {
+        "Time": "2026-11-24T16:12:46.745424+08:00",
+        "Action": "pass",
+        "Package": "github.com/go-aie/teamx/internal/room",
+        "Test": "TestLarkSelfSendIndependentProcessRecovery",
+        "Elapsed": 36.66
+      }
+    ],
+    "packages": [
+      {
+        "Time": "2026-11-24T16:09:20.37113+08:00",
+        "Action": "pass",
+        "Package": "github.com/go-aie/teamx/internal/platform/lark",
+        "Elapsed": 2.82
+      },
+      {
+        "Time": "2026-11-24T16:12:47.775184+08:00",
+        "Action": "pass",
+        "Package": "github.com/go-aie/teamx/internal/room",
+        "Elapsed": 210.221
+      }
+    ],
+    "cases": [
+      {
+        "package": "github.com/go-aie/teamx/internal/platform/lark",
+        "test": "TestReplyAdapterExactTargetAndReceipt/p2p",
+        "status": "pass",
+        "elapsed_seconds": 0
+      },
+      {
+        "package": "github.com/go-aie/teamx/internal/platform/lark",
+        "test": "TestReplyAdapterExactTargetAndReceipt/group",
+        "status": "pass",
+        "elapsed_seconds": 0
+      },
+      {
+        "package": "github.com/go-aie/teamx/internal/platform/lark",
+        "test": "TestReplyAdapterExactTargetAndReceipt",
+        "status": "pass",
+        "elapsed_seconds": 0
+      },
+      {
+        "package": "github.com/go-aie/teamx/internal/platform/lark",
+        "test": "TestReplyAdapterRejectsBeforeDispatch/disabled",
+        "status": "pass",
+        "elapsed_seconds": 0
+      },
+      {
+        "package": "github.com/go-aie/teamx/internal/platform/lark",
+        "test": "TestReplyAdapterRejectsBeforeDispatch/thread",
+        "status": "pass",
+        "elapsed_seconds": 0
+      },
+      {
+        "package": "github.com/go-aie/teamx/internal/platform/lark",
+        "test": "TestReplyAdapterRejectsBeforeDispatch/topic",
+        "status": "pass",
+        "elapsed_seconds": 0
+      },
+      {
+        "package": "github.com/go-aie/teamx/internal/platform/lark",
+        "test": "TestReplyAdapterRejectsBeforeDispatch/unknown_field",
+        "status": "pass",
+        "elapsed_seconds": 0
+      },
+      {
+        "package": "github.com/go-aie/teamx/internal/platform/lark",
+        "test": "TestReplyAdapterRejectsBeforeDispatch/empty",
+        "status": "pass",
+        "elapsed_seconds": 0
+      },
+      {
+        "package": "github.com/go-aie/teamx/internal/platform/lark",
+        "test": "TestReplyAdapterRejectsBeforeDispatch/oversize",
+        "status": "pass",
+        "elapsed_seconds": 0
+      },
+      {
+        "package": "github.com/go-aie/teamx/internal/platform/lark",
+        "test": "TestReplyAdapterRejectsBeforeDispatch/invalid_utf8",
+        "status": "pass",
+        "elapsed_seconds": 0
+      },
+      {
+        "package": "github.com/go-aie/teamx/internal/platform/lark",
+        "test": "TestReplyAdapterRejectsBeforeDispatch/operation",
+        "status": "pass",
+        "elapsed_seconds": 0
+      },
+      {
+        "package": "github.com/go-aie/teamx/internal/platform/lark",
+        "test": "TestReplyAdapterRejectsBeforeDispatch/provider",
+        "status": "pass",
+        "elapsed_seconds": 0
+      },
+      {
+        "package": "github.com/go-aie/teamx/internal/platform/lark",
+        "test": "TestReplyAdapterRejectsBeforeDispatch/app",
+        "status": "pass",
+        "elapsed_seconds": 0
+      },
+      {
+        "package": "github.com/go-aie/teamx/internal/platform/lark",
+        "test": "TestReplyAdapterRejectsBeforeDispatch/account",
+        "status": "pass",
+        "elapsed_seconds": 0
+      },
+      {
+        "package": "github.com/go-aie/teamx/internal/platform/lark",
+        "test": "TestReplyAdapterRejectsBeforeDispatch/chat",
+        "status": "pass",
+        "elapsed_seconds": 0
+      },
+      {
+        "package": "github.com/go-aie/teamx/internal/platform/lark",
+        "test": "TestReplyAdapterRejectsBeforeDispatch/tenant",
+        "status": "pass",
+        "elapsed_seconds": 0
+      },
+      {
+        "package": "github.com/go-aie/teamx/internal/platform/lark",
+        "test": "TestReplyAdapterRejectsBeforeDispatch/deleted",
+        "status": "pass",
+        "elapsed_seconds": 0
+      },
+      {
+        "package": "github.com/go-aie/teamx/internal/platform/lark",
+        "test": "TestReplyAdapterRejectsBeforeDispatch/root_missing",
+        "status": "pass",
+        "elapsed_seconds": 0
+      },
+      {
+        "package": "github.com/go-aie/teamx/internal/platform/lark",
+        "test": "TestReplyAdapterRejectsBeforeDispatch/parent_missing",
+        "status": "pass",
+        "elapsed_seconds": 0
+      },
+      {
+        "package": "github.com/go-aie/teamx/internal/platform/lark",
+        "test": "TestReplyAdapterRejectsBeforeDispatch/cycle",
+        "status": "pass",
+        "elapsed_seconds": 0
+      },
+      {
+        "package": "github.com/go-aie/teamx/internal/platform/lark",
+        "test": "TestReplyAdapterRejectsBeforeDispatch/key",
+        "status": "pass",
+        "elapsed_seconds": 0
+      },
+      {
+        "package": "github.com/go-aie/teamx/internal/platform/lark",
+        "test": "TestReplyAdapterRejectsBeforeDispatch",
+        "status": "pass",
+        "elapsed_seconds": 0
+      },
+      {
+        "package": "github.com/go-aie/teamx/internal/platform/lark",
+        "test": "TestReplyAdapterUnknownNeverGuessesNotApplied/timeout",
+        "status": "pass",
+        "elapsed_seconds": 0
+      },
+      {
+        "package": "github.com/go-aie/teamx/internal/platform/lark",
+        "test": "TestReplyAdapterUnknownNeverGuessesNotApplied/cancelled",
+        "status": "pass",
+        "elapsed_seconds": 0
+      },
+      {
+        "package": "github.com/go-aie/teamx/internal/platform/lark",
+        "test": "TestReplyAdapterUnknownNeverGuessesNotApplied/rate_limited",
+        "status": "pass",
+        "elapsed_seconds": 0
+      },
+      {
+        "package": "github.com/go-aie/teamx/internal/platform/lark",
+        "test": "TestReplyAdapterUnknownNeverGuessesNotApplied/malformed",
+        "status": "pass",
+        "elapsed_seconds": 0
+      },
+      {
+        "package": "github.com/go-aie/teamx/internal/platform/lark",
+        "test": "TestReplyAdapterUnknownNeverGuessesNotApplied/read_missing",
+        "status": "pass",
+        "elapsed_seconds": 0
+      },
+      {
+        "package": "github.com/go-aie/teamx/internal/platform/lark",
+        "test": "TestReplyAdapterUnknownNeverGuessesNotApplied/body",
+        "status": "pass",
+        "elapsed_seconds": 0
+      },
+      {
+        "package": "github.com/go-aie/teamx/internal/platform/lark",
+        "test": "TestReplyAdapterUnknownNeverGuessesNotApplied/author",
+        "status": "pass",
+        "elapsed_seconds": 0
+      },
+      {
+        "package": "github.com/go-aie/teamx/internal/platform/lark",
+        "test": "TestReplyAdapterUnknownNeverGuessesNotApplied/sender_type",
+        "status": "pass",
+        "elapsed_seconds": 0
+      },
+      {
+        "package": "github.com/go-aie/teamx/internal/platform/lark",
+        "test": "TestReplyAdapterUnknownNeverGuessesNotApplied/tenant",
+        "status": "pass",
+        "elapsed_seconds": 0
+      },
+      {
+        "package": "github.com/go-aie/teamx/internal/platform/lark",
+        "test": "TestReplyAdapterUnknownNeverGuessesNotApplied/chat",
+        "status": "pass",
+        "elapsed_seconds": 0
+      },
+      {
+        "package": "github.com/go-aie/teamx/internal/platform/lark",
+        "test": "TestReplyAdapterUnknownNeverGuessesNotApplied/parent",
+        "status": "pass",
+        "elapsed_seconds": 0
+      },
+      {
+        "package": "github.com/go-aie/teamx/internal/platform/lark",
+        "test": "TestReplyAdapterUnknownNeverGuessesNotApplied/root",
+        "status": "pass",
+        "elapsed_seconds": 0
+      },
+      {
+        "package": "github.com/go-aie/teamx/internal/platform/lark",
+        "test": "TestReplyAdapterUnknownNeverGuessesNotApplied/thread",
+        "status": "pass",
+        "elapsed_seconds": 0
+      },
+      {
+        "package": "github.com/go-aie/teamx/internal/platform/lark",
+        "test": "TestReplyAdapterUnknownNeverGuessesNotApplied/deleted",
+        "status": "pass",
+        "elapsed_seconds": 0
+      },
+      {
+        "package": "github.com/go-aie/teamx/internal/platform/lark",
+        "test": "TestReplyAdapterUnknownNeverGuessesNotApplied/same_id",
+        "status": "pass",
+        "elapsed_seconds": 0
+      },
+      {
+        "package": "github.com/go-aie/teamx/internal/platform/lark",
+        "test": "TestReplyAdapterUnknownNeverGuessesNotApplied/not_sent",
+        "status": "pass",
+        "elapsed_seconds": 0
+      },
+      {
+        "package": "github.com/go-aie/teamx/internal/platform/lark",
+        "test": "TestReplyAdapterUnknownNeverGuessesNotApplied",
+        "status": "pass",
+        "elapsed_seconds": 0
+      },
+      {
+        "package": "github.com/go-aie/teamx/internal/platform/lark",
+        "test": "TestReplyTargetResolutionKeepsRootAndExactMessage",
+        "status": "pass",
+        "elapsed_seconds": 0
+      },
+      {
+        "package": "github.com/go-aie/teamx/internal/platform/lark",
+        "test": "TestSelfSendExactIdentityAndReceipt/ok",
+        "status": "pass",
+        "elapsed_seconds": 0
+      },
+      {
+        "package": "github.com/go-aie/teamx/internal/platform/lark",
+        "test": "TestSelfSendExactIdentityAndReceipt/peer",
+        "status": "pass",
+        "elapsed_seconds": 0
+      },
+      {
+        "package": "github.com/go-aie/teamx/internal/platform/lark",
+        "test": "TestSelfSendExactIdentityAndReceipt/group",
+        "status": "pass",
+        "elapsed_seconds": 0
+      },
+      {
+        "package": "github.com/go-aie/teamx/internal/platform/lark",
+        "test": "TestSelfSendExactIdentityAndReceipt/namespace",
+        "status": "pass",
+        "elapsed_seconds": 0
+      },
+      {
+        "package": "github.com/go-aie/teamx/internal/platform/lark",
+        "test": "TestSelfSendExactIdentityAndReceipt/tenant",
+        "status": "pass",
+        "elapsed_seconds": 0
+      },
+      {
+        "package": "github.com/go-aie/teamx/internal/platform/lark",
+        "test": "TestSelfSendExactIdentityAndReceipt/container",
+        "status": "pass",
+        "elapsed_seconds": 0
+      },
+      {
+        "package": "github.com/go-aie/teamx/internal/platform/lark",
+        "test": "TestSelfSendExactIdentityAndReceipt/incomplete",
+        "status": "pass",
+        "elapsed_seconds": 0
+      },
+      {
+        "package": "github.com/go-aie/teamx/internal/platform/lark",
+        "test": "TestSelfSendExactIdentityAndReceipt/body",
+        "status": "pass",
+        "elapsed_seconds": 0
+      },
+      {
+        "package": "github.com/go-aie/teamx/internal/platform/lark",
+        "test": "TestSelfSendExactIdentityAndReceipt/author",
+        "status": "pass",
+        "elapsed_seconds": 0
+      },
+      {
+        "package": "github.com/go-aie/teamx/internal/platform/lark",
+        "test": "TestSelfSendExactIdentityAndReceipt/unknown",
+        "status": "pass",
+        "elapsed_seconds": 0
+      },
+      {
+        "package": "github.com/go-aie/teamx/internal/platform/lark",
+        "test": "TestSelfSendExactIdentityAndReceipt",
+        "status": "pass",
+        "elapsed_seconds": 0
+      },
+      {
+        "package": "github.com/go-aie/teamx/internal/platform/lark",
+        "test": "TestSelfSendAccountCapacity",
+        "status": "pass",
+        "elapsed_seconds": 0
+      },
+      {
+        "package": "github.com/go-aie/teamx/internal/platform/lark",
+        "test": "TestAcceptedActionsSeparateGroupSendsFromPendingUserSends/user",
+        "status": "pass",
+        "elapsed_seconds": 0
+      },
+      {
+        "package": "github.com/go-aie/teamx/internal/platform/lark",
+        "test": "TestAcceptedActionsSeparateGroupSendsFromPendingUserSends/chat",
+        "status": "pass",
+        "elapsed_seconds": 0
+      },
+      {
+        "package": "github.com/go-aie/teamx/internal/platform/lark",
+        "test": "TestAcceptedActionsSeparateGroupSendsFromPendingUserSends",
+        "status": "pass",
+        "elapsed_seconds": 0
+      },
+      {
+        "package": "github.com/go-aie/teamx/internal/platform/lark",
+        "test": "TestSendAdapterAndResolution/user",
+        "status": "pass",
+        "elapsed_seconds": 0
+      },
+      {
+        "package": "github.com/go-aie/teamx/internal/platform/lark",
+        "test": "TestSendAdapterAndResolution/chat",
+        "status": "pass",
+        "elapsed_seconds": 0
+      },
+      {
+        "package": "github.com/go-aie/teamx/internal/platform/lark",
+        "test": "TestSendAdapterAndResolution",
+        "status": "pass",
+        "elapsed_seconds": 0
+      },
+      {
+        "package": "github.com/go-aie/teamx/internal/platform/lark",
+        "test": "TestSendRejectsBeforeDispatch/disabled",
+        "status": "pass",
+        "elapsed_seconds": 0
+      },
+      {
+        "package": "github.com/go-aie/teamx/internal/platform/lark",
+        "test": "TestSendRejectsBeforeDispatch/body",
+        "status": "pass",
+        "elapsed_seconds": 0
+      },
+      {
+        "package": "github.com/go-aie/teamx/internal/platform/lark",
+        "test": "TestSendRejectsBeforeDispatch/extra",
+        "status": "pass",
+        "elapsed_seconds": 0
+      },
+      {
+        "package": "github.com/go-aie/teamx/internal/platform/lark",
+        "test": "TestSendRejectsBeforeDispatch/oversize",
+        "status": "pass",
+        "elapsed_seconds": 0
+      },
+      {
+        "package": "github.com/go-aie/teamx/internal/platform/lark",
+        "test": "TestSendRejectsBeforeDispatch/utf8",
+        "status": "pass",
+        "elapsed_seconds": 0
+      },
+      {
+        "package": "github.com/go-aie/teamx/internal/platform/lark",
+        "test": "TestSendRejectsBeforeDispatch/operation",
+        "status": "pass",
+        "elapsed_seconds": 0
+      },
+      {
+        "package": "github.com/go-aie/teamx/internal/platform/lark",
+        "test": "TestSendRejectsBeforeDispatch/provider",
+        "status": "pass",
+        "elapsed_seconds": 0
+      },
+      {
+        "package": "github.com/go-aie/teamx/internal/platform/lark",
+        "test": "TestSendRejectsBeforeDispatch/instance",
+        "status": "pass",
+        "elapsed_seconds": 0
+      },
+      {
+        "package": "github.com/go-aie/teamx/internal/platform/lark",
+        "test": "TestSendRejectsBeforeDispatch/app",
+        "status": "pass",
+        "elapsed_seconds": 0
+      },
+      {
+        "package": "github.com/go-aie/teamx/internal/platform/lark",
+        "test": "TestSendRejectsBeforeDispatch/tenant",
+        "status": "pass",
+        "elapsed_seconds": 0
+      },
+      {
+        "package": "github.com/go-aie/teamx/internal/platform/lark",
+        "test": "TestSendRejectsBeforeDispatch/self",
+        "status": "pass",
+        "elapsed_seconds": 0
+      },
+      {
+        "package": "github.com/go-aie/teamx/internal/platform/lark",
+        "test": "TestSendRejectsBeforeDispatch/peer",
+        "status": "pass",
+        "elapsed_seconds": 0
+      },
+      {
+        "package": "github.com/go-aie/teamx/internal/platform/lark",
+        "test": "TestSendRejectsBeforeDispatch/p2p_as_group",
+        "status": "pass",
+        "elapsed_seconds": 0
+      },
+      {
+        "package": "github.com/go-aie/teamx/internal/platform/lark",
+        "test": "TestSendRejectsBeforeDispatch/group_as_user",
+        "status": "pass",
+        "elapsed_seconds": 0
+      },
+      {
+        "package": "github.com/go-aie/teamx/internal/platform/lark",
+        "test": "TestSendRejectsBeforeDispatch/thread",
+        "status": "pass",
+        "elapsed_seconds": 0
+      },
+      {
+        "package": "github.com/go-aie/teamx/internal/platform/lark",
+        "test": "TestSendRejectsBeforeDispatch/message",
+        "status": "pass",
+        "elapsed_seconds": 0
+      },
+      {
+        "package": "github.com/go-aie/teamx/internal/platform/lark",
+        "test": "TestSendRejectsBeforeDispatch/containers",
+        "status": "pass",
+        "elapsed_seconds": 0
+      },
+      {
+        "package": "github.com/go-aie/teamx/internal/platform/lark",
+        "test": "TestSendRejectsBeforeDispatch/membership",
+        "status": "pass",
+        "elapsed_seconds": 0
+      },
+      {
+        "package": "github.com/go-aie/teamx/internal/platform/lark",
+        "test": "TestSendRejectsBeforeDispatch/key",
+        "status": "pass",
+        "elapsed_seconds": 0
+      },
+      {
+        "package": "github.com/go-aie/teamx/internal/platform/lark",
+        "test": "TestSendRejectsBeforeDispatch",
+        "status": "pass",
+        "elapsed_seconds": 0
+      },
+      {
+        "package": "github.com/go-aie/teamx/internal/platform/lark",
+        "test": "TestSendUncertainReceiptNeverRetries/timeout",
+        "status": "pass",
+        "elapsed_seconds": 0
+      },
+      {
+        "package": "github.com/go-aie/teamx/internal/platform/lark",
+        "test": "TestSendUncertainReceiptNeverRetries/not_sent",
+        "status": "pass",
+        "elapsed_seconds": 0
+      },
+      {
+        "package": "github.com/go-aie/teamx/internal/platform/lark",
+        "test": "TestSendUncertainReceiptNeverRetries/bad_id",
+        "status": "pass",
+        "elapsed_seconds": 0
+      },
+      {
+        "package": "github.com/go-aie/teamx/internal/platform/lark",
+        "test": "TestSendUncertainReceiptNeverRetries/missing",
+        "status": "pass",
+        "elapsed_seconds": 0
+      },
+      {
+        "package": "github.com/go-aie/teamx/internal/platform/lark",
+        "test": "TestSendUncertainReceiptNeverRetries/body",
+        "status": "pass",
+        "elapsed_seconds": 0
+      },
+      {
+        "package": "github.com/go-aie/teamx/internal/platform/lark",
+        "test": "TestSendUncertainReceiptNeverRetries/sender",
+        "status": "pass",
+        "elapsed_seconds": 0
+      },
+      {
+        "package": "github.com/go-aie/teamx/internal/platform/lark",
+        "test": "TestSendUncertainReceiptNeverRetries/sender_type",
+        "status": "pass",
+        "elapsed_seconds": 0
+      },
+      {
+        "package": "github.com/go-aie/teamx/internal/platform/lark",
+        "test": "TestSendUncertainReceiptNeverRetries/tenant",
+        "status": "pass",
+        "elapsed_seconds": 0
+      },
+      {
+        "package": "github.com/go-aie/teamx/internal/platform/lark",
+        "test": "TestSendUncertainReceiptNeverRetries/chat",
+        "status": "pass",
+        "elapsed_seconds": 0
+      },
+      {
+        "package": "github.com/go-aie/teamx/internal/platform/lark",
+        "test": "TestSendUncertainReceiptNeverRetries/parent",
+        "status": "pass",
+        "elapsed_seconds": 0
+      },
+      {
+        "package": "github.com/go-aie/teamx/internal/platform/lark",
+        "test": "TestSendUncertainReceiptNeverRetries/root",
+        "status": "pass",
+        "elapsed_seconds": 0
+      },
+      {
+        "package": "github.com/go-aie/teamx/internal/platform/lark",
+        "test": "TestSendUncertainReceiptNeverRetries/thread",
+        "status": "pass",
+        "elapsed_seconds": 0
+      },
+      {
+        "package": "github.com/go-aie/teamx/internal/platform/lark",
+        "test": "TestSendUncertainReceiptNeverRetries/deleted",
+        "status": "pass",
+        "elapsed_seconds": 0
+      },
+      {
+        "package": "github.com/go-aie/teamx/internal/platform/lark",
+        "test": "TestSendUncertainReceiptNeverRetries",
+        "status": "pass",
+        "elapsed_seconds": 0
+      },
+      {
+        "package": "github.com/go-aie/teamx/internal/room",
+        "test": "TestActionDispatchFrozenContentAndExactRecord/unchanged",
+        "status": "pass",
+        "elapsed_seconds": 0.36
+      },
+      {
+        "package": "github.com/go-aie/teamx/internal/room",
+        "test": "TestActionDispatchFrozenContentAndExactRecord/body",
+        "status": "pass",
+        "elapsed_seconds": 0.47
+      },
+      {
+        "package": "github.com/go-aie/teamx/internal/room",
+        "test": "TestActionDispatchFrozenContentAndExactRecord/target",
+        "status": "pass",
+        "elapsed_seconds": 0.5
+      },
+      {
+        "package": "github.com/go-aie/teamx/internal/room",
+        "test": "TestActionDispatchFrozenContentAndExactRecord/key",
+        "status": "pass",
+        "elapsed_seconds": 0.48
+      },
+      {
+        "package": "github.com/go-aie/teamx/internal/room",
+        "test": "TestActionDispatchFrozenContentAndExactRecord/operation",
+        "status": "pass",
+        "elapsed_seconds": 0.43
+      },
+      {
+        "package": "github.com/go-aie/teamx/internal/room",
+        "test": "TestActionDispatchFrozenContentAndExactRecord/digest",
+        "status": "pass",
+        "elapsed_seconds": 0.45
+      },
+      {
+        "package": "github.com/go-aie/teamx/internal/room",
+        "test": "TestActionDispatchFrozenContentAndExactRecord/account",
+        "status": "pass",
+        "elapsed_seconds": 0.43
+      },
+      {
+        "package": "github.com/go-aie/teamx/internal/room",
+        "test": "TestActionDispatchFrozenContentAndExactRecord",
+        "status": "pass",
+        "elapsed_seconds": 3.12
+      },
+      {
+        "package": "github.com/go-aie/teamx/internal/room",
+        "test": "TestActionInputCanonicalNestedContent",
+        "status": "pass",
+        "elapsed_seconds": 0
+      },
+      {
+        "package": "github.com/go-aie/teamx/internal/room",
+        "test": "TestActionLedgerReadableDuringSessionRecovery/closing",
+        "status": "pass",
+        "elapsed_seconds": 10.73
+      },
+      {
+        "package": "github.com/go-aie/teamx/internal/room",
+        "test": "TestActionLedgerReadableDuringSessionRecovery/failed",
+        "status": "pass",
+        "elapsed_seconds": 10.82
+      },
+      {
+        "package": "github.com/go-aie/teamx/internal/room",
+        "test": "TestActionLedgerReadableDuringSessionRecovery/waiting",
+        "status": "pass",
+        "elapsed_seconds": 11.01
+      },
+      {
+        "package": "github.com/go-aie/teamx/internal/room",
+        "test": "TestActionLedgerReadableDuringSessionRecovery",
+        "status": "pass",
+        "elapsed_seconds": 0
+      },
+      {
+        "package": "github.com/go-aie/teamx/internal/room",
+        "test": "TestActionsLedgerFailureNeverReplays/intent",
+        "status": "pass",
+        "elapsed_seconds": 0.26
+      },
+      {
+        "package": "github.com/go-aie/teamx/internal/room",
+        "test": "TestActionsLedgerFailureNeverReplays/attempt",
+        "status": "pass",
+        "elapsed_seconds": 0.41
+      },
+      {
+        "package": "github.com/go-aie/teamx/internal/room",
+        "test": "TestActionsLedgerFailureNeverReplays/result",
+        "status": "pass",
+        "elapsed_seconds": 0.46
+      },
+      {
+        "package": "github.com/go-aie/teamx/internal/room",
+        "test": "TestActionsLedgerFailureNeverReplays/projection",
+        "status": "pass",
+        "elapsed_seconds": 0.37
+      },
+      {
+        "package": "github.com/go-aie/teamx/internal/room",
+        "test": "TestActionsLedgerFailureNeverReplays",
+        "status": "pass",
+        "elapsed_seconds": 1.5
+      },
+      {
+        "package": "github.com/go-aie/teamx/internal/room",
+        "test": "TestActionsLegacyReceiptAndSchemaPreflight",
+        "status": "pass",
+        "elapsed_seconds": 0.49
+      },
+      {
+        "package": "github.com/go-aie/teamx/internal/room",
+        "test": "TestActionsAdapterInputAndMessageTargetAreGeneric",
+        "status": "pass",
+        "elapsed_seconds": 0.27
+      },
+      {
+        "package": "github.com/go-aie/teamx/internal/room",
+        "test": "TestGitlabImagesManagedCLI/false/images",
+        "status": "pass",
+        "elapsed_seconds": 1.32
+      },
+      {
+        "package": "github.com/go-aie/teamx/internal/room",
+        "test": "TestGitlabImagesManagedCLI/false/caption",
+        "status": "pass",
+        "elapsed_seconds": 1.23
+      },
+      {
+        "package": "github.com/go-aie/teamx/internal/room",
+        "test": "TestGitlabImagesManagedCLI/false/4096",
+        "status": "pass",
+        "elapsed_seconds": 1.35
+      },
+      {
+        "package": "github.com/go-aie/teamx/internal/room",
+        "test": "TestGitlabImagesManagedCLI/false/upload-failure",
+        "status": "pass",
+        "elapsed_seconds": 1.11
+      },
+      {
+        "package": "github.com/go-aie/teamx/internal/room",
+        "test": "TestGitlabImagesManagedCLI/false/post-502",
+        "status": "pass",
+        "elapsed_seconds": 1.18
+      },
+      {
+        "package": "github.com/go-aie/teamx/internal/room",
+        "test": "TestGitlabImagesManagedCLI/false/read-failure",
+        "status": "pass",
+        "elapsed_seconds": 1.13
+      },
+      {
+        "package": "github.com/go-aie/teamx/internal/room",
+        "test": "TestGitlabImagesManagedCLI/false/thread-failure",
+        "status": "pass",
+        "elapsed_seconds": 1.15
+      },
+      {
+        "package": "github.com/go-aie/teamx/internal/room",
+        "test": "TestGitlabImagesManagedCLI/true/images",
+        "status": "pass",
+        "elapsed_seconds": 1.26
+      },
+      {
+        "package": "github.com/go-aie/teamx/internal/room",
+        "test": "TestGitlabImagesManagedCLI/true/caption",
+        "status": "pass",
+        "elapsed_seconds": 1.21
+      },
+      {
+        "package": "github.com/go-aie/teamx/internal/room",
+        "test": "TestGitlabImagesManagedCLI/true/4096",
+        "status": "pass",
+        "elapsed_seconds": 1.32
+      },
+      {
+        "package": "github.com/go-aie/teamx/internal/room",
+        "test": "TestGitlabImagesManagedCLI/true/upload-failure",
+        "status": "pass",
+        "elapsed_seconds": 1.23
+      },
+      {
+        "package": "github.com/go-aie/teamx/internal/room",
+        "test": "TestGitlabImagesManagedCLI/true/post-502",
+        "status": "pass",
+        "elapsed_seconds": 1.29
+      },
+      {
+        "package": "github.com/go-aie/teamx/internal/room",
+        "test": "TestGitlabImagesManagedCLI/true/read-failure",
+        "status": "pass",
+        "elapsed_seconds": 1.25
+      },
+      {
+        "package": "github.com/go-aie/teamx/internal/room",
+        "test": "TestGitlabImagesManagedCLI/true/thread-failure",
+        "status": "pass",
+        "elapsed_seconds": 1.14
+      },
+      {
+        "package": "github.com/go-aie/teamx/internal/room",
+        "test": "TestGitlabImagesManagedCLI",
+        "status": "pass",
+        "elapsed_seconds": 17.16
+      },
+      {
+        "package": "github.com/go-aie/teamx/internal/room",
+        "test": "TestGitlabImagesPreflightAndPolicy/policy",
+        "status": "pass",
+        "elapsed_seconds": 0.9
+      },
+      {
+        "package": "github.com/go-aie/teamx/internal/room",
+        "test": "TestGitlabImagesPreflightAndPolicy/rule",
+        "status": "pass",
+        "elapsed_seconds": 1
+      },
+      {
+        "package": "github.com/go-aie/teamx/internal/room",
+        "test": "TestGitlabImagesPreflightAndPolicy/instruction",
+        "status": "pass",
+        "elapsed_seconds": 0.97
+      },
+      {
+        "package": "github.com/go-aie/teamx/internal/room",
+        "test": "TestGitlabImagesPreflightAndPolicy/question",
+        "status": "pass",
+        "elapsed_seconds": 0.93
+      },
+      {
+        "package": "github.com/go-aie/teamx/internal/room",
+        "test": "TestGitlabImagesPreflightAndPolicy/message-refs",
+        "status": "pass",
+        "elapsed_seconds": 0.9
+      },
+      {
+        "package": "github.com/go-aie/teamx/internal/room",
+        "test": "TestGitlabImagesPreflightAndPolicy/code",
+        "status": "pass",
+        "elapsed_seconds": 0.93
+      },
+      {
+        "package": "github.com/go-aie/teamx/internal/room",
+        "test": "TestGitlabImagesPreflightAndPolicy/html",
+        "status": "pass",
+        "elapsed_seconds": 0.96
+      },
+      {
+        "package": "github.com/go-aie/teamx/internal/room",
+        "test": "TestGitlabImagesPreflightAndPolicy/quick",
+        "status": "pass",
+        "elapsed_seconds": 0.99
+      },
+      {
+        "package": "github.com/go-aie/teamx/internal/room",
+        "test": "TestGitlabImagesPreflightAndPolicy/unknown-field",
+        "status": "pass",
+        "elapsed_seconds": 0.92
+      },
+      {
+        "package": "github.com/go-aie/teamx/internal/room",
+        "test": "TestGitlabImagesPreflightAndPolicy/bad-id",
+        "status": "pass",
+        "elapsed_seconds": 1.04
+      },
+      {
+        "package": "github.com/go-aie/teamx/internal/room",
+        "test": "TestGitlabImagesPreflightAndPolicy/fraction",
+        "status": "pass",
+        "elapsed_seconds": 0.95
+      },
+      {
+        "package": "github.com/go-aie/teamx/internal/room",
+        "test": "TestGitlabImagesPreflightAndPolicy/duplicate",
+        "status": "pass",
+        "elapsed_seconds": 0.9
+      },
+      {
+        "package": "github.com/go-aie/teamx/internal/room",
+        "test": "TestGitlabImagesPreflightAndPolicy/old-text-limit",
+        "status": "pass",
+        "elapsed_seconds": 0.88
+      },
+      {
+        "package": "github.com/go-aie/teamx/internal/room",
+        "test": "TestGitlabImagesPreflightAndPolicy",
+        "status": "pass",
+        "elapsed_seconds": 12.27
+      },
+      {
+        "package": "github.com/go-aie/teamx/internal/room",
+        "test": "TestGitlabImagesFinalDispatchAndDeadline/dispatch",
+        "status": "pass",
+        "elapsed_seconds": 1.07
+      },
+      {
+        "package": "github.com/go-aie/teamx/internal/room",
+        "test": "TestGitlabImagesFinalDispatchAndDeadline/cancel-upload",
+        "status": "pass",
+        "elapsed_seconds": 1.05
+      },
+      {
+        "package": "github.com/go-aie/teamx/internal/room",
+        "test": "TestGitlabImagesFinalDispatchAndDeadline/deadline",
+        "status": "pass",
+        "elapsed_seconds": 1.05
+      },
+      {
+        "package": "github.com/go-aie/teamx/internal/room",
+        "test": "TestGitlabImagesFinalDispatchAndDeadline/digest-equivalent",
+        "status": "pass",
+        "elapsed_seconds": 1.34
+      },
+      {
+        "package": "github.com/go-aie/teamx/internal/room",
+        "test": "TestGitlabImagesFinalDispatchAndDeadline",
+        "status": "pass",
+        "elapsed_seconds": 4.51
+      },
+      {
+        "package": "github.com/go-aie/teamx/internal/room",
+        "test": "TestGitlabImageReceiptPolicyPreservation",
+        "status": "pass",
+        "elapsed_seconds": 1.21
+      },
+      {
+        "package": "github.com/go-aie/teamx/internal/room",
+        "test": "TestGitlabImagesHelpAndDiagnostics",
+        "status": "pass",
+        "elapsed_seconds": 1.27
+      },
+      {
+        "package": "github.com/go-aie/teamx/internal/room",
+        "test": "TestGitlabImageAgentContractEvidence",
+        "status": "pass",
+        "elapsed_seconds": 1.47
+      },
+      {
+        "package": "github.com/go-aie/teamx/internal/room",
+        "test": "TestGitlabImagesRevocationStopsRemainingRequests/admission-cancel",
+        "status": "pass",
+        "elapsed_seconds": 1.03
+      },
+      {
+        "package": "github.com/go-aie/teamx/internal/room",
+        "test": "TestGitlabImagesRevocationStopsRemainingRequests/turn",
+        "status": "pass",
+        "elapsed_seconds": 1.09
+      },
+      {
+        "package": "github.com/go-aie/teamx/internal/room",
+        "test": "TestGitlabImagesRevocationStopsRemainingRequests/session",
+        "status": "pass",
+        "elapsed_seconds": 1.17
+      },
+      {
+        "package": "github.com/go-aie/teamx/internal/room",
+        "test": "TestGitlabImagesRevocationStopsRemainingRequests",
+        "status": "pass",
+        "elapsed_seconds": 3.3
+      },
+      {
+        "package": "github.com/go-aie/teamx/internal/room",
+        "test": "TestGitlabImagesPolicyChangeBeforeAttempt",
+        "status": "pass",
+        "elapsed_seconds": 1.09
+      },
+      {
+        "package": "github.com/go-aie/teamx/internal/room",
+        "test": "TestGitlabImagesSelectionsCLI/first",
+        "status": "pass",
+        "elapsed_seconds": 1.38
+      },
+      {
+        "package": "github.com/go-aie/teamx/internal/room",
+        "test": "TestGitlabImagesSelectionsCLI/second",
+        "status": "pass",
+        "elapsed_seconds": 1.04
+      },
+      {
+        "package": "github.com/go-aie/teamx/internal/room",
+        "test": "TestGitlabImagesSelectionsCLI/reverse",
+        "status": "pass",
+        "elapsed_seconds": 1.07
+      },
+      {
+        "package": "github.com/go-aie/teamx/internal/room",
+        "test": "TestGitlabImagesSelectionsCLI/four",
+        "status": "pass",
+        "elapsed_seconds": 1.08
+      },
+      {
+        "package": "github.com/go-aie/teamx/internal/room",
+        "test": "TestGitlabImagesSelectionsCLI",
+        "status": "pass",
+        "elapsed_seconds": 4.56
+      },
+      {
+        "package": "github.com/go-aie/teamx/internal/room",
+        "test": "TestGitlabImagesExistingMatterContext/false",
+        "status": "pass",
+        "elapsed_seconds": 1.29
+      },
+      {
+        "package": "github.com/go-aie/teamx/internal/room",
+        "test": "TestGitlabImagesExistingMatterContext/true",
+        "status": "pass",
+        "elapsed_seconds": 1.2
+      },
+      {
+        "package": "github.com/go-aie/teamx/internal/room",
+        "test": "TestGitlabImagesExistingMatterContext",
+        "status": "pass",
+        "elapsed_seconds": 2.49
+      },
+      {
+        "package": "github.com/go-aie/teamx/internal/room",
+        "test": "TestGitlabImagesIndependentProcessRecovery/comment/settled",
+        "status": "pass",
+        "elapsed_seconds": 4.78
+      },
+      {
+        "package": "github.com/go-aie/teamx/internal/room",
+        "test": "TestGitlabImagesIndependentProcessRecovery/comment/during_upload",
+        "status": "pass",
+        "elapsed_seconds": 3.79
+      },
+      {
+        "package": "github.com/go-aie/teamx/internal/room",
+        "test": "TestGitlabImagesIndependentProcessRecovery/comment/after_dispatch",
+        "status": "pass",
+        "elapsed_seconds": 3.89
+      },
+      {
+        "package": "github.com/go-aie/teamx/internal/room",
+        "test": "TestGitlabImagesIndependentProcessRecovery/comment/before_verification",
+        "status": "pass",
+        "elapsed_seconds": 3.89
+      },
+      {
+        "package": "github.com/go-aie/teamx/internal/room",
+        "test": "TestGitlabImagesIndependentProcessRecovery/thread/settled",
+        "status": "pass",
+        "elapsed_seconds": 4.81
+      },
+      {
+        "package": "github.com/go-aie/teamx/internal/room",
+        "test": "TestGitlabImagesIndependentProcessRecovery/thread/during_upload",
+        "status": "pass",
+        "elapsed_seconds": 3.93
+      },
+      {
+        "package": "github.com/go-aie/teamx/internal/room",
+        "test": "TestGitlabImagesIndependentProcessRecovery/thread/after_dispatch",
+        "status": "pass",
+        "elapsed_seconds": 3.88
+      },
+      {
+        "package": "github.com/go-aie/teamx/internal/room",
+        "test": "TestGitlabImagesIndependentProcessRecovery/thread/before_verification",
+        "status": "pass",
+        "elapsed_seconds": 3.88
+      },
+      {
+        "package": "github.com/go-aie/teamx/internal/room",
+        "test": "TestGitlabImagesIndependentProcessRecovery",
+        "status": "pass",
+        "elapsed_seconds": 32.87
+      },
+      {
+        "package": "github.com/go-aie/teamx/internal/room",
+        "test": "TestLarkImagesIndependentProcessRecovery/embedded/group/during_upload",
+        "status": "pass",
+        "elapsed_seconds": 15.02
+      },
+      {
+        "package": "github.com/go-aie/teamx/internal/room",
+        "test": "TestLarkImagesIndependentProcessRecovery/embedded/group/settled",
+        "status": "pass",
+        "elapsed_seconds": 18.86
+      },
+      {
+        "package": "github.com/go-aie/teamx/internal/room",
+        "test": "TestLarkImagesIndependentProcessRecovery/embedded/self/before_verification",
+        "status": "pass",
+        "elapsed_seconds": 21.64
+      },
+      {
+        "package": "github.com/go-aie/teamx/internal/room",
+        "test": "TestLarkImagesIndependentProcessRecovery/input-log/self/settled",
+        "status": "pass",
+        "elapsed_seconds": 22.17
+      },
+      {
+        "package": "github.com/go-aie/teamx/internal/room",
+        "test": "TestLarkImagesIndependentProcessRecovery/input-log/group/after_dispatch",
+        "status": "pass",
+        "elapsed_seconds": 30.38
+      },
+      {
+        "package": "github.com/go-aie/teamx/internal/room",
+        "test": "TestLarkImagesIndependentProcessRecovery/input-log/group/before_verification",
+        "status": "pass",
+        "elapsed_seconds": 34.99
+      },
+      {
+        "package": "github.com/go-aie/teamx/internal/room",
+        "test": "TestLarkImagesIndependentProcessRecovery/input-log/group/settled",
+        "status": "pass",
+        "elapsed_seconds": 38.86
+      },
+      {
+        "package": "github.com/go-aie/teamx/internal/room",
+        "test": "TestLarkImagesIndependentProcessRecovery/embedded/self/after_dispatch",
+        "status": "pass",
+        "elapsed_seconds": 41.31
+      },
+      {
+        "package": "github.com/go-aie/teamx/internal/room",
+        "test": "TestLarkImagesIndependentProcessRecovery/input-log/self/during_upload",
+        "status": "pass",
+        "elapsed_seconds": 50.03
+      },
+      {
+        "package": "github.com/go-aie/teamx/internal/room",
+        "test": "TestLarkImagesIndependentProcessRecovery/embedded/self/settled",
+        "status": "pass",
+        "elapsed_seconds": 50.31
+      },
+      {
+        "package": "github.com/go-aie/teamx/internal/room",
+        "test": "TestLarkImagesIndependentProcessRecovery",
+        "status": "pass",
+        "elapsed_seconds": 0
+      },
+      {
+        "package": "github.com/go-aie/teamx/internal/room",
+        "test": "TestLarkSelfSendRevocationRaces/remove",
+        "status": "pass",
+        "elapsed_seconds": 7.72
+      },
+      {
+        "package": "github.com/go-aie/teamx/internal/room",
+        "test": "TestLarkSelfSendRevocationRaces/unbind",
+        "status": "pass",
+        "elapsed_seconds": 8.32
+      },
+      {
+        "package": "github.com/go-aie/teamx/internal/room",
+        "test": "TestLarkSelfSendRevocationRaces/disable",
+        "status": "pass",
+        "elapsed_seconds": 9.96
+      },
+      {
+        "package": "github.com/go-aie/teamx/internal/room",
+        "test": "TestLarkSelfSendRevocationRaces/account",
+        "status": "pass",
+        "elapsed_seconds": 16.09
+      },
+      {
+        "package": "github.com/go-aie/teamx/internal/room",
+        "test": "TestLarkSelfSendRevocationRaces/rotate",
+        "status": "pass",
+        "elapsed_seconds": 22.02
+      },
+      {
+        "package": "github.com/go-aie/teamx/internal/room",
+        "test": "TestLarkSelfSendRevocationRaces",
+        "status": "pass",
+        "elapsed_seconds": 0
+      },
+      {
+        "package": "github.com/go-aie/teamx/internal/room",
+        "test": "TestLarkSelfSendLedgerFailures/intent",
+        "status": "pass",
+        "elapsed_seconds": 6
+      },
+      {
+        "package": "github.com/go-aie/teamx/internal/room",
+        "test": "TestLarkSelfSendLedgerFailures/attempt",
+        "status": "pass",
+        "elapsed_seconds": 5.85
+      },
+      {
+        "package": "github.com/go-aie/teamx/internal/room",
+        "test": "TestLarkSelfSendIndependentProcessRecovery/settled",
+        "status": "pass",
+        "elapsed_seconds": 13.98
+      },
+      {
+        "package": "github.com/go-aie/teamx/internal/room",
+        "test": "TestLarkSelfSendManagedCapability",
+        "status": "pass",
+        "elapsed_seconds": 15.27
+      },
+      {
+        "package": "github.com/go-aie/teamx/internal/room",
+        "test": "TestLarkSelfSendLedgerFailures/result",
+        "status": "pass",
+        "elapsed_seconds": 6.76
+      },
+      {
+        "package": "github.com/go-aie/teamx/internal/room",
+        "test": "TestLarkSelfSendBindingViewExpires",
+        "status": "pass",
+        "elapsed_seconds": 22.4
+      },
+      {
+        "package": "github.com/go-aie/teamx/internal/room",
+        "test": "TestLarkSelfSendIndependentProcessRecovery/before_dispatch",
+        "status": "pass",
+        "elapsed_seconds": 11.69
+      },
+      {
+        "package": "github.com/go-aie/teamx/internal/room",
+        "test": "TestLarkSelfSendLedgerFailures/result_commit_unknown",
+        "status": "pass",
+        "elapsed_seconds": 7.34
+      },
+      {
+        "package": "github.com/go-aie/teamx/internal/room",
+        "test": "TestLarkSelfSendLedgerFailures",
+        "status": "pass",
+        "elapsed_seconds": 25.95
+      },
+      {
+        "package": "github.com/go-aie/teamx/internal/room",
+        "test": "TestLarkSelfSendConcurrentRoomsAndMembers",
+        "status": "pass",
+        "elapsed_seconds": 28.66
+      },
+      {
+        "package": "github.com/go-aie/teamx/internal/room",
+        "test": "TestLarkSelfSendIndependentProcessRecovery/after_dispatch",
+        "status": "pass",
+        "elapsed_seconds": 10.98
+      },
+      {
+        "package": "github.com/go-aie/teamx/internal/room",
+        "test": "TestLarkSelfSendIndependentProcessRecovery",
+        "status": "pass",
+        "elapsed_seconds": 36.66
+      }
+    ],
+    "fixture_slots": [
+      {
+        "test": "TestActionLedgerReadableDuringSessionRecovery/closing",
+        "observation": "parallel_test.go:22: fixture slot: wait=1.25µs held=10.72701025s"
+      },
+      {
+        "test": "TestActionLedgerReadableDuringSessionRecovery/failed",
+        "observation": "parallel_test.go:22: fixture slot: wait=834ns held=10.815489208s"
+      },
+      {
+        "test": "TestActionLedgerReadableDuringSessionRecovery/waiting",
+        "observation": "parallel_test.go:22: fixture slot: wait=500ns held=11.013470917s"
+      },
+      {
+        "test": "TestLarkImagesIndependentProcessRecovery/embedded/group/during_upload",
+        "observation": "parallel_test.go:22: fixture slot: wait=1.209µs held=15.023281625s"
+      },
+      {
+        "test": "TestLarkImagesIndependentProcessRecovery/embedded/group/settled",
+        "observation": "parallel_test.go:22: fixture slot: wait=542ns held=18.856193083s"
+      },
+      {
+        "test": "TestLarkImagesIndependentProcessRecovery/embedded/self/before_verification",
+        "observation": "parallel_test.go:22: fixture slot: wait=1.041µs held=21.635791709s"
+      },
+      {
+        "test": "TestLarkImagesIndependentProcessRecovery/input-log/self/settled",
+        "observation": "parallel_test.go:22: fixture slot: wait=500ns held=22.168728541s"
+      },
+      {
+        "test": "TestLarkImagesIndependentProcessRecovery/input-log/group/after_dispatch",
+        "observation": "parallel_test.go:22: fixture slot: wait=15.023231791s held=15.359180084s"
+      },
+      {
+        "test": "TestLarkImagesIndependentProcessRecovery/input-log/group/before_verification",
+        "observation": "parallel_test.go:22: fixture slot: wait=18.856278958s held=16.130514292s"
+      },
+      {
+        "test": "TestLarkImagesIndependentProcessRecovery/input-log/group/settled",
+        "observation": "parallel_test.go:22: fixture slot: wait=21.635628417s held=17.22906075s"
+      },
+      {
+        "test": "TestLarkImagesIndependentProcessRecovery/embedded/self/after_dispatch",
+        "observation": "parallel_test.go:22: fixture slot: wait=22.168606709s held=19.136456041s"
+      },
+      {
+        "test": "TestLarkImagesIndependentProcessRecovery/input-log/self/during_upload",
+        "observation": "parallel_test.go:22: fixture slot: wait=34.986820791s held=15.042486125s"
+      },
+      {
+        "test": "TestLarkImagesIndependentProcessRecovery/embedded/self/settled",
+        "observation": "parallel_test.go:22: fixture slot: wait=30.38236625s held=19.924108584s"
+      },
+      {
+        "test": "TestLarkSelfSendRevocationRaces/remove",
+        "observation": "parallel_test.go:22: fixture slot: wait=1.416µs held=7.721743375s"
+      },
+      {
+        "test": "TestLarkSelfSendRevocationRaces/unbind",
+        "observation": "parallel_test.go:22: fixture slot: wait=792ns held=8.317695416s"
+      },
+      {
+        "test": "TestLarkSelfSendRevocationRaces/disable",
+        "observation": "parallel_test.go:22: fixture slot: wait=2.625µs held=9.962358167s"
+      },
+      {
+        "test": "TestLarkSelfSendRevocationRaces/account",
+        "observation": "parallel_test.go:22: fixture slot: wait=500ns held=16.085998375s"
+      },
+      {
+        "test": "TestLarkSelfSendRevocationRaces/rotate",
+        "observation": "parallel_test.go:22: fixture slot: wait=7.721636667s held=14.296882041s"
+      },
+      {
+        "test": "TestLarkSelfSendManagedCapability",
+        "observation": "parallel_test.go:22: fixture slot: wait=1.709µs held=15.267763916s"
+      },
+      {
+        "test": "TestLarkSelfSendBindingViewExpires",
+        "observation": "parallel_test.go:22: fixture slot: wait=15.267770333s held=7.128266292s"
+      },
+      {
+        "test": "TestLarkSelfSendLedgerFailures",
+        "observation": "parallel_test.go:22: fixture slot: wait=333ns held=25.953342792s"
+      },
+      {
+        "test": "TestLarkSelfSendConcurrentRoomsAndMembers",
+        "observation": "parallel_test.go:22: fixture slot: wait=1.375µs held=28.660602167s"
+      },
+      {
+        "test": "TestLarkSelfSendIndependentProcessRecovery",
+        "observation": "parallel_test.go:22: fixture slot: wait=833ns held=36.657965167s"
+      }
+    ]
+  },
+  "checks": {
+    "default-compile": {
+      "args": [
+        "go",
+        "test",
+        "-run",
+        "^$",
+        "./internal/room"
+      ],
+      "exit_code": 0,
+      "wall_seconds": 7.9508549170568585,
+      "output": "ok  \tgithub.com/go-aie/teamx/internal/room\t0.528s [no tests to run]\n"
+    },
+    "e2e-compile": {
+      "args": [
+        "go",
+        "test",
+        "-tags=e2e",
+        "-run",
+        "^$",
+        "./internal/room"
+      ],
+      "exit_code": 0,
+      "wall_seconds": 25.974182040896267,
+      "output": "ok  \tgithub.com/go-aie/teamx/internal/room\t0.502s [no tests to run]\n"
+    },
+    "vet": {
+      "args": [
+        "go",
+        "vet",
+        "-tags=integration",
+        "./internal/room"
+      ],
+      "exit_code": 1,
+      "wall_seconds": 10.44984508305788,
+      "output": "internal/room/platform_gitlab_image_actions_integration_test.go:336:41: github.com/go-aie/teamx/internal/platform/gitlab.ImageRef struct literal uses unkeyed fields\n"
+    },
+    "vet-final": {
+      "args": [
+        "go",
+        "vet",
+        "-tags=integration",
+        "./internal/room"
+      ],
+      "exit_code": 0,
+      "wall_seconds": 3.3151111667975783,
+      "output": ""
+    },
+    "image-ref-regression": {
+      "args": [
+        "go",
+        "test",
+        "-race",
+        "-tags=integration",
+        "-count=1",
+        "-run",
+        "^TestGitlabImagesPreflightAndPolicy/bad-id$",
+        "./internal/room"
+      ],
+      "exit_code": 0,
+      "wall_seconds": 32.363520957995206,
+      "output": "ok  \tgithub.com/go-aie/teamx/internal/room\t3.051s\n"
+    },
+    "e2e-final-compile": {
+      "args": [
+        "go",
+        "test",
+        "-tags=e2e",
+        "-run",
+        "^$",
+        "./internal/room"
+      ],
+      "exit_code": 0,
+      "wall_seconds": 16.392868041992188,
+      "output": "ok  \tgithub.com/go-aie/teamx/internal/room\t(cached) [no tests to run]\n"
+    }
+  },
+  "conclusion": "Retain F3 component reopen after reversed-order rerun: all checks pass, initial complete slowdown not reproduced, isolated ledger savings about 0.65 and 0.54 seconds. Stable whole-selection speedup not established; no expansion.",
+  "deferred": [
+    "F4 workspace isolation and parallelism",
+    "F5 complete integration, complete race and whole-repository checks",
+    "Core three-minute and local-integration eight-minute budgets",
+    "Real platform/model/browser acceptance"
+  ],
+  "repeat_comparisons": {
+    "execution_order": [
+      "repeat-full-after",
+      "repeat-full-before",
+      "repeat-ledger-after",
+      "repeat-ledger-before"
+    ],
+    "method": "Reuse the same preserved integration test binaries; run after then before for both complete selection and isolated ledger, reversing the first measurement order. No concurrent build, race or other checks launched by this task. Every run used fresh private fixtures and count=1.",
+    "runs": {
+      "repeat-full-after": {
+        "label": "repeat-full-after",
+        "started": "2026-11-24T16:31:37.765464+08:00",
+        "wall_seconds": 120.86710208281875,
+        "exit_code": 0,
+        "args": [
+          "go",
+          "tool",
+          "test2json",
+          "-t",
+          "-p",
+          "github.com/go-aie/teamx/internal/room",
+          "/tmp/teamx-recovery-matrix/after.test",
+          "-test.v=test2json",
+          "-test.run=^(TestLarkSelfSendIndependentProcessRecovery|TestLarkSelfSendLedgerFailures|TestLarkSelfSendBindingViewExpires|TestLarkSelfSendConcurrentRoomsAndMembers|TestLarkSelfSendRevocationRaces|TestLarkSelfSendManagedCapability|TestActionsLedgerFailureNeverReplays|TestActionsLegacyReceiptAndSchemaPreflight|TestActionsAdapterInputAndMessageTargetAreGeneric|TestActionDispatchFrozenContentAndExactRecord|TestActionInputCanonicalNestedContent|TestActionLedgerReadableDuringSessionRecovery|TestLarkImagesIndependentProcessRecovery|TestGitlabImagesIndependentProcessRecovery)$",
+          "-test.count=1",
+          "-test.timeout=6m"
+        ],
+        "binary_sha256": "0925149f00a1493f0ff61bda085c909138e07557c62280429b1c5691deaa5f0b",
+        "child_user_cpu_seconds": 119.933633,
+        "child_system_cpu_seconds": 58.210348,
+        "load_average_start": [
+          11.9677734375,
+          13.78173828125,
+          17.87646484375
+        ],
+        "load_average_end": [
+          24.98291015625,
+          20.03125,
+          19.9287109375
+        ],
+        "counts": {
+          "pass": 58
+        },
+        "top_level": [
+          {
+            "Time": "2026-11-24T16:31:40.84437+08:00",
+            "Action": "pass",
+            "Package": "github.com/go-aie/teamx/internal/room",
+            "Test": "TestActionDispatchFrozenContentAndExactRecord",
+            "Elapsed": 2.76
+          },
+          {
+            "Time": "2026-11-24T16:31:40.844629+08:00",
+            "Action": "pass",
+            "Package": "github.com/go-aie/teamx/internal/room",
+            "Test": "TestActionInputCanonicalNestedContent",
+            "Elapsed": 0
+          },
+          {
+            "Time": "2026-11-24T16:31:53.93453+08:00",
+            "Action": "pass",
+            "Package": "github.com/go-aie/teamx/internal/room",
+            "Test": "TestActionLedgerReadableDuringSessionRecovery",
+            "Elapsed": 0
+          },
+          {
+            "Time": "2026-11-24T16:31:55.273265+08:00",
+            "Action": "pass",
+            "Package": "github.com/go-aie/teamx/internal/room",
+            "Test": "TestActionsLedgerFailureNeverReplays",
+            "Elapsed": 1.34
+          },
+          {
+            "Time": "2026-11-24T16:31:55.736698+08:00",
+            "Action": "pass",
+            "Package": "github.com/go-aie/teamx/internal/room",
+            "Test": "TestActionsLegacyReceiptAndSchemaPreflight",
+            "Elapsed": 0.46
+          },
+          {
+            "Time": "2026-11-24T16:31:55.947049+08:00",
+            "Action": "pass",
+            "Package": "github.com/go-aie/teamx/internal/room",
+            "Test": "TestActionsAdapterInputAndMessageTargetAreGeneric",
+            "Elapsed": 0.21
+          },
+          {
+            "Time": "2026-11-24T16:32:05.064374+08:00",
+            "Action": "pass",
+            "Package": "github.com/go-aie/teamx/internal/room",
+            "Test": "TestGitlabImagesIndependentProcessRecovery",
+            "Elapsed": 9.12
+          },
+          {
+            "Time": "2026-11-24T16:32:49.282996+08:00",
+            "Action": "pass",
+            "Package": "github.com/go-aie/teamx/internal/room",
+            "Test": "TestLarkImagesIndependentProcessRecovery",
+            "Elapsed": 0
+          },
+          {
+            "Time": "2026-11-24T16:33:05.731379+08:00",
+            "Action": "pass",
+            "Package": "github.com/go-aie/teamx/internal/room",
+            "Test": "TestLarkSelfSendRevocationRaces",
+            "Elapsed": 0
+          },
+          {
+            "Time": "2026-11-24T16:33:16.904423+08:00",
+            "Action": "pass",
+            "Package": "github.com/go-aie/teamx/internal/room",
+            "Test": "TestLarkSelfSendBindingViewExpires",
+            "Elapsed": 6.58
+          },
+          {
+            "Time": "2026-11-24T16:33:24.091423+08:00",
+            "Action": "pass",
+            "Package": "github.com/go-aie/teamx/internal/room",
+            "Test": "TestLarkSelfSendManagedCapability",
+            "Elapsed": 14.05
+          },
+          {
+            "Time": "2026-11-24T16:33:37.504358+08:00",
+            "Action": "pass",
+            "Package": "github.com/go-aie/teamx/internal/room",
+            "Test": "TestLarkSelfSendLedgerFailures",
+            "Elapsed": 25.2
+          },
+          {
+            "Time": "2026-11-24T16:33:38.626349+08:00",
+            "Action": "pass",
+            "Package": "github.com/go-aie/teamx/internal/room",
+            "Test": "TestLarkSelfSendIndependentProcessRecovery",
+            "Elapsed": 31.77
+          },
+          {
+            "Time": "2026-11-24T16:33:38.626803+08:00",
+            "Action": "pass",
+            "Package": "github.com/go-aie/teamx/internal/room",
+            "Test": "TestLarkSelfSendConcurrentRoomsAndMembers",
+            "Elapsed": 32.89
+          }
+        ],
+        "packages": [
+          {
+            "Time": "2026-11-24T16:33:38.629604+08:00",
+            "Action": "pass",
+            "Package": "github.com/go-aie/teamx/internal/room",
+            "Elapsed": 120.609
+          }
+        ],
+        "sources_unchanged": true,
+        "cases": [
+          {
+            "package": "github.com/go-aie/teamx/internal/room",
+            "test": "TestActionDispatchFrozenContentAndExactRecord/unchanged",
+            "status": "pass",
+            "elapsed_seconds": 0.34
+          },
+          {
+            "package": "github.com/go-aie/teamx/internal/room",
+            "test": "TestActionDispatchFrozenContentAndExactRecord/body",
+            "status": "pass",
+            "elapsed_seconds": 0.47
+          },
+          {
+            "package": "github.com/go-aie/teamx/internal/room",
+            "test": "TestActionDispatchFrozenContentAndExactRecord/target",
+            "status": "pass",
+            "elapsed_seconds": 0.38
+          },
+          {
+            "package": "github.com/go-aie/teamx/internal/room",
+            "test": "TestActionDispatchFrozenContentAndExactRecord/key",
+            "status": "pass",
+            "elapsed_seconds": 0.4
+          },
+          {
+            "package": "github.com/go-aie/teamx/internal/room",
+            "test": "TestActionDispatchFrozenContentAndExactRecord/operation",
+            "status": "pass",
+            "elapsed_seconds": 0.36
+          },
+          {
+            "package": "github.com/go-aie/teamx/internal/room",
+            "test": "TestActionDispatchFrozenContentAndExactRecord/digest",
+            "status": "pass",
+            "elapsed_seconds": 0.41
+          },
+          {
+            "package": "github.com/go-aie/teamx/internal/room",
+            "test": "TestActionDispatchFrozenContentAndExactRecord/account",
+            "status": "pass",
+            "elapsed_seconds": 0.4
+          },
+          {
+            "package": "github.com/go-aie/teamx/internal/room",
+            "test": "TestActionDispatchFrozenContentAndExactRecord",
+            "status": "pass",
+            "elapsed_seconds": 2.76
+          },
+          {
+            "package": "github.com/go-aie/teamx/internal/room",
+            "test": "TestActionInputCanonicalNestedContent",
+            "status": "pass",
+            "elapsed_seconds": 0
+          },
+          {
+            "package": "github.com/go-aie/teamx/internal/room",
+            "test": "TestActionLedgerReadableDuringSessionRecovery/failed",
+            "status": "pass",
+            "elapsed_seconds": 12.63
+          },
+          {
+            "package": "github.com/go-aie/teamx/internal/room",
+            "test": "TestActionLedgerReadableDuringSessionRecovery/waiting",
+            "status": "pass",
+            "elapsed_seconds": 12.98
+          },
+          {
+            "package": "github.com/go-aie/teamx/internal/room",
+            "test": "TestActionLedgerReadableDuringSessionRecovery/closing",
+            "status": "pass",
+            "elapsed_seconds": 13.09
+          },
+          {
+            "package": "github.com/go-aie/teamx/internal/room",
+            "test": "TestActionLedgerReadableDuringSessionRecovery",
+            "status": "pass",
+            "elapsed_seconds": 0
+          },
+          {
+            "package": "github.com/go-aie/teamx/internal/room",
+            "test": "TestActionsLedgerFailureNeverReplays/intent",
+            "status": "pass",
+            "elapsed_seconds": 0.22
+          },
+          {
+            "package": "github.com/go-aie/teamx/internal/room",
+            "test": "TestActionsLedgerFailureNeverReplays/attempt",
+            "status": "pass",
+            "elapsed_seconds": 0.43
+          },
+          {
+            "package": "github.com/go-aie/teamx/internal/room",
+            "test": "TestActionsLedgerFailureNeverReplays/result",
+            "status": "pass",
+            "elapsed_seconds": 0.34
+          },
+          {
+            "package": "github.com/go-aie/teamx/internal/room",
+            "test": "TestActionsLedgerFailureNeverReplays/projection",
+            "status": "pass",
+            "elapsed_seconds": 0.35
+          },
+          {
+            "package": "github.com/go-aie/teamx/internal/room",
+            "test": "TestActionsLedgerFailureNeverReplays",
+            "status": "pass",
+            "elapsed_seconds": 1.34
+          },
+          {
+            "package": "github.com/go-aie/teamx/internal/room",
+            "test": "TestActionsLegacyReceiptAndSchemaPreflight",
+            "status": "pass",
+            "elapsed_seconds": 0.46
+          },
+          {
+            "package": "github.com/go-aie/teamx/internal/room",
+            "test": "TestActionsAdapterInputAndMessageTargetAreGeneric",
+            "status": "pass",
+            "elapsed_seconds": 0.21
+          },
+          {
+            "package": "github.com/go-aie/teamx/internal/room",
+            "test": "TestGitlabImagesIndependentProcessRecovery/comment/settled",
+            "status": "pass",
+            "elapsed_seconds": 1.2
+          },
+          {
+            "package": "github.com/go-aie/teamx/internal/room",
+            "test": "TestGitlabImagesIndependentProcessRecovery/comment/during_upload",
+            "status": "pass",
+            "elapsed_seconds": 1.1
+          },
+          {
+            "package": "github.com/go-aie/teamx/internal/room",
+            "test": "TestGitlabImagesIndependentProcessRecovery/comment/after_dispatch",
+            "status": "pass",
+            "elapsed_seconds": 1.08
+          },
+          {
+            "package": "github.com/go-aie/teamx/internal/room",
+            "test": "TestGitlabImagesIndependentProcessRecovery/comment/before_verification",
+            "status": "pass",
+            "elapsed_seconds": 1.15
+          },
+          {
+            "package": "github.com/go-aie/teamx/internal/room",
+            "test": "TestGitlabImagesIndependentProcessRecovery/thread/settled",
+            "status": "pass",
+            "elapsed_seconds": 1.17
+          },
+          {
+            "package": "github.com/go-aie/teamx/internal/room",
+            "test": "TestGitlabImagesIndependentProcessRecovery/thread/during_upload",
+            "status": "pass",
+            "elapsed_seconds": 1.1
+          },
+          {
+            "package": "github.com/go-aie/teamx/internal/room",
+            "test": "TestGitlabImagesIndependentProcessRecovery/thread/after_dispatch",
+            "status": "pass",
+            "elapsed_seconds": 1.23
+          },
+          {
+            "package": "github.com/go-aie/teamx/internal/room",
+            "test": "TestGitlabImagesIndependentProcessRecovery/thread/before_verification",
+            "status": "pass",
+            "elapsed_seconds": 1.08
+          },
+          {
+            "package": "github.com/go-aie/teamx/internal/room",
+            "test": "TestGitlabImagesIndependentProcessRecovery",
+            "status": "pass",
+            "elapsed_seconds": 9.12
+          },
+          {
+            "package": "github.com/go-aie/teamx/internal/room",
+            "test": "TestLarkImagesIndependentProcessRecovery/embedded/group/settled",
+            "status": "pass",
+            "elapsed_seconds": 15.15
+          },
+          {
+            "package": "github.com/go-aie/teamx/internal/room",
+            "test": "TestLarkImagesIndependentProcessRecovery/embedded/self/before_verification",
+            "status": "pass",
+            "elapsed_seconds": 19.05
+          },
+          {
+            "package": "github.com/go-aie/teamx/internal/room",
+            "test": "TestLarkImagesIndependentProcessRecovery/input-log/self/settled",
+            "status": "pass",
+            "elapsed_seconds": 19.88
+          },
+          {
+            "package": "github.com/go-aie/teamx/internal/room",
+            "test": "TestLarkImagesIndependentProcessRecovery/embedded/self/settled",
+            "status": "pass",
+            "elapsed_seconds": 20.07
+          },
+          {
+            "package": "github.com/go-aie/teamx/internal/room",
+            "test": "TestLarkImagesIndependentProcessRecovery/input-log/group/after_dispatch",
+            "status": "pass",
+            "elapsed_seconds": 28.22
+          },
+          {
+            "package": "github.com/go-aie/teamx/internal/room",
+            "test": "TestLarkImagesIndependentProcessRecovery/embedded/group/during_upload",
+            "status": "pass",
+            "elapsed_seconds": 30.81
+          },
+          {
+            "package": "github.com/go-aie/teamx/internal/room",
+            "test": "TestLarkImagesIndependentProcessRecovery/input-log/group/before_verification",
+            "status": "pass",
+            "elapsed_seconds": 32.15
+          },
+          {
+            "package": "github.com/go-aie/teamx/internal/room",
+            "test": "TestLarkImagesIndependentProcessRecovery/input-log/group/settled",
+            "status": "pass",
+            "elapsed_seconds": 33.54
+          },
+          {
+            "package": "github.com/go-aie/teamx/internal/room",
+            "test": "TestLarkImagesIndependentProcessRecovery/input-log/self/during_upload",
+            "status": "pass",
+            "elapsed_seconds": 43.53
+          },
+          {
+            "package": "github.com/go-aie/teamx/internal/room",
+            "test": "TestLarkImagesIndependentProcessRecovery/embedded/self/after_dispatch",
+            "status": "pass",
+            "elapsed_seconds": 44.22
+          },
+          {
+            "package": "github.com/go-aie/teamx/internal/room",
+            "test": "TestLarkImagesIndependentProcessRecovery",
+            "status": "pass",
+            "elapsed_seconds": 0
+          },
+          {
+            "package": "github.com/go-aie/teamx/internal/room",
+            "test": "TestLarkSelfSendRevocationRaces/remove",
+            "status": "pass",
+            "elapsed_seconds": 8.18
+          },
+          {
+            "package": "github.com/go-aie/teamx/internal/room",
+            "test": "TestLarkSelfSendRevocationRaces/disable",
+            "status": "pass",
+            "elapsed_seconds": 9.57
+          },
+          {
+            "package": "github.com/go-aie/teamx/internal/room",
+            "test": "TestLarkSelfSendRevocationRaces/unbind",
+            "status": "pass",
+            "elapsed_seconds": 13.93
+          },
+          {
+            "package": "github.com/go-aie/teamx/internal/room",
+            "test": "TestLarkSelfSendRevocationRaces/account",
+            "status": "pass",
+            "elapsed_seconds": 15.73
+          },
+          {
+            "package": "github.com/go-aie/teamx/internal/room",
+            "test": "TestLarkSelfSendRevocationRaces/rotate",
+            "status": "pass",
+            "elapsed_seconds": 16.45
+          },
+          {
+            "package": "github.com/go-aie/teamx/internal/room",
+            "test": "TestLarkSelfSendRevocationRaces",
+            "status": "pass",
+            "elapsed_seconds": 0
+          },
+          {
+            "package": "github.com/go-aie/teamx/internal/room",
+            "test": "TestLarkSelfSendLedgerFailures/intent",
+            "status": "pass",
+            "elapsed_seconds": 5.73
+          },
+          {
+            "package": "github.com/go-aie/teamx/internal/room",
+            "test": "TestLarkSelfSendBindingViewExpires",
+            "status": "pass",
+            "elapsed_seconds": 6.58
+          },
+          {
+            "package": "github.com/go-aie/teamx/internal/room",
+            "test": "TestLarkSelfSendLedgerFailures/attempt",
+            "status": "pass",
+            "elapsed_seconds": 5.44
+          },
+          {
+            "package": "github.com/go-aie/teamx/internal/room",
+            "test": "TestLarkSelfSendIndependentProcessRecovery/settled",
+            "status": "pass",
+            "elapsed_seconds": 11.58
+          },
+          {
+            "package": "github.com/go-aie/teamx/internal/room",
+            "test": "TestLarkSelfSendManagedCapability",
+            "status": "pass",
+            "elapsed_seconds": 14.05
+          },
+          {
+            "package": "github.com/go-aie/teamx/internal/room",
+            "test": "TestLarkSelfSendLedgerFailures/result",
+            "status": "pass",
+            "elapsed_seconds": 7.19
+          },
+          {
+            "package": "github.com/go-aie/teamx/internal/room",
+            "test": "TestLarkSelfSendIndependentProcessRecovery/before_dispatch",
+            "status": "pass",
+            "elapsed_seconds": 9.99
+          },
+          {
+            "package": "github.com/go-aie/teamx/internal/room",
+            "test": "TestLarkSelfSendLedgerFailures/result_commit_unknown",
+            "status": "pass",
+            "elapsed_seconds": 6.84
+          },
+          {
+            "package": "github.com/go-aie/teamx/internal/room",
+            "test": "TestLarkSelfSendLedgerFailures",
+            "status": "pass",
+            "elapsed_seconds": 25.2
+          },
+          {
+            "package": "github.com/go-aie/teamx/internal/room",
+            "test": "TestLarkSelfSendIndependentProcessRecovery/after_dispatch",
+            "status": "pass",
+            "elapsed_seconds": 10.2
+          },
+          {
+            "package": "github.com/go-aie/teamx/internal/room",
+            "test": "TestLarkSelfSendIndependentProcessRecovery",
+            "status": "pass",
+            "elapsed_seconds": 31.77
+          },
+          {
+            "package": "github.com/go-aie/teamx/internal/room",
+            "test": "TestLarkSelfSendConcurrentRoomsAndMembers",
+            "status": "pass",
+            "elapsed_seconds": 32.89
+          }
+        ],
+        "fixture_slots": [
+          {
+            "test": "TestActionLedgerReadableDuringSessionRecovery/failed",
+            "observation": "parallel_test.go:22: fixture slot: wait=209ns held=12.627083125s"
+          },
+          {
+            "test": "TestActionLedgerReadableDuringSessionRecovery/waiting",
+            "observation": "parallel_test.go:22: fixture slot: wait=792ns held=12.97744425s"
+          },
+          {
+            "test": "TestActionLedgerReadableDuringSessionRecovery/closing",
+            "observation": "parallel_test.go:22: fixture slot: wait=209ns held=13.088154541s"
+          },
+          {
+            "test": "TestLarkImagesIndependentProcessRecovery/embedded/group/settled",
+            "observation": "parallel_test.go:22: fixture slot: wait=42ns held=15.149614333s"
+          },
+          {
+            "test": "TestLarkImagesIndependentProcessRecovery/embedded/self/before_verification",
+            "observation": "parallel_test.go:22: fixture slot: wait=84ns held=19.052490375s"
+          },
+          {
+            "test": "TestLarkImagesIndependentProcessRecovery/input-log/self/settled",
+            "observation": "parallel_test.go:22: fixture slot: wait=84ns held=19.87773675s"
+          },
+          {
+            "test": "TestLarkImagesIndependentProcessRecovery/embedded/self/settled",
+            "observation": "parallel_test.go:22: fixture slot: wait=417ns held=20.071762833s"
+          },
+          {
+            "test": "TestLarkImagesIndependentProcessRecovery/input-log/group/after_dispatch",
+            "observation": "parallel_test.go:22: fixture slot: wait=15.149475166s held=13.069602709s"
+          },
+          {
+            "test": "TestLarkImagesIndependentProcessRecovery/embedded/group/during_upload",
+            "observation": "parallel_test.go:22: fixture slot: wait=20.071526667s held=10.739599666s"
+          },
+          {
+            "test": "TestLarkImagesIndependentProcessRecovery/input-log/group/before_verification",
+            "observation": "parallel_test.go:22: fixture slot: wait=19.052353041s held=13.096482042s"
+          },
+          {
+            "test": "TestLarkImagesIndependentProcessRecovery/input-log/group/settled",
+            "observation": "parallel_test.go:22: fixture slot: wait=19.87759975s held=13.658804833s"
+          },
+          {
+            "test": "TestLarkImagesIndependentProcessRecovery/input-log/self/during_upload",
+            "observation": "parallel_test.go:22: fixture slot: wait=30.811161708s held=12.71619975s"
+          },
+          {
+            "test": "TestLarkImagesIndependentProcessRecovery/embedded/self/after_dispatch",
+            "observation": "parallel_test.go:22: fixture slot: wait=28.219106s held=15.997532667s"
+          },
+          {
+            "test": "TestLarkSelfSendRevocationRaces/remove",
+            "observation": "parallel_test.go:22: fixture slot: wait=375ns held=8.182291375s"
+          },
+          {
+            "test": "TestLarkSelfSendRevocationRaces/disable",
+            "observation": "parallel_test.go:22: fixture slot: wait=84ns held=9.56947125s"
+          },
+          {
+            "test": "TestLarkSelfSendRevocationRaces/unbind",
+            "observation": "parallel_test.go:22: fixture slot: wait=8.182404209s held=5.743764541s"
+          },
+          {
+            "test": "TestLarkSelfSendRevocationRaces/account",
+            "observation": "parallel_test.go:22: fixture slot: wait=375ns held=15.730491583s"
+          },
+          {
+            "test": "TestLarkSelfSendRevocationRaces/rotate",
+            "observation": "parallel_test.go:22: fixture slot: wait=333ns held=16.446945792s"
+          },
+          {
+            "test": "TestLarkSelfSendBindingViewExpires",
+            "observation": "parallel_test.go:22: fixture slot: wait=167ns held=6.580661166s"
+          },
+          {
+            "test": "TestLarkSelfSendManagedCapability",
+            "observation": "parallel_test.go:22: fixture slot: wait=125ns held=14.051988209s"
+          },
+          {
+            "test": "TestLarkSelfSendLedgerFailures",
+            "observation": "parallel_test.go:22: fixture slot: wait=166ns held=25.198318209s"
+          },
+          {
+            "test": "TestLarkSelfSendIndependentProcessRecovery",
+            "observation": "parallel_test.go:22: fixture slot: wait=167ns held=31.772039833s"
+          },
+          {
+            "test": "TestLarkSelfSendConcurrentRoomsAndMembers",
+            "observation": "parallel_test.go:22: fixture slot: wait=6.580316s held=26.313545875s"
+          }
+        ]
+      },
+      "repeat-full-before": {
+        "label": "repeat-full-before",
+        "started": "2026-11-24T16:33:38.704477+08:00",
+        "wall_seconds": 128.9336263751611,
+        "exit_code": 0,
+        "args": [
+          "go",
+          "tool",
+          "test2json",
+          "-t",
+          "-p",
+          "github.com/go-aie/teamx/internal/room",
+          "/tmp/teamx-recovery-matrix/healthy-before.test",
+          "-test.v=test2json",
+          "-test.run=^(TestLarkSelfSendIndependentProcessRecovery|TestLarkSelfSendLedgerFailures|TestLarkSelfSendBindingViewExpires|TestLarkSelfSendConcurrentRoomsAndMembers|TestLarkSelfSendRevocationRaces|TestLarkSelfSendManagedCapability|TestActionsLedgerFailureNeverReplays|TestActionsLegacyReceiptAndSchemaPreflight|TestActionsAdapterInputAndMessageTargetAreGeneric|TestActionDispatchFrozenContentAndExactRecord|TestActionInputCanonicalNestedContent|TestActionLedgerReadableDuringSessionRecovery|TestLarkImagesIndependentProcessRecovery|TestGitlabImagesIndependentProcessRecovery)$",
+          "-test.count=1",
+          "-test.timeout=6m"
+        ],
+        "binary_sha256": "b2ebf20d31f38ed6760f8d86779bbd9d3d1c3b50922ddc84a4914c29c8d7d127",
+        "child_user_cpu_seconds": 119.80603900000001,
+        "child_system_cpu_seconds": 58.17435,
+        "load_average_start": [
+          24.98291015625,
+          20.03125,
+          19.9287109375
+        ],
+        "load_average_end": [
+          31.244140625,
+          23.083984375,
+          21.06982421875
+        ],
+        "counts": {
+          "pass": 58
+        },
+        "top_level": [
+          {
+            "Time": "2026-11-24T16:33:41.69376+08:00",
+            "Action": "pass",
+            "Package": "github.com/go-aie/teamx/internal/room",
+            "Test": "TestActionDispatchFrozenContentAndExactRecord",
+            "Elapsed": 2.72
+          },
+          {
+            "Time": "2026-11-24T16:33:41.694015+08:00",
+            "Action": "pass",
+            "Package": "github.com/go-aie/teamx/internal/room",
+            "Test": "TestActionInputCanonicalNestedContent",
+            "Elapsed": 0
+          },
+          {
+            "Time": "2026-11-24T16:33:52.628482+08:00",
+            "Action": "pass",
+            "Package": "github.com/go-aie/teamx/internal/room",
+            "Test": "TestActionLedgerReadableDuringSessionRecovery",
+            "Elapsed": 0
+          },
+          {
+            "Time": "2026-11-24T16:33:54.111019+08:00",
+            "Action": "pass",
+            "Package": "github.com/go-aie/teamx/internal/room",
+            "Test": "TestActionsLedgerFailureNeverReplays",
+            "Elapsed": 1.48
+          },
+          {
+            "Time": "2026-11-24T16:33:54.5232+08:00",
+            "Action": "pass",
+            "Package": "github.com/go-aie/teamx/internal/room",
+            "Test": "TestActionsLegacyReceiptAndSchemaPreflight",
+            "Elapsed": 0.41
+          },
+          {
+            "Time": "2026-11-24T16:33:54.713337+08:00",
+            "Action": "pass",
+            "Package": "github.com/go-aie/teamx/internal/room",
+            "Test": "TestActionsAdapterInputAndMessageTargetAreGeneric",
+            "Elapsed": 0.19
+          },
+          {
+            "Time": "2026-11-24T16:34:04.470219+08:00",
+            "Action": "pass",
+            "Package": "github.com/go-aie/teamx/internal/room",
+            "Test": "TestGitlabImagesIndependentProcessRecovery",
+            "Elapsed": 9.76
+          },
+          {
+            "Time": "2026-11-24T16:34:45.59172+08:00",
+            "Action": "pass",
+            "Package": "github.com/go-aie/teamx/internal/room",
+            "Test": "TestLarkImagesIndependentProcessRecovery",
+            "Elapsed": 0
+          },
+          {
+            "Time": "2026-11-24T16:35:06.58537+08:00",
+            "Action": "pass",
+            "Package": "github.com/go-aie/teamx/internal/room",
+            "Test": "TestLarkSelfSendRevocationRaces",
+            "Elapsed": 0
+          },
+          {
+            "Time": "2026-11-24T16:35:19.890221+08:00",
+            "Action": "pass",
+            "Package": "github.com/go-aie/teamx/internal/room",
+            "Test": "TestLarkSelfSendBindingViewExpires",
+            "Elapsed": 7.21
+          },
+          {
+            "Time": "2026-11-24T16:35:26.942962+08:00",
+            "Action": "pass",
+            "Package": "github.com/go-aie/teamx/internal/room",
+            "Test": "TestLarkSelfSendManagedCapability",
+            "Elapsed": 18.43
+          },
+          {
+            "Time": "2026-11-24T16:35:37.118861+08:00",
+            "Action": "pass",
+            "Package": "github.com/go-aie/teamx/internal/room",
+            "Test": "TestLarkSelfSendLedgerFailures",
+            "Elapsed": 28.69
+          },
+          {
+            "Time": "2026-11-24T16:35:47.633175+08:00",
+            "Action": "pass",
+            "Package": "github.com/go-aie/teamx/internal/room",
+            "Test": "TestLarkSelfSendConcurrentRoomsAndMembers",
+            "Elapsed": 31.62
+          },
+          {
+            "Time": "2026-11-24T16:35:47.633461+08:00",
+            "Action": "pass",
+            "Package": "github.com/go-aie/teamx/internal/room",
+            "Test": "TestLarkSelfSendIndependentProcessRecovery",
+            "Elapsed": 41.04
+          }
+        ],
+        "packages": [
+          {
+            "Time": "2026-11-24T16:35:47.635066+08:00",
+            "Action": "pass",
+            "Package": "github.com/go-aie/teamx/internal/room",
+            "Elapsed": 128.706
+          }
+        ],
+        "sources_unchanged": true,
+        "cases": [
+          {
+            "package": "github.com/go-aie/teamx/internal/room",
+            "test": "TestActionDispatchFrozenContentAndExactRecord/unchanged",
+            "status": "pass",
+            "elapsed_seconds": 0.37
+          },
+          {
+            "package": "github.com/go-aie/teamx/internal/room",
+            "test": "TestActionDispatchFrozenContentAndExactRecord/body",
+            "status": "pass",
+            "elapsed_seconds": 0.37
+          },
+          {
+            "package": "github.com/go-aie/teamx/internal/room",
+            "test": "TestActionDispatchFrozenContentAndExactRecord/target",
+            "status": "pass",
+            "elapsed_seconds": 0.37
+          },
+          {
+            "package": "github.com/go-aie/teamx/internal/room",
+            "test": "TestActionDispatchFrozenContentAndExactRecord/key",
+            "status": "pass",
+            "elapsed_seconds": 0.42
+          },
+          {
+            "package": "github.com/go-aie/teamx/internal/room",
+            "test": "TestActionDispatchFrozenContentAndExactRecord/operation",
+            "status": "pass",
+            "elapsed_seconds": 0.39
+          },
+          {
+            "package": "github.com/go-aie/teamx/internal/room",
+            "test": "TestActionDispatchFrozenContentAndExactRecord/digest",
+            "status": "pass",
+            "elapsed_seconds": 0.39
+          },
+          {
+            "package": "github.com/go-aie/teamx/internal/room",
+            "test": "TestActionDispatchFrozenContentAndExactRecord/account",
+            "status": "pass",
+            "elapsed_seconds": 0.42
+          },
+          {
+            "package": "github.com/go-aie/teamx/internal/room",
+            "test": "TestActionDispatchFrozenContentAndExactRecord",
+            "status": "pass",
+            "elapsed_seconds": 2.72
+          },
+          {
+            "package": "github.com/go-aie/teamx/internal/room",
+            "test": "TestActionInputCanonicalNestedContent",
+            "status": "pass",
+            "elapsed_seconds": 0
+          },
+          {
+            "package": "github.com/go-aie/teamx/internal/room",
+            "test": "TestActionLedgerReadableDuringSessionRecovery/closing",
+            "status": "pass",
+            "elapsed_seconds": 9.89
+          },
+          {
+            "package": "github.com/go-aie/teamx/internal/room",
+            "test": "TestActionLedgerReadableDuringSessionRecovery/failed",
+            "status": "pass",
+            "elapsed_seconds": 10.07
+          },
+          {
+            "package": "github.com/go-aie/teamx/internal/room",
+            "test": "TestActionLedgerReadableDuringSessionRecovery/waiting",
+            "status": "pass",
+            "elapsed_seconds": 10.93
+          },
+          {
+            "package": "github.com/go-aie/teamx/internal/room",
+            "test": "TestActionLedgerReadableDuringSessionRecovery",
+            "status": "pass",
+            "elapsed_seconds": 0
+          },
+          {
+            "package": "github.com/go-aie/teamx/internal/room",
+            "test": "TestActionsLedgerFailureNeverReplays/intent",
+            "status": "pass",
+            "elapsed_seconds": 0.31
+          },
+          {
+            "package": "github.com/go-aie/teamx/internal/room",
+            "test": "TestActionsLedgerFailureNeverReplays/attempt",
+            "status": "pass",
+            "elapsed_seconds": 0.45
+          },
+          {
+            "package": "github.com/go-aie/teamx/internal/room",
+            "test": "TestActionsLedgerFailureNeverReplays/result",
+            "status": "pass",
+            "elapsed_seconds": 0.42
+          },
+          {
+            "package": "github.com/go-aie/teamx/internal/room",
+            "test": "TestActionsLedgerFailureNeverReplays/projection",
+            "status": "pass",
+            "elapsed_seconds": 0.31
+          },
+          {
+            "package": "github.com/go-aie/teamx/internal/room",
+            "test": "TestActionsLedgerFailureNeverReplays",
+            "status": "pass",
+            "elapsed_seconds": 1.48
+          },
+          {
+            "package": "github.com/go-aie/teamx/internal/room",
+            "test": "TestActionsLegacyReceiptAndSchemaPreflight",
+            "status": "pass",
+            "elapsed_seconds": 0.41
+          },
+          {
+            "package": "github.com/go-aie/teamx/internal/room",
+            "test": "TestActionsAdapterInputAndMessageTargetAreGeneric",
+            "status": "pass",
+            "elapsed_seconds": 0.19
+          },
+          {
+            "package": "github.com/go-aie/teamx/internal/room",
+            "test": "TestGitlabImagesIndependentProcessRecovery/comment/settled",
+            "status": "pass",
+            "elapsed_seconds": 1.17
+          },
+          {
+            "package": "github.com/go-aie/teamx/internal/room",
+            "test": "TestGitlabImagesIndependentProcessRecovery/comment/during_upload",
+            "status": "pass",
+            "elapsed_seconds": 1.22
+          },
+          {
+            "package": "github.com/go-aie/teamx/internal/room",
+            "test": "TestGitlabImagesIndependentProcessRecovery/comment/after_dispatch",
+            "status": "pass",
+            "elapsed_seconds": 1.25
+          },
+          {
+            "package": "github.com/go-aie/teamx/internal/room",
+            "test": "TestGitlabImagesIndependentProcessRecovery/comment/before_verification",
+            "status": "pass",
+            "elapsed_seconds": 1.14
+          },
+          {
+            "package": "github.com/go-aie/teamx/internal/room",
+            "test": "TestGitlabImagesIndependentProcessRecovery/thread/settled",
+            "status": "pass",
+            "elapsed_seconds": 1.4
+          },
+          {
+            "package": "github.com/go-aie/teamx/internal/room",
+            "test": "TestGitlabImagesIndependentProcessRecovery/thread/during_upload",
+            "status": "pass",
+            "elapsed_seconds": 1.13
+          },
+          {
+            "package": "github.com/go-aie/teamx/internal/room",
+            "test": "TestGitlabImagesIndependentProcessRecovery/thread/after_dispatch",
+            "status": "pass",
+            "elapsed_seconds": 1.25
+          },
+          {
+            "package": "github.com/go-aie/teamx/internal/room",
+            "test": "TestGitlabImagesIndependentProcessRecovery/thread/before_verification",
+            "status": "pass",
+            "elapsed_seconds": 1.17
+          },
+          {
+            "package": "github.com/go-aie/teamx/internal/room",
+            "test": "TestGitlabImagesIndependentProcessRecovery",
+            "status": "pass",
+            "elapsed_seconds": 9.76
+          },
+          {
+            "package": "github.com/go-aie/teamx/internal/room",
+            "test": "TestLarkImagesIndependentProcessRecovery/embedded/group/during_upload",
+            "status": "pass",
+            "elapsed_seconds": 10.78
+          },
+          {
+            "package": "github.com/go-aie/teamx/internal/room",
+            "test": "TestLarkImagesIndependentProcessRecovery/embedded/group/settled",
+            "status": "pass",
+            "elapsed_seconds": 13.37
+          },
+          {
+            "package": "github.com/go-aie/teamx/internal/room",
+            "test": "TestLarkImagesIndependentProcessRecovery/embedded/self/settled",
+            "status": "pass",
+            "elapsed_seconds": 17.88
+          },
+          {
+            "package": "github.com/go-aie/teamx/internal/room",
+            "test": "TestLarkImagesIndependentProcessRecovery/input-log/self/settled",
+            "status": "pass",
+            "elapsed_seconds": 18.3
+          },
+          {
+            "package": "github.com/go-aie/teamx/internal/room",
+            "test": "TestLarkImagesIndependentProcessRecovery/input-log/group/after_dispatch",
+            "status": "pass",
+            "elapsed_seconds": 22.68
+          },
+          {
+            "package": "github.com/go-aie/teamx/internal/room",
+            "test": "TestLarkImagesIndependentProcessRecovery/input-log/group/before_verification",
+            "status": "pass",
+            "elapsed_seconds": 25.52
+          },
+          {
+            "package": "github.com/go-aie/teamx/internal/room",
+            "test": "TestLarkImagesIndependentProcessRecovery/input-log/group/settled",
+            "status": "pass",
+            "elapsed_seconds": 30.78
+          },
+          {
+            "package": "github.com/go-aie/teamx/internal/room",
+            "test": "TestLarkImagesIndependentProcessRecovery/input-log/self/during_upload",
+            "status": "pass",
+            "elapsed_seconds": 30.84
+          },
+          {
+            "package": "github.com/go-aie/teamx/internal/room",
+            "test": "TestLarkImagesIndependentProcessRecovery/embedded/self/before_verification",
+            "status": "pass",
+            "elapsed_seconds": 38.64
+          },
+          {
+            "package": "github.com/go-aie/teamx/internal/room",
+            "test": "TestLarkImagesIndependentProcessRecovery/embedded/self/after_dispatch",
+            "status": "pass",
+            "elapsed_seconds": 41.12
+          },
+          {
+            "package": "github.com/go-aie/teamx/internal/room",
+            "test": "TestLarkImagesIndependentProcessRecovery",
+            "status": "pass",
+            "elapsed_seconds": 0
+          },
+          {
+            "package": "github.com/go-aie/teamx/internal/room",
+            "test": "TestLarkSelfSendRevocationRaces/remove",
+            "status": "pass",
+            "elapsed_seconds": 7.2
+          },
+          {
+            "package": "github.com/go-aie/teamx/internal/room",
+            "test": "TestLarkSelfSendRevocationRaces/unbind",
+            "status": "pass",
+            "elapsed_seconds": 7.43
+          },
+          {
+            "package": "github.com/go-aie/teamx/internal/room",
+            "test": "TestLarkSelfSendRevocationRaces/disable",
+            "status": "pass",
+            "elapsed_seconds": 9.27
+          },
+          {
+            "package": "github.com/go-aie/teamx/internal/room",
+            "test": "TestLarkSelfSendRevocationRaces/account",
+            "status": "pass",
+            "elapsed_seconds": 15.05
+          },
+          {
+            "package": "github.com/go-aie/teamx/internal/room",
+            "test": "TestLarkSelfSendRevocationRaces/rotate",
+            "status": "pass",
+            "elapsed_seconds": 20.99
+          },
+          {
+            "package": "github.com/go-aie/teamx/internal/room",
+            "test": "TestLarkSelfSendRevocationRaces",
+            "status": "pass",
+            "elapsed_seconds": 0
+          },
+          {
+            "package": "github.com/go-aie/teamx/internal/room",
+            "test": "TestLarkSelfSendLedgerFailures/intent",
+            "status": "pass",
+            "elapsed_seconds": 5.9
+          },
+          {
+            "package": "github.com/go-aie/teamx/internal/room",
+            "test": "TestLarkSelfSendBindingViewExpires",
+            "status": "pass",
+            "elapsed_seconds": 7.21
+          },
+          {
+            "package": "github.com/go-aie/teamx/internal/room",
+            "test": "TestLarkSelfSendLedgerFailures/attempt",
+            "status": "pass",
+            "elapsed_seconds": 7.4
+          },
+          {
+            "package": "github.com/go-aie/teamx/internal/room",
+            "test": "TestLarkSelfSendManagedCapability",
+            "status": "pass",
+            "elapsed_seconds": 18.43
+          },
+          {
+            "package": "github.com/go-aie/teamx/internal/room",
+            "test": "TestLarkSelfSendIndependentProcessRecovery/settled",
+            "status": "pass",
+            "elapsed_seconds": 13.14
+          },
+          {
+            "package": "github.com/go-aie/teamx/internal/room",
+            "test": "TestLarkSelfSendLedgerFailures/result",
+            "status": "pass",
+            "elapsed_seconds": 8.41
+          },
+          {
+            "package": "github.com/go-aie/teamx/internal/room",
+            "test": "TestLarkSelfSendLedgerFailures/result_commit_unknown",
+            "status": "pass",
+            "elapsed_seconds": 6.98
+          },
+          {
+            "package": "github.com/go-aie/teamx/internal/room",
+            "test": "TestLarkSelfSendLedgerFailures",
+            "status": "pass",
+            "elapsed_seconds": 28.69
+          },
+          {
+            "package": "github.com/go-aie/teamx/internal/room",
+            "test": "TestLarkSelfSendIndependentProcessRecovery/before_dispatch",
+            "status": "pass",
+            "elapsed_seconds": 10.18
+          },
+          {
+            "package": "github.com/go-aie/teamx/internal/room",
+            "test": "TestLarkSelfSendConcurrentRoomsAndMembers",
+            "status": "pass",
+            "elapsed_seconds": 31.62
+          },
+          {
+            "package": "github.com/go-aie/teamx/internal/room",
+            "test": "TestLarkSelfSendIndependentProcessRecovery/after_dispatch",
+            "status": "pass",
+            "elapsed_seconds": 10.51
+          },
+          {
+            "package": "github.com/go-aie/teamx/internal/room",
+            "test": "TestLarkSelfSendIndependentProcessRecovery",
+            "status": "pass",
+            "elapsed_seconds": 41.04
+          }
+        ],
+        "fixture_slots": [
+          {
+            "test": "TestActionLedgerReadableDuringSessionRecovery/closing",
+            "observation": "parallel_test.go:22: fixture slot: wait=208ns held=9.885773292s"
+          },
+          {
+            "test": "TestActionLedgerReadableDuringSessionRecovery/failed",
+            "observation": "parallel_test.go:22: fixture slot: wait=250ns held=10.065789458s"
+          },
+          {
+            "test": "TestActionLedgerReadableDuringSessionRecovery/waiting",
+            "observation": "parallel_test.go:22: fixture slot: wait=500ns held=10.933486375s"
+          },
+          {
+            "test": "TestLarkImagesIndependentProcessRecovery/embedded/group/during_upload",
+            "observation": "parallel_test.go:22: fixture slot: wait=375ns held=10.779822917s"
+          },
+          {
+            "test": "TestLarkImagesIndependentProcessRecovery/embedded/group/settled",
+            "observation": "parallel_test.go:22: fixture slot: wait=375ns held=13.367369708s"
+          },
+          {
+            "test": "TestLarkImagesIndependentProcessRecovery/embedded/self/settled",
+            "observation": "parallel_test.go:22: fixture slot: wait=333ns held=17.88346325s"
+          },
+          {
+            "test": "TestLarkImagesIndependentProcessRecovery/input-log/self/settled",
+            "observation": "parallel_test.go:22: fixture slot: wait=792ns held=18.302822833s"
+          },
+          {
+            "test": "TestLarkImagesIndependentProcessRecovery/input-log/group/after_dispatch",
+            "observation": "parallel_test.go:22: fixture slot: wait=10.779724791s held=11.895742167s"
+          },
+          {
+            "test": "TestLarkImagesIndependentProcessRecovery/input-log/group/before_verification",
+            "observation": "parallel_test.go:22: fixture slot: wait=13.367225666s held=12.156942542s"
+          },
+          {
+            "test": "TestLarkImagesIndependentProcessRecovery/input-log/group/settled",
+            "observation": "parallel_test.go:22: fixture slot: wait=17.882982834s held=12.899432041s"
+          },
+          {
+            "test": "TestLarkImagesIndependentProcessRecovery/input-log/self/during_upload",
+            "observation": "parallel_test.go:22: fixture slot: wait=18.302445959s held=12.532938333s"
+          },
+          {
+            "test": "TestLarkImagesIndependentProcessRecovery/embedded/self/before_verification",
+            "observation": "parallel_test.go:22: fixture slot: wait=22.675508834s held=15.961626041s"
+          },
+          {
+            "test": "TestLarkImagesIndependentProcessRecovery/embedded/self/after_dispatch",
+            "observation": "parallel_test.go:22: fixture slot: wait=25.5241785s held=15.595383292s"
+          },
+          {
+            "test": "TestLarkSelfSendRevocationRaces/remove",
+            "observation": "parallel_test.go:22: fixture slot: wait=375ns held=7.204200167s"
+          },
+          {
+            "test": "TestLarkSelfSendRevocationRaces/unbind",
+            "observation": "parallel_test.go:22: fixture slot: wait=333ns held=7.429289667s"
+          },
+          {
+            "test": "TestLarkSelfSendRevocationRaces/disable",
+            "observation": "parallel_test.go:22: fixture slot: wait=208ns held=9.269004542s"
+          },
+          {
+            "test": "TestLarkSelfSendRevocationRaces/account",
+            "observation": "parallel_test.go:22: fixture slot: wait=208ns held=15.048368708s"
+          },
+          {
+            "test": "TestLarkSelfSendRevocationRaces/rotate",
+            "observation": "parallel_test.go:22: fixture slot: wait=7.204092083s held=13.78548375s"
+          },
+          {
+            "test": "TestLarkSelfSendBindingViewExpires",
+            "observation": "parallel_test.go:22: fixture slot: wait=292ns held=7.213399542s"
+          },
+          {
+            "test": "TestLarkSelfSendManagedCapability",
+            "observation": "parallel_test.go:22: fixture slot: wait=208ns held=18.430786875s"
+          },
+          {
+            "test": "TestLarkSelfSendLedgerFailures",
+            "observation": "parallel_test.go:22: fixture slot: wait=292ns held=28.688705792s"
+          },
+          {
+            "test": "TestLarkSelfSendConcurrentRoomsAndMembers",
+            "observation": "parallel_test.go:22: fixture slot: wait=875ns held=31.615658334s"
+          },
+          {
+            "test": "TestLarkSelfSendIndependentProcessRecovery",
+            "observation": "parallel_test.go:22: fixture slot: wait=7.209377916s held=33.834859209s"
+          }
+        ]
+      },
+      "repeat-ledger-after": {
+        "label": "repeat-ledger-after",
+        "started": "2026-11-24T16:35:47.696978+08:00",
+        "wall_seconds": 22.114794458262622,
+        "exit_code": 0,
+        "args": [
+          "go",
+          "tool",
+          "test2json",
+          "-t",
+          "-p",
+          "github.com/go-aie/teamx/internal/room",
+          "/tmp/teamx-recovery-matrix/after.test",
+          "-test.v=test2json",
+          "-test.run=^TestLarkSelfSendLedgerFailures$",
+          "-test.count=1",
+          "-test.timeout=6m"
+        ],
+        "binary_sha256": "0925149f00a1493f0ff61bda085c909138e07557c62280429b1c5691deaa5f0b",
+        "child_user_cpu_seconds": 11.299351999999999,
+        "child_system_cpu_seconds": 5.332414,
+        "load_average_start": [
+          31.244140625,
+          23.083984375,
+          21.06982421875
+        ],
+        "load_average_end": [
+          26.052734375,
+          22.390625,
+          20.865234375
+        ],
+        "counts": {
+          "pass": 5
+        },
+        "top_level": [
+          {
+            "Time": "2026-11-24T16:36:09.807945+08:00",
+            "Action": "pass",
+            "Package": "github.com/go-aie/teamx/internal/room",
+            "Test": "TestLarkSelfSendLedgerFailures",
+            "Elapsed": 21.83
+          }
+        ],
+        "packages": [
+          {
+            "Time": "2026-11-24T16:36:09.808921+08:00",
+            "Action": "pass",
+            "Package": "github.com/go-aie/teamx/internal/room",
+            "Elapsed": 21.903
+          }
+        ],
+        "sources_unchanged": true,
+        "cases": [
+          {
+            "package": "github.com/go-aie/teamx/internal/room",
+            "test": "TestLarkSelfSendLedgerFailures/intent",
+            "status": "pass",
+            "elapsed_seconds": 4.35
+          },
+          {
+            "package": "github.com/go-aie/teamx/internal/room",
+            "test": "TestLarkSelfSendLedgerFailures/attempt",
+            "status": "pass",
+            "elapsed_seconds": 4.54
+          },
+          {
+            "package": "github.com/go-aie/teamx/internal/room",
+            "test": "TestLarkSelfSendLedgerFailures/result",
+            "status": "pass",
+            "elapsed_seconds": 6.38
+          },
+          {
+            "package": "github.com/go-aie/teamx/internal/room",
+            "test": "TestLarkSelfSendLedgerFailures/result_commit_unknown",
+            "status": "pass",
+            "elapsed_seconds": 6.57
+          },
+          {
+            "package": "github.com/go-aie/teamx/internal/room",
+            "test": "TestLarkSelfSendLedgerFailures",
+            "status": "pass",
+            "elapsed_seconds": 21.83
+          }
+        ],
+        "fixture_slots": [
+          {
+            "test": "TestLarkSelfSendLedgerFailures",
+            "observation": "parallel_test.go:22: fixture slot: wait=542ns held=21.831370625s"
+          }
+        ]
+      },
+      "repeat-ledger-before": {
+        "label": "repeat-ledger-before",
+        "started": "2026-11-24T16:36:09.863365+08:00",
+        "wall_seconds": 22.654914375394583,
+        "exit_code": 0,
+        "args": [
+          "go",
+          "tool",
+          "test2json",
+          "-t",
+          "-p",
+          "github.com/go-aie/teamx/internal/room",
+          "/tmp/teamx-recovery-matrix/healthy-before.test",
+          "-test.v=test2json",
+          "-test.run=^TestLarkSelfSendLedgerFailures$",
+          "-test.count=1",
+          "-test.timeout=6m"
+        ],
+        "binary_sha256": "b2ebf20d31f38ed6760f8d86779bbd9d3d1c3b50922ddc84a4914c29c8d7d127",
+        "child_user_cpu_seconds": 11.375160999999963,
+        "child_system_cpu_seconds": 5.399226999999996,
+        "load_average_start": [
+          26.052734375,
+          22.390625,
+          20.865234375
+        ],
+        "load_average_end": [
+          19.7783203125,
+          21.20361328125,
+          20.47998046875
+        ],
+        "counts": {
+          "pass": 5
+        },
+        "top_level": [
+          {
+            "Time": "2026-11-24T16:36:32.514604+08:00",
+            "Action": "pass",
+            "Package": "github.com/go-aie/teamx/internal/room",
+            "Test": "TestLarkSelfSendLedgerFailures",
+            "Elapsed": 22.31
+          }
+        ],
+        "packages": [
+          {
+            "Time": "2026-11-24T16:36:32.515587+08:00",
+            "Action": "pass",
+            "Package": "github.com/go-aie/teamx/internal/room",
+            "Elapsed": 22.394
+          }
+        ],
+        "sources_unchanged": true,
+        "cases": [
+          {
+            "package": "github.com/go-aie/teamx/internal/room",
+            "test": "TestLarkSelfSendLedgerFailures/intent",
+            "status": "pass",
+            "elapsed_seconds": 5.05
+          },
+          {
+            "package": "github.com/go-aie/teamx/internal/room",
+            "test": "TestLarkSelfSendLedgerFailures/attempt",
+            "status": "pass",
+            "elapsed_seconds": 4.95
+          },
+          {
+            "package": "github.com/go-aie/teamx/internal/room",
+            "test": "TestLarkSelfSendLedgerFailures/result",
+            "status": "pass",
+            "elapsed_seconds": 6.36
+          },
+          {
+            "package": "github.com/go-aie/teamx/internal/room",
+            "test": "TestLarkSelfSendLedgerFailures/result_commit_unknown",
+            "status": "pass",
+            "elapsed_seconds": 5.95
+          },
+          {
+            "package": "github.com/go-aie/teamx/internal/room",
+            "test": "TestLarkSelfSendLedgerFailures",
+            "status": "pass",
+            "elapsed_seconds": 22.31
+          }
+        ],
+        "fixture_slots": [
+          {
+            "test": "TestLarkSelfSendLedgerFailures",
+            "observation": "parallel_test.go:22: fixture slot: wait=375ns held=22.308845416s"
+          }
+        ]
+      }
+    },
+    "source_change_during_repeat": false,
+    "scope_expanded": false
+  },
+  "repeat_analysis": {
+    "initial_complete_before_seconds": 130.5726999999024,
+    "initial_complete_after_seconds": 161.78689033398405,
+    "repeat_complete_before_seconds": 128.9336263751611,
+    "repeat_complete_after_seconds": 120.86710208281875,
+    "same_after_binary_wall_decrease_seconds": 40.9197882511653,
+    "initial_isolated_ledger_saved_seconds": 0.6546782092191279,
+    "repeat_isolated_ledger_saved_seconds": 0.5401199171319604,
+    "interpretation": "Substantial run-to-run variation; initial complete slowdown not reproduced. Isolated ledger savings were small and in the same direction under both execution orders. Two pairs do not establish stable whole-selection speedup or explain the variation source."
+  },
+  "decision": {
+    "retain_f3_component_reopen": true,
+    "implementation_changed_after_repeat": false,
+    "expand_to_other_families": false,
+    "reason": "Repeat did not reproduce complete slowdown and both isolated ledger pairs showed small savings. Preserve coverage-backed responsibility change without claiming stable whole-selection speedup. Previous rollback recommendation based on one slow complete sample was premature.",
+    "unquantified_cost": "Recovery manager is explicitly closed and later closed again by testManager cleanup. This redundant path is real, but has not been measured and does not explain the initial 31-second whole-selection difference."
+  }
+}

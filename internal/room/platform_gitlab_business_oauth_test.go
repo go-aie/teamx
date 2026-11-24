@@ -237,6 +237,7 @@ func TestOAuthBusinessWorkspaceAndManagedGit(t *testing.T) {
 }
 
 func TestOAuthLocalWorkspaceCommandDoesNotRefreshOrExposeToken(t *testing.T) {
+	parallelFixtureTest(t)
 	m, _ := sharedWorkspaceManager(t)
 	room := managerCreate(t, m, "local-oauth-workspace")
 	openRoomOK(t, m, room, "initial")

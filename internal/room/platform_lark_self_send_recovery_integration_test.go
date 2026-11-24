@@ -101,6 +101,8 @@ func TestLarkSelfSendIndependentProcessRecovery(t *testing.T) {
 					t.Fatal(r, err)
 				}
 			}
+			assertSelfSendRecoveredRecord(t, cli, id, q, wantStatus)
+			assertSelfSendRemoteMessage(t, h.dir, q.Input.Body, wantPosts)
 			if wantStatus == "unknown" {
 				q.TurnNumber, q.ID = 1, "replacement-intent"
 				if _, err := executeSelfSend(cli, q); err == nil {
@@ -126,22 +128,28 @@ func TestLarkSelfSendLedgerFailures(t *testing.T) {
 			cli := contractCLI(t, server.URL, h.svc, id, h.c.ToolEntryID)
 			q := selfSendRequest(t, cli, "durable-intent")
 			ops, saves := h.svc.store.ops, 0
+			injected := false
 			h.svc.store.ops.createTemp = func(dir, pattern string) (snapshotFile, error) {
 				if filepath.Base(dir) == "records" {
 					saves++
 					if mode == "intent" && saves == 1 || mode == "attempt" && saves == 2 || mode == "result" && saves == 3 {
-						return nil, errors.New("S3 injected persistence failure")
+						injected = true
+						return nil, errors.New("injected action persistence failure")
 					}
 				}
 				return ops.createTemp(dir, pattern)
 			}
 			h.svc.store.ops.syncDir = func(dir string) error {
 				if mode == "result_commit_unknown" && filepath.Base(dir) == "records" && saves == 3 {
-					return errors.New("S3 result renamed but directory sync failed")
+					injected = true
+					return errors.New("action result renamed but directory sync failed")
 				}
 				return ops.syncDir(dir)
 			}
 			r, err := executeSelfSend(cli, q)
+			if !injected {
+				t.Fatal("ledger fault point was not reached")
+			}
 			if mode != "attempt" && err == nil {
 				t.Fatal("persistence failure hidden", r)
 			}
@@ -153,23 +161,106 @@ func TestLarkSelfSendLedgerFailures(t *testing.T) {
 				t.Fatal("dispatch without durable attempt", got)
 			}
 			h.svc.store.ops = ops
+			server.Close()
 			root := h.m.store.dir
 			if err := h.m.close(); err != nil {
 				t.Fatal(err)
 			}
-			p := startSelfSendProcess(t, root, h.room)
-			cli = contractCLI(t, p.endpoint, &service{info: p.info}, id)
-			if mode != "intent" {
-				want := map[string]string{"attempt": "not_applied", "result": "unknown", "result_commit_unknown": "succeeded"}[mode]
-				if r, err := executeSelfSend(cli, q); err != nil || r.Status != want {
-					t.Fatal("recovered outcome", r, err)
+			// These calls have settled; only durable commit points are under test.
+			// Reopen real components and file locks, without an extra OS process.
+			// Death, orphaned CLI and member recovery remain in the process matrix.
+			m := testManager(t, root, managerTestProfiles(t))
+			recoveredServer := httptest.NewServer(m)
+			defer recoveredServer.Close()
+			svc, err := newService(m.roomDir(h.room.RoomID), h.room.RoomID, serviceConfig{endpoint: recoveredServer.URL, cliPath: os.Args[0], persistentScheduling: true})
+			if err != nil {
+				t.Fatal(err)
+			}
+			m.mu.Lock()
+			m.runtimes[h.room.RoomIdentity] = &roomRuntime{service: svc, status: "ready"}
+			m.mu.Unlock()
+			m.bindPlatformReferences(svc)
+			if svc.store == h.svc.store || svc.info.ServiceEpoch == h.svc.info.ServiceEpoch {
+				t.Fatal("recovery reused the old Store or service epoch")
+			}
+			cli = contractCLI(t, recoveredServer.URL, svc, id)
+			if mode == "intent" {
+				var records struct{ Items []actionQueryRecord }
+				if err := cli([]string{"actions", "list"}, &records); err != nil || len(records.Items) != 0 {
+					t.Fatal("failed intent left a durable action", records, err)
 				}
+			} else {
+				want := map[string]string{"attempt": "not_applied", "result": "unknown", "result_commit_unknown": "succeeded"}[mode]
+				q.TurnNumber = 99
+				for range 2 {
+					if r, err := executeSelfSend(cli, q); err != nil || r.ID != q.ID || r.Status != want {
+						t.Fatal("recovered outcome", r, err)
+					}
+				}
+				assertSelfSendRecoveredRecord(t, cli, id, q, want)
 				if got := len(selfSendPosts(t, h.dir)); got != wantPosts {
 					t.Fatal("persistence failure replayed", got)
 				}
 			}
-			p.stop(t, false)
+			assertSelfSendRemoteMessage(t, h.dir, q.Input.Body, wantPosts)
+			if err := m.close(); err != nil {
+				t.Fatal(err)
+			}
 		})
+	}
+}
+
+func assertSelfSendRecoveredRecord(t *testing.T, cli func([]string, any) error, id MemberIdentity, q agentActionRequest, status string) {
+	t.Helper()
+	var record actionQueryRecord
+	if err := cli([]string{"actions", "read", "--id", q.ID}, &record); err != nil || record.Detail == nil {
+		t.Fatal("original action unavailable", record, err)
+	}
+	a := record.Detail
+	if record.ID != q.ID || record.Status != status || a.Request.ID != q.ID || a.Request.TargetRef != q.TargetRef || a.Request.Operation != q.Operation || a.Request.Input != q.Input || a.Access.RoomIdentity != id.RoomIdentity || a.Access.AgentID != id.AgentID || a.Access.MembershipID != id.MembershipID || a.Access.Account.ID.Value != "ou_reader" || a.Target.Object.ID != a.Access.Account.ID || a.CapabilityBasis == nil {
+		t.Fatal("original content, identity or capability changed", record)
+	}
+	if a.Result != nil && (a.Result.Account != a.Access.Account || !sameNativeTarget(a.Result.Target, a.Target)) {
+		t.Fatal("result changed target or author", a.Result)
+	}
+	if status == "succeeded" && (a.Attempts != 1 || a.Result == nil || a.Result.ResultID.Value != "om_receipt") {
+		t.Fatal("known result ID lost", record)
+	}
+	if status == "unknown" && (a.Attempts != 1 || a.Result != nil) {
+		t.Fatal("unsettled attempt lost", record)
+	}
+	if status == "not_applied" && a.Attempts != 0 {
+		t.Fatal("failed attempt became durable", record)
+	}
+	changed := q
+	changed.Input.Body += "changed"
+	if _, err := executeSelfSend(cli, changed); err == nil {
+		t.Fatal("same ID accepted changed frozen content")
+	}
+}
+
+func assertSelfSendRemoteMessage(t *testing.T, dir, body string, posts int) {
+	t.Helper()
+	if got := len(selfSendPosts(t, dir)); got != posts {
+		t.Fatal("native dispatch count", got, posts)
+	}
+	if posts == 0 {
+		return
+	}
+	var messages []struct {
+		ID     string                   `json:"message_id"`
+		ChatID string                   `json:"chat_id"`
+		Sender struct{ ID string }      `json:"sender"`
+		Body   struct{ Content string } `json:"body"`
+	}
+	raw, err := os.ReadFile(filepath.Join(dir, "messages.json"))
+	if err != nil || json.Unmarshal(raw, &messages) != nil || len(messages) != 1 {
+		t.Fatal("remote receipt unavailable", err, string(raw))
+	}
+	message := messages[0]
+	var content struct{ Text string }
+	if json.Unmarshal([]byte(message.Body.Content), &content) != nil || content.Text != body || message.ID != "om_receipt" || message.ChatID != "oc_chat" || message.Sender.ID != "ou_reader" {
+		t.Fatal("remote message changed content, target or author", message)
 	}
 }
 
