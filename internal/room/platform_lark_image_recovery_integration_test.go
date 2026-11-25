@@ -115,7 +115,7 @@ sys.exit(1)
 					cli = contractCLI(t, p.endpoint, &service{info: p.info}, id)
 					wantStatus, wantPosts := "succeeded", 1
 					if mode == "settled" {
-						r, err := executeSelfSend(cli, q)
+						r, err := executeImageActionAtUpload(t, h, id, cli, q)
 						if err != nil || r.Status != wantStatus || r.Result == nil {
 							t.Fatal(r, err)
 						}
@@ -124,6 +124,7 @@ sys.exit(1)
 						done := make(chan error, 1)
 						go func() { _, err := executeSelfSend(cli, q); done <- err }()
 						waitSelfSendFile(t, filepath.Join(h.dir, "blocked"))
+						assertImageActionAttempt(t, h.svc.store, id, q.ID, q.Input, imageRequestDigest(t, h, q.Input))
 						// Same-ID concurrency while a native child is paused cannot upload/send again.
 						r, err := executeSelfSend(cli, q)
 						if err != nil || r.Status != "processing" {
@@ -171,6 +172,7 @@ sys.exit(1)
 					if string(beforeUploads) != string(afterUploads) || len(selfSendPosts(t, h.dir)) != wantPosts {
 						t.Fatal("recovery repeated uploads or message POST")
 					}
+					assertImageUploadedOriginals(t, h, q.Input)
 					// Crashed processes lose their in-memory leases; opening the source Store
 					// in a new owner must not retain a native or object pin.
 					store, err := OpenStore(h.svc.store.dir, h.room.RoomID)

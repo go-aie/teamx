@@ -4,6 +4,8 @@
 
 F1–F4 及 F2 就绪回执修正的原提交为 `1231182`，本次将可独立提交的 F5 Todos 时序修复、测量入口与验收记录 amend 到同一提交。§10.9 的独立优化、并行 Space／DSH 迁移及依赖 Space 的 F5 身份接线仍保留在工作区。下文计时与源码摘要对应当时完整工作树，不能作为独立提交快照的全仓通过证明。F5 固定了包含当时并行迁移的完整快照，后续工作区改动不自动继承其结果。
 
+**后续职责梳理与实施（2026-11-25）：全仓盘点及 G1–G4 取舍见 [§12](#12-测试职责重划与重型组合收缩g-系列)。G1 已实施：Lark 图文发送规则与协议下沉、上层重型组合退出，见[职责拆分与验证记录](implementation/lark-image-action-responsibilities.zh.md)。G2–G4 未实施。** G2 面向默认核心反馈，G3 面向消息／Inbox／History 主路径；不再按旧阶段编号继续扩大编译夹具或并发范围。先减少必须执行的重型工作，再考虑剩余夹具成本。
+
 提交前独立 HEAD 快照已完成相关 303 项检查（302 通过、1 项原有挂载跳过），默认／integration／e2e 编译及 Room integration vet 通过；就绪相关三项测试各执行三轮 race 均通过。Room 首次组合达到诊断上限后复用二进制补验尾组，不作为一次完整组合通过或全仓性能结论；详见 [F2 记录的就绪回执修正](implementation/lark-configuration-cli.zh.md#就绪回执修正)。
 
 2026-11-24 开发反馈优化：按最新取舍优先保留核心测试、收缩重复的重型组合并将页面整体验收改为按需运行。已将 20 份文件中的 187 项私有组件测试纳入现有四槽，测试体及 helper 断言保持不变；同范围执行墙钟 134.138 → 94.197 秒，改前／改后均 187 项顶层通过，定向 race 同样 187 项通过。它是单对局部样本，不是全仓提速率或三分钟预算达成证明。新增改动和当前全仓分布见 §10.9；下文 11 月 21 日状态为历史对照。
@@ -625,6 +627,142 @@ F5 已按下列约定执行并收口，详见[统一验收与停止决策](imple
 - **目标不偷换。** 核心三分钟、完整本地集成八分钟仍是目标，现有证据不能承诺 F1–F4 达成。全量后重算串行跨度、并行 held／wait、构建／执行／清理与失败等待；只把真正进入主路径的剩余项加入下一轮。Makefile 超时的诊断放宽不算提速，不新增真实模型／平台／浏览器 CI 依赖。
 
 H5 旧候选退役继续作为独立维护工作，不能冒充分钟级运行收益。Room 较大造成的构建和包级结果缓存失效属于后置方向：只有 F5 表明它成为主要反馈成本时，才考虑将天然独立的规则和测试迁入现有职责包；本轮不做 Room 全面拆包、通用 mock／测试选择平台，也不关闭正式 `fsync`、跳过身份核验或放宽持久与结清语义。
+
+## 12. 测试职责重划与重型组合收缩（G 系列）
+
+本节回应新的取舍：**核心规则与失败分支充分留在 unit／轻量组件层，integration 与 e2e 只承担下层无法证明的接线和失效模式；允许删除已经被承接的上层副本。** 保持行为覆盖不等于保持原有测试形态、文件归属和组合数量。既不为了维持测试数量补同义单测，也不把整批重测试换标签当作同范围提速。
+
+### 12.1 本轮梳理范围与成本依据
+
+盘点版本为 `71f11ef` 加当时工作树；GitLab 动作／registry 等仍有并行修改。只读取源码、既有测量，并运行 `go list` 获取三种标签下的编译文件，**没有重新执行测试、测量全仓或修改测试实现**。本节覆盖全仓测试入口、主要业务域及重点族源码职责；逐项等价性与具体删除清单在选定阶段内落实到实际断言。
+
+| 当前入口 | 参与编译的 Go 测试文件 | 其中 Room | 说明 |
+| --- | ---: | ---: | --- |
+| 默认核心 | 443 | 279 | 包含大量真实 Store、owner 和生命周期组合，不等于全部是廉价 unit test |
+| integration | 607 | 422 | 包含默认核心；重点削减多入口反复装配、规则矩阵乘上真实 CLI 的组合 |
+| e2e | 750 | 546 | 相比 integration 新增 146 份文件，但另有 3 份 integration-only 文件未纳入，不能用一次 e2e 编译替代所有标签检查 |
+
+上述来自当前 macOS 的 54 个 Go 包，包含仅有 helper 的测试文件；文件数不是成本或质量指标。三份 integration-only 文件为 `builtin/agents/dsh/factory_integration_test.go`、`internal/room/agent_execution_integration_test.go`、`internal/room/service_native_integration_test.go`。Web DOM、脚本、Linux 原生与真实平台／模型验收另按其实际入口和依赖判断。
+
+成本继续使用 [F5 固定快照记录](implementation/test-suite-final-validation.zh.md)：完整 integration 1136.298 秒，Room 串行／并行跨度 691.794／405.357 秒，命令至首项 Room 测试约 40 秒。当前源码已演进，以下是**历史成本池与排序线索，不是当前基线、可删除时间或收益承诺**：
+
+| 候选 | F5 观察 | 判断 |
+| --- | --- | --- |
+| Lark 图片发送，`platform_lark_image_send_integration_test.go` | 串行父组跨度 110.853 秒；33 条子项持槽日志累计 held 337.01 秒 | 首选；规则、协议、账本与材料租约混在同一重型夹具，存在明确的职责拆分切口。两种时间不能相加 |
+| Lark 图片进程恢复／文本发送恢复 | 图片父组跨度 40.536 秒；文本文件串行 18.947 秒，另有累计持槽工作 | G1 共用夹具的回归范围；不再以 F3 四种账本故障的亚秒改善为独立项目 |
+| GitLab 图片动作 | 文件串行跨度 34.704 秒 | 有迁移潜力，但当前动作路径仍在修改；G1 成功后独立评估，不能认定与 Lark 等价 |
+| Space／访问／执行隔离默认层 | 同轮 13 份候选文件、82 项核心顶层，串行跨度累计约 67.919 秒，其中 Space 生命周期 33.331 秒 | G2；区分控制器规则、真实持久提交和完整多 owner 装配，不能直接删除五项生命周期风险 |
+| 模型／Session／调度／恢复默认层 | 按互不重叠文件前缀归组约 50.097 秒核心串行工作 | G2 的相邻候选；按生产状态决策／Session 快照与真实装配分工，不整族重写 |
+| 消息／Input／Inbox／History／附件默认层 | 45 份候选文件、216 项核心顶层，核心串行累计 34.380 秒，含输入升级 14.385 秒；另有并行持槽工作 | G3，核心价值高；成本分散，不能仅凭测试多就承诺分钟级收益，升级发布中断不列作普通规则副本 |
+| Workspace、通知、配置工具入口 | Workspace management 累计 held 67.32 秒，Lark 通知 55.95 秒，配置工具等亦有持槽成本 | G4 条件候选；已有 F1／F2／F4 的收益不重复计算，先删除重复工作而非再换一轮夹具 |
+
+归组只服务本次评估，跨组共享 helper、子项持槽与父组时间仍可能交叉；不把表内数字相加为预计全仓收益。F5 的五项 CLI 身份接线失败和 Space pending 恢复失败保留为历史未决项，当前版本是否仍失败需按相关阶段复核，不能作为自动删除名单。
+
+### 12.2 全盘职责分配
+
+| 业务／基础能力 | 主要证明放在哪里 | 上层应保留的独有证明／收缩方向 |
+| --- | --- | --- |
+| 消息发布、Agent Inbox、History 与材料读取 | `internal/inputstream` 的序列、目录、消费／调用回执与存储合同；Room 读取投影、预算／cursor／范围判断直接测实际函数或最小 input session | 保留一条真实发布→读取→确认→重开链，以及私有／共享可见性、租约和回收的独有接线。MCP、CLI、HTTP 不各自复制分页／payload 全矩阵 |
+| 平台动作、图文发送、引用与幂等 | provider 层负责输入／payload／目标与结果核验；Room action Store／执行组件负责冻结证据、intent／attempt／result、最后准入和材料租约 | 原生传输只证明 argv、字节、次序、错误分类、取消与清理；正式入口只留代表接线。跨进程死亡、未知提交、防重和执行中撤权保留独有证明。G1 首先实施 |
+| Events／Todos／Lark 通知与投递 | provider 的轮询、分页、过滤、退避与候选快照；`internal/platform/notification` 的 revision、取消／暂停／释放和投递确认 | Room 只证明配置接入、准确目标 Inbox、源回执失败后的重试／防重、关闭结清及重开。不要让每个查询错误都重建 manager 和账号 |
+| 平台连接、成员工具、授权与自然语言规则 | `internal/platform/registry`、`internal/app/platforms` 和实际配置／准入函数负责补丁、版本、scope、操作选择 | 每条有差异的绑定入口保留薄接线；账号／成员代际、ABA、TOCTOU、撤权和 unknown 仍在实际 owner 验证。F1／F2 已交付部分不重做；活跃 GitLab 改动稳定后再选 |
+| Space、用户访问、模型、Session 与调度 | 准入、版本与状态决策、默认／固定模型、不可变 Session 快照直接测生产函数；控制器使用受控但遵守结清合同的 owner／backend | 保留认证与 Space 路由、旧代际拒绝、归档恢复、未结清不替换、模型切换和后台恢复。整机 HTTP＋完整模型目录＋多 Room 不用于穷举同一静态规则。G2 |
+| 持久存储、升级与恢复 | 真实文件、原子发布、故障注入和新 Store 重读；存储格式差异由真实对应 writer／reader 证明 | 独有提交点、未知结果和损坏拒绝不合并掉；OS 子进程仅用于真实死亡、锁／缓存、信号、孤儿与未结清资源。保留支持格式的升级输入，不把历史比较工具与迁移材料一起删除 |
+| Workspace／Git／Scion／文件目录 | 路径／目标／授权规则轻量测；Git／Scion 原生合同在所属实现验证 | 必要真实 clone、用户文件／作者保留、符号链接重核验、外部目录、准备取消及未知结果保留；不为每个配置分支重复建仓库和 Session。沿用 F4 私有环境 |
+| Calendar | `internal/calendar` 覆盖重复规则、时区／DST、日期与任务状态；Room CalendarActor 负责提交与调度接线 | 保留暂停／取消与结清、后台恢复、唯一发布和跨会话隔离的代表链，不在页面、HTTP 和 manager 层重新穷举日期矩阵；不是当前运行提速首选 |
+| DSH／SRT／Computer | 协议解析、权限与模型参数、屏幕／控制权规则放所属包；执行资源状态用受控 runtime 验证 | 真实 ACP／CLI 传输、PID／信号、进程树、正常与异常关闭、恢复、沙箱逃逸／非 root、实际屏幕接管各按真实风险保留。早于 Room 结束的包不为整仓提速先重构 |
+| Web／DOM／HTTP／浏览器 | DOM 行为测试负责页面分支，Go handler／service 测试负责请求与身份；两者不各自维护完整业务规则表 | 少量实际页面＋HTTP 和浏览器链覆盖安装／登录、发送／回读、SSE 重连／上下文隔离、关键文件／设置体验；焦点、滚动、原生 EventSource 等浏览器独有行为不能用 DOM 替身替代 |
+| CLI／MCP／boot／扩展／打包 | 参数／JSON／schema／指引解析和扩展组合优先用公开注册或解析入口；执行合同在相应 provider／runtime 包 | 正式 CLI／MCP 各保留身份／绑定、错误传播和一次成功接线；独立进程用于安装后资源、恢复及信号特性。发布包、平台原生与真实模型验收按需，已退出比较入口确认无生产／离线依赖后可退役 |
+
+低层不是另一套实现：优先复用现有生产函数、`WithImageActions` 的 reader／source／writer 参数、现有通知 host 和 runtime factory。仅当规则确实被不可分的装配绑住时，提取正式路径也调用的小决策函数；不建立万能 fake manager、测试选择平台或通用依赖注入框架。unit 可使用小临时目录／HTTP 替身，但不得用层级名称掩盖完整系统启动。
+
+### 12.3 可选择的实施阶段
+
+| 阶段 | 优先级与完整交付范围 | 收益目标与停止条件 |
+| --- | --- | --- |
+| **G1：Lark 图文动作职责拆分与重型矩阵退出** | **唯一首推。** provider 规则／真实发送协议、Room 账本与租约组件、少量正式入口组成一个完整切片；不是只新增 unit test | 历史主文件 110.853 秒，整组含承接与共用调用方，优先争取 40–60 秒净改善；是筛选投入的目标而非承诺。若当前完整范围不能支持成组数十秒下降，缩小交付并停止扩散，不再重复 F2 微实验 |
+| **G2：默认核心的 Space／模型生命周期减装配** | 默认反馈优先时选此阶段；先处理 `space_lifecycle_test.go`／`space_server_test.go`，再按当前成本选择相邻模型／Session 族 | 区分同范围净减少与重型组合移出默认入口；争取默认路径成组数十秒下降，不把约 68／50 秒成本池全算作可省。必要真实生命周期若已是最小证明则保留，不能为达到数字制造假状态机 |
+| **G3：消息→Inbox／History→确认／回收的低层承接与接线收缩** | 核心正确性优先，G1／G2 之后按剩余成本选择。整条消息读取／消费职责闭环，包含通知投递的直接承接，不扩成所有 provider 的重写 | 保留核心语义矩阵，实际退出重复的 Room／transport 组合；成本分散，暂不承诺分钟级。若只找到少数几项便宜 schema／参数检查，不开展新的大范围夹具工程 |
+| **G4：条件扩展与可独立退役项** | 可跳过。GitLab 图片动作、通知配置、Workspace、Web／CLI 验收按届时主路径分别选择，一个族一份承接映射 | 必须有现成低层承接或 G1 的实测收益支持；不能因为做完 G1 就批量复制。真实 e2e／旧比较工具的删减单列维护收益，不冒充本轮本地 integration 的提速 |
+
+各阶段可独立评估和交付，不以全做完为目标。**如果只优先实施一项，选择 G1。** 如果当次唯一目标是缩短默认 `make test`，可直接选择 G2，G1 不是它的代码前置；不同时铺开两个重写族。共同验收沿用 §12.8，不另建一轮先全量、后微优化的启动流程。
+
+### 12.4 G1：先对 Lark 图文发送动刀
+
+**2026-11-25 已实施。** 原主文件 35 次完整图片夹具装配收缩至 7 次；协议、真实 Store／执行组件和正式注册诊断分别承接，图片／文本进程死亡矩阵保留。包含承接的三包顺序执行 251.8 → 182.4 秒；计入改后全部编译成本仍比改前仅执行少约 49.8 秒，仅为本机局部样本。相关族 race、三种标签编译与 vet 通过；一次未复现的原生屏障超时仍留作风险，不冒充全仓通过或预算达成。覆盖映射、包含承接及共享调用方的对照与剩余门槛见[实施记录](implementation/lark-image-action-responsibilities.zh.md)。下文保留实施前的职责要求，未授权扩展 G2–G4。
+
+**范围与现成接点。** 主要入口为 `platform_lark_image_send_integration_test.go` 六个顶层测试；最低承接在 `internal/platform/lark/image_send_test.go`、`send_transport_test.go`，Room 的 `room_action_images_test.go`、`action_dispatch_test.go`、`actions_store.go` 和 `followups_actions_service.go`。`imageSendHarness`／`configureImageSendHarness` 的实际调用方纳入回归，包括图片进程恢复，但本阶段不再缩减 F3 已收口的文本／图片死亡矩阵，不改 GitLab 动作或生产权限合同。
+
+源码复核发现：provider 已有 `TestImageSendInputAndTextAdapterBoundary`、`TestImageSendExactContentVerification`、`TestImageSendNativePostMetadata`、`TestImageSendAdapterSettlement`，分别覆盖输入、内容／digest 与适配器结果等规则；后者注入 writer，**当前本包测试未发现直接调用 `Pinned.SendImages` 的发送协议证明**。必须补齐这一缺口，不能直接删掉上层唯一的 argv／上传次序／真实清理检查。
+
+| 当前重型组 | 承接与退出方案 | 上层保留 |
+| --- | --- | --- |
+| `TestLarkImagesManagedCLI`：self／group 下共 14 个完整组合 | 输入、单／多图、caption、内容镜像与结果差异优先复用上述 provider 测试；在本包真实 `Pinned.SendImages` 协议测试中覆盖各次上传失败、单次 POST、参数／字节、错误分类、临时目录与取消。不为同义规则重新启动 Room | 候选压缩为 4–6 条普通正式入口代表，覆盖两种目标的实际路由、完整正文／图片顺序，以及发出后未知结果／核验失败。具体保留项以实际分支和已有承接映射确认，数字不是硬上限 |
+| `TestLarkImagesDispatchGuards`：两种源存储 × 5 种模式 | 静态输入／digest 判断复用实际 dispatch 决策；并发同 ID、取消、执行中权限／内容变化在最小 Room 执行组件配受控 writer 验证。writer 必须遵守真实 guard／dispatch／取消回调，不能直接返回成功绕过结清 | 至少保留一条真正原生上传期间的租约／最后准入接线。仍支持的两种源存储各保留其独有 pin／清理证明，不机械保留或删除整个乘积 |
+| `TestLarkImagesLedgerFailureReleasesSource`：两种源存储 × intent／attempt／unknown-intent | 保留各真实文件失败点和源租约，用最小真实 Store／执行组件观察 writer 调用为零、unknown 冻结、pin 释放；去掉与目标无关的账号初始化、CLI 与 HTTP 往返 | 保留必要的“持久 intent／attempt 先于上传”真实接线；不以关闭 fsync、假 writer 持久成功或单纯返回错误替代证明 |
+| `TestLarkImagesOptionalPermission`、`TestLarkImagesPermissionRecoveryKeepsTextIndependent` | 应用 scope、用户 scope、查询失败及修复指引由 provider 权限／capability 测试承接；Room 只验证实际 capability 安装和恢复，不为每个 scope 分支重跑全部上传 | 留一条图片不可用／恢复后可用且文本一直可用的接线；执行中撤权另由真实 guard 边界覆盖，不与静态权限合并 |
+| `TestLarkImagesBuiltinActionFieldDiagnostics` | 直接验证真实 action schema／字段诊断生成，不准备图片、不启动上传和完整 manager；已有等价断言则合并 | 依赖正式 action 注册而非独立手写 schema，避免“测试副本正确、正式入口未注册” |
+
+**先拆掉测试夹具中的业务耦合。** 当前 `imageSendCLI` 会扫描 Room 的动作账本，检查 unknown／attempt／冻结输入后才处理图片；协议假进程因此必须依赖整个业务世界。将这些断言移到 Go 的真实 owner／Store 测试，在实际上传／dispatch 屏障处读取准确 action 记录，先证明持久 intent／attempt 与冻结内容，再让 CLI 夹具只观察 argv、文件字节、顺序、输出、POST 和退出。进程恢复中的同类断言也需明确承接，不因删掉脚本中的检查而消失。
+
+实现顺序：复用已有低层规则 → 补真实 `Pinned.SendImages` 协议与受控执行组件缺口 → 删除／合并已承接的重型副本 → 复验共享调用方。最终交付必须列出真正消失的完整装配、原生调用和组合；若只新增测试而原 33 条持槽工作基本不变，不算本阶段完成。33 是 F5 日志条数，不是必须按数量削减的覆盖率指标。
+
+计时范围必须包含原组、保留 Room 组件／正式入口、旧有和新增 provider 承接、被改 helper 的直接调用方及构建摊销；不能只比较缩小后的 Room 文件。首次源码已变时重新构建，使用固定快照做一组健康的同范围对照；只有结果接近门槛或波动影响判断时才补有限样本。不预先承诺全仓下降 40–60 秒，独立包提前结束的收益仍须与 Room 主路径区分。
+
+### 12.5 G2：默认核心职责归位，保留真正的生命周期证明
+
+第一切片限定 `space_lifecycle_test.go`、`space_server_test.go` 及其实际调用的访问／runtime helper；相邻模型候选为 `default_assistant_test.go`、`platform_connect_model_test.go`、`model_management_test.go`、`automatic_recovery_test.go`、`rotation_state_test.go`，仅在首切片后按成本选一族，不自动全部实施。
+
+- 状态／版本／主体／路径准入直接测试 `changeSpaceStatus` 等实际控制器或其正式路径调用的小决策函数，默认／固定模型与 Session 参数快照复用现有真实构造；不为每个拒绝分支创建用户、模型目录、两个 Space、多个 Room 与 TCP listener。
+- 控制器结清、迟到结果、最终回执写失败和 owner 不可替换，使用最小控制器、真实状态提交及可控 owner／backend；复用现有 factory，不能复制另一套归档算法或把未结束 worker 假装成已结束。
+- 登记／目录发布、损坏拒绝与各独有 unknown 提交点继续真实落盘。`space_identity_test.go` 已直接测注册发布，不整组改成内存表；真实跨 owner 关闭、锁、资源与旧执行代际也不能只剩状态枚举。
+- `TestSpaceArchiveRestoreRebuildsOwnersAndRevokesOldGeneration` 等完整多组件链按实际依赖归入 integration，默认层留下控制器规则和代表性最小生命周期。归档超时、最终回执失败后原 owner 保留、源通知回执丢失后的重试／防重分别保留，不以“一条 happy path”吞并。
+- 选择模型切片时，将 `onlineModelManager` 默认创建 A／B／C、保存配置、安装 controller 和 Room 的步骤按目标收缩；只有涉及成员轮换、操作幂等和 Session 生效才用完整装配。无关模型及历史材料不建，规则已有覆盖则直接删上层副本。
+
+交付分别报告：①新增承接后同范围实际执行净减少；②仍必要的真实组合移到 integration 后默认入口减少的工作。第二类可以改善日常反馈，但不宣称全仓提速；不能靠把 68／50 秒候选全部换标签完成预算。当前五项 Space 生命周期包含多种独有失效模式，**没有预授权的整项删除清单**，实施必须逐项区分规则与真实证明。
+
+### 12.6 G3：消息、Inbox、History 与通知只在必要层串联
+
+入口为 `history_test.go`、`input_stream_tools_test.go`、`input_stream_unified_test.go`、`input_stream_reader_test.go`、`inbox_*test.go`、`shared_inbox_test.go`、相关 MCP／HTTP／CLI 组合，以及它们直接接入的 Events／Todos 通知测试。存储算法承接在 `internal/inputstream`，通知 host 承接在 `internal/platform/notification`，轮询／过滤承接在各 provider。`input_upgrade_test.go` 的真实发布中断暂不纳入规则副本收缩。
+
+1. 分清 repository（持久内容／消费回执）、input session（可见性／预算／冻结 cursor）、delivery owner（可靠入箱／确认）、transport（MCP／HTTP／CLI 绑定）四种职责。仅证 schema、边界参数、文本投影的场景，直接使用当前 schema／解析／投影函数；不通过 `newRoomHarness` 建多成员、写多条消息再得到同一判断。
+2. `unifiedReaderFixture` 已比完整 manager 更轻，但仍创建真实 Store／Room、追加成员、保存运行中的 Agent、打开输入存储和 session。只有测试目标需要这些状态时才使用；需要冻结页／读取确认时用最小真实 input session，不复制游标／消费算法做 fake reader。
+3. 保留代表性的真实发布→读取→输出确认→receive／consume→重开链，以及共享授权、私有成员可见性、稳定流引用、稀疏页、unknown／回收和并发失效的独有证明；MCP、CLI 与 History 入口不各自再穷举所有分页／容量／错误组合。
+4. 已有 `TestConsumptionStreamsBoundsQuotaAndReopen`、`TestConsumptionFailureBoundaries`、`TestFrameworkCallReplayReopenAndReceiptLoss`、`TestCandidatesAreAtomicAndUnknownCommitLatches`、`TestDeliveryAcknowledgesOnlyAfterCommitAndKeepsStableOrder` 等承接优先复用。低层原子提交不能自动证明 Room 自己的目录／消费 checkpoint 接线，后者保留薄的真实文件与回执失败检查。
+5. 旧 Inbox、统一流、History 对同一底层算法的副本在明确承接后合并；仍支持的格式只保留各自独有适配／升级证据，不能仅凭 legacy 命名判定退役。通知将分页／过滤矩阵留在 provider／host，Room 只串联准确目标、确认、防重、凭据轮换／关闭结清及重开。
+
+该组核心重要性高，但历史默认串行成本较分散。实施前选完整子族，说明会净退出哪些重型工作；若主成本仍为不可替代的真实持久边界，交付职责整理并停止扩展，不补出一批同样重的“新 unit test”。
+
+### 12.7 G4：其余领域的条件选择与 e2e 精简
+
+- **GitLab 图片／平台动作**：G1 效果成立且当前动作／授权改动稳定后，先复核 `internal/platform/gitlab/image_actions_test.go`、`actions_test.go`、`project_actions_test.go` 与 Room 族的重合。沿用职责原则，不照搬 Lark 保留数量；MR／discussion、上传后 POST／核验、作者／目标、写后失败等实际差异各留证明。
+- **通知／配置／Workspace**：优先消除 provider 已验证分支在 manager、member、onboarding、HTTP 中的重型副本；真实平台代际、配置未知提交、投递确认丢失、准备进程及外部目录仍留。已经完成 F1／F2／F4 的微优化不重复作为本轮项目；若只找到几秒机会则跳过。
+- **Web／CLI／MCP**：沿用低层 DOM 行为＋Go handler／owner 的分工，页面／真实 TCP 组合只证明独有接线。保留浏览器特有的安装／登录、发送回读、SSE 重连／切换及关键文件／设置体验；不同独有风险可用不同小场景，不强行塞进一个巨型 journey，也不按每个业务参数新建一条浏览器用例。
+- **DSH／SRT／Computer、boot／扩展与打包**：保留协议、资源边界及发布接线，业务矩阵不重复搬进真实模型／浏览器／沙箱。Linux 非 root／容器、真实平台与模型、安装后的资源读取继续独立按需；不因它们名字带 e2e 就删掉唯一的原生边界证明。
+- **旧比较与阶段验收**：确认生产、正式回归、离线证据和升级材料均无依赖后，删除已退出入口与对应重复测试；无需为废弃能力新建替代。默认未运行的真实 e2e 退役主要减少维护／构建负担，本轮没有其运行提速的数字。
+
+### 12.8 所有 G 阶段的交付与验收约定
+
+实施阶段先提交一张短映射，随后完成同一行为切片，不能只交付“低层测试新增”：
+
+| 必须说明 | 可核对的内容 |
+| --- | --- |
+| 退出什么 | 旧重型用例／组合、原来保护的行为、确切删除／合并或最小装配方式；已退役能力写明依据 |
+| 谁承接 | 已有或新增的实际生产规则、协议／组件测试；同义覆盖已有则不再新增 |
+| 上层为什么还在 | 仅列下层无法证明的绑定、时序、真实持久与进程／浏览器风险；维度只有实际交互时才继续相乘 |
+| 工作量怎样下降 | 实际少建的 manager／Room／成员／模型／仓库、少启动的进程及少做的无关持久准备；次数用于解释，最终以含承接后的健康整族墙钟判断 |
+| 收益归哪类 | 同范围净提速、冗余测试／退役能力减少工作量、必要验收移出默认入口分别报告；不能互换或相加冒充全仓结果 |
+
+运行节奏与停止条件：
+
+1. 先复用本节证据选定完整族，核对当前源码与 helper 调用方；不为启动 G1 再跑一轮全仓核心／集成。相关旧失败先确认当前入口与合同，不能通过放宽身份、取消、持久或 unknown 语义“修健康”。范围外失败单列，不要求先跨模块全部修完。
+2. 固定同一源码快照，局部对照包含新增承接、保留上层、受影响 helper 的直接调用方、构建与清理。相同源码／标签／race 的二进制可以复用，源码变了就重建；不用全局 GOFLAGS 采集日志，Make 正则结尾使用 `$$`。
+3. 普通相关族先通过；涉及取消、共享持有权或并发时补定向 race。helper／标签变更再补对应默认、integration、e2e 编译，注意 e2e 不是当前 integration 文件的严格超集。没有新变化或未解问题，不机械追加同范围复跑。
+4. 一组选做阶段完成、源码稳定且准备评价整轮结果时，再统一跑一次完整 integration、全仓 race、标准 vet 与 Web 检查；只为独立判断三分钟核心预算时另测核心，不在每次集成前串跑核心。真实模型／平台／浏览器仍按功能变化单独决定，不增加日常 CI 依赖。
+5. G1 以成组数十秒、争取 40–60 秒为投入目标；未达到不硬凑测试数量或继续铺开。若只省几秒、波动超过收益，先看仍必须执行的工作；只保留有职责／稳定性价值的改动并停止扩散，不为达成阶段编号反复测量。
+6. 默认核心三分钟、完整集成八分钟继续作为整轮目标。本节不保证 G1 或 G1–G3 相加即可达成；失败样本、不同源码及累计持槽时间不能形成因果提速率。**既要允许上层用例真正退出，也要允许必要的昂贵证明保留；决定依据是独有风险和实际成本，而非层级配额或测试数。**
+
+2026-11-24 的本节盘点只补方案，未更改测试、构建标签、生产接口或执行预算，未执行新的测试回归；2026-11-25 G1 的后续实施与验证另见上方记录。临时入口清单与分组计算位于 `/tmp/teamx-test-responsibility-review/`；实施所需的范围、关键数值与判断已留在本节，不依赖该目录长期存在。
 
 ## 附录 A：T1 需要核对的失败清单
 

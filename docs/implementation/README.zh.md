@@ -13,6 +13,7 @@
 | [独立 SRT 隔离检查](srt-independent-isolation.zh.md) | 空间 S3a.1：文件、网络与监督条件的独立实测；DSH 接入见执行记录 |
 | [SRT 与 DSH 隔离检查](srt-dsh-isolation.zh.md) | SRT 包装 DSH 的原始兼容性证据与边界 |
 | [OpenCSG SSO 与用户生命周期](opencsg-auth-preflight.zh.md) | S4a 代码及本地闭环；Linux 安装实例真实单账号登录／模型首用、显式开放认证后准入；真实多账号／远端撤权及正式门槛保留 |
+| [Lark 图文动作职责拆分](lark-image-action-responsibilities.zh.md) | provider 真实发送协议、Room 账本与租约承接、重型组合退出及整族验证 |
 | [空间执行隔离路线验证](space-execution-isolation.zh.md) | 空间 S3a 历史探针：DSH／文件／Shell／CLI、UID／容器及取消恢复证据保留；每空间业务 worker 路线已被替代，下一步 S3a.1 验证 SRT |
 | [空间与执行资源准入](space-resource-admission.zh.md) | 空间 S3b 部分实现：共享核心中的空间／占有 Session 额度及结清释放保留；SRT 接入、工具链／硬资源与组合验收仍未完成 |
 | [Agent 执行环境接入与恢复](agent-execution.zh.md) | 空间 S3b.1 完成：原生／SRT 执行合同、非 root 真实 DSH 的 MCP／CLI 回调、取消／故障／重启恢复／轮换及资源结清；多用户仍关闭 |

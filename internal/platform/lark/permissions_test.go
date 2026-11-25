@@ -167,3 +167,46 @@ func TestPermissionCapabilitiesDegradeOnlyAffectedBranches(t *testing.T) {
 		t.Fatal("credential in check contract")
 	}
 }
+
+func TestImageUploadPermissionKeepsTextIndependent(t *testing.T) {
+	for _, tc := range []struct{ name, reason, next string }{
+		{"application", "application_scopes_missing", "configure_application"},
+		{"user", "user_scopes_missing", "authorize_user"},
+		{"unchecked", "query_failed", "retry_check"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			p := PermissionCheck{Application: ScopeCheck{State: "granted"}, User: ScopeCheck{State: "granted"}, Renewal: ScopeCheck{State: "granted"}, AccountFixed: true}
+			switch tc.name {
+			case "application":
+				p.Application.State = "missing"
+				p.Application.Missing = []string{"im:resource"}
+			case "user":
+				p.User.State = "missing"
+				p.User.Missing = []string{"im:resource"}
+			case "unchecked":
+				p.Application.State = "unchecked"
+				p.Application.ReasonCode = "query_failed"
+			}
+			caps := permissionCapabilities(p, "darwin", "")
+			upload := findCapability(t, caps, "image.upload")
+			if upload.State == "ready" || upload.ReasonCode != tc.reason || upload.NextAction != tc.next {
+				t.Fatal(upload)
+			}
+			for _, op := range []string{"message.send", "message.send_self", "message.reply"} {
+				v := findCapability(t, caps, op)
+				if tc.name == "unchecked" {
+					if v.State == "ready" {
+						t.Fatal("unchecked application admitted text", v)
+					}
+				} else if v.State != "ready" {
+					t.Fatal("image scope gap blocked text", v)
+				}
+			}
+			p.Application = ScopeCheck{State: "granted"}
+			p.User = ScopeCheck{State: "granted"}
+			if v := findCapability(t, permissionCapabilities(p, "darwin", ""), "image.upload"); v.State != "ready" {
+				t.Fatal("permission repair did not restore upload", v)
+			}
+		})
+	}
+}
