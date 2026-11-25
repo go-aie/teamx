@@ -484,7 +484,7 @@ export function createMembers({ env, runtime, notificationsUI, workspaceUI, onbo
     const selected=selectedAgent();
     $("activity-title").textContent = !roomsUI.isDirect() && selected ? `${agentName(selected)} · 设置` : "设置";
     $("agent-profile-name").textContent = selected ? agentName(selected) : "";
-    if (selected) renderAvatar(document, $("activity-avatar"), {kind:"agent",id:selected.agent_id,name:agentName(selected),direct:roomsUI.isDirect(),defaultAssistant:roomsUI.isDefaultAssistant()});
+    if (selected) renderAvatar(document, $("activity-avatar"), {kind:"agent",id:selected.agent_id,name:agentName(selected),roomID:state.info?.room_id,direct:roomsUI.isDirect(),defaultAssistant:roomsUI.isDefaultAssistant()});
     $("agent-tabs").hidden = false;
     $("agent-tab-platforms").hidden = !state.managed;
     const member = selectedAgent();
@@ -709,7 +709,7 @@ export function createMembers({ env, runtime, notificationsUI, workspaceUI, onbo
       summary.dataset.state = runtimeFailed(member) || /failed|blocked|unavailable|interrupted/.test(member.status) ? "error" : running || recovering(member) ? "running" : "idle";
       summary.disabled = !state.connected;
       summary.addEventListener("click", () => openMemberActivity(member, summary));
-      renderAvatar(document, el.querySelector(".avatar"), {kind:"agent", id:member.agent_id, name:agentName(member), direct:roomsUI.isDirect(), defaultAssistant:roomsUI.isDefaultAssistant()});
+      renderAvatar(document, el.querySelector(".avatar"), {kind:"agent", id:member.agent_id, name:agentName(member), roomID:state.info?.room_id, direct:roomsUI.isDirect(), defaultAssistant:roomsUI.isDefaultAssistant()});
       const profile = el.querySelector(".member-profile"), description = role?.name || member.runner?.profile;
       profile.textContent = description || "";
       profile.hidden = roomsUI.isDirect() || !description || description === agentName(member) || description === member.agent_id;

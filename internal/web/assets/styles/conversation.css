@@ -118,6 +118,11 @@
 .agent-avatar[data-avatar-tone="amber"] { --avatar-background:#875219; }
 .agent-avatar[data-avatar-tone="cyan"] { --avatar-background:#266279; }
 .agent-avatar[data-avatar-tone="assistant"] { --avatar-background:#4f6fa8; }
+.direct-avatar[data-avatar-tone="sage"] { --avatar-background:#587d6b; }
+.direct-avatar[data-avatar-tone="blue"] { --avatar-background:#596eaa; }
+.direct-avatar[data-avatar-tone="violet"] { --avatar-background:#7c68a0; }
+.direct-avatar[data-avatar-tone="amber"] { --avatar-background:#ac774b; }
+.direct-avatar[data-avatar-tone="cyan"] { --avatar-background:#4e8192; }
 .integration-avatar { --avatar-background:#e5eaf1; --avatar-border:#c9d1dc; --avatar-color:#4e5d73; }
 .integration-avatar[data-avatar-provider="gitlab"] { --avatar-background:#fbe1cf; --avatar-border:#edbc99; --avatar-color:#9d4717; }
 .integration-avatar[data-avatar-provider="lark"] { --avatar-background:#dae6ff; --avatar-border:#b0c7ef; --avatar-color:#2457bd; }

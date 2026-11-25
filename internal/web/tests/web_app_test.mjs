@@ -4081,6 +4081,32 @@ test("catalog room avatars retain full names and stable colors across member cha
   assert.equal(image(room).dataset.avatarTone,tone,"renaming retains the room identity color");
 });
 
+test("private avatars use stable conversation colors across the list, messages and member details", async () => {
+  const rooms=Array.from({length:5},(_,i)=>({...makeRoom(`助理 ${i}`,`dm-${i}`),is_direct:true,members:[{id:"assistant"}]}));
+  const defaultRoom={...makeRoom("个人助理","default-dm"),is_direct:true,members:[{id:"assistant"}]};
+  const api=server([defaultRoom,...rooms]);
+  api.catalog.default_assistant={status:"completed",room_id:defaultRoom.room_id,room_instance:defaultRoom.room_instance};
+  api.hook=path=>path==="/v1/member/list" ? {members:[{agent_id:"assistant",membership_id:"member-assistant",status:"paused",runner:{profile:"runtime"}}]} : undefined;
+  for (const room of [defaultRoom,...rooms]) api.history.set(room.room_id,[{...message(1,"你好"),author:{kind:"agent",id:"assistant"}}]);
+  const ui=await launch(api);
+  const image=room=>ui.el("room-list").children.find(row=>row.dataset.roomKey===JSON.stringify([room.room_id,room.room_instance])).children[0].children.find(el=>el.className==="room-avatar").children[0];
+  const tones=rooms.map(room=>image(room).dataset.avatarTone);
+  assert.equal(new Set(tones).size,5,"repeated assistant IDs must not collapse to one color");
+  assert.equal(image(defaultRoom).dataset.avatarTone,"assistant");
+  for (const room of [defaultRoom,...rooms]) {
+    await ui.select(room.name);
+    const tone=image(room).dataset.avatarTone;
+    const messageAvatar=ui.el("messages").children.find(el=>el.id==="message-1").querySelector(".avatar");
+    await ui.el("members").children[0].querySelector(".member-summary").emit("click");await settle();
+    for (const avatar of [image(room),messageAvatar,ui.el("activity-avatar"),ui.el("members").children[0].querySelector(".avatar")]) {
+      assert.equal(avatar.dataset.avatarTone,tone);
+      assert.equal(avatar.classList.contains("direct-avatar"),true);
+    }
+  }
+  api.catalog.rooms.reverse();rooms[0].name="重新命名";await ui.refresh();
+  assert.deepEqual(rooms.map(room=>image(room).dataset.avatarTone),tones,"sorting and renaming retain colors");
+});
+
 test("catalog unread badges include unopened direct replies and room mentions without changing order or drafts", async () => {
   const reading = (unread, mentions = 0) => ({status:"ready",revision:0,snapshot_seq:200,cleared_through:0,unread_count:unread,mention_count:mentions});
   const direct = {...makeRoom("Direct"),is_direct:true,human_read:reading(120,3)};

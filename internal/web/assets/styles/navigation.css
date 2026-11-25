@@ -142,7 +142,6 @@
 .room-detail .room-preview,.room-detail .room-status { min-width:0; }
 .room-choice .room-avatar { position:relative; grid-column:1; grid-row:1 / 3; width:44px; height:44px; }
 .room-avatar-image { width:44px; height:44px; border:0; border-radius:50%; }
-.room-avatar .room-avatar-image .assistant-icon { width:28px; height:28px; }
 .room-avatar-name {
   max-width:32px;
   max-height:28px;

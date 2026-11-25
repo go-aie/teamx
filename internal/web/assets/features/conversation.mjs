@@ -372,7 +372,7 @@ export function createConversation({ env, runtime, roomsUI, membersUI, settingsU
     el.classList.toggle("integration", integration);
     const avatar = el.querySelector(".avatar");
     renderAvatar(document, avatar, {kind:message.author.kind, id:message.author.id,
-      provider:message.source?.provider || message.author.id, direct:roomsUI.isDirect(), defaultAssistant:roomsUI.isDefaultAssistant(), name:authorName(message.author,message)});
+      provider:message.source?.provider || message.author.id, roomID:state.info?.room_id, direct:roomsUI.isDirect(), defaultAssistant:roomsUI.isDefaultAssistant(), name:authorName(message.author,message)});
     const channel = message.source?.provider === "gitlab" && ["events", "todos"].includes(message.source?.channel) ? message.source.channel : null;
     el.querySelector(".author").textContent = integration ? channel ? `GitLab · ${channel === "todos" ? "我的待办" : "项目活动"}` : `${message.author.id} · 通知` : authorName(message.author,message);
     if (agent) {
@@ -476,7 +476,7 @@ export function createConversation({ env, runtime, roomsUI, membersUI, settingsU
       el.classList.toggle("own", own);
       if (message.author.kind !== "integration") el.querySelector(".author").textContent = authorName(message.author,message);
       if(message.author.kind==="agent")for(const selector of [".avatar",".author"])el.querySelector(selector).setAttribute("aria-label",`查看 ${authorName(message.author,message)} 的详情`);
-      if(message.author.kind==="agent" && cached.memberNames!==memberNamesKey)renderAvatar(document,el.querySelector(".avatar"),{kind:"agent",id:message.author.id,name:authorName(message.author,message),direct:roomsUI.isDirect(),defaultAssistant:roomsUI.isDefaultAssistant()});
+      if(message.author.kind==="agent" && cached.memberNames!==memberNamesKey)renderAvatar(document,el.querySelector(".avatar"),{kind:"agent",id:message.author.id,name:authorName(message.author,message),roomID:state.info?.room_id,direct:roomsUI.isDirect(),defaultAssistant:roomsUI.isDefaultAssistant()});
       if (cached.memberNames !== memberNamesKey) {
         renderMessageBody(el.querySelector(".message-text"), message.text, state.operator, messageOptions(message));
         cached.memberNames = memberNamesKey;

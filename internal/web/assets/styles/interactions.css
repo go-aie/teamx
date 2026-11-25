@@ -43,15 +43,11 @@
 .assistant-icon {
   width:1em;
   height:1em;
-  fill:none;
-  stroke:currentColor;
-  stroke-width:1.7;
-  stroke-linecap:round;
-  stroke-linejoin:round;
+  fill:currentColor;
   vertical-align:-.15em;
   flex-shrink:0;
 }
-.avatar .assistant-icon { width:20px; height:20px; }
+.avatar .assistant-icon { width:100%; height:100%; }
 .direct-suggestions { display:flex; flex-wrap:wrap; justify-content:center; gap:8px; margin:0 20px 24px; }
 .direct-conversation :is(#member-empty,#members,#room-details,#room-members-heading) { display:none; }
 #direct-settings-loading { margin:16px 0; font-size:var(--font-small); line-height:1.6; }

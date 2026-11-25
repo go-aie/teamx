@@ -307,7 +307,7 @@ export function createRooms({ env, runtime, layoutUI, workspaceUI, conversationU
     const wrapper = document.createElement("span"); wrapper.className = "room-avatar";
     const image = document.createElement("span"); image.className = "room-avatar-image";
     image.setAttribute("aria-hidden", "true");
-    renderAvatar(document, image, {kind:"agent", id:room.is_direct ? room.members?.[0]?.id || room.room_id : room.room_id,
+    renderAvatar(document, image, {kind:"agent", id:room.room_id,
       name:room.name, direct:!!room.is_direct, defaultAssistant:isDefaultAssistant(room)});
     if (!room.is_direct) {
       const label = document.createElement("span"); label.className = "room-avatar-name"; label.textContent = room.name;
