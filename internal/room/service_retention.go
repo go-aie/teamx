@@ -87,7 +87,8 @@ func serviceRequiredReleases(r serviceRegistration) ([]string, error) {
 	}
 	homes := []string{r.Home}
 	var directory spaceDirectory
-	if err := readIdentitySnapshot(filepath.Join(r.Home, "spaces.json"), &directory); err == nil {
+	identityPath := filepath.Join(r.Home, "spaces.json")
+	if err := readIdentitySnapshotForUID(identityPath, &directory, uint32(r.UID)); err == nil {
 		if directory.Version != 1 {
 			return nil, errors.New("invalid Space directory during release retention")
 		}
@@ -102,7 +103,7 @@ func serviceRequiredReleases(r serviceRegistration) ([]string, error) {
 			}
 		}
 	} else if !errors.Is(err, os.ErrNotExist) {
-		return nil, err
+		return nil, fmt.Errorf("read service Space directory %s (owner UID %d): %w", identityPath, r.UID, err)
 	}
 	for _, home := range homes {
 		data, err := os.ReadFile(filepath.Join(home, "config.toml"))

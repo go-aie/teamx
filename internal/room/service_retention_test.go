@@ -56,6 +56,41 @@ func serviceRetentionRelease(t *testing.T, r serviceRegistration, version string
 	return release
 }
 
+func TestServiceReleaseReferencesRequireRegisteredIdentityOwner(t *testing.T) {
+	for _, scenario := range []string{"registered-owner", "wrong-owner", "permissions", "symlink"} {
+		t.Run(scenario, func(t *testing.T) {
+			r := serviceTestRegistration(t)
+			path := filepath.Join(r.Home, "spaces.json")
+			if err := writeServiceJSON(path, spaceDirectory{Version: 1}); err != nil {
+				t.Fatal(err)
+			}
+			switch scenario {
+			case "wrong-owner":
+				r.UID++
+			case "permissions":
+				if err := os.Chmod(path, 0644); err != nil {
+					t.Fatal(err)
+				}
+			case "symlink":
+				if err := os.Rename(path, path+".saved"); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.Symlink("spaces.json.saved", path); err != nil {
+					t.Fatal(err)
+				}
+			}
+			_, err := serviceRequiredReleases(r)
+			if scenario == "registered-owner" {
+				if err != nil {
+					t.Fatal(err)
+				}
+			} else if err == nil {
+				t.Fatal("accepted identity file outside registered ownership/permissions", scenario)
+			}
+		})
+	}
+}
+
 func TestServiceBackupIncludesPinnedSpacesAndSessionsWithoutUnusedReleases(t *testing.T) {
 	r := serviceTestRegistration(t)
 	original, _ := filepath.EvalSymlinks(filepath.Join(r.Root, "current"))

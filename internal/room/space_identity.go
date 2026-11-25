@@ -256,6 +256,12 @@ func (a *serverAccess) ownsRequest(r *http.Request) bool {
 // Read from the same checked descriptor used by config/session access. Never
 // follow a symlink or accept a registry writable by another OS account.
 func readIdentitySnapshot(path string, value any) error {
+	return readIdentitySnapshotForUID(path, value, uint32(os.Geteuid()))
+}
+
+// Root-run service maintenance must check the registered ordinary service
+// account, while runtime reads continue to require the current process owner.
+func readIdentitySnapshotForUID(path string, value any, owner uint32) error {
 	data, info, err := readSettingsFile(path)
 	if err != nil {
 		return err
@@ -264,7 +270,7 @@ func readIdentitySnapshot(path string, value any) error {
 		return os.ErrNotExist
 	}
 	stat, ok := info.Sys().(*syscall.Stat_t)
-	if !ok || stat.Uid != uint32(os.Geteuid()) || info.Mode().Perm() != 0600 || int64(len(data)) > maxPrivateFileBytes {
+	if !ok || stat.Uid != owner || info.Mode().Perm() != 0600 || int64(len(data)) > maxPrivateFileBytes {
 		return errors.New("identity directory must be a private 0600 file")
 	}
 	decoder := json.NewDecoder(bytes.NewReader(data))
