@@ -56,7 +56,7 @@ func probeFailure(stage string, err error) error {
 		code = "timeout"
 	case errors.Is(err, ErrAuthentication):
 		code = "authentication"
-	case errors.Is(err, ErrRateLimited):
+	case errors.Is(err, ErrRateLimited), errors.Is(err, ErrQuotaExceeded):
 		code = "rate_quota"
 	case errors.Is(err, ErrModelNotFound), errors.Is(err, ErrModelUnavailable):
 		code = "route_model_access"

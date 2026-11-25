@@ -39,6 +39,7 @@ type apiRequest struct {
 	automatic        bool
 	recovering       bool
 	automaticInbox   *InboxStatus
+	automaticInputs  *unifiedInputStatus
 	internalPause    bool
 	expectedPause    *uint64
 	environmentID    string
@@ -786,9 +787,17 @@ func (s *service) control(ctx context.Context, req apiRequest, action string) (M
 			if lease != nil && s.ctx != nil {
 				callCtx = s.ctx
 			}
+			if action == "rotate" && req.automatic && !req.recovering && s.unifiedInputs {
+				inputs, err := s.inputStatus(callCtx, id)
+				if err != nil {
+					lease.close()
+					return MemberStatus{}, fmt.Errorf("rotation input status: %w", err)
+				}
+				req.automaticInputs = &inputs
+			}
 			result, err := s.target(member.MembershipID).Call[MemberStatus](callCtx, ControlMember{MemberIdentity: id, Action: action,
 				ExecutionID: req.ExecutionID, environmentID: req.environmentID, environmentOwner: req.environmentOwner,
-				automatic: req.automatic, recovering: req.recovering, automaticInbox: req.automaticInbox, Retry: req.Retry, Cancel: req.Cancel, Resume: req.Resume, State: state, OperationID: req.OperationID, FromGeneration: req.FromGeneration, Reason: req.RotationReason, ContinueRotation: req.ContinueRotation, Replenish: rotationReplenish, lease: lease, internalPause: req.internalPause, expectedPause: req.expectedPause})
+				automatic: req.automatic, recovering: req.recovering, automaticInbox: req.automaticInbox, automaticInputs: req.automaticInputs, Retry: req.Retry, Cancel: req.Cancel, Resume: req.Resume, State: state, OperationID: req.OperationID, FromGeneration: req.FromGeneration, Reason: req.RotationReason, ContinueRotation: req.ContinueRotation, Replenish: rotationReplenish, lease: lease, internalPause: req.internalPause, expectedPause: req.expectedPause})
 			if err != nil {
 				lease.close()
 			}

@@ -42,15 +42,20 @@ func (m *MemberAgent) requestSessionChange(request func(context.Context, MemberI
 	}, func(_ struct{}, err error) bool {
 		defer m.observeStatus()
 		m.rotationRequest = false
-		if errors.Is(err, ErrBusy) {
+		if errors.Is(err, ErrBusy) || errors.Is(err, ErrConflict) {
 			m.rotationNext = m.now().Add(100 * time.Millisecond)
 		}
 		if err != nil && !errors.Is(err, ErrBusy) && !errors.Is(err, ErrConflict) && !errors.Is(err, ErrClosing) {
 			m.lastError = "automatic rotation admission: " + err.Error()
-			m.BackendBlocked = m.lastError
+			m.deferSessionChange("admission", m.lastError, transientSessionError(err))
+		} else if err == nil && m.sessionRecovery != nil && m.sessionRecovery.Stage == "admission" {
 			if recovering {
-				m.RecoveryPending = false
+				m.sessionRecovery.Stage = "backend"
+			} else {
+				m.sessionRecovery = nil
 			}
+			m.lastError = ""
+			_ = m.persistScheduling(m.enabled, m.turnsUsed)
 		}
 		m.schedule()
 		return true
@@ -66,14 +71,18 @@ func (s *service) requestMemberRotation(ctx context.Context, id MemberIdentity, 
 	if id.RoomIdentity != s.info.RoomIdentity {
 		return ErrIdentity
 	}
-	inbox, err := s.memberInboxStatus(ctx, id)
-	if err != nil {
-		return err
+	req := apiRequest{AgentID: id.AgentID, MembershipID: id.MembershipID,
+		FromGeneration: from, RotationReason: "session_max_turns", Resume: true, automatic: true}
+	if !s.unifiedInputs {
+		inbox, err := s.memberInboxStatus(ctx, id)
+		if err != nil {
+			return fmt.Errorf("rotation input status: %w", err)
+		}
+		req.automaticInbox = &inbox
 	}
 	// The actor has already released its execution slot. Service admission is
 	// shared with manual rotation, removal, configuration and shutdown.
-	_, err = s.control(ctx, apiRequest{AgentID: id.AgentID, MembershipID: id.MembershipID,
-		FromGeneration: from, RotationReason: "session_max_turns", Resume: true, automatic: true, automaticInbox: &inbox}, "rotate")
+	_, err := s.control(ctx, req, "rotate")
 	return err
 }
 

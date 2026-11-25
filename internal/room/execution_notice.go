@@ -13,7 +13,8 @@ func (m *MemberAgent) recoveringSession() bool {
 	if r := m.rotation; r != nil && (r.Status == "waiting" || r.Status == "closing") {
 		return r.Reason == "backend_recovery"
 	}
-	return m.RecoveryPending && !m.recoveryAttempted
+	return (m.RecoveryPending || m.sessionRecovery != nil && m.sessionRecovery.Stage != "backend") &&
+		(m.sessionRecovery == nil || !m.sessionRecovery.Blocked)
 }
 
 // Safe authored messages are separate from the full error chain retained for
@@ -21,7 +22,14 @@ func (m *MemberAgent) recoveringSession() bool {
 // recognized; unrecognized text is never copied into the user-facing message.
 func executionNotice(s MemberStatus) *ExecutionNotice {
 	if s.Status == "recovering" {
-		return &ExecutionNotice{Code: "session_recovering", Message: "正在恢复助理，恢复后将自动继续。"}
+		message := "正在恢复助理，恢复后将自动继续。"
+		if r := s.SessionRecovery; r != nil && r.NextAt.After(time.Now()) {
+			message = "助理正在等待自动恢复，下次重试 " + r.NextAt.Format(time.RFC3339) + "。"
+		}
+		return &ExecutionNotice{Code: "session_recovering", Message: message}
+	}
+	if r := s.SessionRecovery; r != nil && r.Blocked && !s.SessionResetRequired {
+		return &ExecutionNotice{Code: "recovery_check_failed", Message: "助理恢复检查未通过，已保留对话和任务记录。请查看诊断详情。"}
 	}
 	if r := s.InputRecovery; r != nil && !s.Active && s.Error == "" {
 		code, message := "inbox_recovery_waiting", fmt.Sprintf("收件箱还有 %d 条待交付输入。", r.Pending)

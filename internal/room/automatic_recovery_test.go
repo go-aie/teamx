@@ -18,9 +18,18 @@ import (
 )
 
 func recoveryHarness(t *testing.T, fail error, always bool, closeFn func(context.Context) error) (*roomHarness, *service, actorx.Addr, MemberIdentity, *atomic.Int32) {
+	return recoveryHarnessWithFailures(t, func(attempt int32) error {
+		if attempt == 1 || always {
+			return fail
+		}
+		return nil
+	}, closeFn, 10*time.Second)
+}
+
+func recoveryHarnessWithFailures(t *testing.T, failure func(int32) error, closeFn func(context.Context) error, timeout time.Duration) (*roomHarness, *service, actorx.Addr, MemberIdentity, *atomic.Int32) {
 	t.Helper()
 	var runs atomic.Int32
-	h := newRoomHarness(t, historyRoom(0, ""), nil)
+	h := newRoomHarnessWithTimeout(t, historyRoom(0, ""), nil, timeout)
 	id := h.memberID("A", "generation-A")
 	opens := &atomic.Int32{}
 	list := roomCall[MemberList](t, h, ListMembers{h.id})
@@ -29,8 +38,8 @@ func recoveryHarness(t *testing.T, fail error, always bool, closeFn func(context
 	backend := dshBackend{store: h.store, open: func(context.Context, dsh.Options) (dshComponent, error) {
 		opens.Add(1)
 		return &adapterComponent{run: func(context.Context, string) (dsh.TurnResult, error) {
-			if runs.Add(1) == 1 || always {
-				return dsh.TurnResult{}, fail
+			if err := failure(runs.Add(1)); err != nil {
+				return dsh.TurnResult{}, err
 			}
 			return dsh.TurnResult{StopReason: "end_turn"}, nil
 		}, close: closeFn}, nil
@@ -76,8 +85,8 @@ func TestAutomaticRecoveryIsBoundedAndSurvivesRestart(t *testing.T) {
 			t.Fatal("persistent fault retried indefinitely or lost user intent", s, saved, err)
 		}
 		r := recoveredMember{id: id, automatic: true, recovery: true, blocked: "backend unavailable"}
-		if err := (&service{store: h.store, maxTurns: 16}).restoreScheduling(&r, *s.Agent); err != nil || r.recovery || r.resume {
-			t.Fatal("restart renewed automatic recovery", r, err)
+		if err := (&service{store: h.store, maxTurns: 16}).restoreScheduling(&r, *s.Agent); err != nil || !r.recovery || r.resume || saved.SessionRecovery == nil || !saved.SessionRecovery.NextAt.After(time.Now()) {
+			t.Fatal("restart lost the cooled-down recovery", r, err)
 		}
 
 	})
@@ -151,7 +160,7 @@ func TestAutomaticRecoveryPauseWinsDuringCleanup(t *testing.T) {
 }
 
 func TestAutomaticRecoveryPermanentErrorsStayPaused(t *testing.T) {
-	for _, fail := range []error{dsh.ErrAuthentication, dsh.ErrModelNotFound, dsh.ErrRateLimited, &dsh.HTTPStatusError{StatusCode: 403}} {
+	for _, fail := range []error{dsh.ErrAuthentication, dsh.ErrModelNotFound, dsh.ErrQuotaExceeded, &dsh.HTTPStatusError{StatusCode: 403}, &dsh.HTTPStatusError{StatusCode: 402}} {
 		t.Run(fail.Error(), func(t *testing.T) {
 			synctest.Test(t, func(t *testing.T) {
 				h, _, addr, id, opens := recoveryHarness(t, errors.Join(dsh.ErrUncertain, fail), true, nil)
@@ -264,7 +273,13 @@ func TestAutomaticRecoveryRestoresOnlyEnabledSettledSessions(t *testing.T) {
 				if err := svc.resumeMembers(h.ctx); err != nil {
 					t.Fatal(err)
 				}
-				if mode == "enabled" || mode == "incompatible" || mode == "corrupt-backend" {
+				if mode == "already-attempted" {
+					s := inspectMember(t, h.ctx, addr, id)
+					saved, err := h.store.loadScheduling(id)
+					if err != nil || s.Status != "recovering" || saved.SessionRecovery == nil || saved.SessionRecovery.Attempts != 1 || !saved.SessionRecovery.NextAt.After(time.Now()) || opens.Load() != 0 {
+						t.Fatal("legacy recovery was not cooled down durably", s, saved, err)
+					}
+				} else if mode == "enabled" || mode == "incompatible" || mode == "corrupt-backend" {
 					s := waitMember(t, h.ctx, addr, id, func(s MemberStatus) bool {
 						return !s.Active && s.Agent.TurnNumber == 2
 					})
@@ -361,8 +376,10 @@ func TestAutomaticRecoveryAfterFailedSessionOpen(t *testing.T) {
 							t.Fatal("replacement did not continue normal input", last, runs.Load())
 						}
 					} else {
+						// A failed fresh Open returned no Session or independent
+						// settlement proof. Backoff cannot authorize its replacement.
 						if !last.Paused || last.Status == "recovering" || last.Notice == nil || runs.Load() != 0 {
-							t.Fatal("persistent failure was not bounded", last)
+							t.Fatal("unsettled fresh open was automatically replaced", last)
 						}
 						saved, err := h.store.loadScheduling(id)
 						if err != nil || !saved.RecoveryAttempted {

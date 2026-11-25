@@ -55,6 +55,13 @@ test("Session recovery shows progress with pause and keeps internal failures in 
   assert.equal(ui.el("activity-output-error").hidden,true);
   assert.equal(ui.el("activity-diagnostics").hidden,true);
 
+  member.execution.session_recovery={stage:"backend",attempts:3,next_at:"2026-11-25T09:30:00Z"};
+  member.execution.notice.message="助理正在等待自动恢复，下次重试 2026-11-25T09:30:00Z。";
+  await ui.refresh();await settle();
+  assert.match(ui.el("agent-error").textContent,/等待自动恢复/);
+  assert.equal(ui.el("agent-enable-hint").hidden,true);
+  assert.equal(ui.el("agent-actions").children[0].textContent,"暂停");
+
   member.status="backend_blocked";
   member.execution.notice={code:"session_unavailable",message:"助理暂时无法恢复。对话和任务记录已保留，可查看诊断详情。"};
   await ui.refresh();await settle();

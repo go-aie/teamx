@@ -26,6 +26,7 @@ type rotationRecord struct {
 	Resume      bool   `json:"resume"`
 	Replenish   bool   `json:"replenish"`
 	Recovery    bool   `json:"recovery,omitempty"`
+	Automatic   bool   `json:"automatic,omitempty"`
 	Error       string `json:"error,omitempty"`
 	FailedStep  string `json:"failed_step,omitempty"`
 }

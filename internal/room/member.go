@@ -45,6 +45,7 @@ type MemberAgent struct {
 	RecoveryPending      bool // Startup candidate; armed only after HTTP is serving.
 	recoveryArmed        bool
 	recoveryAttempted    bool
+	sessionRecovery      *sessionRecovery
 	enabled              bool                // Durable user intent, independent of fault pause.
 	environmentControl   *environmentHandoff // Actor-owned; a lost viewer leaves durable scheduling paused.
 	rotationRequest      bool
@@ -130,6 +131,9 @@ func (m *MemberAgent) Started(ctx actorx.Context, _ actorx.Started) error {
 	if err := m.initializeScheduling(); err != nil && !errors.Is(err, ErrIdentity) {
 		return err
 	}
+	if m.lastError == "" && m.sessionRecovery != nil {
+		m.lastError = m.sessionRecovery.Error
+	}
 	if _, capable := m.Backend.(rotatingBackend); m.schedulingReady && capable {
 		if r, err := m.Store.loadRotation(m.Options.MemberIdentity); err != nil {
 			return err
@@ -214,6 +218,10 @@ func (m *MemberAgent) status() MemberStatus {
 	result := MemberStatus{CurrentGeneration: m.currentGeneration, PauseRevision: m.pauseRevision, Status: status, Active: m.active, Paused: m.paused || m.rotation != nil && m.rotation.Status == "failed", Agent: &state, Error: m.lastError,
 		SessionResetRequired: m.BackendBlocked != "", SessionGeneration: m.sessionGeneration, SessionStartUsed: m.sessionStartUsed,
 		TurnBudget: &TurnBudget{Limit: m.turnLimit, Used: m.turnsUsed, Grant: m.MaxTurns}}
+	if m.sessionRecovery != nil {
+		copy := *m.sessionRecovery
+		result.SessionRecovery = &copy
+	}
 	result.EnvironmentControl = m.environmentControlView()
 	if m.automaticRotation() {
 		result.TurnBudget = nil
@@ -374,6 +382,8 @@ func (m *MemberAgent) Control(ctx actorx.Context, msg ControlMember) (MemberStat
 		}
 		if msg.Action == "enable" {
 			m.recoveryAttempted = false
+			m.sessionRecovery = nil
+			m.rotationNext = time.Time{}
 			m.RecoveryPending, m.recoveryArmed = false, false
 		}
 		if m.active && msg.Retry {
@@ -615,6 +625,18 @@ func (m *MemberAgent) schedule() {
 	if m.CapabilityReady != nil && !m.CapabilityReady() {
 		m.withdrawTurn()
 		return
+	}
+	if r := m.sessionRecovery; r != nil && m.enabled {
+		if r.Blocked || m.now().Before(r.NextAt) && (m.RecoveryPending || r.Stage != "backend") {
+			m.withdrawTurn()
+			return
+		}
+		if r.Stage == "rotation" && m.recoveryArmed && !m.active && !m.fault &&
+			(m.ExecutionFrozen == nil || !m.ExecutionFrozen.Load()) {
+			m.withdrawTurn()
+			m.requestSessionChange(m.RequestRecovery, true)
+			return
+		}
 	}
 	if m.recoveryArmed && m.canRecoverSession() {
 		m.withdrawTurn()
@@ -900,14 +922,23 @@ func (m *MemberAgent) startTurn(input UnreadChanged, snapshotSeq, readThrough ui
 			if errors.Is(err, errBackendDisabled) {
 				m.BackendBlocked = m.lastError
 			}
-			if errors.Is(err, errBackendPaused) && (work.session != nil || work.openSettled) && recoverableBackendFailure(backend, err) {
+			if m.automaticRotation() && errors.Is(err, errBackendPaused) && (work.session != nil || work.openSettled) && recoverableBackendFailure(backend, err) {
 				m.RecoveryPending, m.recoveryArmed = true, true
-				m.rotationNext = m.now().Add(time.Second)
+				if m.sessionRecovery == nil {
+					m.sessionRecovery = &sessionRecovery{Stage: "backend"}
+				}
+				r := m.sessionRecovery
+				r.Stage, r.Error, r.Blocked = "backend", err.Error(), false
+				r.NextAt = m.now().Add(recoveryDelay(r.Attempts))
+				m.rotationNext = r.NextAt
+				_ = m.persistScheduling(m.enabled, m.turnsUsed)
 			}
 		} else {
 			m.RecoveryPending = false
-			if m.recoveryAttempted {
+			if m.recoveryAttempted || m.sessionRecovery != nil {
 				m.recoveryAttempted = false
+				m.sessionRecovery = nil
+				m.rotationNext = time.Time{}
 				_ = m.persistScheduling(m.enabled, m.turnsUsed)
 			}
 		}

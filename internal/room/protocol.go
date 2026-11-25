@@ -154,6 +154,7 @@ type InboxInput = agent.InboxInput
 
 type InspectMember struct{ MemberIdentity }
 type MemberStatus struct {
+	SessionRecovery      *sessionRecovery    `json:"session_recovery,omitempty"`
 	EnvironmentControl   *environmentHandoff `json:"environment_control,omitempty"`
 	ExecutionID          uint64              `json:"execution_id,omitempty"` // Cumulative admitted attempt; never reused by Session rotation.
 	Stopping             bool                `json:"stopping,omitempty"`
@@ -230,6 +231,7 @@ type ControlMember struct {
 	automatic           bool
 	recovering          bool
 	automaticInbox      *InboxStatus
+	automaticInputs     *unifiedInputStatus
 	internalPause       bool
 	expectedPause       *uint64
 	MemberIdentity

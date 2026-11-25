@@ -133,11 +133,21 @@ func (m *MemberAgent) prepareRotation(msg ControlMember) error {
 			status := *msg.automaticInbox
 			m.inbox = &status
 		}
+		if msg.automaticInputs != nil {
+			if m.Inputs == nil {
+				return ErrConflict
+			}
+			status := *msg.automaticInputs
+			m.inputStatus = &status
+		}
 		eligible := m.automaticRotation() && m.ready() && m.needsRotation()
 		if msg.recovering {
 			eligible = m.canRecoverSession()
 		}
-		if !eligible || m.active || msg.FromGeneration != m.currentGeneration {
+		continuing := msg.ContinueRotation && m.rotationRecord != nil && m.rotationRecord.Automatic &&
+			m.rotationRecord.OperationID == msg.OperationID && m.enabled && !m.fault &&
+			(m.ExecutionFrozen == nil || !m.ExecutionFrozen.Load())
+		if (!eligible && !continuing) || m.active || (!continuing && msg.FromGeneration != m.currentGeneration) {
 			return ErrConflict
 		}
 	}
@@ -189,6 +199,10 @@ func (m *MemberAgent) prepareRotation(msg ControlMember) error {
 		if m.turnsUsed != r.BaseUsed || (current != r.From && current != r.To) {
 			return ErrConflict
 		}
+		if !msg.automatic && msg.modelTarget == nil {
+			m.sessionRecovery, m.recoveryAttempted = nil, false
+			m.rotationNext = time.Time{}
+		}
 		m.rotationEnable = r.Replenish
 		m.rotationLease = msg.lease
 		r.Error, r.FailedStep = "", ""
@@ -233,10 +247,11 @@ func (m *MemberAgent) prepareRotation(msg ControlMember) error {
 		r.ModelTarget = &snapshot
 	}
 	r.Recovery = msg.recovering
+	r.Automatic = msg.automatic
 	if msg.recovering {
-		// Commit a bounded recovery allowance before any lifecycle operation.
-		// A restart must not turn a persistent failure into an endless loop.
+		// Commit the spent attempt and cooldown before any lifecycle operation.
 		m.recoveryAttempted = true
+		m.recordRecoveryAttempt()
 		if err := m.persistScheduling(m.enabled, m.turnsUsed); err != nil {
 			return err
 		}
@@ -260,6 +275,10 @@ func (m *MemberAgent) prepareRotation(msg ControlMember) error {
 	if err := m.Store.saveRotation(*r); err != nil {
 		m.rotationFailure("prepared", err)
 		return err
+	}
+	if !msg.automatic && msg.modelTarget == nil {
+		m.sessionRecovery, m.recoveryAttempted = nil, false
+		m.rotationNext = time.Time{}
 	}
 	if !msg.automatic && msg.Resume {
 		if err := m.persistScheduling(true, m.turnsUsed); err != nil {
@@ -291,6 +310,15 @@ func (m *MemberAgent) rotationFailure(step string, err error) {
 	m.rotationStatus("failed")
 	m.lastError = err.Error()
 	m.BackendBlocked = "rotation incomplete; continue the same operation: " + err.Error()
+	var pending *pendingBackendClose
+	retryable := transientSessionError(err) || recoverableBackendFailure(m.Backend, err)
+	if errors.Is(err, ErrCommitUnknown) || errors.Is(err, ErrInvalid) || errors.Is(err, ErrIdentity) ||
+		(step == "old_cleanup" && !errors.As(err, &pending)) {
+		retryable = false
+	}
+	if m.rotationRecord.Automatic {
+		m.deferSessionChange("rotation", "Session rotation "+step+": "+err.Error(), retryable)
+	}
 	m.rotationLease.close()
 	m.rotationLease = nil
 }
@@ -366,11 +394,18 @@ func (m *MemberAgent) rotate() {
 		m.currentGeneration = record.To
 		m.Backend = r.backend
 		m.schedulingVersion, m.sessionGeneration, m.sessionStartUsed = schedulingVersion, record.To, record.BaseUsed
-		if record.Recovery || record.PreserveIntent {
+		if record.Automatic || record.Recovery || record.PreserveIntent {
 			// A newer explicit pause always wins over asynchronous cleanup.
 			m.paused = !m.enabled
 			m.retry = m.enabled
 			m.RecoveryPending = false
+		}
+		if m.sessionRecovery != nil && m.sessionRecovery.Stage == "rotation" {
+			if record.Recovery {
+				m.sessionRecovery.Stage = "backend"
+			} else {
+				m.sessionRecovery = nil
+			}
 		}
 		if err := m.persistScheduling(m.enabled, m.turnsUsed); err != nil {
 			m.rotationFailure("collaboration_baseline", err)

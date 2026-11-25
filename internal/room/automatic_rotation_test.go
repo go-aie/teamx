@@ -33,7 +33,7 @@ func automaticHarness(t *testing.T, threshold uint64, closeFn func(context.Conte
 	svc := &service{ctx: h.ctx, store: h.store, info: ServiceInfo{RoomIdentity: h.id}, room: h.addr, targets: map[string]actorx.Addr{}, dshProfiles: map[string]dshProfile{"reviewer": {}}}
 	list := roomCall[MemberList](t, h, ListMembers{h.id})
 	svc.dshProfiles[list.Members[0].Runner.Profile] = dshProfile{}
-	addr, err := h.spawn(&MemberAgent{Options: adapterOptions(h.store, id), Store: h.store, Room: h.addr, Backend: backend, SessionMaxTurns: threshold, RequestRotation: svc.requestMemberRotation})
+	addr, err := h.spawn(&MemberAgent{Options: adapterOptions(h.store, id), Store: h.store, Room: h.addr, Backend: backend, SessionMaxTurns: threshold, RequestRotation: svc.requestMemberRotation, RequestRecovery: svc.requestMemberRecovery})
 	if err != nil {
 		t.Fatal(err)
 	}

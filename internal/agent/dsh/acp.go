@@ -51,6 +51,9 @@ func (e *rpcError) Unwrap() error {
 	if strings.Contains(detail, "authentication_error") || strings.Contains(detail, "invalid_api_key") {
 		return ErrAuthentication
 	}
+	if strings.Contains(detail, "insufficient_quota") || strings.Contains(detail, "quota_exceeded") {
+		return ErrQuotaExceeded
+	}
 	if strings.Contains(detail, "tpm_exceeded") || strings.Contains(detail, "rate_limit_error") {
 		return ErrRateLimited
 	}

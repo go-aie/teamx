@@ -28,6 +28,7 @@ var (
 	ErrCancelled           = errors.New("DSH turn cancelled")
 	ErrCleanupPending      = errors.New("DSH cleanup remains owned")
 	ErrRateLimited         = errors.New("model service rate limited (HTTP 429); wait before retrying")
+	ErrQuotaExceeded       = errors.New("model service quota exhausted; check account billing and quota")
 	ErrModelNotFound       = errors.New("configured model not found (HTTP 404, model_not_found); check model ID and endpoint")
 	ErrModelUnavailable    = errors.New("configured model unavailable (HTTP 503, model_unavailable); no upstream endpoint available; check model availability or retry later")
 	ErrAuthentication      = errors.New("model service authentication failed (HTTP 401); check API key and endpoint")

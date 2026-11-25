@@ -137,17 +137,18 @@ func (b dshBackend) latestModelSelection(opts SessionOptions) (dshBackend, error
 }
 
 func (b dshBackend) recoverableFailure(err error) bool {
-	if errors.Is(err, context.Canceled) || errors.Is(err, dsh.ErrCleanupPending) || errors.Is(err, dsh.ErrLocked) || errors.Is(err, dsh.ErrAuthentication) || errors.Is(err, dsh.ErrModelNotFound) || errors.Is(err, dsh.ErrRateLimited) {
+	if errors.Is(err, context.Canceled) || errors.Is(err, ErrInvalid) || errors.Is(err, ErrIdentity) || errors.Is(err, ErrVersion) || errors.Is(err, ErrRequest) || errors.Is(err, ErrCommitUnknown) || errors.Is(err, dsh.ErrCleanupPending) || errors.Is(err, dsh.ErrLocked) || errors.Is(err, dsh.ErrAuthentication) || errors.Is(err, dsh.ErrModelNotFound) || errors.Is(err, dsh.ErrQuotaExceeded) {
 		return false
 	}
 	var status *dsh.HTTPStatusError
 	if errors.As(err, &status) {
-		return status.StatusCode >= 500
+		return status.StatusCode >= 500 || status.StatusCode == 408 || status.StatusCode == 429
 	}
 	// Incompatibility authorizes a recovery candidate, never replacement by
 	// itself. The adapter reference, settlement and business receipts must all
 	// pass the existing rotation gates, including after a failed lazy resume.
-	return errors.Is(err, dsh.ErrRecoveryUnsupported) || errors.Is(err, dsh.ErrUnavailable) || errors.Is(err, dsh.ErrUncertain) || errors.Is(err, dsh.ErrModelUnavailable)
+	return errors.Is(err, dsh.ErrRecoveryUnsupported) || errors.Is(err, dsh.ErrUnavailable) || errors.Is(err, dsh.ErrUncertain) || errors.Is(err, dsh.ErrModelUnavailable) ||
+		errors.Is(err, dsh.ErrRateLimited) || errors.Is(err, dsh.ErrDNS) || errors.Is(err, dsh.ErrConnection) || errors.Is(err, dsh.ErrUpstreamTimeout) || errors.Is(err, context.DeadlineExceeded)
 }
 
 // Legacy snapshots retain only safe diagnostics, so recognize only known
@@ -157,16 +158,18 @@ func recoverableDSHHistory(agent AgentSnapshot) bool {
 		return true
 	}
 	err := agent.Turn.Error
-	if strings.Contains(err, "HTTP 4") {
+	if strings.Contains(err, "HTTP 4") && !strings.Contains(err, "HTTP 429") && !strings.Contains(err, "HTTP 408") {
 		return false
 	}
-	for _, permanent := range []error{dsh.ErrAuthentication, dsh.ErrModelNotFound, dsh.ErrRateLimited} {
+	for _, permanent := range []error{ErrInvalid, ErrIdentity, ErrVersion, ErrRequest, ErrCommitUnknown, dsh.ErrCleanupPending, dsh.ErrLocked, dsh.ErrAuthentication, dsh.ErrModelNotFound, dsh.ErrQuotaExceeded} {
 		if strings.Contains(err, permanent.Error()) {
 			return false
 		}
 	}
 	return strings.Contains(err, "cannot inspect owned DSH processes") || strings.Contains(err, dsh.ErrUnavailable.Error()) ||
-		strings.Contains(err, dsh.ErrModelUnavailable.Error()) || strings.Contains(err, dsh.ErrRecoveryUnsupported.Error())
+		strings.Contains(err, dsh.ErrModelUnavailable.Error()) || strings.Contains(err, dsh.ErrRecoveryUnsupported.Error()) ||
+		strings.Contains(err, dsh.ErrRateLimited.Error()) || strings.Contains(err, dsh.ErrDNS.Error()) || strings.Contains(err, dsh.ErrConnection.Error()) ||
+		strings.Contains(err, dsh.ErrUpstreamTimeout.Error()) || strings.Contains(err, context.DeadlineExceeded.Error()) || strings.Contains(err, "HTTP 5") || strings.Contains(err, "HTTP 429") || strings.Contains(err, "HTTP 408")
 }
 
 // Failed Open/Resume may return no owned Session. Only independently verified
@@ -357,6 +360,8 @@ func isSessionGenerationEntry(name string) bool {
 // adapter recognizes its known provider messages; arbitrary text is not shown.
 func backendModelNotice(text string) *ExecutionNotice {
 	switch {
+	case strings.Contains(text, dsh.ErrQuotaExceeded.Error()):
+		return &ExecutionNotice{Code: "model_quota_exhausted", Message: "模型账号额度不足，请检查账号账单或更换模型连接。"}
 	case strings.Contains(text, dsh.ErrAuthentication.Error()):
 		return &ExecutionNotice{Code: "model_authentication", Message: "模型连接验证失败，请在设置中检查模型凭据。"}
 	case strings.Contains(text, dsh.ErrRateLimited.Error()):

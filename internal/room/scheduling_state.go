@@ -16,15 +16,16 @@ const schedulingVersion = 2
 type memberScheduling struct {
 	Version int `json:"version"`
 	MemberIdentity
-	Enabled            bool           `json:"enabled"`
-	RecoveryAttempted  bool           `json:"recovery_attempted,omitempty"`
-	Used               uint64         `json:"used"`
-	SessionGeneration  string         `json:"session_generation"`
-	SessionStartUsed   uint64         `json:"session_start_used"`
-	Limit              uint64         `json:"limit,omitempty"` // Absent in older snapshots: use the Room's original limit.
-	InboxRecovery      *inboxRecovery `json:"inbox_recovery,omitempty"`
-	InboxContinuedAt   time.Time      `json:"inbox_continued_at,omitempty"`
-	InboxContinueCount uint64         `json:"inbox_continue_count,omitempty"`
+	Enabled            bool             `json:"enabled"`
+	RecoveryAttempted  bool             `json:"recovery_attempted,omitempty"`
+	SessionRecovery    *sessionRecovery `json:"session_recovery,omitempty"`
+	Used               uint64           `json:"used"`
+	SessionGeneration  string           `json:"session_generation"`
+	SessionStartUsed   uint64           `json:"session_start_used"`
+	Limit              uint64           `json:"limit,omitempty"` // Absent in older snapshots: use the Room's original limit.
+	InboxRecovery      *inboxRecovery   `json:"inbox_recovery,omitempty"`
+	InboxContinuedAt   time.Time        `json:"inbox_continued_at,omitempty"`
+	InboxContinueCount uint64           `json:"inbox_continue_count,omitempty"`
 }
 
 func (s *Store) loadScheduling(id MemberIdentity) (memberScheduling, error) {
@@ -43,6 +44,10 @@ func (s *Store) loadScheduling(id MemberIdentity) (memberScheduling, error) {
 	}
 	if r := state.InboxRecovery; r != nil && (r.SnapshotSeq <= r.Start || r.SnapshotSeq-r.Start > inboxBatchSize || r.Attempts < 0 || r.Attempts > 3 || r.Since.IsZero() || r.ConsumedThrough > r.Start) {
 		return state, fmt.Errorf("%w: Inbox recovery", ErrInvalid)
+	}
+	if r := state.SessionRecovery; r != nil &&
+		(r.Stage != "backend" && r.Stage != "admission" && r.Stage != "rotation" || r.Attempts < 0 || r.Attempts > 64 || r.NextAt.IsZero() || len(r.Error) > 64<<10) {
+		return state, fmt.Errorf("%w: Session recovery", ErrInvalid)
 	}
 	if state.Version == schedulingVersion {
 		var fields map[string]json.RawMessage
@@ -87,7 +92,7 @@ func (m *MemberAgent) persistSchedulingLimit(enabled bool, used, limit uint64) e
 	if m.automaticRotation() {
 		limit = 0
 	}
-	err := m.Store.saveScheduling(memberScheduling{Version: version, MemberIdentity: m.Options.MemberIdentity, Enabled: enabled, RecoveryAttempted: m.recoveryAttempted, Used: used, Limit: limit, SessionGeneration: m.sessionGeneration, SessionStartUsed: m.sessionStartUsed, InboxRecovery: m.inboxRecovery, InboxContinuedAt: m.inboxContinuedAt, InboxContinueCount: m.inboxContinueCount})
+	err := m.Store.saveScheduling(memberScheduling{Version: version, MemberIdentity: m.Options.MemberIdentity, Enabled: enabled, RecoveryAttempted: m.recoveryAttempted, SessionRecovery: m.sessionRecovery, Used: used, Limit: limit, SessionGeneration: m.sessionGeneration, SessionStartUsed: m.sessionStartUsed, InboxRecovery: m.inboxRecovery, InboxContinuedAt: m.inboxContinuedAt, InboxContinueCount: m.inboxContinueCount})
 	if err != nil {
 		m.fault, m.paused = true, true
 		m.lastError = "collaboration checkpoint failed: " + err.Error()
@@ -154,8 +159,26 @@ func (s *service) restoreScheduling(member *recoveredMember, agent AgentSnapshot
 	member.used = state.Used
 	member.limit = max(s.maxTurns, state.Limit)
 	safe := agent.Turn == nil || member.contextReset || ((agent.Turn.Status == "completed" || agent.Turn.Status == "interrupted") && member.backendResume)
-	member.resume = state.Enabled && safe && member.blocked == "" && (member.automatic || state.Used < member.limit)
-	member.recovery = member.recovery && state.Enabled && !state.RecoveryAttempted
+	if r := state.SessionRecovery; r != nil && r.Stage == "rotation" && !r.Blocked {
+		rotation, err := s.store.loadRotation(member.id)
+		if err != nil {
+			return err
+		}
+		if rotation != nil && rotation.Phase == "completed" {
+			if rotation.Recovery {
+				r.Stage = "backend"
+			} else {
+				state.SessionRecovery = nil
+			}
+			if err := s.store.saveScheduling(state); err != nil {
+				return err
+			}
+		} else {
+			member.recovery = member.recovery || rotation != nil && rotation.Automatic
+		}
+	}
+	member.resume = state.Enabled && safe && member.blocked == "" && (member.automatic || state.Used < member.limit) && (state.SessionRecovery == nil || !state.SessionRecovery.Blocked)
+	member.recovery = member.recovery && state.Enabled && (state.SessionRecovery == nil || !state.SessionRecovery.Blocked)
 	return nil
 }
 
@@ -214,6 +237,18 @@ func (m *MemberAgent) initializeScheduling() error {
 	m.enabled, m.recoveryAttempted = state.Enabled, state.RecoveryAttempted
 	m.inboxRecovery, m.inboxContinuedAt, m.inboxContinueCount = state.InboxRecovery, state.InboxContinuedAt, state.InboxContinueCount
 	m.turnsUsed, m.turnLimit = state.Used, max(m.turnLimit, state.Limit)
+	m.sessionRecovery = state.SessionRecovery
+	if m.sessionRecovery == nil && state.RecoveryAttempted {
+		// Old one-shot recovery becomes a cooled-down retry, preserving the
+		// spent attempt instead of renewing it on every service restart.
+		m.sessionRecovery = &sessionRecovery{Stage: "backend", Attempts: 1, NextAt: m.now().Add(recoveryDelay(1))}
+		if err := m.persistScheduling(m.enabled, state.Used); err != nil {
+			return err
+		}
+	}
+	if m.sessionRecovery != nil {
+		m.rotationNext = m.sessionRecovery.NextAt
+	}
 	m.schedulingReady = true
 	generation, err := m.Backend.(rotatingBackend).sessionGeneration(m.Options)
 	if err != nil {

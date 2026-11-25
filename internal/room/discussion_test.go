@@ -245,6 +245,8 @@ func TestDiscussionRestartFailureKeepsHistoryAndTeamPaused(t *testing.T) {
 }
 
 func TestDiscussionRestartRecoversSettledRateLimitFailures(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
 	var opens atomic.Int32
 	svc := discussionService(t, t.TempDir(), func(context.Context, dsh.Options) (dshComponent, error) {
 		failed := opens.Add(1) <= 2
@@ -278,9 +280,14 @@ func TestDiscussionRestartRecoversSettledRateLimitFailures(t *testing.T) {
 			t.Fatal(err)
 		}
 		id := MemberIdentity{RoomIdentity: svc.info.RoomIdentity, AgentID: member.AgentID, MembershipID: member.MembershipID}
-		waitMember(t, svc.ctx, svc.target(member.MembershipID), id, func(s MemberStatus) bool {
-			return !s.Active && s.Agent.TurnNumber == 1 && s.Status == "backend_blocked"
+		waitMember(t, ctx, svc.target(member.MembershipID), id, func(s MemberStatus) bool {
+			return !s.Active && s.Agent.TurnNumber == 1 && s.Status == "recovering"
 		})
+		// Retain the settled failure while exercising the explicit whole-team
+		// restart. Ordinary rate limits now recover without this user action.
+		if _, err := svc.control(ctx, apiRequest{AgentID: member.AgentID, MembershipID: member.MembershipID}, "pause"); err != nil {
+			t.Fatal(err)
+		}
 	}
 	req := apiRequest{ServiceInfo: svc.info, Caller: humanCaller, RestartID: strings.Repeat("d", 32)}
 	if code := discussionHTTP(t, svc, "/v1/discussion/restart", req, nil); code != http.StatusOK {
@@ -295,7 +302,7 @@ func TestDiscussionRestartRecoversSettledRateLimitFailures(t *testing.T) {
 	}
 	for _, member := range members {
 		id := MemberIdentity{RoomIdentity: svc.info.RoomIdentity, AgentID: member.AgentID, MembershipID: member.MembershipID}
-		status := waitMember(t, svc.ctx, svc.target(member.MembershipID), id, func(s MemberStatus) bool {
+		status := waitMember(t, ctx, svc.target(member.MembershipID), id, func(s MemberStatus) bool {
 			return !s.Active && s.Agent.TurnNumber == 2
 		})
 		if status.Agent.Turn.Status != "completed" {

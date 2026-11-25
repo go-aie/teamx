@@ -35,6 +35,8 @@ func TestRPCErrorSafeProviderHints(t *testing.T) {
 		{"unlabeled 503", "503 server_error " + secret, nil, nil},
 		{"rate limit", "rate_limit_error " + secret, nil, ErrRateLimited},
 		{"token rate limit", "tpm_exceeded " + secret, nil, ErrRateLimited},
+		{"quota exhausted before rate hint", "HTTP 429 rate_limit_error insufficient_quota " + secret, nil, ErrQuotaExceeded},
+		{"quota code in data", "Internal error", json.RawMessage(`{"code":"quota_exceeded","message":"private-provider-detail"}`), ErrQuotaExceeded},
 		{"unrelated 404", "404 resource not found " + secret, nil, nil},
 		{"unknown error", secret, nil, nil},
 	} {
