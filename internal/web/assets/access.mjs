@@ -46,6 +46,7 @@ function clearSetupErrors() {
 }
 function showSetupError(error) {
   showSetupForm();
+  $("setup-help").hidden = false;
   const signature = JSON.stringify([error.field, error.message]);
   const reveal = signature !== lastSetupError;
   clearSetupErrors(); lastSetupError = signature;
@@ -77,13 +78,19 @@ function busy(value) {
   $("save-model").textContent = value ? "正在提交…" : "验证并开始使用";
 }
 function showSetupForm() {
+  $("setup-title").hidden = false;
+  $("model").setAttribute("aria-labelledby", "setup-title");
+  document.title = "TeamX · 设置模型";
   $("setup-editor").hidden = false; $("setup-progress").hidden = true;
   $("check-setup-operation").hidden = true;
+  $("setup-help").hidden = true;
 }
 function showSetupProgress(phase) {
   if (navigator.onLine === false) phase = "unknown";
   const entering = $("setup-progress").hidden;
   busy(true); clearSetupErrors(); feedback("");
+  $("setup-title").hidden = true;
+  $("model").setAttribute("aria-labelledby", "setup-progress-title");
   $("setup-editor").hidden = true; $("setup-progress").hidden = false;
   $("setup-progress").setAttribute("data-state", phase);
   $("setup-summary-model").textContent = $("model-id").value || "所选模型";
@@ -96,11 +103,13 @@ function showSetupProgress(phase) {
   const [title, hint] = phase === "preparing"
     ? ["正在准备助理…", "模型已保存，即将进入对话。"]
     : phase === "unknown"
-      ? ["暂时无法确认验证结果", "正在自动检查，连接恢复后会继续更新。"]
-      : ["正在验证模型…", "可能需要约 90 秒，完成后将自动进入对话。"];
+      ? ["暂时无法确认结果", "正在自动检查，连接恢复后会继续更新。"]
+      : ["正在验证模型…", "验证可能需要约 90 秒，完成后将自动进入对话。"];
+  document.title = `TeamX · ${title}`;
   if ($("setup-progress-title").textContent !== title) $("setup-progress-title").textContent = title;
   if ($("setup-progress-hint").textContent !== hint) $("setup-progress-hint").textContent = hint;
   $("check-setup-operation").hidden = phase !== "unknown";
+  $("setup-help").hidden = phase !== "unknown";
   if (entering) { $("setup-progress").focus({preventScroll:true}); $("model").scrollIntoView({block:"start"}); }
 }
 function reconcileSetup(state) {
@@ -177,7 +186,7 @@ async function showSession() {
   fillModelParameters($, m);
   configuredKey = state.credential_configured; $("replace-key-label").hidden = !configuredKey;
   restoreDraft(); draftReady=true; keyState(); protocolState();
-  if (state.writable === false) {showSetupForm();busy(true); $("save-model").textContent = "需要迁移或部署机修复"; feedback(state.message); return;}
+  if (state.writable === false) {showSetupForm();busy(true); $("setup-help").hidden = false; $("save-model").textContent = "需要迁移或部署机修复"; feedback(state.message); return;}
   const draftFeedback = $("feedback").textContent;
   if (!reconcileSetup(state)) void poll();
   else if (!state.operation && !$("reload-model-draft").hidden) feedback(draftFeedback);

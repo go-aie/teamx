@@ -5,7 +5,6 @@ import { randomUUID } from "../random-id.mjs";
 import { readPages as collectPages, createRoomDrafts, mentionRanges, compactViewport } from "../client.mjs";
 import { createHumanRead } from "./human-read.mjs";
 import { notificationOptions } from "../markdown.mjs";
-import { createAssistantIcon } from "../icons.mjs";
 import { renderAvatar } from "../avatars.mjs";
 import { createMentionPicker } from "../mention-picker.mjs";
 import { roomEventDisplayText } from "../room-events.mjs";
@@ -743,32 +742,29 @@ export function createConversation({ env, runtime, roomsUI, membersUI, settingsU
 
   // Keep welcome content stable across polling and composer updates. In
   // particular, never show temporary room copy while a direct read is pending.
-  function renderEmptyConversation(direct, name) {
+  function renderEmptyConversation(direct) {
     const suggestions = $("direct-suggestions");
     const hidden = !direct || !state.info || state.messages.size > 0;
     if (suggestions.hidden !== hidden) suggestions.hidden = hidden;
     $("platform-suggestions").hidden = !state.managed || !state.info || state.messages.size > 0;
-    const key = JSON.stringify([direct, !!state.info, name]);
+    const key = JSON.stringify([direct, !!state.info]);
     if (key === emptyConversationKey) return;
     emptyConversationKey = key;
-    const icon = $("empty-conversation-icon"), kind = direct ? "assistant" : "room";
-    if (icon.dataset.kind !== kind) {
-      if (direct) icon.replaceChildren(createAssistantIcon(document));
-      else icon.textContent = "#";
-      icon.dataset.kind = kind;
-    }
+    const icon = $("empty-conversation-icon");
+    icon.hidden = direct || !state.info;
+    if (!icon.hidden) icon.textContent = "#";
     $("empty").querySelector("h2").textContent = !state.info ? "开始一个新任务"
-      : direct ? `与${name || "个人助理"}聊聊` : "从一条消息开始";
+      : direct ? "想先处理什么？" : "从一条消息开始";
     $("empty").querySelector("p").textContent = !state.info ? "从左侧新建私信与助理交流，或新建房间与团队协作。"
-      : direct ? "梳理待办、总结信息、起草内容；接入飞书或 GitLab，还能跟进消息和项目进展。" : "发送任务或想法，让房间里的 Agent 一起参与。";
+      : direct ? "告诉我你想处理的事，也可以粘贴一段内容。" : "发送任务或想法，让房间里的 Agent 一起参与。";
     $("platform-suggestions-hint").textContent = direct
-      ? "接入后为当前助手开启通知和工具；已有账号直接使用，接收范围保留。"
-      : "通过交谈选择负责的成员，为其开启通知和工具；已有账号和接收范围复用。";
+      ? "接入飞书或 GitLab，让助理帮你跟进消息与项目。"
+      : "接入飞书或 GitLab，让团队帮你跟进消息与项目。";
   }
 
   function renderConversation() {
     const direct = roomsUI.isDirect(), type = roomsUI.conversationType(), name = roomsUI.roomName();
-    renderEmptyConversation(direct, name);
+    renderEmptyConversation(direct);
     $("conversation").setAttribute("aria-label", `${type}消息`);
     $("member-rail").setAttribute("aria-label", direct ? "助理详情" : "房间详情");
     $("member-sidebar").setAttribute("aria-label", direct ? "助理详情" : "房间成员");

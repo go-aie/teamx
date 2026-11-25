@@ -4,7 +4,7 @@ import { pageSpaceID, spaceCapabilities, observeSpaceReset, freezeSpaceCache } f
 // Keep the exact accepted/uncertain request in tab storage across navigation.
 export function mountSpaceReset() {
   if (spaceCapabilities().space_reset !== true || document.getElementById("space-reset-control")) return;
-  const host=document.getElementById("general-settings") || document.querySelector("main");
+  const host=document.getElementById("setup-reset-host") || document.getElementById("general-settings") || document.querySelector("main");
   if (!host) return;
   const section=document.createElement("section");section.id="space-reset-control";section.className="space-reset-control";
   const button=document.createElement("button");button.type="button";button.textContent="重置此空间";button.className="text-button danger";

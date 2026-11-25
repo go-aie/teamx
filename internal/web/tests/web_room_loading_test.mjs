@@ -50,7 +50,8 @@ test("first entry reveals the verified conversation without waiting for auxiliar
   assert.notEqual(ui.el("workspace").getAttribute("aria-busy"), "true");
   assert.equal(ui.el("room-details").hidden, true);
   assert.equal(ui.el("activity-dialog").open, true);
-  assert.equal(ui.el("empty").querySelector("h2").textContent, "与个人助理聊聊");
+  assert.equal(ui.el("empty").querySelector("h2").textContent, "想先处理什么？");
+  assert.equal(ui.el("empty-conversation-icon").hidden,true);
   platforms.resolve({platforms:structuredClone(api.platforms)}); await starting;
 });
 

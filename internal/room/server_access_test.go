@@ -13,8 +13,10 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -593,15 +595,41 @@ func TestAccessUserDisplayNamePreservesCaller(t *testing.T) {
 	}
 }
 
-func TestAccessModelFormAssetsLoadBeforeLogin(t *testing.T) {
+func TestAccessLoginAssetsLoadBeforeLogin(t *testing.T) {
 	_, _, handler := accessFixture(t)
-	for path, contentType := range map[string]string{
-		"/ui/access.mjs": "javascript", "/ui/model-form.mjs": "javascript", "/ui/brand-mark.svg": "image/svg+xml",
-		"/ui/access.css": "text/css", "/ui/styles/controls.css": "text/css",
-	} {
-		response := accessRequest(handler, http.MethodGet, path, "", "", "", nil)
+	// Follow the actual page dependencies so a new import cannot silently make
+	// login depend on an authenticated session. Do not expose other UI assets.
+	dependencies := regexp.MustCompile(`(?m)(?:src|href)=["']([^"']+)["']|^import\s+.*?\sfrom\s+["']([^"']+)["']|@import\s+["']([^"']+)["']`)
+	queue, seen := []string{"/access"}, map[string]bool{}
+	for len(queue) > 0 {
+		asset := queue[0]
+		queue = queue[1:]
+		if seen[asset] {
+			continue
+		}
+		seen[asset] = true
+		response := accessRequest(handler, http.MethodGet, asset, "", "", "", nil)
+		contentType := map[string]string{".mjs": "javascript", ".css": "text/css", ".svg": "image/svg+xml"}[filepath.Ext(asset)]
 		if response.Code != http.StatusOK || !strings.Contains(response.Header().Get("Content-Type"), contentType) {
-			t.Fatal(path, response.Code)
+			t.Fatal(asset, response.Code, response.Header().Get("Content-Type"))
+		}
+		base, err := url.Parse(asset)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, match := range dependencies.FindAllStringSubmatch(response.Body.String(), -1) {
+			for _, reference := range match[1:] {
+				if reference == "" {
+					continue
+				}
+				resolved, err := base.Parse(reference)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if resolved.Host == "" && strings.HasPrefix(resolved.Path, "/ui/") {
+					queue = append(queue, resolved.Path)
+				}
+			}
 		}
 	}
 	if response := accessRequest(handler, http.MethodGet, "/ui/styles/settings.css", "", "", "", nil); response.Code != http.StatusUnauthorized {

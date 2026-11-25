@@ -87,16 +87,22 @@
   </form>
   </div>
   <section id="setup-progress" class="setup-progress" aria-labelledby="setup-progress-title" tabindex="-1" hidden>
-    <dl class="setup-summary">
-      <div><dt>模型</dt><dd id="setup-summary-model"></dd></div>
-      <div><dt>接口地址</dt><dd id="setup-summary-address"></dd></div>
-    </dl>
     <div class="setup-progress-status" role="status" aria-live="polite">
-      <div class="setup-progress-heading"><span class="setup-spinner" aria-hidden="true"></span><h2 id="setup-progress-title"></h2></div>
+      <div class="setup-progress-heading"><span class="setup-spinner" aria-hidden="true"></span><h1 id="setup-progress-title"></h1></div>
       <p id="setup-progress-hint"></p>
     </div>
-    <div class="setup-recovery"><button id="check-setup-operation" class="text-button" type="button" hidden>重新检查状态</button></div>
+    <button id="check-setup-operation" class="text-button" type="button" hidden>重新检查状态</button>
+    <dl class="setup-summary"><div><dt>模型</dt><dd id="setup-summary-model"></dd></div></dl>
+    <details class="setup-details">
+      <summary>模型详情</summary>
+      <dl class="setup-address"><div><dt>接口地址</dt><dd id="setup-summary-address"></dd></div></dl>
+    </details>
   </section>
+  <details id="setup-help" class="setup-details" hidden>
+    <summary>故障处理</summary>
+    <p class="field-hint">请先检查网络或核对错误提示。仍无法恢复时，可重置此空间。</p>
+    <div id="setup-reset-host"></div>
+  </details>
 </section>
 <p id="feedback" role="status" aria-live="polite" tabindex="-1"></p>
 <div class="access-actions">

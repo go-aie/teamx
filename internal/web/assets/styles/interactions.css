@@ -59,8 +59,10 @@
   .direct-conversation .member-rail #member-sidebar { overflow:auto; }
 }
 .empty .direct-suggestions { margin:20px 0 0; }
-.platform-suggestions { margin-top:28px; font-size:var(--font-small); }
-.empty .platform-suggestions .direct-suggestions { margin:10px 0; }
+.platform-suggestions { max-width:360px; margin-top:32px; font-size:var(--font-small); color:var(--muted); }
+.platform-suggestion-actions { display:flex; flex-wrap:wrap; align-items:center; justify-content:center; gap:8px; margin-top:12px; }
+.platform-suggestion-actions .secondary-button { min-height:36px; padding:6px 10px; font-size:var(--font-small); font-weight:400; color:var(--muted); background:transparent; }
+@media(pointer:coarse) { .platform-suggestion-actions .secondary-button { min-height:44px; } }
 .empty .platform-suggestions p { margin:0; font-size:var(--font-small); }
 @media(max-width:640px) {
   .workspace.direct-conversation { height:100dvh; min-height:0; overflow:hidden; }

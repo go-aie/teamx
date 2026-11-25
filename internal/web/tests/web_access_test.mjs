@@ -116,6 +116,7 @@ test("accepted first-use validation replaces the form with one summary and follo
   assert.equal(ui.el("setup-editor").hidden,false);assert.equal(ui.el("save-model").textContent,"正在提交…");assert.equal(ui.el("check-setup-operation").hidden,true);
   accept();await submitting;
   assert.equal(ui.el("setup-editor").hidden,true);assert.equal(ui.el("setup-progress").hidden,false);
+  assert.equal(ui.el("setup-title").hidden,true);assert.equal(ui.el("model").attributes["aria-labelledby"],"setup-progress-title");assert.equal(ui.el("setup-help").hidden,true);
   assert.equal(ui.el("setup-summary-model").textContent,"my-model");assert.equal(ui.el("setup-summary-address").textContent,"https://model.invalid/v1");
   assert.equal(ui.el("setup-progress-title").textContent,"正在验证模型…");assert.equal(ui.el("feedback").textContent,"");assert.equal(ui.el("check-setup-operation").hidden,true);
   operation.status="saved";await ui.tick();assert.equal(ui.el("setup-progress-title").textContent,"正在准备助理…");assert.equal(ui.el("check-setup-operation").hidden,true);
@@ -133,9 +134,11 @@ test("only uncertain progress exposes a state check and a confirmed failure rest
   ui.el("model-id").value="my-model";ui.el("context-window").value="128000";ui.el("api-key").value="private-key";
   await ui.el("model-form").emit("submit");offline=true;await ui.tick();
   assert.equal(ui.el("setup-editor").hidden,true);assert.equal(ui.el("setup-progress").attributes["data-state"],"unknown");assert.equal(ui.el("check-setup-operation").hidden,false);
+  assert.equal(ui.el("setup-help").hidden,false);
   await ui.el("check-setup-operation").emit("click");assert.equal(writes.length,1);assert.equal(ui.el("save-model").disabled,true);
   offline=false;operation={...operation,status:"failed",field:"reasoning_effort",message:"请调整推理强度后重试。"};await ui.tick();
   assert.equal(ui.el("setup-editor").hidden,false);assert.equal(ui.el("setup-progress").hidden,true);assert.equal(ui.el("check-setup-operation").hidden,true);
+  assert.equal(ui.el("setup-title").hidden,false);assert.equal(ui.el("model").attributes["aria-labelledby"],"setup-title");assert.equal(ui.el("setup-help").hidden,false);
   assert.equal(ui.el("model-id").value,"my-model");assert.equal(ui.el("context-window").value,"128000");assert.equal(ui.el("api-key").value,"");
   assert.equal(ui.el("model-advanced").open,true);assert.equal(ui.el("reasoning-effort").focused,true);
 });

@@ -62,6 +62,8 @@
   line-height:1.8;
   margin:0;
 }
+.empty > p { max-width:440px; }
+.direct-conversation .empty h2 { font-size:var(--font-title); }
 .message {
   contain:layout style;
   display:flex;

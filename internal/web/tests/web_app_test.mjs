@@ -387,7 +387,7 @@ for (const direct of [false, true]) test(`empty ${direct ? "direct conversation"
   api.history.set("A", []);
   const ui = await launch(api);
   const heading = ui.el("empty").querySelector("h2"), description = ui.el("empty").querySelector("p");
-  const expectedHeading = direct ? "与A聊聊" : "从一条消息开始";
+  const expectedHeading = direct ? "想先处理什么？" : "从一条消息开始";
   assert.equal(heading.textContent, expectedHeading);
   // Observe every assignment, including temporary copy shown across an await.
   const writes = [];
@@ -395,7 +395,8 @@ for (const direct of [false, true]) test(`empty ${direct ? "direct conversation"
     let text = node.textContent;
     Object.defineProperty(node, "textContent", {get:()=>text, set:value=>{writes.push(value);text=value;}});
   }
-  const icon = ui.el("empty-conversation-icon"), originalIcon = icon.firstChild;
+  const icon = ui.el("empty-conversation-icon");
+  assert.equal(icon.hidden,direct);
   for (const path of ["/v1/member/list", "/v1/read"]) {
     let release;
     api.hook = requestPath => requestPath === path ? new Promise(resolve=>{release=resolve;}) : undefined;
@@ -410,7 +411,7 @@ for (const direct of [false, true]) test(`empty ${direct ? "direct conversation"
   api.hook = null;
   await ui.refresh(); await ui.refresh(); await ui.draft("尚未发送");
   assert.deepEqual(writes, [], "unchanged welcome copy must retain its text nodes");
-  assert.equal(icon.firstChild, originalIcon, "polling and typing must retain the assistant icon");
+  assert.equal(icon.hidden,direct,"polling and typing must preserve the welcome icon visibility");
   assert.equal(ui.el("empty").hidden, false);
   assert.equal(ui.el("direct-suggestions").hidden, !direct);
   assert.equal(ui.el("platform-suggestions").hidden, false);
@@ -464,14 +465,18 @@ test("empty welcome copy follows conversation switches and renames", async () =>
   for (const room of api.catalog.rooms) api.history.set(room.room_id, []);
   const ui = await launch(api), heading = ui.el("empty").querySelector("h2");
   await ui.select("Assistant");
-  assert.equal(heading.textContent,"与Assistant聊聊");
+  assert.equal(heading.textContent,"想先处理什么？");
+  assert.equal(ui.el("empty-conversation-icon").hidden,true);
   await ui.select("Room");
   assert.equal(heading.textContent,"从一条消息开始");
   assert.equal(ui.el("empty-conversation-icon").textContent,"#");
+  assert.equal(ui.el("empty-conversation-icon").hidden,false);
   assert.equal(ui.el("direct-suggestions").hidden,true);
   api.catalog.rooms[0].name="New assistant";
   await ui.refresh(); await ui.select("New assistant");
-  assert.equal(heading.textContent,"与New assistant聊聊");
+  assert.equal(heading.textContent,"想先处理什么？");
+  assert.equal(ui.el("room-name").textContent,"New assistant");
+  assert.equal(ui.el("empty-conversation-icon").hidden,true);
   assert.equal(ui.el("direct-suggestions").hidden,false);
 });
 
