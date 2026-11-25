@@ -747,8 +747,8 @@ export function createConversation({ env, runtime, roomsUI, membersUI, settingsU
     const suggestions = $("direct-suggestions");
     const hidden = !direct || !state.info || state.messages.size > 0;
     if (suggestions.hidden !== hidden) suggestions.hidden = hidden;
-    const hasLark = !!workspaceUI.workspaceView?.allPlatforms?.some(item => item.provider === "lark" && item.validation?.status === "valid");
-    const key = JSON.stringify([direct, !!state.info, name, hasLark]);
+    $("platform-suggestions").hidden = !state.managed || !state.info || state.messages.size > 0;
+    const key = JSON.stringify([direct, !!state.info, name]);
     if (key === emptyConversationKey) return;
     emptyConversationKey = key;
     const icon = $("empty-conversation-icon"), kind = direct ? "assistant" : "room";
@@ -760,19 +760,10 @@ export function createConversation({ env, runtime, roomsUI, membersUI, settingsU
     $("empty").querySelector("h2").textContent = !state.info ? "开始一个新任务"
       : direct ? `与${name || "个人助理"}聊聊` : "从一条消息开始";
     $("empty").querySelector("p").textContent = !state.info ? "从左侧新建私信与助理交流，或新建房间与团队协作。"
-      : direct ? "梳理待办、总结信息、起草内容，也可以连接飞书，关注群消息。" : "发送任务或想法，让房间里的 Agent 一起参与。";
-    if (direct && state.info) {
-      const prompts = [
-        ["整理待办", "帮我整理一下待办事项"],
-        hasLark ? ["总结内容", "帮我总结以下内容：\n"] : ["你能做什么", "介绍一下你能帮我做什么"],
-        hasLark ? ["起草回复", "帮我起草一段回复：\n"] : ["连接飞书", "帮我连接飞书"],
-      ];
-      Array.from(suggestions.children).forEach((button, index) => {
-        const [label, prompt] = prompts[index];
-        button.textContent = label;
-        button.dataset.suggestion = prompt;
-      });
-    }
+      : direct ? "梳理待办、总结信息、起草内容；接入飞书或 GitLab，还能跟进消息和项目进展。" : "发送任务或想法，让房间里的 Agent 一起参与。";
+    $("platform-suggestions-hint").textContent = direct
+      ? "接入后为当前助手开启通知和工具；已有账号直接使用，接收范围保留。"
+      : "通过交谈选择负责的成员，为其开启通知和工具；已有账号和接收范围复用。";
   }
 
   function renderConversation() {
@@ -864,6 +855,21 @@ export function createConversation({ env, runtime, roomsUI, membersUI, settingsU
       if (!suggestion || !roomsUI.isDirect() || !state.info || $("message-input").readOnly || state.draft.pending) return;
       $("message-input").value = suggestion.dataset.suggestion; saveDraft(); composerState(); $("message-input").focus();
     });
+
+    for (const [id, platform] of [["onboard-lark", "飞书"], ["onboard-gitlab", "GitLab"]]) {
+      $(id).addEventListener("click", () => {
+        if (!state.managed || !state.info || !state.connected || $("message-input").readOnly || state.draft.pending || state.draft.sending || discussionBusy()) return;
+        // Use the ordinary human message lifecycle, including its identity,
+        // retry and receipt handling. Never replace an existing draft.
+        if ($("message-input").value.trim() || state.draft.attachments?.length || state.draft.replyTo) {
+          notice("send-error", "输入框中还有未发送的内容，请先发送或清空后再接入平台。");
+          $("message-input").focus(); return;
+        }
+        $("message-input").value = roomsUI.isDirect() ? `帮我接入${platform}` : `帮这个房间接入${platform}`;
+        saveDraft(); composerState();
+        $("compose").requestSubmit();
+      });
+    }
 
     $("view-mention").addEventListener("click", () => locateReview());
     $("cancel-history").addEventListener("click", () => cancelHistory("已取消定位；再次点击可继续。"));

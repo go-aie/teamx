@@ -23,8 +23,10 @@ an account or action is ready; a general introduction needs no tool inventory.
   account/group/project selection card or its asynchronous result, read
   `"$TEAMX_CLI" platforms skill --topic selection`. No index/full read is needed
   first. Connection, source customization and tool setup/repair use the complete
-  `"$TEAMX_CLI" platforms skill`. Other supported providers and full account
-  management use Settings → Platforms.
+  `"$TEAMX_CLI" platforms skill`. Plain onboarding reuses an available account and
+  enables this member's notifications and tools, retaining saved ranges and grants;
+  explicit limits such as connection-only take precedence. Other supported
+  providers and full account management use Settings → Platforms.
 - **Platform work:** discover enabled accounts and actual capabilities with
   `"$TEAMX_CLI" tools list`; use its exact entry with `tools skill ENTRY` and
   `tools run ENTRY --help`. A connection or subscription does not enable tools.

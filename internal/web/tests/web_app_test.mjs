@@ -413,7 +413,50 @@ for (const direct of [false, true]) test(`empty ${direct ? "direct conversation"
   assert.equal(icon.firstChild, originalIcon, "polling and typing must retain the assistant icon");
   assert.equal(ui.el("empty").hidden, false);
   assert.equal(ui.el("direct-suggestions").hidden, !direct);
+  assert.equal(ui.el("platform-suggestions").hidden, false);
   assert.equal(api.calls.some(call=>call.path === "/v1/send"), false);
+});
+
+for (const direct of [true, false]) test(`platform onboarding sends one real request in the current ${direct ? "private conversation" : "room"}`, async () => {
+  const room = {...makeRoom("A"),is_direct:direct};
+  const api = server([room]);api.history.set("A", []);
+  const ui = await launch(api);
+  let release;
+  api.hook = (path, data) => path === "/v1/send" ? new Promise(resolve => {release = () => {
+    api.history.get("A").push(message(1,data.text));resolve({seq:1});
+  };}) : undefined;
+  await ui.el("onboard-gitlab").emit("click");await settle();
+  assert.equal(typeof release,"function");
+  await ui.el("onboard-gitlab").emit("click");await settle();
+  const sends = api.calls.filter(c=>c.path === "/v1/send");
+  assert.equal(sends.length,1,"repeated clicks must use the pending message lifecycle");
+  assert.equal(sends[0].data.text,direct ? "帮我接入GitLab" : "帮这个房间接入GitLab");
+  assert.equal(sends[0].data.room_id,room.room_id);
+  assert.equal(sends[0].data.room_instance,room.room_instance);
+  assert.equal(sends[0].data.caller.kind,"human");
+  assert.ok(sends[0].data.client_message_id);
+  assert.equal(ui.el("settings-dialog").open,false);
+  assert.equal(api.calls.some(c=>c.path.startsWith("/v1/platforms/onboarding/")),false);
+  release();await settle();
+  assert.equal(ui.el("platform-suggestions").hidden,true);
+});
+
+test("platform onboarding keeps an unsent draft and remains available with a shared account", async () => {
+  const api = server([{...makeRoom("A"),is_direct:true}]);api.history.set("A", []);
+  const originalHook = api.hook;
+  api.hook = (path,...args) => path.startsWith("/v1/platforms?")
+    ? {platforms:[{id:"shared-lark",provider:"lark",validation:{status:"valid"}}]}
+    : originalHook?.(path,...args);
+  const ui = await launch(api);
+  await ui.draft("尚未发送的任务");
+  await ui.el("onboard-lark").emit("click");await settle();
+  assert.equal(ui.el("message-input").value,"尚未发送的任务");
+  assert.equal(api.calls.some(c=>c.path === "/v1/send"),false);
+  assert.equal(ui.el("direct-suggestions").hidden,false);
+  assert.equal(ui.el("platform-suggestions").hidden,false);
+  await ui.draft("");
+  await ui.el("onboard-lark").emit("click");await settle();
+  assert.equal(api.calls.find(c=>c.path === "/v1/send").data.text,"帮我接入飞书");
 });
 
 test("empty welcome copy follows conversation switches and renames", async () => {
@@ -1207,11 +1250,15 @@ test("returning from the mobile list captures anew but waits for foreground focu
 
 test("explicit single-room bootstrap retains composer and member addition without management navigation", async () => {
   const room = makeRoom("single"), api = server([room]);
+  api.history.set(room.room_id, []);
   api.hook = path => path === "/v1/ui" ? { ...api.catalog.rooms[0]?.service, operator: "tester", profiles: ["runtime"] } : undefined;
   const ui = await launch(api);
   assert.equal(ui.el("room-nav").hidden, true);
   assert.equal(ui.el("toggle-add").hidden, false);
   assert.equal(ui.el("room-name").textContent, "single");
+  assert.equal(ui.el("platform-suggestions").hidden, true);
+  await ui.el("onboard-lark").emit("click");
+  assert.equal(api.calls.some(call=>call.path === "/v1/send"),false);
   await ui.draft("single draft"); assert.equal(ui.el("send").disabled, false);
 });
 

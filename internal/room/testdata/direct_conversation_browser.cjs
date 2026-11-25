@@ -4,6 +4,10 @@ const {chromium}=require('playwright'),assert=require('node:assert/strict');
  const endpoint=process.argv[2],browser=await chromium.launch({headless:true});
  try {
   const context=await browser.newContext({viewport:{width:1440,height:1000}}),page=await context.newPage(),errors=[];
+  // This fixture hosts one manager directly. Normalize the default Space URL
+  // alias to that manager; all requests still use its real access middleware.
+  const managerURL=value=>{const url=new URL(value);url.pathname=url.pathname.replace(/^\/s\/[a-f0-9]{32}/,'');return url.href;};
+  await context.route(/\/s\/[a-f0-9]{32}\//,route=>route.continue({url:managerURL(route.request().url())}));
   page.on('pageerror',e=>errors.push(e.message));page.setDefaultTimeout(15000);
   await page.addInitScript(()=>{
    window.directMemberListFrames=0;
@@ -14,7 +18,7 @@ const {chromium}=require('playwright'),assert=require('node:assert/strict');
   });
   await page.goto(endpoint);
   const openMemberDetails=async()=>{
-   if(!await page.locator('#member-rail').isVisible())await toggleConversationDetails(page);
+   if(await page.locator('#member-sidebar').getAttribute('aria-hidden')==='true')await toggleConversationDetails(page);
    await page.locator('#agent-controls').waitFor();
   };
   if(process.argv[3]==='restore'){
@@ -39,9 +43,9 @@ const {chromium}=require('playwright'),assert=require('node:assert/strict');
   // A cold page holds member readiness while the private settings stay open.
   const cold=await context.newPage();let releaseMembers;
   const membersReady=new Promise(resolve=>{releaseMembers=resolve;});
-  await cold.route('**/v1/member/list',async route=>{await membersReady;await route.continue();});
-  await cold.goto(endpoint);
-  if(!await cold.locator('#member-rail').isVisible())await toggleConversationDetails(cold);
+  await cold.route('**/v1/member/list',async route=>{await membersReady;await route.fallback();});
+  await cold.goto(endpoint,{waitUntil:'commit'});
+  if(await cold.locator('#member-sidebar').getAttribute('aria-hidden')==='true')await toggleConversationDetails(cold);
   await cold.locator('#direct-settings-loading').waitFor();
   assert.equal(await cold.locator('#members').isVisible(),false);
   assert.equal(await cold.locator('#activity-dialog').evaluate(el=>el.open),false);
@@ -132,18 +136,19 @@ const {chromium}=require('playwright'),assert=require('node:assert/strict');
   await page.locator('#room-name').getByText('另一位助理',{exact:true}).waitFor();
   assert.equal(await page.locator('#messages .message').count(),0);
   assert.equal(await page.locator('#message-input').inputValue(),'');
-  assert.equal(await page.locator('#empty p').textContent(),'梳理待办、总结信息、起草内容，也可以连接飞书，关注群消息。');
-  assert.deepEqual(await page.locator('#direct-suggestions button').allTextContents(),['整理待办','你能做什么','连接飞书']);
-  await page.locator('#direct-suggestions button').getByText('连接飞书',{exact:true}).click();
-  assert.equal(await page.locator('#message-input').inputValue(),'帮我连接飞书');
-  assert.equal(await page.locator('#messages .message').count(),0);
+  assert.equal(await page.locator('#empty > p').textContent(),'梳理待办、总结信息、起草内容；接入飞书或 GitLab，还能跟进消息和项目进展。');
+  assert.deepEqual(await page.locator('#direct-suggestions button').allTextContents(),['你能帮我做什么？','整理待办']);
+  assert.deepEqual(await page.locator('#platform-suggestions button').allTextContents(),['接入飞书','接入 GitLab']);
   await page.locator('#direct-suggestions button').first().click();
+  assert.equal(await page.locator('#message-input').inputValue(),'介绍一下你能帮我做什么');
+  assert.equal(await page.locator('#messages .message').count(),0);
+  await page.locator('#direct-suggestions button').last().click();
   assert.match(await page.locator('#message-input').inputValue(),/待办/);
   assert.equal(await page.locator('#messages .message').count(),0);
-  // Shared verified accounts change suggestions without requiring a member binding.
+  // A shared account does not imply this new assistant has notifications/tools.
   let larkValidation='valid';
   await page.route('**/v1/platforms?*',async route=>{
-   const response=await route.fetch(),data=await response.json();
+   const response=await route.fetch({url:managerURL(route.request().url())}),data=await response.json();
    data.platforms.push({id:'suggestion-lark',provider:'lark',name:'工作飞书',validation:{status:larkValidation}});
    try {
     await route.fulfill({response,json:data});
@@ -152,19 +157,31 @@ const {chromium}=require('playwright'),assert=require('node:assert/strict');
    }
   });
   await page.reload();
-  await page.waitForFunction(()=>document.querySelector('#direct-suggestions button:nth-child(2)')?.textContent==='总结内容');
-  assert.deepEqual(await page.locator('#direct-suggestions button').allTextContents(),['整理待办','总结内容','起草回复']);
+  await page.locator('#platform-suggestions').waitFor();
+  assert.deepEqual(await page.locator('#direct-suggestions button').allTextContents(),['你能帮我做什么？','整理待办']);
+  assert.deepEqual(await page.locator('#platform-suggestions button').allTextContents(),['接入飞书','接入 GitLab']);
   assert.equal(await page.locator('#message-input').inputValue(),'帮我整理一下待办事项');
-  await page.getByRole('button',{name:'总结内容',exact:true}).click();
-  assert.equal(await page.locator('#message-input').inputValue(),'帮我总结以下内容：\n');
-  await page.getByRole('button',{name:'起草回复',exact:true}).click();
-  assert.equal(await page.locator('#message-input').inputValue(),'帮我起草一段回复：\n');
+  await page.locator('#onboard-lark').click();
+  assert.equal(await page.locator('#message-input').inputValue(),'帮我整理一下待办事项');
+  assert.match(await page.locator('#send-error').textContent(),/未发送/);
   assert.equal(await page.locator('#messages .message').count(),0);
   larkValidation='failed';
   await page.reload();
-  await page.waitForFunction(()=>document.querySelector('#direct-suggestions button:nth-child(3)')?.textContent==='连接飞书');
-  assert.equal(await page.locator('#message-input').inputValue(),'帮我起草一段回复：\n');
+  await page.locator('#platform-suggestions').waitFor();
+  assert.equal(await page.locator('#message-input').inputValue(),'帮我整理一下待办事项');
   await page.unrouteAll({behavior:'wait'});
+  await page.locator('#message-input').fill('');
+  for(const viewport of [{width:1440,height:1000},{width:390,height:844}]){
+   await page.setViewportSize(viewport);
+   assert.equal(await page.locator('#platform-suggestions').isVisible(),true);
+   assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true);
+   if(process.env.TEAMX_DM_BROWSER_ARTIFACTS){const fs=require('node:fs/promises'),path=require('node:path');await fs.mkdir(process.env.TEAMX_DM_BROWSER_ARTIFACTS,{recursive:true});await page.screenshot({path:path.join(process.env.TEAMX_DM_BROWSER_ARTIFACTS,`welcome-${viewport.width}.png`),fullPage:true});}
+  }
+  await page.locator('#onboard-gitlab').click();
+  await page.waitForFunction(()=>document.querySelector('#platform-suggestions').hidden);
+  assert.match(await page.locator('#messages').textContent(),/帮我接入GitLab/);
+  assert.equal(await page.locator('#settings-dialog').isVisible(),false);
+  await page.setViewportSize({width:1440,height:1000});
   // A second tab sees the same single default, while this tab keeps its choice.
   const second=await context.newPage();await second.goto(endpoint);
   await second.locator('#room-list [data-default-assistant="true"]').waitFor();

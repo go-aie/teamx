@@ -114,7 +114,22 @@
         <div id="timeline" class="timeline" tabindex="0" aria-label="消息记录">
           <div class="history-control"><button id="load-history" class="text-button" hidden>加载更早消息</button></div>
           <div id="conversation-loading" class="conversation-loading" role="status" hidden><span class="sr-only">正在读取会话…</span><div class="conversation-loading-row" aria-hidden="true"></div><div class="conversation-loading-row" aria-hidden="true"></div><div class="conversation-loading-row" aria-hidden="true"></div></div>
-          <div id="empty" class="empty"><span id="empty-conversation-icon" class="empty-mark" aria-hidden="true">#</span><h2>从一条消息开始</h2><p>发送任务或想法，让房间里的 Agent 一起参与。</p><div id="direct-suggestions" class="direct-suggestions" hidden><button type="button" class="secondary-button" data-suggestion="帮我整理一下待办事项">整理待办</button><button type="button" class="secondary-button" data-suggestion="介绍一下你能帮我做什么">你能做什么</button><button type="button" class="secondary-button" data-suggestion="帮我连接飞书">连接飞书</button></div></div>
+          <div id="empty" class="empty">
+            <span id="empty-conversation-icon" class="empty-mark" aria-hidden="true">#</span>
+            <h2>从一条消息开始</h2><p>发送任务或想法，让房间里的 Agent 一起参与。</p>
+            <div id="direct-suggestions" class="direct-suggestions" hidden>
+              <button type="button" class="secondary-button" data-suggestion="介绍一下你能帮我做什么">你能帮我做什么？</button>
+              <button type="button" class="secondary-button" data-suggestion="帮我整理一下待办事项">整理待办</button>
+            </div>
+            <div id="platform-suggestions" class="platform-suggestions" hidden>
+              <span>接入工作平台</span>
+              <div class="direct-suggestions">
+                <button id="onboard-lark" type="button" class="secondary-button">接入飞书</button>
+                <button id="onboard-gitlab" type="button" class="secondary-button">接入 GitLab</button>
+              </div>
+              <p id="platform-suggestions-hint" class="quiet"></p>
+            </div>
+          </div>
 
           <div id="messages" role="log" aria-label="公共消息" aria-live="polite" aria-relevant="additions"></div>
         </div>

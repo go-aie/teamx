@@ -29,9 +29,46 @@ Confirm applied changes with your member name, exact platform and changed settin
 Apply the latest human corrections and revocations before continuing; an operation
 result never revives cancelled intent.
 
+## Conversational onboarding
+
+A plain request to connect, enable or use Feishu/GitLab (for example, “帮我接入飞书”
+or “连接 GitLab”) means make it usable for this member: reuse or connect the account
+and enable both notifications and tools, including previously disabled switches.
+These verbs do not select different setup modes. Explain this briefly and proceed
+without another enable question. Explicit limits (“只连接账号”, “不要通知”, “仅工具”),
+source restrictions and later corrections take precedence. Opening or refreshing
+a conversation/settings page is not a setup request and never reopens switches.
+
+Reuse the existing workflows below:
+
+1. Resolve the addressed member and exact verified account. Reuse an unambiguous
+   account directly; only missing access or real account/instance ambiguity needs
+   connection/selection. Keep the original human seq across asynchronous results.
+2. Enable notifications through the existing total switch. First use has manual
+   defaults: Feishu personnel private chats and group @me/@all, or GitLab personal
+   to-dos with project activity off, starting now. Existing reception ranges,
+   filters and start are retained. Explicit source requests use customization
+   instead of broad defaults. State the actual scope briefly before applying.
+3. Read member get for the tool binding. If `binding_revision=0` and no tool is
+   enabled, use the existing initial setup command directly:
+   `teamx platforms member tool --platform-id ID --platform-version V --binding-revision 0 --operation-id TOOL_STEP_ID --source-seq SEQ --enabled true`.
+   Otherwise use the short tool switch below, retaining saved grants. Do not try
+   the short switch for a missing binding or add defaults to saved grants.
+4. Use the common lifecycle, per-step receipts and recovery; finish follow-on
+   settings before acknowledging the connection result. Publish one short outcome
+   through the existing `teamx send` entry; ordinary final output is private.
+   State the account, actual notification/tool results (including partial failure)
+   and one useful next request. Omit operation IDs/revision numbers unless asked.
+   Full settings is optional for adjustment or recovery.
+
+Onboarding is local setup, not authority for external business writes, collaboration
+changes or reminder rules. Reuse existing configuration operations, not a new flow.
+
 ## Common lifecycle
 
 1. Read the real human message and retain its `seq`. Choose the requested path:
+   combined onboarding → reuse/connect the account, then use the existing
+   notification switch and saved/initial tool paths above;
    notification or existing tool total switch → submit directly (the server recovers its receipt);
    source/tool customization → recover member status and get observed versions;
    connection or selection → recover only that workflow by original source-seq.
@@ -203,8 +240,8 @@ teamx platforms connect start --provider lark --name NAME --operation-id ID --so
 For reuse, add `--platform-id ID --platform-version V`. The message component may
 have application setup and user authorization stages. In a CLI-only client,
 observe a live `interaction.authorization_url` without persisting it. Report a
-connection only after the common lifecycle checks. A connection-only request ends
-there; do not add groups, notifications or tools.
+connection only after the common lifecycle checks. An explicit connection-only
+request ends there; otherwise continue the conversational onboarding path above.
 
 New login requests the complete current TeamX permission set supported by the
 selected application, including search and sending dependencies. OAuth permission
@@ -396,8 +433,10 @@ callback verifies the application/account and saves the connection once. Importe
 apps also require native owner verification. Agent commands receive no browser
 secrets or authorization URL. Tabs in the same browser reuse its session; another
 browser cannot take over. Account mismatch or already-connected conflict never
-selects a replacement. Apply the common result/continuation checks. Connecting
-alone does not enable notifications, tools, external replies or to-do completion.
+selects a replacement. Apply the common result/continuation checks. A connection
+receipt alone does not enable notifications or tools: finish the requested member
+steps through the conversational onboarding path above. External replies and
+to-do completion still require their own business authorization.
 
 ## GitLab personal to-dos, project activity and filters
 

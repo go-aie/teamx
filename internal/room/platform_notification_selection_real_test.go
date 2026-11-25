@@ -165,11 +165,24 @@ func TestPlatformNotificationSelectionRealDSH(t *testing.T) {
 	root := imageRealOutput(t)
 	for _, provider := range []string{"lark", "gitlab"} {
 		for run := 1; run <= 2; run++ {
-			t.Run(fmt.Sprintf("%s/run%d", provider, run), func(t *testing.T) { settingsSelectionRealRun(t, root, provider, run) })
+			t.Run(fmt.Sprintf("%s/run%d", provider, run), func(t *testing.T) { settingsPlatformRealRun(t, root, provider, run, false) })
 		}
 	}
 }
-func settingsSelectionRealRun(t *testing.T, root, provider string, run int) {
+
+// Reuse the same real-model/CLI/receipt harness for ordinary onboarding intent.
+// Provider accounts are fixtures; no OAuth, collectors or remote writes run.
+func TestPlatformOnboardingRealDSH(t *testing.T) {
+	if os.Getenv("TEAMX_PLATFORM_ONBOARDING_REAL") != "1" {
+		t.Skip("opt-in real model; explicit settings config and fresh output required")
+	}
+	root := imageRealOutput(t)
+	for _, provider := range []string{"lark", "gitlab"} {
+		t.Run(provider, func(t *testing.T) { settingsPlatformRealRun(t, root, provider, 1, true) })
+	}
+}
+
+func settingsPlatformRealRun(t *testing.T, root, provider string, run int, onboarding bool) {
 	t.Setenv("USER", humanCaller.ID)
 	out := filepath.Join(root, fmt.Sprintf("%s-%d", provider, run))
 	if err := os.Mkdir(out, 0700); err != nil {
@@ -187,7 +200,12 @@ func settingsSelectionRealRun(t *testing.T, root, provider string, run int) {
 	var platformID string
 	var larkDir string
 	if provider == "lark" {
-		h, _ := platformMemberHarness(t)
+		var h *larkHarness
+		if onboarding {
+			h = larkToolConfigurationHarnessWithMembers(t, 1)
+		} else {
+			h, _ = platformMemberHarness(t)
+		}
 		m, platformID, larkDir = h.m, h.c.ID, h.dir
 		scriptPath := filepath.Join(h.dir, "lark-cli")
 		script, err := os.ReadFile(scriptPath)
@@ -304,8 +322,11 @@ func settingsSelectionRealRun(t *testing.T, root, provider string, run int) {
 	wait := func(n uint64) {
 		t.Helper()
 		s := waitMember(t, ctx, svc.target(id.MembershipID), id, func(s MemberStatus) bool { return !s.Active && (s.Agent.TurnNumber >= n || s.Paused) })
-		if s.Error != "" || s.Agent.Turn == nil || s.Agent.Turn.Status != "completed" || s.Agent.TurnNumber != n {
+		if s.Error != "" || s.Agent.Turn == nil || s.Agent.Turn.Status != "completed" || !onboarding && s.Agent.TurnNumber != n {
 			t.Fatal("real turn did not complete", s.Error, s.Agent.Turn)
+		}
+		if onboarding {
+			turn = s.Agent.TurnNumber
 		}
 	}
 	post := func(text string) (PostReceipt, time.Time, []settingsRequestTrace) {
@@ -328,12 +349,95 @@ func settingsSelectionRealRun(t *testing.T, root, provider string, run int) {
 		return source, start, requests.snapshot()[before:]
 	}
 	enabled := func(v platformMemberView) bool {
+		if v.NotificationVersion == 0 {
+			return false // GitLab exposes enabled draft defaults before any subscription exists.
+		}
 		if provider == "lark" {
 			return v.Config != nil && v.Config.Enabled
 		}
 		return v.GitLab.Config.Enabled
 	}
 	label := map[string]string{"lark": "飞书", "gitlab": "GitLab"}[provider]
+	if onboarding {
+		var initialSetup *platformMemberView
+		for _, tc := range []struct {
+			text string
+			on   bool
+			keep bool
+		}{
+			{"只连接" + label + "账号，暂不开通知和工具", false, true},
+			{"帮我接入" + label, true, false},
+			{"关闭" + label + "通知和工具", false, false},
+			{"帮我接入" + label, true, false},
+		} {
+			before := view()
+			source, started, trace := post(tc.text)
+			after := view()
+			snapshot, err := svc.store.LoadRoom()
+			if err != nil {
+				t.Fatal(err)
+			}
+			published := false
+			for _, message := range snapshot.Messages {
+				published = published || message.Seq > source.Seq && message.Author.Kind == "agent" && message.Author.ID == id.AgentID && strings.TrimSpace(message.Text) != ""
+			}
+			if !published {
+				t.Error("onboarding result was not published to the conversation", tc.text)
+			}
+			if enabled(after) != tc.on || after.ToolEnabled != tc.on {
+				t.Fatal("onboarding did not finish requested member settings", tc.text, after)
+			}
+			for _, request := range trace {
+				if request.Path == "/v1/platforms/connect/start" {
+					var req platformConnectRequest
+					if json.Unmarshal(request.Body, &req) != nil || req.Input == nil || req.Input.PlatformID != platformID {
+						t.Error("onboarding created another account instead of reusing it", request)
+					}
+				}
+				if request.Path == "/v1/platforms/member/notifications" || request.Path == "/v1/platforms/member/tool" {
+					var req platformMemberRequest
+					if json.Unmarshal(request.Body, &req) != nil || req.SourceSeq != source.Seq || req.Input == nil || req.Input.PlatformID != platformID {
+						t.Fatal("configuration lost original human/account identity", request)
+					}
+				}
+			}
+			if tc.keep && (before.NotificationVersion != after.NotificationVersion || before.BindingRevision != after.BindingRevision || !before.Baseline.Equal(after.Baseline) || !reflect.DeepEqual(before.Config, after.Config) || !reflect.DeepEqual(before.GitLab, after.GitLab)) {
+				t.Fatal("onboarding changed a saved choice or connection-only scope", tc.text, before, after)
+			}
+			if !tc.keep {
+				m.mu.Lock()
+				ops, err := m.platformMemberStatusLocked(platformMemberRequest{ServiceInfo: svc.info, Caller: query.Caller, SourceSeq: source.Seq})
+				m.mu.Unlock()
+				if err != nil || len(ops) != 2 {
+					t.Fatal("expected one notification and one tool receipt", err, ops)
+				}
+				for _, op := range ops {
+					if op.Status != "completed" || op.Input.PlatformID != platformID || op.Source.Seq != source.Seq {
+						t.Error("onboarding did not settle the original member/account operation", op)
+					}
+					if tc.on && op.Kind == "tool" && before.BindingRevision == 0 && (op.Input.ExpectedBindingRevision == nil || *op.Input.ExpectedBindingRevision != 0) {
+						t.Error("initial tool receipt did not retain the missing-binding observation", op)
+					}
+				}
+			}
+			if tc.on {
+				if initialSetup == nil {
+					initialSetup = &after
+					if provider == "lark" && (!after.Config.Private.Enabled || after.Config.Private.Scope != "all" || !after.Config.Groups.Enabled || after.Config.Groups.Scope != "all" || !after.Config.Groups.AtMe || !after.Config.Groups.AtAll) || provider == "gitlab" && (!after.GitLab.Config.Todos.Enabled || after.GitLab.Config.Events.Enabled) {
+						t.Error("onboarding changed first-use defaults", after)
+					}
+					if after.Baseline.Before(started.Truncate(time.Second)) {
+						t.Error("onboarding enabled an unrequested history window", after.Baseline)
+					}
+				} else if !initialSetup.Baseline.Equal(after.Baseline) || !reflect.DeepEqual(initialSetup.Config, after.Config) || provider == "gitlab" && !reflect.DeepEqual(initialSetup.GitLab.Config, after.GitLab.Config) || provider == "lark" && !reflect.DeepEqual(initialSetup.Tool.ActionAuthorization.Grants, after.Tool.ActionAuthorization.Grants) {
+					t.Error("repeated onboarding changed saved ranges, reception start or tool grants", after)
+				}
+			}
+			cases = append(cases, map[string]any{"text": tc.text, "source_seq": source.Seq, "elapsed_seconds": time.Since(started).Seconds(), "before": before, "after": after, "requests": trace})
+		}
+		report["status"] = "passed"
+		return
+	}
 	toggle := func(text string, want bool) {
 		t.Helper()
 		before := view()

@@ -63,6 +63,9 @@
   .direct-conversation .member-rail #member-sidebar { overflow:auto; }
 }
 .empty .direct-suggestions { margin:20px 0 0; }
+.platform-suggestions { margin-top:28px; font-size:var(--font-small); }
+.empty .platform-suggestions .direct-suggestions { margin:10px 0; }
+.empty .platform-suggestions p { margin:0; font-size:var(--font-small); }
 @media(max-width:640px) {
   .workspace.direct-conversation { height:100dvh; min-height:0; overflow:hidden; }
   .direct-conversation .conversation { flex:1; min-height:0; height:auto; }
