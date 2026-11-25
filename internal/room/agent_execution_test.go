@@ -7,10 +7,48 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"runtime"
+	"strings"
 	"testing"
 
 	"github.com/go-aie/teamx/agent"
 )
+
+func TestMultiUserDevelopmentBuildAdmission(t *testing.T) {
+	for version, allowed := range map[string]bool{
+		"dev": true, "dev-123abc": true,
+		"": false, "v1.0.0": false, "1.0.0": false,
+		"v1.0.0-rc.1": false, "v1.0.0-dev": false,
+	} {
+		if multiUserDevelopmentBuild(version) != allowed {
+			t.Fatalf("unexpected multi-user availability for %q", version)
+		}
+	}
+}
+
+func TestMultiUserDevelopmentSelectionRetainsExecutionChecks(t *testing.T) {
+	if runtime.GOOS != "linux" {
+		t.Skip("hosted execution requires Linux")
+	}
+	old := distributionVersion
+	t.Cleanup(func() { distributionVersion = old })
+	for _, version := range []string{"v1.0.0", "dev-123abc"} {
+		distributionVersion = version
+		c := startupConfig{}
+		c.Deployment.Mode = "multi-user"
+		c.Deployment.Execution.Kind = "srt"
+		c.Deployment.Execution.Manifest = filepath.Join(t.TempDir(), "missing.json")
+		c.Deployment.Authentication.Provider = "opencsg"
+		c.Deployment.Authentication.AllowedSubjects = []string{"admitted"}
+		err := selectAgentExecution(t.Context(), &c)
+		if err == nil || c.execution != nil {
+			t.Fatal("incomplete hosted execution became available", err)
+		}
+		if gated := strings.Contains(err.Error(), "release builds"); gated != (version == "v1.0.0") {
+			t.Fatalf("wrong admission boundary for %s: %v", version, err)
+		}
+	}
+}
 
 type boundExecutionFixture struct {
 	agent.ExecutionFactory

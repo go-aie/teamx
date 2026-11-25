@@ -18,10 +18,11 @@ import (
 )
 
 type externalAuthConfig struct {
-	Provider        string   `toml:"provider"`
-	LoginOrigin     string   `toml:"login_origin"`
-	HubOrigin       string   `toml:"hub_origin"`
-	AllowedSubjects []string `toml:"allowed_subjects"`
+	Provider              string   `toml:"provider"`
+	LoginOrigin           string   `toml:"login_origin"`
+	HubOrigin             string   `toml:"hub_origin"`
+	AllowedSubjects       []string `toml:"allowed_subjects"`
+	AllowAllAuthenticated bool     `toml:"allow_all_authenticated"`
 }
 
 func (c externalAuthConfig) provider() (authn.Provider, error) {
@@ -36,8 +37,8 @@ func (c externalAuthConfig) provider() (authn.Provider, error) {
 	if c.HubOrigin == "" {
 		c.HubOrigin = "https://hub.opencsg.com"
 	}
-	if len(c.AllowedSubjects) == 0 {
-		return nil, errors.New("authentication.allowed_subjects must explicitly allow stable external user IDs")
+	if !c.AllowAllAuthenticated && len(c.AllowedSubjects) == 0 {
+		return nil, errors.New("authentication requires allowed_subjects or explicit allow_all_authenticated")
 	}
 	return opencsg.New(c.LoginOrigin, c.HubOrigin, nil)
 }
@@ -199,13 +200,14 @@ func (u *hostedUsers) authorize(subject userSubject) error {
 	return nil
 }
 
-func (u *hostedUsers) reserve(identity authn.Identity, allowed []string) (externalUser, error) {
+func (u *hostedUsers) reserve(identity authn.Identity, admission externalAuthConfig) (externalUser, error) {
 	u.mu.Lock()
 	defer u.mu.Unlock()
 	if u.failed {
 		return externalUser{}, ErrCommitUnknown
 	}
-	if !slices.Contains(allowed, identity.Subject) || identity.Provider == "" || identity.Authority == "" || identity.Subject == "" {
+	if identity.Provider == "" || identity.Authority == "" || identity.Subject == "" ||
+		!admission.AllowAllAuthenticated && !slices.Contains(admission.AllowedSubjects, identity.Subject) {
 		return externalUser{}, ErrIdentity
 	}
 	source := [2]string{identity.Provider, identity.Authority}
@@ -345,7 +347,7 @@ func (s *spaceServer) admitExternal(ctx context.Context, w http.ResponseWriter, 
 		s.mu.Unlock()
 		return ErrClosing
 	}
-	entry, err := s.access.users.reserve(identity, s.access.config.Deployment.Authentication.AllowedSubjects)
+	entry, err := s.access.users.reserve(identity, s.access.config.Deployment.Authentication)
 	if err == nil {
 		err = s.publishDefaultSpaceLocked(entry)
 	}

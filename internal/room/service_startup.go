@@ -87,6 +87,10 @@ func (e *serviceEndpoint) get(ctx context.Context, route string, result any) err
 }
 
 func (e *serviceEndpoint) authenticate(ctx context.Context) error {
+	if e.config.Deployment.Mode == "multi-user" {
+		_, err := e.deploymentStatus(ctx)
+		return err
+	}
 	var session struct {
 		Operator       string `json:"operator"`
 		InstallationID string `json:"installation_id"`
@@ -98,6 +102,19 @@ func (e *serviceEndpoint) authenticate(ctx context.Context) error {
 		return serviceStartupFailure(fmt.Errorf("监听地址 %s 属于其他安装实例或用户", e.listen))
 	}
 	return nil
+}
+
+func (e *serviceEndpoint) deploymentStatus(ctx context.Context) (map[string]any, error) {
+	status := map[string]any{}
+	if err := e.get(ctx, "/v1/deployment/status", &status); err != nil {
+		return nil, err
+	}
+	if status["installation_id"] != e.r.InstallationID || status["deployment_mode"] != "multi-user" ||
+		status["status"] != "running" || status["ready"] != true {
+		return nil, serviceStartupFailure(fmt.Errorf("监听地址 %s 未确认当前多用户安装就绪", e.listen))
+	}
+	status["authenticated"] = true
+	return status, nil
 }
 
 // A matching authenticated installation may occupy its port before stop. After

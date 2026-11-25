@@ -1,3 +1,4 @@
+import { checkSRTLock } from './package-srt.mjs';
 // Offline P0 inventory validation. This does not construct or accept a bundle.
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
@@ -8,6 +9,7 @@ import { fileURLToPath } from 'node:url';
 import { hasDependency, releaseProfiles } from './package-profiles.mjs';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
+checkSRTLock(root);
 const read = (path) => readFileSync(resolve(root, path));
 const json = (path) => JSON.parse(read(path));
 const digest = (path) => createHash('sha256').update(read(path)).digest('hex');

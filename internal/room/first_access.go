@@ -24,8 +24,8 @@ func prepareFirstAccess(c startupConfig) error {
 		return err
 	}
 	if c.Deployment.Mode == "multi-user" {
-		if c.Deployment.Authentication.Provider == "" || len(c.Deployment.Authentication.AllowedSubjects) == 0 {
-			return errors.New("multi-user access requires an authentication provider and subject admission")
+		if c.Deployment.Authentication.Provider == "" || !c.Deployment.Authentication.AllowAllAuthenticated && len(c.Deployment.Authentication.AllowedSubjects) == 0 {
+			return errors.New("multi-user access requires an authentication provider and explicit admission policy")
 		}
 		if err := makeDurableDir(filepath.Dir(adminTokenPath(c))); err != nil {
 			return err

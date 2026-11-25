@@ -144,6 +144,9 @@ func runServerOnce(ctx context.Context, args []string, stdout, stderr io.Writer,
 	if err != nil {
 		return err
 	}
+	if err := checkManagedExecution(startup, layout); err != nil {
+		return err
+	}
 	selectedFactories := options.deployment.factories
 	if startup.Deployment.Mode == "multi-user" {
 		if selectedFactories.authentication == nil {
@@ -187,6 +190,9 @@ func runServerOnce(ctx context.Context, args []string, stdout, stderr io.Writer,
 		}
 		startup, err = readStartupConfig(*configFile, false, false)
 		if err != nil {
+			return err
+		}
+		if err := checkManagedExecution(startup, layout); err != nil {
 			return err
 		}
 		if selectedMode != startup.Deployment.Mode || selectedMode == "multi-user" && !bytes.Equal(selectedSource, startup.source) {

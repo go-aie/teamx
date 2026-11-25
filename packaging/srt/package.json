@@ -1,0 +1,9 @@
+{
+  "name": "teamx-srt-isolation-experiment",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "@anthropic-ai/sandbox-runtime": "0.0.83"
+  }
+}

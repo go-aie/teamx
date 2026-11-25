@@ -13,7 +13,7 @@ import { machOFiles, signBundle, signingPolicy } from './package-signing.mjs';
 const root = p.resolve(p.dirname(fileURLToPath(import.meta.url)), '..');
 const commit = 'a'.repeat(40), version = 'v0.0.0';
 const target = `${process.platform}-${process.arch === 'x64' ? 'amd64' : process.arch}`;
-const smokeFiles = { smoke_sha256: 'scripts/package-smoke.mjs',
+const smokeFiles = { smoke_sha256: 'scripts/package-smoke.mjs', srt_check_sha256: 'scripts/package-srt.mjs',
   native_check_sha256: 'scripts/check-dsh-native.mjs', fixture_sha256: 'scripts/fixtures/acp.mjs' };
 const batch = { run_id: 101, run_attempt: 2 };
 const native = { 'darwin-arm64': ['darwin', 'arm64', 'arm64'], 'darwin-amd64': ['darwin', 'x64', 'x86_64'],
@@ -25,7 +25,7 @@ function fixture(t, candidateTarget = target) {
   const source = p.join(temp, 'source'), directory = p.join(temp, 'artifact');
   fs.mkdirSync(directory);
   for (const file of ['packaging/dependencies.lock.json', 'packaging/dsh/package-lock.json',
-    'packaging/dsh/package.json', 'tools/gitlab/glab.lock.json', ...Object.values(smokeFiles), 'scripts/package-release.mjs', 'scripts/package-ci.mjs', 'scripts/package-lib.mjs',
+    'packaging/dsh/package.json', 'packaging/srt/package.json', 'packaging/srt/package-lock.json', 'packaging/srt/runtime.lock.json', 'tools/gitlab/glab.lock.json', ...Object.values(smokeFiles), 'scripts/package-release.mjs', 'scripts/package-ci.mjs', 'scripts/package-lib.mjs',
     'scripts/package-release-source.mjs', 'scripts/package-profiles.mjs', 'scripts/package-signing.mjs', 'scripts/package-platform.mjs', 'scripts/fixtures/models.mjs']) {
     fs.mkdirSync(p.dirname(p.join(source, file)), { recursive: true });
     fs.copyFileSync(p.join(root, file), p.join(source, file));

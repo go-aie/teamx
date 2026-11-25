@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strconv"
 	"strings"
 )
@@ -16,6 +17,58 @@ import (
 // Archive validation and publication belong to the deployment command.
 type serverLayout struct {
 	Root, Release, Home string
+}
+
+// Installation selection is independent of mutable business settings. A
+// selected SRT service cannot silently start with a native or stale descriptor.
+func checkManagedExecution(c startupConfig, layout serverLayout) error {
+	if layout.Root == "" {
+		return nil
+	}
+	data, err := os.ReadFile(filepath.Join(layout.Root, "service.json"))
+	if errors.Is(err, os.ErrNotExist) {
+		return nil
+	} // diagnostic managed roots
+	if err != nil {
+		return err
+	}
+	var registration struct {
+		Execution string   `json:"execution"`
+		Endpoints []string `json:"srt_endpoints"`
+	}
+	if err := json.Unmarshal(data, &registration); err != nil {
+		return err
+	}
+	if registration.Execution == "" || registration.Execution == "native" {
+		if c.Deployment.Execution.Kind == "" || c.Deployment.Execution.Kind == "native" {
+			return nil
+		}
+		return errors.New("execution configuration differs from native service installation")
+	}
+	if registration.Execution != "srt" || c.Deployment.Execution.Kind != "srt" ||
+		c.Deployment.Execution.Manifest != filepath.Join(layout.Home, "execution", filepath.Base(layout.Release)+".json") {
+		return errors.New("execution configuration differs from SRT service installation")
+	}
+	data, err = os.ReadFile(c.Deployment.Execution.Manifest)
+	if err != nil {
+		return err
+	}
+	var manifest struct {
+		Node struct {
+			Path string `json:"path"`
+		} `json:"node"`
+		Runtime struct {
+			Path string `json:"path"`
+		} `json:"runtime"`
+		Endpoints    []string `json:"endpoints"`
+		PrivateRoots []string `json:"private_roots"`
+	}
+	if json.Unmarshal(data, &manifest) != nil || manifest.Node.Path != filepath.Join(layout.Release, "runtime/node/bin/node") ||
+		manifest.Runtime.Path != filepath.Join(layout.Release, "runtime/srt") || !slices.Equal(manifest.Endpoints, registration.Endpoints) ||
+		!slices.Contains(manifest.PrivateRoots, layout.Home) {
+		return errors.New("SRT descriptor differs from selected release or authority")
+	}
+	return nil
 }
 
 func validateManagedListen(address string) error {

@@ -2,6 +2,8 @@
 
 日期：2026-11-12。对应[常驻 Server 方案 W5](../DESKTOP-APPLICATION-ANALYSIS-AND-PLAN.zh.md#w5常驻部署归档与手动升级)。运维入口与部署材料已实现；本机自动验证和真实系统服务探针分别记录，原生 Linux／平台无人值守出口尚未通过，不表示 W5 全部验收完成。操作说明见 [安装与运行](../installation.zh.md)。
 
+2026-11-25 补充：Linux amd64 standard＋SRT 的原生实机部署、systemd／HTTPS、真实 OpenCSG 单账号登录与模型首用、同模式升级及旧运行指纹检查已有后续证据。本轮开发实机预验收与环境交付已收尾，alpha 保留供人工验证；完整还原、故障恢复及生产资格仍未关闭，见[阶段交接](space-deployment.zh.md#阶段交接2026-11-25)。后续服务器操作见 [Linux 打包、部署与升级](../linux-deployment.zh.md)，不将下述历史证据自动扩大为完整 Linux 生产验收。
+
 ## 实现
 
 2026-11-13 后续调整：用户安装入口已统一为 `install.sh`，内部复用本文的 `teamx service install`，并自动建立 PATH 中的稳定 `teamx` 入口。无需先在临时包执行 `start init`，不再要求用户手工创建 Linux 服务账号。开发用前台入口保留。安装器改动及独立验收边界见[安装器记录](server-installer.zh.md)；本文原生服务与长期观察的既有证据不自动覆盖新安装入口。

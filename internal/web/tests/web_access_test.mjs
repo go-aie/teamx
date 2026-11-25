@@ -29,12 +29,21 @@ test("login focuses the password field and preserves focus when returning to the
   assert.equal(ui.el("token").focusCount,focused);
 });
 
-test("OpenCSG uses the fixed native POST login form without exposing deployment credentials",async()=>{
-  const ui=await launch(async(path)=>path==="/v1/access/method" ? {status:200,data:{provider:"opencsg"}} : {status:401,data:{}});
+test("OpenCSG starts a same-origin POST then navigates outside the form CSP",async()=>{
+  const writes=[];
+  const target="https://login.example/sso/login?redirect_url=fixed-callback";
+  const ui=await launch(async(path,body)=>{
+    if(path==="/v1/access/method")return {status:200,data:{provider:"opencsg"}};
+    if(path==="/v1/access/sso/login"){writes.push(body);return {status:200,data:{login_url:target}};}
+    return {status:401,data:{}};
+  });
   assert.equal(ui.el("sso-login-form").hidden,false);
   assert.equal(ui.el("login-form").hidden,true);
   assert.equal(ui.el("sso-login-submit").textContent,"使用 OpenCSG 登录");
   assert.match(html,/<form id="sso-login-form"[^>]*method="post"[^>]*action="\/v1\/access\/sso\/login"/);
+  await ui.el("sso-login-form").emit("submit");
+  assert.equal(writes.length,1);
+  assert.deepEqual(ui.navigation,[target]);
 });
 
 test("external authentication can replace the provider without changing the login transaction",async()=>{
@@ -60,7 +69,7 @@ async function launch(api, saved = new Map(), hash = "") {
   const document={hidden:false,body:{},activeElement:null,getElementById:el,addEventListener:(name,fn)=>documentEvents.set(name,fn)};
   vm.runInNewContext(source, {...modelForm,randomUUID,URL,crypto:webcrypto, spaceURL:path=>path,spaceStorage:storage=>storage,mountSpacePicker:()=>{},
     document,navigator:{onLine:true},
-    location:{origin:"http://fixture",hash,replace:path=>navigation.push(path)},addEventListener(){},
+    location:{origin:"http://fixture",hash,replace:path=>navigation.push(path),assign:path=>navigation.push(path)},addEventListener(){},
     sessionStorage:{getItem:key=>saved.get(key),setItem:(key,value)=>saved.set(key,value),removeItem:key=>saved.delete(key)},
     setTimeout:fn=>timers.push(fn),
     fetch:async(path,options)=>{

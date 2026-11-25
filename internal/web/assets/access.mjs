@@ -25,7 +25,7 @@ function restoreDraft(versionKnown = true) {
   if (typeof draft.request_id === "string") requestID=draft.request_id;
 }
 async function request(path, data) {
-  const response = await fetch(spaceURL(path), {method: data ? "POST" : "GET", cache: "no-store", credentials: "same-origin", headers: data ? {"Content-Type":"application/json"} : {}, body: data ? JSON.stringify(data) : undefined});
+  const response = await fetch(spaceURL(path), {method: data ? "POST" : "GET", cache: "no-store", credentials: "same-origin", headers: data ? {"Content-Type":"application/json", "Accept":"application/json"} : {"Accept":"application/json"}, body: data ? JSON.stringify(data) : undefined});
   const result = await response.json();
   if (!response.ok) {const error = new Error(response.status === 401 ? "访问令牌无效或登录已到期，请重新输入。" : response.status === 429 ? "尝试过于频繁，请稍后重试。" : result.message || "请求未完成，请稍后重试。"); error.status = response.status; error.field = result.field; error.code = result.code; throw error; }
   return result;
@@ -233,6 +233,19 @@ $("toggle-token").addEventListener("click", () => {
 });
 $("token").addEventListener("input", () => {
   $("token").removeAttribute("aria-invalid"); $("login-feedback").hidden = true;
+});
+$("sso-login-form").addEventListener("submit", async event => {
+  event.preventDefault(); const button = $("sso-login-submit");
+  if (button.disabled) return;
+  button.disabled = true; $("login-feedback").hidden = true;
+  try {
+    const result = await request("/v1/access/sso/login", {});
+    location.assign(result.login_url);
+  } catch (error) {
+    $("login-feedback").textContent = error.status ? error.message : "暂时无法连接，请稍后重试。";
+    $("login-feedback").hidden = false;
+    button.disabled = false;
+  }
 });
 $("login-form").addEventListener("submit", async event => {
   event.preventDefault(); const button = $("login-submit");

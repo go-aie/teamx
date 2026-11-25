@@ -27,17 +27,19 @@ import (
 var serviceTemplates embed.FS
 
 type serviceRegistration struct {
-	Version        int    `json:"version"`
-	InstallationID string `json:"installation_id"`
-	Root           string `json:"server_root"`
-	Home           string `json:"home"`
-	User           string `json:"user"`
-	UserHome       string `json:"user_home"`
-	UID            int    `json:"uid"`
-	GID            int    `json:"gid"`
-	Platform       string `json:"platform"`
-	Unit           string `json:"unit"`
-	LogRoot        string `json:"log_root"`
+	Execution      string   `json:"execution,omitempty"`
+	SRTEndpoints   []string `json:"srt_endpoints,omitempty"`
+	Version        int      `json:"version"`
+	InstallationID string   `json:"installation_id"`
+	Root           string   `json:"server_root"`
+	Home           string   `json:"home"`
+	User           string   `json:"user"`
+	UserHome       string   `json:"user_home"`
+	UID            int      `json:"uid"`
+	GID            int      `json:"gid"`
+	Platform       string   `json:"platform"`
+	Unit           string   `json:"unit"`
+	LogRoot        string   `json:"log_root"`
 }
 
 // A PATH symlink follows current through upgrades. Resolve it before finding
@@ -62,6 +64,10 @@ func writeServiceInstallResult(r serviceRegistration, status map[string]any, std
 	c, err := readStartupConfig(filepath.Join(r.Home, "config.toml"), true, false)
 	if err != nil {
 		return err
+	}
+	if c.Deployment.Mode == "multi-user" {
+		fmt.Fprintf(stderr, "\nTeamX 已安装并启动。\n\n1. 打开：%s\n2. 使用部署配置的账号登录；管理令牌仅用于服务机器上的部署管理。\n3. 在本人空间按页面提示配置模型。\n", serviceBrowserURL(c))
+		return writeJSON(stdout, status)
 	}
 	tokenCommand := "cat '" + strings.ReplaceAll(adminTokenPath(c), "'", "'\\''") + "'"
 	if r.Platform == "linux" {
@@ -230,11 +236,22 @@ func serviceTemplate(r serviceRegistration) ([]byte, error) {
 	return out.Bytes(), err
 }
 
+// The ordinary core verifies the immutable execution selection at startup.
+// This record contains installation metadata and endpoint origins, no tokens.
+// It remains root-owned and read-only to the service account on Linux.
+func writeServiceRegistration(r serviceRegistration) error {
+	data, err := json.MarshalIndent(r, "", "  ")
+	if err != nil {
+		return err
+	}
+	return writeServiceFile(filepath.Join(r.Root, "service.json"), append(data, '\n'), 0644)
+}
+
 func serviceEnvironment(r serviceRegistration) []string {
 	return []string{"HOME=" + r.UserHome, "USER=" + r.User, "LOGNAME=" + r.User, "PATH=/usr/bin:/bin:/usr/sbin:/sbin", "LANG=en_US.UTF-8"}
 }
 
-func initializeServiceHome(ctx context.Context, r serviceRegistration, release string) error {
+func initializeServiceHome(ctx context.Context, r serviceRegistration, release string, initial ...map[string]any) error {
 	if err := os.MkdirAll(r.Home, 0700); err != nil {
 		return err
 	}
@@ -255,6 +272,11 @@ func initializeServiceHome(ctx context.Context, r serviceRegistration, release s
 	}
 	if err := os.Chmod(r.Home, 0700); err != nil {
 		return err
+	}
+	if len(initial) > 0 && initial[0] != nil {
+		if err := initializeServiceConfig(r, release, initial[0]); err != nil {
+			return err
+		}
 	}
 	cmd := exec.CommandContext(ctx, filepath.Join(release, "bin/teamx"), "init", "--bundle-root", release, "--home", r.Home, "--server-root", r.Root)
 	cmd.Env = serviceEnvironment(r)
@@ -362,6 +384,9 @@ func authenticatedServiceStatus(ctx context.Context, r serviceRegistration) (map
 		return nil, err
 	}
 	defer endpoint.close()
+	if endpoint.config.Deployment.Mode == "multi-user" {
+		return endpoint.deploymentStatus(ctx)
+	}
 	if err := endpoint.authenticate(ctx); err != nil {
 		return nil, err
 	}

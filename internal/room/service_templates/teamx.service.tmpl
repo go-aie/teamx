@@ -21,7 +21,10 @@ RestartSec=10
 TimeoutStopSec=45
 KillMode=mixed
 UMask=0077
-StandardOutput=journal
+{{if eq .Execution "srt"}}NoNewPrivileges=yes
+CapabilityBoundingSet=
+AmbientCapabilities=
+{{end}}StandardOutput=journal
 StandardError=journal
 SyslogIdentifier=teamx
 

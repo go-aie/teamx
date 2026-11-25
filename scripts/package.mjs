@@ -12,6 +12,7 @@ import {
   extract
 } from './package-lib.mjs';
 import { assemblePlatformDependencies, checkBinaries } from './package-platform.mjs';
+import { assembleSRT } from './package-srt.mjs';
 import { hasDependency } from './package-profiles.mjs';
 import { assertReleaseSource, releaseBatch } from './package-release-source.mjs';
 import { signingPolicy, signBundle, notarizeBundle } from './package-signing.mjs';
@@ -55,11 +56,12 @@ try {
     'docs/implementation/model-deletion-migration-delivery.zh.md',
     'packaging/bundle-files.json', 'packaging/git-launcher', 'packaging/glab-launcher',
     'packaging/dsh/package.json', 'packaging/dsh/package-lock.json',
+    'packaging/srt/package.json', 'packaging/srt/package-lock.json', 'packaging/srt/runtime.lock.json',
     lock.dependencies.glab.contract,
     ...assets.files.map(a => a.source),
     ...['package.mjs', 'package-lib.mjs', 'package-platform.mjs', 'package-profiles.mjs',
       'package-smoke.mjs', 'check-packaging.mjs', 'check-dsh-native.mjs',
-      'package-release-source.mjs', 'package-signing.mjs',
+      'package-release-source.mjs', 'package-signing.mjs', 'package-srt.mjs',
       'fixtures/acp.mjs', 'fixtures/models.mjs'].map(f => `scripts/${f}`),
     'packaging/node-entitlements.plist'
   ])].sort().map(path => ({ path, sha256: hash(fs.readFileSync(p.join(root, path))) }));
@@ -285,6 +287,7 @@ try {
     root, bundle, target: opts.target, profile: opts.profile, lock,
     glabLock: json(p.join(root, dep.glab.contract)), download
   });
+  const srt = assembleSRT({ root, bundle, target: opts.target, profile: opts.profile, cache, buildHome, offline: opts.offline });
   const notices = [];
   for (const file of files(p.join(dsh, 'node_modules')).filter((f) =>
     /(?:^|\/)(?:licen[cs]e|copying|notice|copyright)(?:[^/]*?)$/i.test(f)
@@ -378,6 +381,7 @@ try {
     },
     go,
     dependencies: dependencyRecords,
+    ...(srt ? { execution_runtimes: { srt } } : {}),
     dependency_lock_sha256: hash(
       fs.readFileSync(p.join(root, 'packaging/dependencies.lock.json'))
     ),

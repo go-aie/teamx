@@ -4,7 +4,7 @@
 
 自行部署只需运行一次安装脚本。脚本下载完整的 standard 包并安装常驻服务，无需另装 Go 或 Node，也不要求提前配置模型或 export Key。安装完成后统一使用 `teamx` 管理，模型在网页设置。
 
-安装前准备模型服务的地址、模型 ID 和 API Key。运行目标为 macOS 15 或 Ubuntu 24.04／glibc 2.39，Linux 常驻安装需要 systemd；支持的架构及具体依赖见[下载与校验](#下载与校验)。
+安装前准备模型服务的地址、模型 ID 和 API Key。发行矩阵默认基线为 macOS 15 或 Ubuntu 24.04／glibc 2.39；Linux amd64 standard 的可选 SRT 组合另有 Ubuntu 22.04／glibc 2.35 的固定依赖合同与实机证据，范围见 [SRT 执行](#linux-amd64-的可选-srt-执行)。Linux 常驻安装需要 systemd；支持的架构及具体依赖见[下载与校验](#下载与校验)。
 
 | 你要做什么 | 阅读位置 |
 | --- | --- |
@@ -99,6 +99,63 @@ bash ./install.sh --archive /absolute/teamx-standard.tar.gz
 包可能未进行 TeamX Developer ID 签名或 Apple 公证；具体状态见下载页及 `release.json` 的各包 `signing`。上游或 ad-hoc 签名不代表 TeamX 已签名。
 
 安装器从校验后的归档读取引导程序，再写入正式版本目录，不恢复浏览器下载目录的扩展属性；用户无需先运行 `start init` 解除临时包的下载隔离。这不会签名、公证或全局关闭 Gatekeeper。若仍被系统拦截，保留实际提示和报错。
+
+### Linux amd64 的可选 SRT 执行
+
+Linux amd64 standard 包另含固定 SRT `0.0.83` 及完整 npm 依赖，复用包内 Node。默认安装继续使用原生 DSH；个人安装不需要 SRT 辅助程序或 namespace 权限。
+
+显式选择 SRT 时，交付合同包含 **Ubuntu 22.04 amd64／glibc 2.35** 和 **Ubuntu 24.04 amd64／glibc 2.39** 两组宿主依赖。安装器按实际系统选择对应工具，不将新版 Ubuntu 的程序直接用于旧版系统；实际执行与多用户支持仍按下文验收边界判断。宿主须预先准备对应的固定系统包及其依赖；安装器不安装系统软件，也不接受未登记版本或同名替代程序：
+
+Ubuntu 22.04：
+
+```sh
+sudo apt-get install bubblewrap=0.6.1-1ubuntu0.3 socat=1.7.4.1-3ubuntu4 ripgrep=13.0.0-2ubuntu0.1 \
+  libstdc++6 libgcc-s1 libcap2 libselinux1 libssl3 libwrap0 ca-certificates
+```
+
+Ubuntu 24.04：
+
+```sh
+sudo apt-get install bubblewrap=0.9.0-1build1 socat=1.8.0.0-4build3 ripgrep=14.1.0-1 \
+  libstdc++6 libgcc-s1 libcap2 libselinux1 libpcre2-8-0 libssl3t64 libwrap0 ca-certificates
+```
+
+归档的 `share/teamx/srt-runtime.json` 列出这些包的固定 HTTPS 下载地址、包摘要、`/usr/bin/bwrap`、`/usr/bin/socat`、`/usr/bin/rg` 的程序摘要、动态库和内核前置。服务账号必须能创建 user／mount／PID／IPC／network namespaces，并使用 seccomp、procfs；Ubuntu 的 AppArmor、宿主容器或服务管理器也须允许这些操作。保留宿主安全策略；TeamX 不自动修改 sysctl、AppArmor 或容器权限。选中 SRT 后，实际 namespace 检查失败会拒绝启动，不回退原生。
+
+仅在全新安装中选择执行方式，并逐个指定固定内部回调与模型上游的 origin（不带路径、凭据或通配符）：
+
+```sh
+bash install.sh --archive /absolute/teamx-archive.tar.gz --execution srt \
+  --srt-endpoint http://127.0.0.1:8088 \
+  --srt-endpoint https://model.example.com
+```
+
+将归档路径和模型地址换成实际值。Linux 安装流程使用专用普通服务账号，并仅为 SRT 生成 `NoNewPrivileges=yes`、空 `CapabilityBoundingSet` 和空 `AmbientCapabilities`。安装器校验宿主程序版本／摘要及 Node、辅助程序的动态库闭包；私有 home 的 `execution/<release>.json` 以 `0600` 保存实际 release 路径、依赖／系统库摘要、私有根与端点，目录为 `0700`。部署描述不含 token，服务启动核对安装选择、release 和端点，拒绝配置不一致。
+
+普通升级保留原执行选择、旧 release、描述和稳定业务路径；升级前校验目标依赖，停服并一致备份后生成新描述。依赖、执行策略或路径变化若不满足原 Session 恢复条件，按已有恢复合同报告并保留证据，不自动轮换、重置或重放。整份备份恢复仍使用原绝对路径；固定宿主程序和系统库由宿主管理，恢复前也须满足原描述摘要。重新安装不能转换执行组合或修改端点授权。
+
+目前这条链路用于交付准备。多用户开放仍受执行、平台及真实认证验收门槛控制；包含 SRT 资源不代表已完成 systemd／HTTPS 实机部署或多用户发布验收。
+
+管理员需要在首次初始化前选定 HTTPS／认证组合时，可提供 `--deployment-config /private/initial.toml`。文件须为 `0600`，仅接受 `[server]` 的监听、访问模式、公开地址、可信代理和时区，以及 `[deployment]` 的模式、认证、资源与 GitLab 选择；工作目录、执行程序、环境变量、模型和凭据仍由各自配置入口管理。例如：
+
+```toml
+[server]
+listen = "127.0.0.1:18088"
+access_mode = "proxy"
+public_base_url = "https://alpha.teamx.opencsg.com"
+trusted_proxies = ["127.0.0.1"]
+
+[deployment]
+mode = "multi-user"
+
+[deployment.authentication]
+provider = "opencsg"
+allowed_subjects = ["服务端验证得到的用户 UUID"]
+```
+
+若要向所有已认证的 OpenCSG 账号开放，可在此节增加 `allow_all_authenticated = true`；启用后，`allowed_subjects` 不再限制其他已认证账号。默认不开放；这一部署配置只改变认证后的准入，各账号仍有独立用户与空间，本地停用和权限边界继续生效。
+
+配合 `--execution srt` 及上述监听端口的 `--srt-endpoint` 使用。正式版本在多用户生产门槛关闭前仍拒绝启动；`dev`／`dev-*` 开发版本允许在全新业务根开展人工验收，仍须通过 Linux、SRT、明确账号准入及完整执行检查，不代表发布支持。首次配置先于个人身份登记写入；中断保留已选组合，重复输入只能与已有设置一致，不能将已有个人 home 改绑为多用户。常规重装／修复可省略该参数，升级始终沿用原配置。OpenCSG 还须信任该公开域名下的 `/v1/access/sso/callback`，并保留动态 `state` 参数；认证服务拒绝回调时，TeamX 不会取得登录身份。
 
 ## 首次使用与访问
 

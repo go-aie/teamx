@@ -69,6 +69,9 @@ func setupProbeDiagnostic(probe *dsh.ProbeError) (field, message string) {
 	case "busy":
 		return "", "已有模型验证正在进行，请稍后重试。"
 	}
+	if probe.Stage == "local_identity" || probe.Stage == "local" {
+		return "", "模型运行环境检查失败，请联系部署管理员检查运行环境后重试。"
+	}
 	if probe.Stage == "tool" {
 		return "", "模型未通过工具调用验证，请确认所选模型和接口支持工具调用。"
 	}

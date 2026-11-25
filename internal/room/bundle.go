@@ -123,6 +123,14 @@ func runBundleWithCatalog(command string, args []string, stdout, stderr io.Write
 	if err = prepareFirstAccess(startup); err != nil {
 		return err
 	}
+	// Hosted Spaces prepare their own data roots when activated. SRT also
+	// protects the deployment's configured data root, so explicit bootstrap
+	// must prepare that directory even though no personal runtime uses it.
+	if startup.Deployment.Mode == "multi-user" {
+		if err = makeDurableDir(*startup.Server.DataDir); err != nil {
+			return err
+		}
+	}
 	if command == "init" {
 		_, err = fmt.Fprintln(stdout, "基础文件已准备。运行 ./start，在网页中配置模型；访问与安全设置位于设置 → 安全。")
 		return err
@@ -160,7 +168,7 @@ func initializeBundle(root, home string) error {
 	return initializeBundleRuntime(root, home, "")
 }
 
-func initializeBundleRuntime(root, home, managedBinary string) error {
+func bundleStartupConfig(root, home, managedBinary string) map[string]any {
 	config := map[string]any{
 		"server":  map[string]any{"listen": "127.0.0.1:8088", "data_dir": "./data", "teams_dir": "./teams", "session_max_turns": 16, "dsh_turn_timeout": "15m"},
 		"runtime": map[string]any{"dsh": map[string]any{"binary_path": filepath.Join(root, "bin", "dsh")}},
@@ -174,6 +182,11 @@ func initializeBundleRuntime(root, home, managedBinary string) error {
 		config["runtime"].(map[string]any)["dsh"].(map[string]any)["binary_path"] = managedBinary
 		config["access"] = map[string]any{"login_enabled": true}
 	}
+	return config
+}
+
+func initializeBundleRuntime(root, home, managedBinary string) error {
+	config := bundleStartupConfig(root, home, managedBinary)
 	data, err := toml.Marshal(config)
 	if err != nil {
 		return err

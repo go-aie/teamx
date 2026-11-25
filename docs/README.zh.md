@@ -7,6 +7,7 @@
 | 你要做什么 | 文档 |
 | --- | --- |
 | 安装服务、登录、配置模型、远程访问、备份和升级 | [安装与运行](installation.zh.md) |
+| 在 Linux 从源码打包、准备 HTTPS／SRT、部署和升级服务器 | [Linux 打包、部署与升级](linux-deployment.zh.md) |
 | 使用个人助理、创建房间、查看提及、控制执行 | [会话使用](conversations.zh.md) |
 | 理解团队、成员、上下文、工作区和平台连接 | [核心概念](concepts.zh.md) |
 | 接入 GitLab，接收待办或开展开发评审 | [GitLab 使用指南](gitlab.zh.md) |

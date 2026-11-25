@@ -368,3 +368,29 @@ test('unsupported hosts, root macOS and unpinned source downloads stop before de
   assert.notEqual(result.status, 0); assert.match(result.stderr, /--version/);
   assert.equal(fs.existsSync(f.env.INSTALL_TEST_DOWNLOADS), false);
 });
+
+test('explicit SRT selection forwards origin arguments intact and upgrade cannot change execution', t => {
+  const f = fixture(t, 'Linux', 'x86_64');
+  const args = ['--execution', 'srt', '--srt-endpoint', 'http://127.0.0.1:8088', '--srt-endpoint', 'https://model.example'];
+  const result = f.run(['--archive', f.archive, ...args]);
+  assert.equal(result.status, 0, result.stderr);
+  const forwarded = f.calls()[0];
+  assert.deepEqual(forwarded.slice(forwarded.indexOf('--execution'), forwarded.indexOf('--execution') + args.length), args);
+  const rejected = f.runDefault(['--upgrade', '--server-root', f.root, ...args]);
+  assert.notEqual(rejected.status, 0);
+  assert.match(rejected.stderr, /升级保留原 execution/);
+  assert.equal(f.calls().length, 1);
+});
+
+test('initial deployment configuration preserves a private path and cannot be passed to upgrade', t => {
+  const f = fixture(t, 'Linux', 'x86_64');
+  const seed = p.join(f.temp, "private initial ' configuration.toml");
+  fs.writeFileSync(seed, "[deployment]\nmode='personal'\n", { mode: 0o600 });
+  const result = f.run(['--archive', f.archive, '--deployment-config', seed]);
+  assert.equal(result.status, 0, result.stderr);
+  const args = f.calls()[0];
+  assert.equal(args[args.indexOf('--deployment-config') + 1], seed);
+  const rejected = f.runDefault(['--upgrade', '--server-root', f.root, '--deployment-config', seed]);
+  assert.notEqual(rejected.status, 0);
+  assert.equal(f.calls().length, 1);
+});

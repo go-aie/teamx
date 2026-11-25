@@ -27,10 +27,15 @@ func selectAgentExecution(ctx context.Context, c *startupConfig, plannedEndpoint
 		if c.Deployment.Execution.Kind != "srt" {
 			return errors.New("multi-user deployment requires SRT execution")
 		}
-		if c.Deployment.Authentication.Provider == "" || len(c.Deployment.Authentication.AllowedSubjects) == 0 {
-			return errors.New("multi-user deployment requires an authentication provider and explicit subject admission")
+		if c.Deployment.Authentication.Provider == "" || !c.Deployment.Authentication.AllowAllAuthenticated && len(c.Deployment.Authentication.AllowedSubjects) == 0 {
+			return errors.New("multi-user deployment requires an authentication provider and explicit admission policy")
 		}
-		return errors.New("multi-user deployment is not available before execution/toolchain and authentication acceptance")
+		// Development installations may exercise the complete hosted combination
+		// before release acceptance. Keep the release gate independent of runtime
+		// settings, and continue through every SRT check below.
+		if !multiUserDevelopmentBuild(distributionVersion) {
+			return errors.New("multi-user deployment is not available in release builds before execution/toolchain and authentication acceptance")
+		}
 	}
 	switch c.Deployment.Execution.Kind {
 	case "", "native":
@@ -50,10 +55,7 @@ func selectAgentExecution(ctx context.Context, c *startupConfig, plannedEndpoint
 		if err != nil {
 			return err
 		}
-		config.PrivateRoots = append(config.PrivateRoots, filepath.Dir(c.path))
-		if c.Server.DataDir != nil {
-			config.PrivateRoots = append(config.PrivateRoots, *c.Server.DataDir)
-		}
+		protectSRTDeploymentRoots(&config, *c)
 		selected := srt.New(config)
 		if err := selected.Check(ctx); err != nil {
 			return err
@@ -83,4 +85,8 @@ func selectAgentExecution(ctx context.Context, c *startupConfig, plannedEndpoint
 	default:
 		return errors.New("unsupported Agent execution implementation")
 	}
+}
+
+func multiUserDevelopmentBuild(version string) bool {
+	return version == "dev" || strings.HasPrefix(version, "dev-")
 }

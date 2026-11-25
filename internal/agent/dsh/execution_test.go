@@ -115,6 +115,27 @@ func TestExecutionSelectionResumeAndIdentity(t *testing.T) {
 	}
 }
 
+func TestRuntimeInspectionLaunchesResolvedExecutable(t *testing.T) {
+	opts := fixtureOptions(t)
+	physical, err := filepath.EvalSymlinks(opts.BinaryPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	alias := filepath.Join(t.TempDir(), "current-dsh")
+	if err := os.Symlink(physical, alias); err != nil {
+		t.Fatal(err)
+	}
+	factory := &alternateExecution{native: nativeExecution{inspect: opts.inspect}}
+	opts.Execution, opts.BinaryPath = factory, alias
+	id, err := InspectRuntime(t.Context(), opts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if id.BinaryPath != physical || len(factory.requests) != 1 || factory.requests[0].BinaryPath != physical {
+		t.Fatal("version acquisition differs from inspected executable", id, factory.requests)
+	}
+}
+
 func TestExecutionPartialOpenRetainsHandleAndLock(t *testing.T) {
 	opts := fixtureOptions(t)
 	opts.Limits.CleanupTimeout = 30 * time.Millisecond

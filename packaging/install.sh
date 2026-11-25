@@ -21,6 +21,9 @@ TeamX 安装：下载并校验 standard 包，安装和启动常驻服务。
   --server-root DIR    程序安装根；与 --home 不重叠的绝对目录
   --home DIR           私有配置和数据目录
   --user NAME          Linux 专用服务账号（默认 teamx，不存在时创建）
+  --execution KIND     native（默认）或 Linux amd64 srt；仅首次安装
+  --deployment-config FILE  首次部署的私有 TOML：模式、认证与 HTTPS
+  --srt-endpoint URL   SRT 精确端点 origin，可重复指定
   --help               显示帮助
 已有安装会在下载应用包前提示退出；升级到最新稳定版：teamx service upgrade。
 指定版本：teamx service upgrade --version vX.Y.Z；离线：teamx service upgrade --archive FILE。
@@ -29,11 +32,18 @@ EOF
 }
 archive='' expected_sha='' bin_dir='' server_root='' data_home='' service_user='teamx'
 upgrade=false repair=false backup_dir='' explicit_server_root=false
+execution_args=()
 while [[ $# -gt 0 ]]; do
   case $1 in
     --help|-h) usage; exit 0 ;;
     --upgrade) upgrade=true; shift ;;
     --repair) repair=true; shift ;;
+    --execution|--srt-endpoint)
+      [[ $# -ge 2 && -n $2 ]] || fail "$1 缺少参数"
+      execution_args+=("$1" "$2"); shift 2 ;;
+    --deployment-config)
+      [[ $# -ge 2 && -n $2 ]] || fail "$1 缺少参数"
+      execution_args+=("$1" "$2"); shift 2 ;;
     --version|--archive|--sha256|--bin-dir|--server-root|--home|--user|--backup-dir)
       [[ $# -ge 2 && -n $2 ]] || fail "$1 缺少参数"
       case $1 in
@@ -48,6 +58,7 @@ done
 [[ $upgrade == false || $repair == false ]] || fail '--upgrade 与 --repair 不能同时使用'
 [[ $upgrade == true || -z $backup_dir ]] || fail '--backup-dir 仅用于 --upgrade'
 [[ $upgrade == false || ( -z $data_home && $service_user == teamx ) ]] || fail '升级复用登记的 home 和账号，不接受 --home 或 --user'
+[[ $upgrade == false || ${#execution_args[@]} == 0 ]] || fail '升级保留原 execution 选择，不接受执行参数'
 [[ $repair == false || -n $archive ]] || fail '--repair 需要 --archive 指向原版本归档'
 
 platform=$(uname -s)
@@ -236,6 +247,7 @@ service_action=install
 [[ $upgrade == false ]] || service_action=upgrade
 install_args=(service "$service_action" --archive "$archive" --sha256 "$expected_sha" --server-root "$server_root")
 # Let TeamX resolve defaults and an existing installation's registered home.
+if [[ ${#execution_args[@]} -gt 0 ]]; then install_args+=("${execution_args[@]}"); fi
 if [[ -n $data_home ]]; then install_args+=(--home "$data_home"); fi
 if [[ $platform == Linux && $upgrade == false ]]; then install_args+=(--user "$service_user"); fi
 if [[ -n $backup_dir ]]; then install_args+=(--backup-dir "$backup_dir"); fi

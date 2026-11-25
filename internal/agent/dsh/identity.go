@@ -27,6 +27,9 @@ func InspectRuntime(ctx context.Context, opts Options) (RuntimeIdentity, error) 
 		return id, errors.New("DSH executable unavailable")
 	}
 	id.BinaryPath = path
+	// Query the same physical executable that was inspected. Managed current
+	// links are outside an isolated execution's read-only release mounts.
+	opts.BinaryPath = path
 	id.BinaryArgs = append([]string(nil), opts.BinaryArgs...)
 	id.BinarySHA256, err = executableDigest(path)
 	if err != nil {

@@ -2,6 +2,8 @@
 
 本文供维护者从源码构建分发包，包含固定依赖、平台矩阵、本地与 CI 打包。下载、安装和运行见[安装与运行](../docs/installation.zh.md)；自动发布、可选签名公证和独立本地验收见[正式发行指南](releasing.zh.md)；组件原理见 [Server 架构](../docs/server.zh.md)。
 
+Linux 维护者从构建到服务器操作的路径、当前生产门槛与 alpha 环境留存信息，见 [Linux 打包、部署与升级](../docs/linux-deployment.zh.md)。
+
 | 目的 | 入口 | 产物位置 |
 | --- | --- | --- |
 | 用 GitHub Actions 构建开发快照 | [Package snapshots](../.github/workflows/package.yml) | 对应 Actions 运行的 Artifacts |
@@ -17,6 +19,10 @@
 | `full` | standard 的内容，加完整 Git 运行时 | 保留 Git／TLS 运行库和对应源码材料约束；仅用于开发／实验 |
 
 各包均按统一 lock 组装，不从开发机复制运行时或私有状态。Scion 运行能力暂不随包提供。DSH 固定为 `0.2.2-rc.1` 预发布版本，精确依赖见 [dependencies.lock.json](dependencies.lock.json)。
+
+仅 `linux-amd64 standard` 追加可显式选择的 SRT 资源，默认仍为原生 DSH。SRT 使用 [runtime.lock.json](srt/runtime.lock.json) 和与执行层完全一致的 npm lock，构建通过包内 npm `ci --ignore-scripts` 安装完整依赖，不使用实验目录、home 或 `latest`。SRT 锁与组装脚本也进入归档的源码输入摘要；离线缓存使用独立的目标／锁摘要目录。归档 inventory、npm lock、运行时摘要和无凭据模块加载检查纳入原 smoke。
+
+bwrap、socat、ripgrep 选择为固定宿主前置，版本、`.deb`／程序摘要、下载地址和动态库要求随归档交付，不从构建机复制。显式 SRT 安装按合同选择 Ubuntu 22.04／glibc 2.35 或 Ubuntu 24.04／glibc 2.39 的完整依赖组，核对辅助程序及动态库，生成实际 release 的部署描述和 systemd 权限约束。此增量不改变其他目标的发行基线。普通 native 安装不检查这些依赖。配置、宿主 namespace 前置、安装与升级规则见[安装指南](../docs/installation.zh.md#linux-amd64-的可选-srt-执行)。
 
 正式矩阵为以下四个目标 × core／standard，共 8 包。列入矩阵不代表已完成该系统、设备或真实平台的全部测试。
 
@@ -124,6 +130,6 @@ bash ./install-offline.sh
 
 `start`／`init` 保留为开发诊断入口，终端前台运行方法见[Room 开发说明](../internal/room/README.zh.md#归档调试运行)。它们不再作为普通安装的准备步骤；开发快照和旧归档不获得额外正式支持声明。
 
-安装、运行和维护只维护 [docs/installation.zh.md](../docs/installation.zh.md) 这一份指南。[bundle-files.json](bundle-files.json) 将它原样复制为包内 `README.zh.md`；正式发布脚本也将同一来源复制为 Release 的 `README.zh.md`。指南使用文档内锚点导航，独立下载后可完整阅读，不依赖仓库中的其他文件。不再分别维护 bundle、Release 或 Server 使用说明模板。
+通用安装、运行和维护指南统一维护在 [docs/installation.zh.md](../docs/installation.zh.md)。[bundle-files.json](bundle-files.json) 将它原样复制为包内 `README.zh.md`；正式发布脚本也将同一来源复制为 Release 的 `README.zh.md`。指南使用文档内锚点导航，独立下载后可完整阅读，不依赖仓库中的其他文件。不再分别维护 bundle、Release 或 Server 使用说明模板。仓库内的 [Linux 维护者手册](../docs/linux-deployment.zh.md)另负责串联原生构建、部署前置、运维与环境交接，不作为另一份随包 README。
 
 需要追溯设计、历史归档摘要或当时的验收范围时，查阅[实施记录](../docs/implementation/packaging/README.zh.md)。这些记录不作为当前操作入口。

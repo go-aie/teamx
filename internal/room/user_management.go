@@ -28,6 +28,27 @@ func (a *serverAccess) serveUserManagement(w http.ResponseWriter, r *http.Reques
 		a.serveGitLabApplications(w, r)
 		return
 	}
+	if r.URL.Path == "/v1/deployment/status" {
+		if r.Method != http.MethodGet {
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			return
+		}
+		// Control-plane readiness does not require a logged-in business owner
+		// or a configured model. Never inspect a user's rooms with admin auth.
+		a.users.mu.Lock()
+		requiresRestart := a.users.failed
+		a.users.mu.Unlock()
+		a.spaces.mu.Lock()
+		closing := a.spaces.closing
+		a.spaces.mu.Unlock()
+		if requiresRestart || closing {
+			accessError(w, http.StatusServiceUnavailable, "deployment_restart_required")
+			return
+		}
+		_ = writeJSON(w, map[string]any{"status": "running", "ready": true,
+			"installation_id": a.installationID, "deployment_mode": "multi-user"})
+		return
+	}
 	if r.URL.Path != "/v1/deployment/users" {
 		http.NotFound(w, r)
 		return

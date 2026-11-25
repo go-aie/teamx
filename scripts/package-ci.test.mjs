@@ -13,7 +13,7 @@ const root = p.resolve(p.dirname(fileURLToPath(import.meta.url)), '..');
 const commit = 'a'.repeat(40);
 const target = `${process.platform}-${process.arch === 'x64' ? 'amd64' : process.arch}`;
 const verifierFiles = {
-  smoke_sha256: 'scripts/package-smoke.mjs',
+  smoke_sha256: 'scripts/package-smoke.mjs', srt_check_sha256: 'scripts/package-srt.mjs',
   native_check_sha256: 'scripts/check-dsh-native.mjs',
   fixture_sha256: 'scripts/fixtures/acp.mjs'
 };
@@ -24,7 +24,8 @@ function fixture(t, profile = 'core') {
   const directory = p.join(temp, 'artifact'), source = p.join(temp, 'source');
   fs.mkdirSync(directory);
   for (const file of ['packaging/dependencies.lock.json', 'packaging/dsh/package-lock.json',
-    'packaging/dsh/package.json', 'tools/gitlab/glab.lock.json', ...Object.values(verifierFiles)]) {
+    'packaging/dsh/package.json', 'tools/gitlab/glab.lock.json', 'packaging/srt/package.json',
+    'packaging/srt/package-lock.json', 'packaging/srt/runtime.lock.json', ...Object.values(verifierFiles)]) {
     fs.mkdirSync(p.dirname(p.join(source, file)), { recursive: true });
     fs.copyFileSync(p.join(root, file), p.join(source, file));
   }
@@ -101,9 +102,11 @@ test('snapshot matrix includes every locked target and does not hide full blocke
 
 test('snapshot cache fingerprint changes with any locked dependency input', (t) => {
   const f = fixture(t);
-  const before = snapshotPlan(f.source).dependency_key;
-  fs.appendFileSync(p.join(f.source, 'packaging/dsh/package-lock.json'), '\n');
-  assert.notEqual(snapshotPlan(f.source).dependency_key, before);
+  for (const file of ['packaging/dsh/package-lock.json', 'packaging/srt/package-lock.json', 'packaging/srt/runtime.lock.json']) {
+    const before = snapshotPlan(f.source).dependency_key;
+    fs.appendFileSync(p.join(f.source, file), '\n');
+    assert.notEqual(snapshotPlan(f.source).dependency_key, before);
+  }
 });
 
 test('transport inspection binds source, capability, archive and smoke without claiming release readiness', (t) => {

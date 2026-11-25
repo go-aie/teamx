@@ -16,7 +16,8 @@ import (
 
 // Selection contains declarations only. Validation must precede home creation,
 // identity registration, credential access, listeners and recovery workers.
-// The personal combination is the only supported deployment at this stage.
+// Hosted development acceptance additionally requires the Linux/SRT and explicit
+// account admission checks in selectAgentExecution; release builds stay gated.
 type deploymentComposition struct {
 	factories spaceFactories
 	spaces    *spaceServer  // retained through incomplete multi-space settlement

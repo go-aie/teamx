@@ -9,7 +9,7 @@ import { machOFiles } from './package-signing.mjs';
 import { checkManifestProfile, profileNames, releaseProfiles } from './package-profiles.mjs';
 
 const root = p.resolve(p.dirname(fileURLToPath(import.meta.url)), '..');
-const smokeInputs = { smoke_sha256: 'scripts/package-smoke.mjs',
+const smokeInputs = { smoke_sha256: 'scripts/package-smoke.mjs', srt_check_sha256: 'scripts/package-srt.mjs',
   native_check_sha256: 'scripts/check-dsh-native.mjs', fixture_sha256: 'scripts/fixtures/acp.mjs' };
 const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
 const digest = file => hash(fs.readFileSync(file));

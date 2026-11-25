@@ -106,6 +106,12 @@ func (l *externalLogin) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		l.attempts[sha256.Sum256([]byte(state))] = externalAttempt{sha256.Sum256([]byte(browser)), now.Add(externalAttemptLifetime)}
 		l.mu.Unlock()
 		http.SetCookie(w, l.cookie(browser, int(externalAttemptLifetime/time.Second)))
+		// Navigate separately from the same-origin POST: browsers apply a
+		// document's form-action CSP to the entire external redirect chain.
+		if r.Header.Get("Accept") == "application/json" {
+			_ = writeJSON(w, map[string]string{"login_url": login})
+			return
+		}
 		http.Redirect(w, r, login, http.StatusSeeOther)
 	case externalCallbackPath:
 		// Every callback clears sensitive URL parameters, including failure. The

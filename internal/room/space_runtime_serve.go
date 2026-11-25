@@ -20,11 +20,7 @@ func (r *SpaceRuntime) serveSingle(ctx context.Context, listener net.Listener, r
 	config.models = nil // Explicit single-Room profiles retain their original model binding.
 	profiles, dir, roomID, create := config.dshProfiles, r.roots.Data, r.roomID, r.factories.service
 	uiProfiles := profileNames(profiles)
-	cliPath, err := os.Executable()
-	if err != nil {
-		return err
-	}
-	cliPath, err = filepath.EvalSymlinks(cliPath)
+	cliPath, err := spaceCLIPath(config.cliPath)
 	if err != nil {
 		return err
 	}
@@ -140,11 +136,7 @@ func (r *SpaceRuntime) serveManager(ctx context.Context, listener net.Listener, 
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	config.cliPath, err = os.Executable()
-	if err != nil {
-		return err
-	}
-	config.cliPath, err = filepath.EvalSymlinks(config.cliPath)
+	config.cliPath, err = spaceCLIPath(config.cliPath)
 	if err != nil {
 		return err
 	}
@@ -290,4 +282,15 @@ func (r *SpaceRuntime) serveManager(ctx context.Context, listener net.Listener, 
 		return errors.Join(err, cleanupErr, fmt.Errorf("HTTP cleanup incomplete: %w", shutdownErr))
 	}
 	return errors.Join(err, cleanupErr)
+}
+
+func spaceCLIPath(selected string) (string, error) {
+	if selected == "" {
+		var err error
+		selected, err = os.Executable()
+		if err != nil {
+			return "", err
+		}
+	}
+	return filepath.EvalSymlinks(selected)
 }

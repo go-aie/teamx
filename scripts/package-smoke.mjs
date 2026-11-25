@@ -1,3 +1,4 @@
+import { checkSRTArchive } from './package-srt.mjs';
 import * as fs from 'node:fs';
 import * as p from 'node:path';
 import * as os from 'node:os';
@@ -73,6 +74,8 @@ try {
     'Immutable contents/permissions/checksums differ'
   );
   checkManifestProfile(manifest);
+  checkSRTArchive(bundle, manifest);
+  if (manifest.execution_runtimes?.srt) pass('SRT resource digests and locked module load');
   checkBinaries(bundle, manifest.target, manifest.profile);
   for (const item of actual) {
     must(
@@ -368,11 +371,9 @@ try {
     modes.push([dir, fs.statSync(dir).mode & 0o777]);
   for (const [file, mode] of modes) fs.chmodSync(file, mode & ~0o222);
   try {
-    service = await launch(['--home',external]);
-    must(service.info.status === 'setup_required','Read-only bundle first start did not reach web setup');
-    await stop(service);
-    if (!service.token) exec('bin/teamx', ['access', 'init', '--config', p.join(external, 'config.toml')]);
-    seedOfflineModels(external, fixtureBin, manifest.dependencies.dsh.version);
+    // Choose custom roots before first Space registration. Changing data_dir
+    // on an already registered home must remain a startup error.
+    exec('start', ['init', '--non-interactive', '--home', external]);
     const externalConfig = p.join(external, 'config.toml');
     fs.writeFileSync(
       externalConfig,
@@ -380,6 +381,13 @@ try {
         .readFileSync(externalConfig, 'utf8')
         .replace("data_dir = './data'", "data_dir = '.'")
     );
+    service = await launch(['--home',external]);
+    must(service.info.status === 'setup_required','Read-only bundle first start did not reach web setup');
+    const identityFile = p.join(external, 'personal-space-registration.json');
+    const identityBefore = fs.readFileSync(identityFile, 'utf8');
+    await stop(service);
+    if (!service.token) exec('bin/teamx', ['access', 'init', '--config', p.join(external, 'config.toml')]);
+    seedOfflineModels(external, fixtureBin, manifest.dependencies.dsh.version);
     service = await launch(['--home', external]);
     const cat = await request(service, '/v1/rooms');
     const created = await request(service, '/v1/rooms/create', {
@@ -444,6 +452,7 @@ try {
       );
     service = await launch(['--home', external]);
     await stop(service);
+    must(fs.readFileSync(identityFile, 'utf8') === identityBefore, 'External home identity or registered roots changed');
   } finally {
     for (const [file, mode] of modes) fs.chmodSync(file, mode);
   }
@@ -458,10 +467,12 @@ try {
     profile: manifest.profile,
     environment: { os_release: os.release(), process_arch: process.arch, machine: os.machine(), platform: process.platform },
     checks,
+    srt_execution: manifest.execution_runtimes?.srt ? 'not_run' : 'not_selected',
     real_dsh_acp: 'not_run',
     real_platforms: 'not_run',
     browser: 'not_run',
     smoke_sha256: hash(fs.readFileSync(fileURLToPath(import.meta.url))),
+    srt_check_sha256: hash(fs.readFileSync(p.join(scriptRoot, 'package-srt.mjs'))),
     native_check_sha256: hash(
       fs.readFileSync(p.join(scriptRoot, 'check-dsh-native.mjs'))
     ),

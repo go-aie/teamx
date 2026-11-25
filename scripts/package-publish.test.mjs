@@ -23,8 +23,8 @@ function fixture(t, { notes = "## What's Changed\n\nA synthetic release.\n\n---\
   fs.mkdirSync(candidates); fs.mkdirSync(verifications);
   for (const file of new Set(['scripts/package-release.mjs', 'scripts/package-ci.mjs', 'scripts/package-lib.mjs',
     'scripts/package-publish.mjs', 'scripts/package-release-source.mjs', 'scripts/package-profiles.mjs', 'scripts/package-signing.mjs', 'scripts/package-platform.mjs', 'scripts/fixtures/models.mjs',
-    'scripts/package-smoke.mjs', 'scripts/check-dsh-native.mjs', 'scripts/fixtures/acp.mjs',
-    'packaging/dependencies.lock.json', 'packaging/dsh/package.json', 'packaging/dsh/package-lock.json',
+    'scripts/package-smoke.mjs', 'scripts/package-srt.mjs', 'scripts/check-dsh-native.mjs', 'scripts/fixtures/acp.mjs',
+    'packaging/dependencies.lock.json', 'packaging/srt/package.json', 'packaging/srt/package-lock.json', 'packaging/srt/runtime.lock.json', 'packaging/dsh/package.json', 'packaging/dsh/package-lock.json',
     'tools/gitlab/glab.lock.json', 'docs/installation.zh.md', 'packaging/install.sh', 'LICENSE'])) {
     fs.mkdirSync(p.dirname(p.join(source, file)), { recursive: true });
     fs.copyFileSync(p.join(root, file), p.join(source, file));
@@ -67,7 +67,7 @@ function fixture(t, { notes = "## What's Changed\n\nA synthetic release.\n\n---\
       'linux-arm64': ['linux', 'arm64', 'aarch64'], 'linux-amd64': ['linux', 'x64', 'x86_64'] }[row.target];
     const smoke = { schema_version: 1, status: 'passed',
       environment: { platform: native[0], process_arch: native[1], machine: native[2] }, checks: ['synthetic protocol test'], target: row.target, profile: row.profile, archive_sha256: archiveHash,
-      ...Object.fromEntries(Object.entries({ smoke_sha256: 'scripts/package-smoke.mjs',
+      ...Object.fromEntries(Object.entries({ smoke_sha256: 'scripts/package-smoke.mjs', srt_check_sha256: 'scripts/package-srt.mjs',
         native_check_sha256: 'scripts/check-dsh-native.mjs', fixture_sha256: 'scripts/fixtures/acp.mjs' }).map(([k, path]) => [k, digest(p.join(source, path))])) };
     writeJSON(p.join(directory, name + '-report.json'), smoke);
     writeJSON(p.join(directory, name + '-security.json'), { archive_sha256: archiveHash, target: row.target,

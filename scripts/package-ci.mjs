@@ -8,7 +8,7 @@ import { checkManifestProfile, profileNames } from './package-profiles.mjs';
 const root = p.resolve(p.dirname(fileURLToPath(import.meta.url)), '..');
 const lockPath = 'packaging/dependencies.lock.json';
 const smokeInputs = {
-  smoke_sha256: 'scripts/package-smoke.mjs',
+  smoke_sha256: 'scripts/package-smoke.mjs', srt_check_sha256: 'scripts/package-srt.mjs',
   native_check_sha256: 'scripts/check-dsh-native.mjs',
   fixture_sha256: 'scripts/fixtures/acp.mjs'
 };
@@ -25,7 +25,8 @@ export function snapshotPlan(sourceRoot, profile = 'standard') {
     return { target, runner: entry.runner, profile };
   });
   const cacheInputs = [lockPath, 'packaging/dsh/package-lock.json', 'packaging/dsh/package.json',
-    lock.dependencies.glab.contract];
+    lock.dependencies.glab.contract, 'packaging/srt/package.json', 'packaging/srt/package-lock.json',
+    lock.execution_runtimes.srt.contract];
   return {
     matrix: { include },
     go_version: lock.build_tools.go.version,

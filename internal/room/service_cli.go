@@ -14,6 +14,7 @@ import (
 	"os/signal"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
 	"syscall"
 	"time"
@@ -47,7 +48,14 @@ func runServiceWithManager(args []string, stdout, stderr io.Writer, runner servi
 	root := flags.String("server-root", "", "安装根目录；默认从当前 teamx 命令发现")
 	home, account, archive, digest, backup, source, version := new(string), new(string), new(string), new(string), new(string), new(string), new(string)
 	lines, follow := new(int), new(bool)
+	execution := new(string)
+	initialConfigPath := new(string)
+	var initialConfig map[string]any
+	var srtEndpoints []string
 	if action == "install" {
+		flags.StringVar(initialConfigPath, "deployment-config", "", "首次部署的私有 TOML；选择模式、认证与 HTTPS，不修改已有设置")
+		flags.StringVar(execution, "execution", "", "Agent 执行：native（默认）或 Linux amd64 srt")
+		flags.Func("srt-endpoint", "SRT 精确端点 origin；重复指定回调及模型上游", func(value string) error { srtEndpoints = append(srtEndpoints, value); return nil })
 		flags.StringVar(home, "home", "", "独立的私有配置与数据目录")
 		if runtime.GOOS == "linux" {
 			flags.StringVar(account, "user", "", "已存在的专用普通服务账号")
@@ -79,8 +87,23 @@ func runServiceWithManager(args []string, stdout, stderr io.Writer, runner servi
 	if flags.NArg() != 0 {
 		return fmt.Errorf("多余的位置参数；使用 teamx service %s --help 查看示例", action)
 	}
+	if action == "install" {
+		if err := validateServiceExecutionSelection(*execution, srtEndpoints); err != nil {
+			return err
+		}
+	}
 	if action == "install" && *archive == "" {
 		return errors.New("安装需要 --archive FILE；首次安装请运行官方 install.sh，已有安装请使用 teamx service upgrade")
+	}
+	if *initialConfigPath != "" {
+		var err error
+		initialConfig, err = readServiceInitialConfig(*initialConfigPath)
+		if err != nil {
+			return err
+		}
+		if initialConfig["deployment"].(map[string]any)["mode"] == "multi-user" && *execution != "srt" {
+			return errors.New("multi-user initial configuration requires --execution srt")
+		}
 	}
 	if (action == "backup" || action == "restore") && *backup == "" {
 		return errors.New("需要 --backup-dir DIR，使用安装根和 home 外尚不存在的目录；父目录须已存在")
@@ -160,7 +183,9 @@ func runServiceWithManager(args []string, stdout, stderr io.Writer, runner servi
 			return errors.New("server-root and home must be separate, non-overlapping directories")
 		}
 		var r serviceRegistration
+		existing := false
 		if _, err := os.Stat(filepath.Join(*root, "service.json")); err == nil {
+			existing = true
 			r, err = loadServiceRegistration(*root)
 			if err != nil {
 				return err
@@ -185,12 +210,23 @@ func runServiceWithManager(args []string, stdout, stderr io.Writer, runner servi
 				}
 			}
 		}
+		if *execution != "" {
+			if existing && (r.Execution != *execution && !(r.Execution == "" && *execution == "native") || !slices.Equal(r.SRTEndpoints, srtEndpoints)) {
+				return errors.New("installation execution selection cannot be changed by reinstall")
+			}
+			r.Execution, r.SRTEndpoints = *execution, srtEndpoints
+		}
 		release, err := publishServiceArchive(*root, *archive, *digest)
 		if err != nil {
 			return err
 		}
 		if selected, err := filepath.EvalSymlinks(filepath.Join(*root, "current")); err == nil && selected != release {
 			return errors.New("已安装其他版本；尚未切换版本或停止服务。请使用 teamx service upgrade，或查看 teamx service upgrade --help")
+		}
+		if r.Execution == "srt" {
+			if _, err := serviceExecutionConfig(r, release); err != nil {
+				return err
+			}
 		}
 		if err := selectServiceRelease(*root, release); err != nil {
 			return err
@@ -210,10 +246,13 @@ func runServiceWithManager(args []string, stdout, stderr io.Writer, runner servi
 		if err := os.Chmod(filepath.Join(*root, "installation.json"), 0644); err != nil {
 			return err
 		}
-		if err := writeServiceJSON(filepath.Join(*root, "service.json"), r); err != nil {
+		if err := writeServiceRegistration(r); err != nil {
 			return err
 		}
-		if err := initializeServiceHome(ctx, r, release); err != nil {
+		if err := initializeServiceHome(ctx, r, release, initialConfig); err != nil {
+			if initialConfig != nil {
+				return err
+			}
 			// A repeated install may encounter the live Server's home lock.
 			// Attach only after checking the exact registered unit and identity.
 			if checkServiceUnit(r) == nil {
@@ -221,6 +260,9 @@ func runServiceWithManager(args []string, stdout, stderr io.Writer, runner servi
 					return writeServiceInstallResult(r, status, stdout, stderr)
 				}
 			}
+			return err
+		}
+		if err := configureServiceExecution(r, release); err != nil {
 			return err
 		}
 		if _, err := serviceDataRoot(r); err != nil {
@@ -397,6 +439,11 @@ func runServiceWithManager(args []string, stdout, stderr io.Writer, runner servi
 			if next == "" {
 				return nil
 			}
+			if r.Execution == "srt" {
+				if _, err := serviceExecutionConfig(r, next); err != nil {
+					return err
+				}
+			}
 			if *backup == "" {
 				*backup, err = defaultServiceUpgradeBackup(r)
 				if err != nil {
@@ -456,6 +503,10 @@ func runServiceWithManager(args []string, stdout, stderr io.Writer, runner servi
 			}
 		} else {
 			if err := checkServicePort(ctx, r, false); err != nil {
+				return err
+			}
+			selected = true // Configuration and release switching can partially succeed.
+			if err := configureServiceExecution(r, next); err != nil {
 				return err
 			}
 			if err := selectServiceRelease(r.Root, next); err != nil {

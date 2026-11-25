@@ -69,6 +69,7 @@ curl -fsSL https://github.com/go-aie/teamx/releases/latest/download/install.sh |
 ## 文档导航
 
 - [安装与运行](docs/installation.zh.md)：安装、模型首配、远程访问和维护。
+- [Linux 打包、部署与升级](docs/linux-deployment.zh.md)：维护者操作路径、当前验收边界及 alpha 留存环境。
 - [会话使用](docs/conversations.zh.md)：个人助理、团队房间、提及和执行控制。
 - [核心概念](docs/concepts.zh.md)：团队、成员、上下文、工作区与平台连接。
 - [完整文档目录](docs/README.zh.md)：平台接入、自定义配置、架构和开发参考。

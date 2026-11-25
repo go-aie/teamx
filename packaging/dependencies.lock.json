@@ -687,5 +687,13 @@
       "license_file": "packaging/licenses/golang.org_x_image-LICENSE.txt",
       "license_sha256": "911f8f5782931320f5b8d1160a76365b83aea6447ee6c04fa6d5591467db9dad"
     }
-  ]
+  ],
+  "execution_runtimes": {
+    "srt": {
+      "contract": "packaging/srt/runtime.lock.json",
+      "target": "linux-amd64",
+      "profile": "standard",
+      "selection": "explicit_only"
+    }
+  }
 }

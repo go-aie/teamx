@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"net/netip"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -47,12 +48,31 @@ func TestOpenCSGSSOLoopback(t *testing.T) {
 	if err := makeDurableDir(home); err != nil {
 		t.Fatal(err)
 	}
-	listener, err := net.Listen("tcp4", "127.0.0.1:18088")
+	listen := os.Getenv("TEAMX_SSO_ACCEPTANCE_LISTEN")
+	if listen == "" {
+		listen = "127.0.0.1:18088"
+	}
+	if err := validateManagedListen(listen); err != nil {
+		t.Fatal(err)
+	}
+	listener, err := net.Listen("tcp4", listen)
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer listener.Close()
 	origin := "http://" + listener.Addr().String()
+	boundary := &serverAccess{internal: origin, public: origin}
+	if public := os.Getenv("TEAMX_SSO_ACCEPTANCE_ORIGIN"); public != "" {
+		u, err := url.Parse(public)
+		if err != nil || u.Scheme != "https" || u.Host == "" || u.User != nil || u.Path != "" || u.RawQuery != "" || u.Fragment != "" {
+			t.Fatal("acceptance public origin must be a canonical HTTPS origin")
+		}
+		origin = public
+		// The probe still binds loopback. A local TLS terminator or socket
+		// proxy must preserve Host and send X-Forwarded-Proto: https.
+		boundary.public, boundary.activeMode = public, accessProxy
+		boundary.proxies = map[netip.Addr]bool{netip.MustParseAddr("127.0.0.1"): true, netip.MustParseAddr("::1"): true}
+	}
 	provider, err := opencsg.New("https://opencsg.com", "https://hub.opencsg.com", nil)
 	if err != nil {
 		t.Fatal(err)
@@ -83,13 +103,15 @@ func TestOpenCSGSSOLoopback(t *testing.T) {
 	}
 	server := &http.Server{ReadHeaderTimeout: 3 * time.Second, ReadTimeout: 5 * time.Second, WriteTimeout: 15 * time.Second, IdleTimeout: 30 * time.Second, MaxHeaderBytes: 24 << 10}
 	server.Handler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		peer, _, _ := net.SplitHostPort(r.RemoteAddr)
-		if r.Host != listener.Addr().String() || !net.ParseIP(peer).IsLoopback() {
+		if actual, ok := boundary.requestOrigin(r); !ok || actual != origin {
 			accessError(w, 403, "invalid_origin")
 			return
 		}
 		w.Header().Set("Cache-Control", "no-store")
-		w.Header().Set("Referrer-Policy", "no-referrer")
+		// A navigation form POST with no-referrer sends Origin: null in
+		// Chromium. Keep its same-origin proof; the sensitive SSO routes
+		// override this with no-referrer before processing the callback.
+		w.Header().Set("Referrer-Policy", "same-origin")
 		if r.URL.Path == externalLoginPath || r.URL.Path == externalCallbackPath {
 			login.ServeHTTP(w, r)
 			return

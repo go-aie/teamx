@@ -21,6 +21,53 @@ import (
 
 type hostedProviderFixture struct{}
 
+func TestHostedOpenAdmissionKeepsOwnerIsolationAndDisable(t *testing.T) {
+	s := hostedFixtureWithAdmission(t, t.TempDir(), externalAuthConfig{Provider: "fixture", AllowAllAuthenticated: true})
+	a, alice, aSpace := hostedLogin(t, s, "previously-unlisted-a")
+	b, bob, bSpace := hostedLogin(t, s, "previously-unlisted-b")
+	if alice.UserID == bob.UserID || aSpace == bSpace {
+		t.Fatal("open admission merged external identities")
+	}
+	for _, pair := range []struct {
+		cookie  *http.Cookie
+		foreign string
+	}{{a, bSpace}, {b, aSpace}} {
+		if w := hostedRequest(s, "/s/"+pair.foreign+"/v1/setup", nil, pair.cookie, ""); w.Code != 403 {
+			t.Fatal("open admission exposed another owner's space", w.Code)
+		}
+	}
+	for _, id := range []authn.Identity{
+		{Provider: "test", Authority: "https://other.example", Subject: "another"},
+		{Provider: "other", Authority: "https://hub.example", Subject: "another"},
+		{Provider: "test", Authority: "https://hub.example"},
+	} {
+		if err := s.admitExternal(t.Context(), httptest.NewRecorder(), id); err == nil {
+			t.Fatal("open admission accepted invalid or different-source identity")
+		}
+	}
+	if _, err := s.access.users.setStatus(alice.UserID, "disabled"); err != nil {
+		t.Fatal(err)
+	}
+	if w := hostedRequest(s, "/v1/access/session", nil, a, ""); w.Code != 401 && w.Code != 403 {
+		t.Fatal("disabled open-registration user retained access", w.Code)
+	}
+	if err := s.admitExternal(t.Context(), httptest.NewRecorder(), authn.Identity{Provider: "test", Authority: "https://hub.example", Subject: "previously-unlisted-a"}); err == nil {
+		t.Fatal("open admission reenabled a disabled user")
+	}
+	if w := hostedRequest(s, "/v1/access/session", nil, b, ""); w.Code != 200 {
+		t.Fatal("other owner lost session", w.Code)
+	}
+}
+
+func TestOpenCSGAdmissionMustBeExplicit(t *testing.T) {
+	for _, open := range []bool{false, true} {
+		_, err := (externalAuthConfig{Provider: "opencsg", AllowAllAuthenticated: open}).provider()
+		if (err == nil) != open {
+			t.Fatal("unexpected empty-list admission", open, err)
+		}
+	}
+}
+
 func (hostedProviderFixture) LoginURL(callback string) (string, error) {
 	return "https://login.example/sso/login?" + url.Values{"redirect_url": {callback}}.Encode(), nil
 }
@@ -33,9 +80,14 @@ func (hostedProviderFixture) Complete(_ context.Context, values url.Values) (aut
 
 func hostedFixture(t *testing.T, home string) *spaceServer {
 	t.Helper()
+	return hostedFixtureWithAdmission(t, home, externalAuthConfig{Provider: "fixture", AllowedSubjects: []string{"alice", "bob"}})
+}
+
+func hostedFixtureWithAdmission(t *testing.T, home string, admission externalAuthConfig) *spaceServer {
+	t.Helper()
 	c := freshAccessConfig(t, home)
 	c.Deployment.Mode = "multi-user"
-	c.Deployment.Authentication = externalAuthConfig{Provider: "fixture", AllowedSubjects: []string{"alice", "bob"}}
+	c.Deployment.Authentication = admission
 	c.Server.PublicBaseURL = "https://teamx.example"
 	c.Runtime = testTeamDefinition(t).Runtime
 	if err := prepareFirstAccess(c); err != nil {
@@ -225,6 +277,18 @@ func TestHostedUsersTwoOwnersTwoSpacesAndRevocation(t *testing.T) {
 	s.mu.Unlock()
 }
 
+func TestHostedLoginFormKeepsOriginAndCallbackOmitsReferrer(t *testing.T) {
+	s := hostedFixture(t, t.TempDir())
+	page := hostedRequest(s, "/access", nil, nil, "")
+	if page.Code != http.StatusOK || page.Header().Get("Referrer-Policy") != "same-origin" || !strings.Contains(page.Body.String(), `id="sso-login-form"`) {
+		t.Fatal("login document would strip form Origin", page.Code, page.Header())
+	}
+	callback := hostedRequest(s, externalCallbackPath+"?state=invalid", nil, nil, "")
+	if callback.Code != http.StatusSeeOther || callback.Header().Get("Referrer-Policy") != "no-referrer" || callback.Header().Get("Location") != "/access?sso=failed" {
+		t.Fatal("sensitive callback did not clear its URL without a referrer", callback.Code, callback.Header())
+	}
+}
+
 func TestHostedRegistrationRecoveryStableIdentityAndSessions(t *testing.T) {
 	home := t.TempDir()
 	s := hostedFixture(t, home)
@@ -245,7 +309,7 @@ func TestHostedRegistrationRecoveryStableIdentityAndSessions(t *testing.T) {
 		t.Fatal("restart reallocated identity")
 	}
 	// A reserved user survives interruption before publishing its default Space.
-	entry, err := restored.access.users.reserve(authn.Identity{Provider: "test", Authority: "https://hub.example", Subject: "bob"}, []string{"bob"})
+	entry, err := restored.access.users.reserve(authn.Identity{Provider: "test", Authority: "https://hub.example", Subject: "bob"}, externalAuthConfig{AllowedSubjects: []string{"bob"}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -382,7 +446,7 @@ func TestHostedUnknownIdentityCommitFencesUntilRestart(t *testing.T) {
 
 func TestHostedDisableRetainsUnsettledRuntime(t *testing.T) {
 	s := hostedFixture(t, t.TempDir())
-	entry, err := s.access.users.reserve(authn.Identity{Provider: "test", Authority: "https://hub.example", Subject: "alice"}, []string{"alice"})
+	entry, err := s.access.users.reserve(authn.Identity{Provider: "test", Authority: "https://hub.example", Subject: "alice"}, externalAuthConfig{AllowedSubjects: []string{"alice"}})
 	if err != nil {
 		t.Fatal(err)
 	}

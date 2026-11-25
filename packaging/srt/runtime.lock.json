@@ -1,0 +1,139 @@
+{
+  "schema_version": 1,
+  "target": "linux-amd64",
+  "profile": "standard",
+  "version": "0.0.83",
+  "npm_lock": "packaging/srt/package-lock.json",
+  "npm_lock_sha256": "96a2de952c50dd41fd0547ff05bef1bcce90fc46a16186745f7e8ecf23862cd5",
+  "system": {
+    "id": "ubuntu",
+    "version_id": "24.04",
+    "glibc": "glibc 2.39"
+  },
+  "host_tools": [
+    {
+      "package": "bubblewrap",
+      "version": "0.9.0-1build1",
+      "url": "https://mirrors.aliyun.com/ubuntu/pool/main/b/bubblewrap/bubblewrap_0.9.0-1build1_amd64.deb",
+      "archive": "bubblewrap_0.9.0-1build1_amd64.deb",
+      "sha256": "dde30d1f24da50446d647ed504ec8dc5a714f171974d054c70a589b48ba38b48",
+      "path": "/usr/bin/bwrap",
+      "binary_sha256": "3e33f8255e1411ada346db27028c25ef5ba4fa3327754a2321ea4c8732a3bc10",
+      "version_args": [
+        "--version"
+      ],
+      "version_contains": "bubblewrap 0.9.0",
+      "depends": "libc6 (>= 2.38), libcap2 (>= 1:2.10), libselinux1 (>= 3.1~)"
+    },
+    {
+      "package": "socat",
+      "version": "1.8.0.0-4build3",
+      "url": "https://mirrors.aliyun.com/ubuntu/pool/main/s/socat/socat_1.8.0.0-4build3_amd64.deb",
+      "archive": "socat_1.8.0.0-4build3_amd64.deb",
+      "sha256": "60d2dd3f66ffe387c96dc33369404724a18f0d47d2fa38353112a55efaec180d",
+      "path": "/usr/bin/socat",
+      "binary_sha256": "71f338e047078773e7e054e1d652cdb9b304e94f7b8c7b11f49d78db1568cd13",
+      "version_args": [
+        "-V"
+      ],
+      "version_contains": "version 1.8.0.0",
+      "depends": "libc6 (>= 2.38), libssl3t64 (>= 3.0.0), libwrap0 (>= 7.6-4~)"
+    },
+    {
+      "package": "ripgrep",
+      "version": "14.1.0-1",
+      "url": "https://mirrors.aliyun.com/ubuntu/pool/universe/r/rust-ripgrep/ripgrep_14.1.0-1_amd64.deb",
+      "archive": "ripgrep_14.1.0-1_amd64.deb",
+      "sha256": "c5ae63c7bee915b1cfc9f0bd07c55b4ce7f2bcd1133cba4da56719aac26101a4",
+      "path": "/usr/bin/rg",
+      "binary_sha256": "be2fbcdd985161603bfa268c7647eec670b9e94374f0e972da708d7de670a8fb",
+      "version_args": [
+        "--version"
+      ],
+      "version_contains": "ripgrep 14.1.0",
+      "depends": "libc6 (>= 2.34), libgcc-s1 (>= 4.2), libpcre2-8-0 (>= 10.22)"
+    }
+  ],
+  "host_libraries": [
+    "libc6",
+    "libstdc++6",
+    "libgcc-s1",
+    "libcap2",
+    "libselinux1",
+    "libpcre2-8-0",
+    "libssl3t64",
+    "libwrap0",
+    "ca-certificates"
+  ],
+  "kernel_requirements": [
+    "unprivileged user namespaces allowed for the service account",
+    "mount, pid, ipc and network namespaces",
+    "seccomp filter support",
+    "procfs",
+    "no-new-privileges and empty effective and bounding capabilities"
+  ],
+  "acceptance": "SRT runtime namespace check required on selected deployment; no fallback to native",
+  "additional_hosts": [
+    {
+      "system": {
+        "id": "ubuntu",
+        "version_id": "22.04",
+        "glibc": "glibc 2.35"
+      },
+      "host_tools": [
+        {
+          "package": "bubblewrap",
+          "version": "0.6.1-1ubuntu0.3",
+          "url": "https://mirrors.aliyun.com/ubuntu/pool/main/b/bubblewrap/bubblewrap_0.6.1-1ubuntu0.3_amd64.deb",
+          "archive": "bubblewrap_0.6.1-1ubuntu0.3_amd64.deb",
+          "sha256": "706763714e5d19fc7ab2572a6418506e3a4a5d5960e99309707b58117e6b40cb",
+          "path": "/usr/bin/bwrap",
+          "binary_sha256": "bf6cf3d4456665f5d80c14eb79a76e0ce87b39a0883e614a161658b4ec33492c",
+          "version_args": [
+            "--version"
+          ],
+          "version_contains": "bubblewrap 0.6.1",
+          "depends": "libc6 (>= 2.34), libcap2 (>= 1:2.10), libselinux1 (>= 3.1~)"
+        },
+        {
+          "package": "socat",
+          "version": "1.7.4.1-3ubuntu4",
+          "url": "https://mirrors.aliyun.com/ubuntu/pool/main/s/socat/socat_1.7.4.1-3ubuntu4_amd64.deb",
+          "archive": "socat_1.7.4.1-3ubuntu4_amd64.deb",
+          "sha256": "aec6c231f65564cb75c9c2e5c3ce0739482688f373f141471ecf9276fc03df67",
+          "path": "/usr/bin/socat",
+          "binary_sha256": "ac1a7165c0ade4dfdab602895cc56ff21d61f8443a80fb676946e4a624c52f68",
+          "version_args": [
+            "-V"
+          ],
+          "version_contains": "version 1.7.4.1",
+          "depends": "libc6 (>= 2.34), libssl3 (>= 3.0.0~~alpha1), libwrap0 (>= 7.6-4~)"
+        },
+        {
+          "package": "ripgrep",
+          "version": "13.0.0-2ubuntu0.1",
+          "url": "https://mirrors.aliyun.com/ubuntu/pool/universe/r/rust-ripgrep/ripgrep_13.0.0-2ubuntu0.1_amd64.deb",
+          "archive": "ripgrep_13.0.0-2ubuntu0.1_amd64.deb",
+          "sha256": "cd857d6b567e53cd929d2cab8fc99239e5807d37672ddc86e9a30a81d47ec1f3",
+          "path": "/usr/bin/rg",
+          "binary_sha256": "c7b19d09729dca815896b47ccf3f7beca13af202fcb20801034f197a2474ace2",
+          "version_args": [
+            "--version"
+          ],
+          "version_contains": "ripgrep 13.0.0",
+          "depends": "libc6 (>= 2.34), libgcc-s1 (>= 4.2)"
+        }
+      ],
+      "host_libraries": [
+        "libc6",
+        "libstdc++6",
+        "libgcc-s1",
+        "libcap2",
+        "libselinux1",
+        "libssl3",
+        "libwrap0",
+        "ca-certificates"
+      ]
+    }
+  ]
+}

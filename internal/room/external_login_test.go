@@ -2,6 +2,7 @@ package room
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"net/http"
 	"net/http/httptest"
@@ -13,6 +14,37 @@ import (
 
 	"github.com/go-aie/teamx/internal/authn"
 )
+
+func TestExternalLoginJSONNavigationRetainsBrowserBinding(t *testing.T) {
+	provider := &loginProviderStub{}
+	var admissions int
+	login, _ := newExternalLogin(provider, "https://teamx.example", func(context.Context, http.ResponseWriter, authn.Identity) error { admissions++; return nil })
+	r := httptest.NewRequest(http.MethodPost, "https://teamx.example"+externalLoginPath, nil)
+	r.Header.Set("Origin", "https://teamx.example")
+	r.Header.Set("Accept", "application/json")
+	w := httptest.NewRecorder()
+	login.ServeHTTP(w, r)
+	var body struct {
+		LoginURL string `json:"login_url"`
+	}
+	if w.Code != 200 || json.Unmarshal(w.Body.Bytes(), &body) != nil || w.Header().Get("Location") != "" || w.Header().Get("Cache-Control") != "no-store" {
+		t.Fatal("JSON login did not avoid a form redirect", w.Code)
+	}
+	u, err := url.Parse(body.LoginURL)
+	if err != nil || u.Host != "login.example" {
+		t.Fatal("incorrect login URL")
+	}
+	cookie := w.Result().Cookies()[0]
+	if !cookie.Secure || !cookie.HttpOnly {
+		t.Fatal("missing browser protection")
+	}
+	callback := u.Query().Get("redirect_url")
+	callbackLogin(login, callback, cookie)
+	callbackLogin(login, callback, cookie)
+	if admissions != 1 {
+		t.Fatal("JSON navigation changed one-use admission")
+	}
+}
 
 type loginProviderStub struct {
 	calls atomic.Int32

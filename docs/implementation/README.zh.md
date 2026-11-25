@@ -6,11 +6,13 @@
 
 | 记录 | 范围 |
 | --- | --- |
+| [空间部署与恢复验收](space-deployment.zh.md) | 本轮开发部署与实机预验收已收尾，alpha 留存人工验证；真实登录／模型首用、同模式升级及旧运行指纹通过；源码补包、备份容量、完整恢复及正式 S5a 出口保留 |
+| [Linux standard 的 SRT 打包与安装](srt-packaging.zh.md) | 空间 S5.0：固定 SRT 资源、宿主依赖、安装／升级与开发归档验证；首发冻结及 S5a／S5b 门槛保留 |
 | [空间归档、结清与恢复](spaces-archive-restore-s2b.zh.md) | 空间 S2b：原 owner 结清、超时保留、新运行对象恢复及独立后台运行 |
 | [平台工具与私有 CLI 上下文](platform-tools-admission.zh.md) | 空间 S3b.2a：工具准入、托管 Git 禁用与 Linux 飞书私有凭据上下文；真实飞书验收门槛保留 |
 | [独立 SRT 隔离检查](srt-independent-isolation.zh.md) | 空间 S3a.1：文件、网络与监督条件的独立实测；DSH 接入见执行记录 |
 | [SRT 与 DSH 隔离检查](srt-dsh-isolation.zh.md) | SRT 包装 DSH 的原始兼容性证据与边界 |
-| [OpenCSG SSO 与用户生命周期](opencsg-auth-preflight.zh.md) | 空间 S4a 代码及本地闭环：认证／持久登记、会话、owner 授权与本机 CLI 撤权结清；真实 SSO／Linux 组合验收及生产门槛仍保留 |
+| [OpenCSG SSO 与用户生命周期](opencsg-auth-preflight.zh.md) | S4a 代码及本地闭环；Linux 安装实例真实单账号登录／模型首用、显式开放认证后准入；真实多账号／远端撤权及正式门槛保留 |
 | [空间执行隔离路线验证](space-execution-isolation.zh.md) | 空间 S3a 历史探针：DSH／文件／Shell／CLI、UID／容器及取消恢复证据保留；每空间业务 worker 路线已被替代，下一步 S3a.1 验证 SRT |
 | [空间与执行资源准入](space-resource-admission.zh.md) | 空间 S3b 部分实现：共享核心中的空间／占有 Session 额度及结清释放保留；SRT 接入、工具链／硬资源与组合验收仍未完成 |
 | [Agent 执行环境接入与恢复](agent-execution.zh.md) | 空间 S3b.1 完成：原生／SRT 执行合同、非 root 真实 DSH 的 MCP／CLI 回调、取消／故障／重启恢复／轮换及资源结清；多用户仍关闭 |

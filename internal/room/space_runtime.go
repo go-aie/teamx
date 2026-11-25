@@ -14,6 +14,7 @@ import (
 
 	"github.com/go-aie/teamx/agent"
 	"github.com/go-aie/teamx/internal/agent/dsh"
+	"github.com/go-aie/teamx/internal/agent/srt"
 )
 
 // SpaceRuntime owns one registered business root. It delegates settlement to
@@ -99,6 +100,16 @@ func newSpaceRuntime(startup startupConfig, config serviceConfig, factories spac
 	startup.Server.TrustedProxies = nil
 	startup.installationID = ""
 	r := &SpaceRuntime{SpaceContext: access.space, roots: roots, startup: startup, config: config, defaults: startup.Runtime, factories: factories}
+	if config.execution != nil {
+		retained, err := retainedSpaceExecutionConfig(access.authority().config, startup)
+		if err != nil {
+			return nil, err
+		}
+		if retained != nil {
+			r.config.execution = srt.New(*retained)
+			r.config.cliPath = filepath.Join(filepath.Dir(startup.Runtime.DSH.BinaryPath), "teamx")
+		}
+	}
 	if scoped, ok := r.config.execution.(interface {
 		ForSpace(string, string) agent.ExecutionFactory
 	}); ok {
