@@ -41,6 +41,10 @@ pnpm --filter @deepseek-ai/dsh deploy --legacy --prod \
 
 省略 `artifact` 时，TeamX 用相同启动入口执行 `--version` 自动读取安装版本，并从 ACP `initialize.agentInfo` 读取运行时身份。当前 DSH 的 ACP 版本属于适配层，与 CLI 安装版本不同，因此两者分别核对。这些信息与可执行文件摘要、启动参数及配置一起记录在私有 Session 的 `backend.json`。恢复时先核对本地配置和正常关闭证据，再于发送 `session/resume` 前核对安装版本及 ACP 运行时身份；不匹配即停止，不自动新建或重放。显式 `artifact` 标注仍可用于固定构建，由调用方保证实际产物匹配，TeamX 继续核对标注、可执行文件摘要及 ACP 身份。DSH 安装和角色继续沿用既有归属；模型通过集中列表在线应用，当前执行结束后才切换 Backend，Session 保留自己的实际快照。
 
+Linux SRT 部署在服务启动时完整校验共享依赖并验证宿主沙箱能力，同一服务进程中的空间和 Agent 复用结果；升级后保留的旧运行时在首次空间激活前分别验证一次。运行时文件、目录及其父目录必须对服务账号不可写且不由该账号拥有，以防通过修改权限或替换目录绕过已验证内容。发布程序、宿主辅助程序及系统库的更新应停服进行，重启后重新校验。
+
+已配置的 DSH 启动入口会在服务启动时预先查询 CLI 版本；旧运行时在空间激活时查询。仅位于已验证依赖中的启动入口复用成功的版本结果，失败及未结清的查询不缓存。每个 Session 仍独立初始化沙箱、完成 ACP 握手，并检查空间身份、目录、端点及恢复兼容性；原生 DSH 保持原有检查方式。
+
 `deepseek-messages` 使用 DSH 的 DeepSeek Messages 适配；`openai-completions` 需要模型基础地址。模型选择核对 ACP 实际提供的配置及回执，不静默换模型。API 和字段定义见 [options.go](../internal/agent/dsh/options.go)，用户配置统一参照[团队模板](../.teamx/teams/README.md)。
 
 兼容网关拒绝 `developer` 消息角色时，在模型表单的「高级设置 → 接口兼容性」选择「不支持 developer（使用 system）」。三态分别为适配器默认、显式 false、显式 true，仅适用于 `openai-completions`。它独立于推理强度，不关闭推理，也不清除 DeepSeek 的 `thinkingFormat`。验证使用所选值，通过后相关成员在当前回合结束后切换；不直接修改旧 Session 的配置或指纹。

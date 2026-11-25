@@ -8,6 +8,8 @@ import (
 	"runtime"
 	"strings"
 
+	"github.com/go-aie/teamx/agent"
+	"github.com/go-aie/teamx/internal/agent/dsh"
 	"github.com/go-aie/teamx/internal/agent/srt"
 )
 
@@ -81,10 +83,25 @@ func selectAgentExecution(ctx context.Context, c *startupConfig, plannedEndpoint
 			}
 		}
 		c.execution = selected
+		if c.Runtime != nil {
+			// Inspect the installed launcher before opening business listeners.
+			// This uses no model credential and warms the shared version result.
+			binding := agent.ExecutionBinding{UserID: "deployment", SpaceID: "runtime-inspection", Probe: true}
+			if err := inspectExecutionLauncher(ctx, selected.ForSpace(binding.UserID, binding.SpaceID), binding, c.Runtime); err != nil {
+				c.execution = nil
+				return err
+			}
+		}
 		return nil
 	default:
 		return errors.New("unsupported Agent execution implementation")
 	}
+}
+
+func inspectExecutionLauncher(ctx context.Context, execution agent.ExecutionFactory, binding agent.ExecutionBinding, launcher *teamRuntime) error {
+	_, err := inspectSelectedRuntime(ctx, dsh.Options{Execution: execution, ExecutionBinding: binding,
+		BinaryPath: launcher.DSH.BinaryPath, BinaryArgs: launcher.DSH.BinaryArgs, Artifact: launcher.DSH.Artifact})
+	return err
 }
 
 func multiUserDevelopmentBuild(version string) bool {

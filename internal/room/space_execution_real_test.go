@@ -43,6 +43,10 @@ func TestInstalledSpaceExecutionRetainsModelRuntime(t *testing.T) {
 		if retained == nil {
 			continue
 		}
+		factory := srt.New(*retained)
+		if err := factory.Check(t.Context()); err != nil {
+			t.Fatal("retained execution prerequisites", err)
+		}
 		paths, err := filepath.Glob(filepath.Join(record.Roots.Data, "rooms/*/agents/*/session.json*.model.json"))
 		if err != nil {
 			t.Fatal(err)
@@ -56,7 +60,7 @@ func TestInstalledSpaceExecutionRetainsModelRuntime(t *testing.T) {
 				continue
 			}
 			ctx, cancel := context.WithTimeout(t.Context(), 40*time.Second)
-			actual, err := dsh.InspectRuntime(ctx, dsh.Options{BinaryPath: frozen.Profile.BinaryPath, BinaryArgs: frozen.Profile.BinaryArgs, Execution: srt.New(*retained).ForSpace(record.OwnerUserID, record.ID), ExecutionBinding: agent.ExecutionBinding{UserID: record.OwnerUserID, SpaceID: record.ID}})
+			actual, err := dsh.InspectRuntime(ctx, dsh.Options{BinaryPath: frozen.Profile.BinaryPath, BinaryArgs: frozen.Profile.BinaryArgs, Execution: factory.ForSpace(record.OwnerUserID, record.ID), ExecutionBinding: agent.ExecutionBinding{UserID: record.OwnerUserID, SpaceID: record.ID}})
 			cancel()
 			if err != nil {
 				t.Fatal("retained runtime could not start", err)

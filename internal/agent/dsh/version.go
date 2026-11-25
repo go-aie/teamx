@@ -15,6 +15,24 @@ import (
 // ACP may advertise the adapter version. Version queries use the same
 // execution selection and ownership contract as ACP, including partial starts.
 func queryVersion(ctx context.Context, opts Options) (string, agent.Execution, error) {
+	// Only an execution factory that verified immutable deployment files may
+	// reuse a version. Native and other factories retain the original query path.
+	if cache, ok := selectedExecution(opts).(interface {
+		RuntimeVersion(context.Context, agent.ExecutionRequest, func(context.Context) (string, error)) (string, error)
+	}); ok {
+		var owned agent.Execution
+		version, err := cache.RuntimeVersion(ctx, executionRequest(opts, opts.BinaryArgs), func(ctx context.Context) (string, error) {
+			var version string
+			var err error
+			version, owned, err = queryUncachedVersion(ctx, opts)
+			return version, err
+		})
+		return version, owned, err
+	}
+	return queryUncachedVersion(ctx, opts)
+}
+
+func queryUncachedVersion(ctx context.Context, opts Options) (string, agent.Execution, error) {
 	ctx, cancel := context.WithTimeout(ctx, opts.Limits.HandshakeTimeout)
 	defer cancel()
 	args := append(append([]string(nil), opts.BinaryArgs...), "--version")

@@ -54,8 +54,8 @@ func retainedSpaceExecutionConfig(deployment, space startupConfig) (*srt.Config,
 		!slices.Equal(retained.Endpoints, current.Endpoints) || !slices.Equal(retained.PrivateRoots, current.PrivateRoots) {
 		return nil, errors.New("retained execution descriptor differs from deployment authority")
 	}
-	// Start/Identify still verify every original artifact digest and the exact
-	// supervisor before execution; an unavailable old runtime never falls back.
+	// The deployment factory verifies and retains this configuration before
+	// Space activation; an unavailable old runtime never falls back.
 	protectSRTDeploymentRoots(&retained, deployment)
 	return &retained, nil
 }

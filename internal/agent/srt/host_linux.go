@@ -33,6 +33,21 @@ func multipleLinks(info os.FileInfo) bool {
 	return !ok || stat.Nlink > 1
 }
 
+func checkProtectedPath(path string, info os.FileInfo) error {
+	stat, ok := info.Sys().(*syscall.Stat_t)
+	if !ok || int(stat.Uid) == os.Geteuid() {
+		return errors.New("SRT runtime and its ancestors must not be owned by the service account")
+	}
+	err := syscall.Access(path, 2) // W_OK includes group and POSIX ACL grants.
+	if err == nil {
+		return errors.New("SRT runtime and its ancestors must not be writable by the service account")
+	}
+	if !errors.Is(err, syscall.EACCES) && !errors.Is(err, syscall.EROFS) {
+		return err
+	}
+	return nil
+}
+
 func checkWorkspaceMounts(workspace string) error {
 	data, err := os.ReadFile("/proc/self/mountinfo")
 	if err != nil {

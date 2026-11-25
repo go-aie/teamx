@@ -56,6 +56,8 @@ type Factory struct {
 	native      agent.ExecutionFactory
 	user, space string
 	leases      *leases
+	verified    *verifiedRuntime
+	runtimes    *runtimeSet
 }
 type leases struct {
 	sync.Mutex
@@ -86,7 +88,9 @@ func New(c Config) *Factory {
 	c.ReadOnly = slices.Clone(c.ReadOnly)
 	c.Endpoints = slices.Clone(c.Endpoints)
 	c.PrivateRoots = slices.Clone(c.PrivateRoots)
-	return &Factory{config: c, native: dsh.NativeExecution(), leases: &leases{active: map[string]bool{}}}
+	f := &Factory{config: c, native: dsh.NativeExecution(), leases: &leases{active: map[string]bool{}}, verified: newVerifiedRuntime(), runtimes: &runtimeSet{factories: map[string]*Factory{}}}
+	f.runtimes.factories[configKey(c)] = f
+	return f
 }
 
 func (f *Factory) ForSpace(user, space string) agent.ExecutionFactory {
@@ -99,7 +103,17 @@ func (f *Factory) Check(ctx context.Context) error {
 	if err := hostCheck(); err != nil {
 		return err
 	}
-	if _, err := f.runtimeIdentity(); err != nil {
+	return f.verified.check(ctx, func() (agent.ExecutionIdentity, error) {
+		id, err := f.verifyRuntime()
+		if err != nil {
+			return id, err
+		}
+		return id, f.checkHost(ctx)
+	})
+}
+
+func (f *Factory) checkHost(ctx context.Context) error {
+	if err := hostCheck(); err != nil {
 		return err
 	}
 	if len(f.config.Endpoints) == 0 {
@@ -190,7 +204,7 @@ func (f *Factory) Start(ctx context.Context, r agent.ExecutionRequest, failed fu
 	if err := hostCheck(); err != nil {
 		return nil, err
 	}
-	if _, err := f.Identify(r); err != nil {
+	if _, err := f.runtimeIdentity(); err != nil {
 		return nil, err
 	}
 	key := r.StateDir
@@ -236,7 +250,7 @@ func (e *execution) Stop(grace time.Duration) {
 	e.once.Do(e.release)
 }
 
-func (f *Factory) runtimeIdentity() (agent.ExecutionIdentity, error) {
+func (f *Factory) verifyRuntime() (agent.ExecutionIdentity, error) {
 	id := agent.ExecutionIdentity{Kind: "srt", Version: Version}
 	if runtime.GOOS != "linux" {
 		return id, errors.New("SRT execution requires Linux")
@@ -250,8 +264,11 @@ func (f *Factory) runtimeIdentity() (agent.ExecutionIdentity, error) {
 		if !filepath.IsAbs(a.Path) || filepath.Clean(a.Path) == "/" || len(a.SHA256) != 64 {
 			return id, errors.New("SRT requires absolute pinned dependency paths")
 		}
-		hash, err := DigestPath(a.Path)
-		if err != nil || hash != a.SHA256 {
+		hash, err := protectedDigest(a.Path)
+		if err != nil {
+			return id, fmt.Errorf("SRT dependency %s: %w", a.Path, err)
+		}
+		if hash != a.SHA256 {
 			return id, errors.New("SRT installed dependency digest mismatch")
 		}
 	}
@@ -276,11 +293,20 @@ func digest(data []byte) string { sum := sha256.Sum256(data); return hex.EncodeT
 
 // DigestPath is also used by deployment preparation; it never installs files.
 func DigestPath(root string) (string, error) {
+	return digestPath(root, nil)
+}
+
+func digestPath(root string, check func(string, os.FileInfo) error) (string, error) {
 	info, err := os.Lstat(root)
 	if err != nil {
 		return "", err
 	}
 	if info.Mode().IsRegular() {
+		if check != nil {
+			if err := check(root, info); err != nil {
+				return "", err
+			}
+		}
 		file, err := os.Open(root)
 		if err != nil {
 			return "", err
@@ -305,6 +331,11 @@ func DigestPath(root string) (string, error) {
 		info, err := entry.Info()
 		if err != nil {
 			return err
+		}
+		if check != nil {
+			if err := check(path, info); err != nil {
+				return err
+			}
 		}
 		fmt.Fprintf(hash, "%s\x00%d\x00%d\x00", rel, info.Mode(), info.Size())
 		switch {

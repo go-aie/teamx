@@ -106,7 +106,19 @@ func newSpaceRuntime(startup startupConfig, config serviceConfig, factories spac
 			return nil, err
 		}
 		if retained != nil {
-			r.config.execution = srt.New(*retained)
+			selected, ok := config.execution.(*srt.Factory)
+			if !ok {
+				return nil, errors.New("retained execution requires the deployment SRT factory")
+			}
+			retainedFactory, err := selected.WithConfig(context.Background(), *retained)
+			if err != nil {
+				return nil, err
+			}
+			binding := agent.ExecutionBinding{UserID: r.OwnerUserID, SpaceID: r.SpaceID, Probe: true}
+			if err := inspectExecutionLauncher(context.Background(), retainedFactory.ForSpace(r.OwnerUserID, r.SpaceID), binding, startup.Runtime); err != nil {
+				return nil, err
+			}
+			r.config.execution = retainedFactory
 			r.config.cliPath = filepath.Join(filepath.Dir(startup.Runtime.DSH.BinaryPath), "teamx")
 		}
 	}
