@@ -97,6 +97,14 @@ a {
 [hidden] {
   display:none!important;
 }
+.workspace[aria-busy="true"] { visibility:hidden; opacity:0; }
+.app-loading {
+  position:fixed; inset:0; z-index:100;
+  display:flex; flex-direction:column; align-items:center; justify-content:center;
+  gap:16px; padding:24px; background:var(--canvas); text-align:center;
+}
+.app-loading .brand { color:var(--accent); }
+.app-loading p { margin:0; color:var(--muted); line-height:1.6; }
 .quiet {
   font-size:var(--font-small);
   color:var(--muted);

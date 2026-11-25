@@ -214,10 +214,23 @@ func (u *hostedUsers) reserve(identity authn.Identity, admission externalAuthCon
 	if u.saved.Source != ([2]string{}) && u.saved.Source != source {
 		return externalUser{}, ErrIdentity
 	}
-	for _, entry := range u.saved.Users {
+	for i, entry := range u.saved.Users {
 		if externalIdentityKey(entry.Identity) == externalIdentityKey(identity) {
 			if entry.Status != "active" {
 				return externalUser{}, ErrIdentity
+			}
+			if entry.Identity.DisplayName != identity.DisplayName {
+				entry.Identity.DisplayName = identity.DisplayName
+				next := u.saved
+				next.Users = slices.Clone(next.Users)
+				next.Users[i] = entry
+				if err := u.writer.save(filepath.Join(u.home, "users.json"), next, maxPrivateFileBytes); err != nil {
+					if errors.Is(err, ErrCommitUnknown) {
+						u.failed = true
+					}
+					return externalUser{}, err
+				}
+				u.saved = next
 			}
 			return entry, nil
 		}

@@ -24,6 +24,61 @@ function roomFixture() {
   return api;
 }
 
+test("first entry reveals the verified conversation without waiting for auxiliary configuration", async () => {
+  const api = roomFixture(); api.members.splice(1);
+  for (const room of api.rooms) { room.is_direct = true; room.name = "个人助理"; }
+  const settings = deferred(), catalog = deferred(), members = deferred(), messages = deferred(), platforms = deferred();
+  const config = await api.request("/v1/ui"), directory = await api.request("/v1/rooms");
+  api.roomHook = path => path === "/v1/ui" ? settings.promise : path === "/v1/rooms" ? catalog.promise
+    : path === "/v1/member/list" ? members.promise : path === "/v1/read" ? messages.promise
+    : path.startsWith("/v1/platforms?") ? platforms.promise : undefined;
+  let ui;
+  const starting = launch(api, new Map(), {beforeStart:view=>{ ui = view; }});
+  const pending = () => {
+    assert.equal(ui.el("workspace").getAttribute("aria-busy"), "true");
+    assert.equal(ui.el("workspace").inert, true);
+    assert.equal(ui.el("app-loading").hidden, false);
+    assert.equal(count(api, "/v1/human-read/confirm"), 0);
+  };
+  await settle(); pending();
+  settings.resolve(config); await settle(); pending();
+  catalog.resolve(directory); await settle(); pending();
+  messages.resolve({messages:[],snapshot_seq:0,cleared_through:0,has_more:false}); await settle(); pending();
+  members.resolve({members:structuredClone(api.members)}); await settle();
+  assert.equal(ui.el("app-loading").hidden, true);
+  assert.equal(ui.el("workspace").inert, false);
+  assert.notEqual(ui.el("workspace").getAttribute("aria-busy"), "true");
+  assert.equal(ui.el("room-details").hidden, true);
+  assert.equal(ui.el("activity-dialog").open, true);
+  assert.equal(ui.el("empty").querySelector("h2").textContent, "与个人助理聊聊");
+  platforms.resolve({platforms:structuredClone(api.platforms)}); await starting;
+});
+
+test("a verified empty catalog leaves the loading state and permits creating a conversation", async () => {
+  const api = roomFixture(); api.rooms = [];
+  const ui = await launch(api);
+  assert.equal(ui.el("app-loading").hidden, true);
+  assert.equal(ui.el("workspace").inert, false);
+  assert.equal(ui.el("rooms-empty").hidden, false);
+  assert.equal(ui.el("new-room").disabled, false);
+});
+
+test("a failed initial read keeps the placeholder and supports an explicit read-only retry", async () => {
+  const api = roomFixture(); let fail = true, view;
+  api.roomHook = path => { if (fail && path === "/v1/ui") throw Error("offline"); };
+  await assert.rejects(launch(api, new Map(), {beforeStart:ui=>{ view = ui; }}), /暂时无法同步/);
+  assert.equal(view.el("workspace").inert, true);
+  assert.equal(view.el("app-loading").hidden, false);
+  assert.equal(view.el("app-loading-retry").hidden, false);
+  assert.match(view.el("app-loading-status").textContent, /暂时无法加载会话/);
+  fail = false;
+  await view.el("app-loading-retry").emit("click"); await settle();
+  assert.equal(view.el("app-loading").hidden, true);
+  assert.equal(view.el("workspace").inert, false);
+  assert.equal(count(api, "/v1/send"), 0);
+  assert.equal(count(api, "/v1/member/run"), 0);
+});
+
 test("Room entry subscribes first, reconciles once, and reuses unchanged global resources", async () => {
   const api = roomFixture(), ui = await launch(api);
   await ui.draft("Draft R"); api.calls.length = 0; api.deferUpdateHello = true;

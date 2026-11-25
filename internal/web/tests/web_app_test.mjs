@@ -185,6 +185,20 @@ test("message authors and references use the operator display name without chang
   assert.equal(ownMessage.author.id, owner);
 });
 
+test("account usernames appear in desktop and mobile profiles while requests keep the owner ID", async () => {
+  for (const [id, username] of [["a", "opencsg-alice"], ["b", "opencsg-bob"]]) {
+    const api = server([makeRoom("A")]), owner = "owner_" + id.repeat(32);
+    api.catalog.operator = owner;
+    api.hook = path => path === "/v1/ui" ? {managed:true,operator_display_name:username} : undefined;
+    const ui = await launch(api);
+    assert.equal(ui.el("user-name").textContent, username);
+    assert.equal(ui.el("mobile-profile-name").textContent, username);
+    assert.equal(ui.el("user-display-name").placeholder, username);
+    await ui.draft("测试当前账号"); await ui.el("compose").emit("submit");
+    assert.deepEqual(api.calls.find(call=>call.path==="/v1/send").data.caller, {kind:"human",id:owner});
+  }
+});
+
 test("browser display name edits update cached message authors and references and survive reload", async () => {
   const api = server([makeRoom("A")]), owner = "owner_" + "b".repeat(32), names = new Map();
   const localStorage = {getItem:key=>names.get(key),setItem:(key,value)=>names.set(key,value),removeItem:key=>names.delete(key)};

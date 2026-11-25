@@ -12,17 +12,16 @@ async function poll() {
       if (!active) return;
       if (["ready", "setup_required", "migration_required"].includes(space?.runtime_state)) { location.reload(); return; }
       if (space?.status === "suspended") {
-        document.querySelector("h1").textContent = "空间已归档";
-        document.getElementById("space-status").textContent = "此空间的后台任务已停止，会话与工作文件已保留。可在空间设置中恢复，或切换其他空间。";
-        if (document.getElementById("space-lifecycle-action")?.dataset.action !== "restore") location.reload();
+        document.querySelector("h1").textContent = "会话暂不可用";
+        document.getElementById("space-status").textContent = "后台任务已停止，会话与工作文件已保留。请联系部署管理员恢复后重试。";
         return;
       }
       if (space?.status === "archiving") {
-        document.querySelector("h1").textContent = "正在归档空间";
-        document.getElementById("space-status").textContent = space.lifecycle_error || "正在停止此空间并等待已受理操作结清，其他空间可继续使用。";
-        if (!space.lifecycle_busy) { if (document.getElementById("space-lifecycle-action")?.disabled) location.reload(); return; }
+        document.querySelector("h1").textContent = "正在停止后台任务";
+        document.getElementById("space-status").textContent = space.lifecycle_error || "正在等待已受理操作完成，请稍候。";
+        if (!space.lifecycle_busy) return;
       }
-      if (space?.runtime_state === "failed") { document.getElementById("space-status").textContent = "此空间启动失败。可以切换其他空间；请在部署机核对配置并重启后重试。"; return; }
+      if (space?.runtime_state === "failed") { document.getElementById("space-status").textContent = "启动失败，请在部署机核对配置并重启后重试。"; return; }
     }
   } catch { /* The same Space remains selected during a service restart. */ }
   if (active) setTimeout(poll, 750);

@@ -170,6 +170,7 @@ export async function launch(api, saved = new Map(), environment = {}) {
     },
   };
   Object.defineProperties(appEnvironment, Object.getOwnPropertyDescriptors(environment));
+  environment.beforeStart?.({el:id=>elements.get(id),document,window,clock,sources});
   const entrypoint = await createApp(appEnvironment);
   await settle();
   const notificationToggle = () => {

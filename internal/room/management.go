@@ -741,7 +741,7 @@ func (m *roomManager) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			OperatorDisplayName string `json:"operator_display_name"`
 			settingsView
 			Storage *storagePaths `json:"storage,omitempty"`
-		}{true, requestSpaceID(r), requestInstallationID(r), m.epoch, humanOperator(), m.settings.snapshot().settingsView, m.settings.storagePaths(m.store.dir)})
+		}{true, requestSpaceID(r), requestInstallationID(r), m.epoch, requestOperatorDisplayName(r), m.settings.snapshot().settingsView, m.settings.storagePaths(m.store.dir)})
 		return
 	}
 	if r.URL.Path == "/v1/settings" || r.URL.Path == "/v1/settings/save" {

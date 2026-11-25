@@ -58,6 +58,7 @@ func (m *roomManager) serveRoomsCatalog(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	view := m.catalog.Load()
+	displayName := requestOperatorDisplayName(r)
 	rooms := make([]roomRuntimeSummary, 0, len(view.rooms))
 	for _, base := range view.rooms {
 		summary := base
@@ -68,7 +69,7 @@ func (m *roomManager) serveRoomsCatalog(w http.ResponseWriter, r *http.Request) 
 		}
 		// Both files are committed snapshots. No Room/Store/manager gate is
 		// acquired, and receipts are projected for this request's operator only.
-		snapshot, snapshotErr, reading := readHumanReadCatalog(dir, base.RoomIdentity, requestOperator(r), humanOperator())
+		snapshot, snapshotErr, reading := readHumanReadCatalog(dir, base.RoomIdentity, requestOperator(r), displayName)
 		summary.HumanRead = reading
 		if snapshotErr != nil {
 			summary.SummaryStatus, summary.SummaryError = "unavailable", snapshotErr.Error()

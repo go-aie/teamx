@@ -133,7 +133,7 @@ async function showSession() {
     if (generation !== setupRead) return;
     if (error.status !== 401 && requestID) { showSetupProgress("unknown"); void poll(); return; }
     document.title = "TeamX · 登录";
-    const entering = $("login").hidden;
+    const entering = $("login").hidden || $("login-form").hidden;
     $("login").hidden=false; $("logout").hidden=true; $("model").hidden=true; $("api-key").value="";
     try {
       const method=await request("/v1/access/method");
@@ -146,6 +146,8 @@ async function showSession() {
         return;
       }
     } catch { /* Retain the existing token flow on older personal servers. */ }
+    if (generation !== setupRead) return;
+    $("sso-login-form").hidden=true; $("login-form").hidden=false;
     if (entering || !document.activeElement || document.activeElement === document.body) $("token").focus({preventScroll:true});
     return;
   }

@@ -72,6 +72,22 @@ export async function createApp(overrides = {}) {
   const userMenuUI = {};
 
   const $ = (id) => document.getElementById(id);
+  let initialViewPending = true;
+  $("workspace").setAttribute("aria-busy", "true");
+  $("workspace").inert = true;
+  function finishInitialView() {
+    if (!initialViewPending) return;
+    initialViewPending = false;
+    $("workspace").removeAttribute("aria-busy");
+    $("workspace").inert = false;
+    $("app-loading").hidden = true;
+    conversationUI.conversationVisibilityChanged();
+  }
+  function initialViewFailed() {
+    if (!initialViewPending) return;
+    $("app-loading-status").textContent = "暂时无法加载会话，请检查网络后重试。";
+    $("app-loading-retry").hidden = false;
+  }
   const dateTimeUI = createDateTimePicker({env});
   const confirmAction = env.confirmAction || createConfirmation(document);
 
@@ -395,21 +411,23 @@ export async function createApp(overrides = {}) {
           $("connection").textContent = workspaceUI.workspaceView?.data?.directory_error
             ? "工作目录不可用 · 可查看历史并修复目录" : "Workspace 设置待完成 · 可查看历史";
           membersUI.activity.close(); $("activity-dialog").close(); membersUI.renderMembers();
+          round.viewReady = true;
           return;
         }
         if (catalog.busy || room?.busy) {
-          state.connected = false; viewVersion++;
+          state.connected = false; version = ++viewVersion;
           membersUI.activity.close(); $("activity-dialog").close();
           $("connection").textContent = "会话操作进行中";
-          membersUI.renderMembers(); return;
+          membersUI.renderMembers(); round.viewReady = true; return;
         }
         if (!room?.service) {
           syncFailureSince = null;
           selectView(null, catalog.operator);
+          version = viewVersion;
           $("room-name").textContent = room?.name || "选择或新建会话";
           document.title = `${$("room-name").textContent} · TeamX`;
           $("connection").textContent = room ? (room.runtime_error ? `运行受阻 · ${room.runtime_error}` : `点击${roomsUI.conversationType(room)}打开`) : "已连接 · 尚未选择会话";
-          notice("sync-error", ""); return;
+          notice("sync-error", ""); round.viewReady = true; return;
         }
         await syncChat(config);
       } else {
@@ -417,6 +435,7 @@ export async function createApp(overrides = {}) {
         version = viewVersion;
         await syncChat(config);
       }
+      round.viewReady = state.messagesReady && state.membersReady;
     } catch (error) {
       if (!currentView(version)) return;
       syncFailureSince ??= env.performance.now();
@@ -432,7 +451,11 @@ export async function createApp(overrides = {}) {
       $("connection").classList.add("offline");
       notice("sync-error", message);
       $("members").dataset.signature = ""; membersUI.renderMembers();
-    } finally { userMenuUI.render(); conversationUI.composerState(); roomsUI.renderCreateSelection(); roomsUI.renderRooms(); }
+      initialViewFailed();
+    } finally {
+      userMenuUI.render(); conversationUI.composerState(); roomsUI.renderCreateSelection(); roomsUI.renderRooms();
+      if (currentView(version) && round.viewReady) finishInitialView();
+    }
   }
 
   async function syncChat(config) {
@@ -626,6 +649,7 @@ export async function createApp(overrides = {}) {
     if (topic === "members") state.membersReady = false;
     if (error.code === "identity" && ["settings", "catalog", "workspace", "members", "messages"].includes(topic)) updateConnection?.reconnect();
     if (["settings", "catalog", "workspace", "members", "messages"].includes(topic)) {
+      initialViewFailed();
       syncFailureSince ??= env.performance.now();
       if (error.code === "busy" && env.performance.now() - syncFailureSince < 4500) return;
       if (["settings", "catalog"].includes(topic)) state.catalogConnected = false;
@@ -678,6 +702,7 @@ export async function createApp(overrides = {}) {
       state.connected = true; $("connection").textContent = "服务已连接"; $("connection").classList.remove("offline");
       conversationUI.composerState();
       membersUI.syncDirectDetail();
+      finishInitialView();
     }
     return result;
   }, () => active() && chatReadable());
@@ -776,6 +801,11 @@ export async function createApp(overrides = {}) {
   userMenuUI.mount();
 
   roomsUI.restoreManagement();
+  $("app-loading-retry").addEventListener("click", () => {
+    $("app-loading-status").textContent = "正在加载会话…";
+    $("app-loading-retry").hidden = true;
+    void refresh({ background:true });
+  });
 
   await refresh();
   updateConnection = createUpdateConnection({ env, identity: streamIdentity, reconcile: reconcileStream, invalidate,

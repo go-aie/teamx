@@ -23,6 +23,8 @@ export function spaceStorage(storage) {
   };
 }
 
+// Keep Space context active while its management UI is not yet exposed.
+const SPACE_MANAGEMENT_UI_ENABLED = false;
 let picker, capabilities = {};
 export function spaceCapabilities() { return capabilities; }
 export async function mountSpacePicker() {
@@ -30,11 +32,17 @@ export async function mountSpacePicker() {
   let result;
   try { const response = await fetch("/v1/spaces", {cache:"no-store", signal:globalThis.AbortSignal?.timeout?.(5000)}); if (!response.ok) return; result = await response.json(); } catch { return; }
   defaultSpaceID = result.default_space_id || "";
-  if (result.can_create !== true || !result.spaces?.length || picker) return;
   const id = pageSpaceID || result.default_space_id;
-  const current = result.spaces.find(space => space.id === id);
+  const current = result.spaces?.find(space => space.id === id);
   if (!current) return;
   capabilities = current.capabilities || {};
+  for (const brand of document.querySelectorAll('a.brand[href="/"]')) brand.href = spaceURL("/");
+  // Effective capability declarations come from the server, including builds
+  // whose available platform catalog differs from the standard distribution.
+  if (capabilities.computer === false) {
+    const tab = document.getElementById("settings-tab-computer"); if (tab) { tab.disabled = true; tab.title = "当前会话不支持电脑"; }
+  }
+  if (!SPACE_MANAGEMENT_UI_ENABLED || result.can_create !== true || picker) return;
   picker = document.createElement("div"); picker.className = "space-picker";
   const select = document.createElement("select"); select.id = "space-select"; select.setAttribute("aria-label", "切换空间");
   for (const space of result.spaces) select.add(new Option(space.name + ({suspended:" · 已归档", archiving:" · 归档中", failed:" · 启动失败"}[space.runtime_state] || ""), space.id));
@@ -105,10 +113,4 @@ export async function mountSpacePicker() {
       rename.disabled = create.disabled = lifecycle.disabled = false;
     }
   });
-  for (const brand of document.querySelectorAll('a.brand[href="/"]')) brand.href = spaceURL("/");
-  // Effective capability declarations come from the server, including builds
-  // whose available platform catalog differs from the standard distribution.
-  if (current.capabilities?.computer === false) {
-    const tab = document.getElementById("settings-tab-computer"); if (tab) { tab.disabled = true; tab.title = "电脑目前仅在默认空间可用"; }
-  }
 }

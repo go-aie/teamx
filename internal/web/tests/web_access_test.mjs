@@ -22,11 +22,31 @@ test("password-manager fields cannot fall back to putting credentials in the URL
 test("login focuses the password field and preserves focus when returning to the page",async()=>{
   const ui=await launch(async()=>({status:401,data:{}}));
   assert.equal(ui.el("token").focused,true);
-  assert.match(html,/<input id="token"[^>]*autofocus/);
+  assert.doesNotMatch(html,/<input id="token"[^>]*autofocus/);
   const focused = ui.el("token").focusCount;
   ui.el("toggle-token").focus();
   await ui.foreground();
   assert.equal(ui.el("token").focusCount,focused);
+});
+
+test("login waits for the session and method before showing or focusing either form",async()=>{
+  for (const provider of ["token","opencsg"]) {
+    let sessionReply,methodReply;
+    const ui=await launch(async path=>{
+      if(path==="/v1/access/session")return new Promise(resolve=>{sessionReply=resolve;});
+      if(path==="/v1/access/method")return new Promise(resolve=>{methodReply=resolve;});
+      throw Error(path);
+    });
+    for(const id of ["login-form","sso-login-form"]) assert.equal(ui.el(id).hidden,true);
+    assert.equal(ui.el("token").focusCount,undefined);
+    sessionReply({status:401,data:{}});await settle();
+    for(const id of ["login-form","sso-login-form"]) assert.equal(ui.el(id).hidden,true);
+    assert.equal(ui.el("token").focusCount,undefined);
+    methodReply({status:200,data:{provider}});await settle();
+    assert.equal(ui.el("login-form").hidden,provider!=="token");
+    assert.equal(ui.el("sso-login-form").hidden,provider==="token");
+    assert.equal(ui.el("token").focusCount,provider==="token" ? 1 : undefined);
+  }
 });
 
 test("OpenCSG starts a same-origin POST then navigates outside the form CSP",async()=>{
@@ -61,6 +81,7 @@ async function launch(api, saved = new Map(), hash = "") {
     async emit(name){for(const fn of this.listeners[name] || []) await fn({preventDefault(){}});}
   }]));
   const el = id=>elements.get(id);
+  for (const [tag,id] of html.matchAll(/<[^>]+\bid="([^"]+)"[^>]*>/g)) el(id).hidden=/\shidden(?:\s|>)/.test(tag);
   for (const [,id,options] of html.matchAll(/<select\b[^>]*id="([^"]+)"[^>]*>([\s\S]*?)<\/select>/g)) el(id).options=[...options.matchAll(/<option value="([^"]*)"/g)].map(([,value])=>({value,disabled:false}));
   el("reload-model-draft").hidden=true;
   el("setup-progress").hidden=true;

@@ -1,7 +1,7 @@
 .space-picker { display:flex; align-items:center; gap:6px; min-width:0; }
 .space-picker select { min-width:0; max-width:130px; font:inherit; color:inherit; background:transparent; border:1px solid var(--border,#ddd); border-radius:7px; padding:5px; }
 .space-picker button { font:inherit; white-space:nowrap; border:0; background:transparent; color:var(--muted,#666); cursor:pointer; padding:5px; }
-.room-rail-header { flex-wrap:wrap; }
+.room-rail-header:has(.space-picker) { flex-wrap:wrap; }
 .room-rail-header .space-picker { flex-basis:100%; }
 .space-dialog { width:min(420px,calc(100vw - 32px)); border:1px solid #ddd; border-radius:14px; padding:24px; color:#242424; background:#fff; }
 .space-dialog::backdrop { background:#0004; }

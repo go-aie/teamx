@@ -21,6 +21,52 @@ import (
 
 type hostedProviderFixture struct{}
 
+func TestHostedDisplayNamesUseAuthenticatedUserAndPreserveIdentity(t *testing.T) {
+	t.Setenv("USER", "teamx-service-account")
+	s := hostedFixture(t, t.TempDir())
+	for _, account := range []string{"alice", "bob"} {
+		cookie, subject, space := hostedLogin(t, s, account)
+		original, ok := s.access.users.user(subject.UserID)
+		if !ok {
+			t.Fatal("missing admitted user")
+		}
+		access := waitSpaceState(t, s, space, "setup_required").config.access
+		svc, _ := testService(t)
+		manager := testManager(t, t.TempDir(), nil)
+		for _, displayName := range []string{"opencsg-" + account, "renamed-" + account, ""} {
+			identity := original.Identity
+			identity.DisplayName = displayName
+			updated, err := s.access.users.reserve(identity, s.access.config.Deployment.Authentication)
+			if err != nil || updated.User != original.User || updated.DefaultSpace != original.DefaultSpace {
+				t.Fatal("display name update changed identity or Space", updated, err)
+			}
+			for name, next := range map[string]http.Handler{"room": svc, "managed": manager} {
+				r := httptest.NewRequest(http.MethodGet, "https://teamx.example/v1/ui", nil)
+				r.RemoteAddr = "127.0.0.1:1234"
+				r.AddCookie(cookie)
+				w := httptest.NewRecorder()
+				access.wrap(next).ServeHTTP(w, r)
+				var bootstrap map[string]any
+				if w.Code != http.StatusOK || json.Unmarshal(w.Body.Bytes(), &bootstrap) != nil || bootstrap["operator_display_name"] != displayName {
+					t.Fatalf("%s/%s display name: %d %s", account, name, w.Code, w.Body.String())
+				}
+				if bootstrap["space_id"] != space || name == "room" && bootstrap["operator"] != subject.UserID {
+					t.Fatal("display name changed request identity", bootstrap)
+				}
+			}
+			var saved hostedUserSnapshot
+			if err := readIdentitySnapshot(filepath.Join(s.access.users.home, "users.json"), &saved); err != nil {
+				t.Fatal(err)
+			}
+			for _, user := range saved.Users {
+				if user.ID == subject.UserID && user.Identity.DisplayName != displayName {
+					t.Fatal("display name update was not persisted")
+				}
+			}
+		}
+	}
+}
+
 func TestHostedOpenAdmissionKeepsOwnerIsolationAndDisable(t *testing.T) {
 	s := hostedFixtureWithAdmission(t, t.TempDir(), externalAuthConfig{Provider: "fixture", AllowAllAuthenticated: true})
 	a, alice, aSpace := hostedLogin(t, s, "previously-unlisted-a")

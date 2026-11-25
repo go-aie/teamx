@@ -11,7 +11,12 @@
   <link rel="stylesheet" href="/ui/styles/spaces.css">
 </head>
 <body>
-  <main id="workspace" class="workspace">
+  <section id="app-loading" class="app-loading" aria-label="加载会话">
+    <div class="brand"><img class="brand-mark" src="/ui/brand-mark.svg" width="28" height="29" alt="">TeamX</div>
+    <p id="app-loading-status" role="status" aria-live="polite">正在加载会话…</p>
+    <button id="app-loading-retry" class="secondary-button" type="button" hidden>重新加载</button>
+  </section>
+  <main id="workspace" class="workspace" aria-busy="true" inert>
     <aside id="room-rail" class="room-rail" aria-label="消息导航" hidden>
       <div id="room-resizer" class="sidebar-resizer room-resizer" role="separator" tabindex="0" aria-label="调整左侧栏宽度" aria-orientation="vertical" aria-controls="room-rail" title="左右拖动调整宽度"></div>
       <header class="rail-header room-rail-header">

@@ -54,7 +54,7 @@ func (s *service) serveHumanRead(w http.ResponseWriter, r *http.Request) {
 	if req.MentionSeenSeqs != nil {
 		delta.MentionSeenSeqs = *req.MentionSeenSeqs
 	}
-	state, err := s.humanRead.update(s.store, delta, humanOperator())
+	state, err := s.humanRead.update(s.store, delta, requestOperatorDisplayName(r))
 	if err == errHumanReadUnavailable {
 		w.WriteHeader(http.StatusServiceUnavailable)
 		_ = json.NewEncoder(w).Encode(apiError{Error: err.Error(), Message: err.Error(), Code: "human_read_unavailable"})

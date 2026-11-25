@@ -101,7 +101,7 @@ export function createConversation({ env, runtime, roomsUI, membersUI, settingsU
   }
 
   function readingActive() {
-    if ($("timeline-wrap").hidden || !visit || state.messagePreview || state.suspended || document.hidden || !document.hasFocus() ||
+    if ($("workspace").inert || $("timeline-wrap").hidden || !visit || state.messagePreview || state.suspended || document.hidden || !document.hasFocus() ||
       !layoutUI.conversationVisible() || document.querySelector("dialog:modal")) return false;
     const root = $("timeline").getBoundingClientRect(), viewport = window.visualViewport;
     const top = viewport?.offsetTop || 0, left = viewport?.offsetLeft || 0;

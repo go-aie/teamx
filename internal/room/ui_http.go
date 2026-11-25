@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"strings"
 	"time"
 )
 
@@ -56,6 +57,16 @@ func humanOperator() string {
 	return operator
 }
 
+func requestOperatorDisplayName(r *http.Request) string {
+	if access, ok := r.Context().Value(accessContextKey{}).(*serverAccess); ok && access.authority().users != nil {
+		if user, ok := access.authority().users.user(requestOperator(r)); ok {
+			return strings.TrimSpace(user.Identity.DisplayName)
+		}
+		return ""
+	}
+	return humanOperator()
+}
+
 func (s *service) serveUI(w http.ResponseWriter, r *http.Request) bool {
 	if r.URL.Path == "/v1/ui" && r.Method == http.MethodGet {
 		operator := requestOperator(r)
@@ -71,7 +82,7 @@ func (s *service) serveUI(w http.ResponseWriter, r *http.Request) bool {
 			Profiles            []string      `json:"profiles"`
 			IsDirect            bool          `json:"is_direct"`
 			Storage             *storagePaths `json:"storage,omitempty"`
-		}{s.info, s.settings.snapshot().settingsView, requestSpaceID(r), requestInstallationID(r), operator, humanOperator(), s.uiProfiles, s.isDirect, s.settings.storagePaths(s.store.dir)})
+		}{s.info, s.settings.snapshot().settingsView, requestSpaceID(r), requestInstallationID(r), operator, requestOperatorDisplayName(r), s.uiProfiles, s.isDirect, s.settings.storagePaths(s.store.dir)})
 		return true
 	}
 	return false

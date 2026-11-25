@@ -57,7 +57,7 @@ p { line-height:1.6; color:var(--muted); }
 .setup-field .field-control { scroll-margin-block:24px; }
 
 /* Login keeps its familiar composition; model setup uses a compact header. */
-#login-form { display:grid; gap:0; margin:0; }
+.login-form { display:grid; gap:0; margin:0; }
 #login-form > label { font-size:14px; font-weight:500; margin-bottom:8px; }
 .token-field { position:relative; }
 .token-field input { width:100%; min-height:48px; padding:10px 52px 10px 12px; border:1px solid var(--field-border); border-radius:8px; color:var(--text); background:var(--surface); font-size:16px; }
@@ -68,9 +68,8 @@ p { line-height:1.6; color:var(--muted); }
 .eye-slash { display:none; }
 [aria-pressed="true"] .eye-slash { display:block; }
 #login-form .field-hint { margin-top:8px; }
-#login-form .login-error { margin:10px 0 0; font-size:14px; color:var(--danger); overflow-wrap:anywhere; }
-#login-submit { min-height:48px; margin-top:24px; border:0; border-radius:8px; background:var(--accent); color:#fff; font-weight:500; transition:background .15s; }
-#login-submit:hover:not(:disabled) { background:var(--accent-hover); }
+#login .login-error { margin:10px 0 0; font-size:14px; color:var(--danger); overflow-wrap:anywhere; }
+#login-submit { margin-top:24px; }
 #token[aria-invalid="true"] { border-color:var(--danger); }
 .password-username { position:absolute; width:1px; height:1px; min-height:0; padding:0; border:0; overflow:hidden; clip-path:inset(50%); white-space:nowrap; }
 
