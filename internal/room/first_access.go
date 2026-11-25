@@ -3,6 +3,7 @@ package room
 import (
 	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 
@@ -136,4 +137,45 @@ func requireFreshModelHome(c startupConfig) error {
 		}
 	}
 	return nil
+}
+
+// A completed reset may intentionally retain infrastructure nested inside Data
+// (for example a custom admin token). Such files do not make a new model setup
+// an import of historical business state. All other entries remain forbidden.
+func requireFreshModelHomeKeeping(c startupConfig, protected []string) error {
+	if c.Server.DataDir == nil {
+		return ErrRequest
+	}
+	root, err := resolveFutureDirectory(*c.Server.DataDir)
+	if err != nil {
+		return err
+	}
+	protected = append(append([]string{}, protected...), filepath.Join(root, ".lock"), filepath.Join(root, "installation-id"))
+	return filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
+		if errors.Is(err, os.ErrNotExist) && path == root {
+			return nil
+		}
+		if err != nil {
+			return err
+		}
+		if path == root {
+			return nil
+		}
+		for _, keep := range protected {
+			if pathWithin(keep, path) {
+				if d.IsDir() {
+					return fs.SkipDir
+				}
+				return nil
+			}
+		}
+		if d.IsDir() {
+			for _, keep := range protected {
+				if pathWithin(path, keep) {
+					return nil
+				}
+			}
+		}
+		return errors.New("existing business data requires model migration; first-use model writes are disabled")
+	})
 }

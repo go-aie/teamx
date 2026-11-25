@@ -86,6 +86,7 @@ func runServerOnce(ctx context.Context, args []string, stdout, stderr io.Writer,
 	inboxDays := flags.Int("inbox-expire-after-days", 3, "Inbox expiration in days (positive; original event time)")
 	inboxSkip := flags.Bool("inbox-skip-expired", true, "skip expired unconsumed Inbox input")
 	dshConfig := flags.String("dsh-config", "", "JSON file of named DSH member profiles")
+	resetTeamsSource := flags.String("reset-teams-source", "", "trusted current-version teams seed for source deployments")
 	if err := flags.Parse(args); err != nil {
 		return err
 	}
@@ -128,8 +129,14 @@ func runServerOnce(ctx context.Context, args []string, stdout, stderr io.Writer,
 			if err := registerServerInstallation(layout); err != nil {
 				return err
 			}
-			if err := initializeBundleRuntime(layout.Release, layout.Home, filepath.Join(layout.Root, "current", "bin", "dsh")); err != nil {
+			pending, err := homeHasPendingReset(layout.Home)
+			if err != nil {
 				return err
+			}
+			if !pending {
+				if err := initializeBundleRuntime(layout.Release, layout.Home, filepath.Join(layout.Root, "current", "bin", "dsh")); err != nil {
+					return err
+				}
 			}
 		}
 		*configFile = filepath.Join(layout.Home, "config.toml")
@@ -210,7 +217,11 @@ func runServerOnce(ctx context.Context, args []string, stdout, stderr io.Writer,
 		startup.installationID = installation.InstanceID
 	}
 	var migrationErr error
-	if startup.Deployment.Mode != "multi-user" && !explicit["room"] && !explicit["state-dir"] {
+	resetPending, err := startupResetPending(startup)
+	if err != nil {
+		return err
+	}
+	if startup.Deployment.Mode != "multi-user" && !explicit["room"] && !explicit["state-dir"] && !resetPending {
 		installationID := startup.installationID
 		startup, migrationErr = migrateModelConfiguration(startup, nil)
 		startup.installationID = installationID
@@ -330,6 +341,16 @@ func runServerOnce(ctx context.Context, args []string, stdout, stderr io.Writer,
 		endpoint: internalAccessEndpoint(listener.Addr().String()), mergeWindow: *mergeWindow, maxTurns: *maxTurns,
 		dshProfiles: profiles, dshTurnTimeout: *dshTurnTimeout, inboxExpiry: inboxExpiry,
 		inboxMode: startup.Server.InboxMode, imageMaterials: startup.Server.ImageMaterials,
+	}
+	if *resetTeamsSource != "" {
+		config.resetTeamsSource, err = resolveFutureDirectory(*resetTeamsSource)
+		if err != nil {
+			return err
+		}
+	} else if layout.Release != "" {
+		config.resetTeamsSource = filepath.Join(layout.Release, "share", "teamx", "teams")
+	} else if startup.Runtime != nil && startup.Runtime.DSH.BinaryPath != "" {
+		config.resetTeamsSource = filepath.Join(filepath.Dir(filepath.Dir(startup.Runtime.DSH.BinaryPath)), "share", "teamx", "teams")
 	}
 	if access.users != nil {
 		if err := config.hostTools.validateCatalog(config.platformCatalog); err != nil {

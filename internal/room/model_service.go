@@ -25,7 +25,7 @@ type modelService struct {
 	probe                 func(context.Context, dsh.Options) (dsh.ProbeResult, error)
 }
 
-func newModelService(config startupConfig, settings *systemSettings, home string) (*modelService, error) {
+func newModelService(config startupConfig, settings *systemSettings, home string, protected ...[]string) (*modelService, error) {
 	if config.Runtime != nil && config.Runtime.Model.ModelID != "" {
 		return nil, errors.New("existing runtime models require migration; model writes are not enabled")
 	}
@@ -33,7 +33,11 @@ func newModelService(config startupConfig, settings *systemSettings, home string
 		return nil, ErrIdentity
 	}
 	if config.Server.DataDir != nil && (config.Models == nil || len(config.Models.Entries) == 0) {
-		if err := requireFreshModelHome(config); err != nil {
+		err := requireFreshModelHome(config)
+		if len(protected) > 0 {
+			err = requireFreshModelHomeKeeping(config, protected[0])
+		}
+		if err != nil {
 			return nil, err
 		}
 	}

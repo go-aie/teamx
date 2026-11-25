@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"runtime"
 	"time"
 
 	"github.com/go-aie/teamx/internal/agent/dsh"
@@ -25,16 +26,19 @@ type deploymentComposition struct {
 }
 
 type spaceFactories struct {
-	authentication  func(externalAuthConfig) (authn.Provider, error)
-	hostTools       func(string) (hostToolPolicy, error)
-	platformClients func() *lark.ClientFactory
-	service         func(string, string, serviceConfig) (*service, error)
-	manager         func(string, string, uint64, *teamRuntime, *inputUpgradeOptions, *platforms.Catalog) (*roomManager, error)
-	models          func(startupConfig) (*modelExecution, error)
-	modelController func(context.Context, *roomManager, startupConfig, func(context.Context, dsh.Options) (dsh.ProbeResult, error)) (*modelController, error)
-	computer        func(context.Context, startupConfig, *systemSettings, ServiceInfo, string, string, func(MemberIdentity) (bool, error)) (*computerController, error)
-	setup           func(context.Context, net.Listener, startupConfig, *systemSettings, *serverAccess, func(any) error, io.Writer, func(context.Context, dsh.Options) (dsh.ProbeResult, error)) error
-	migration       func(context.Context, net.Listener, startupConfig, *serverAccess, func(any) error) error
+	// Bound by deployment composition, never by Space settings or a request.
+	// Installed release combinations still require their separate acceptance.
+	hostedResetAccepted bool
+	authentication      func(externalAuthConfig) (authn.Provider, error)
+	hostTools           func(string) (hostToolPolicy, error)
+	platformClients     func() *lark.ClientFactory
+	service             func(string, string, serviceConfig) (*service, error)
+	manager             func(string, string, uint64, *teamRuntime, *inputUpgradeOptions, *platforms.Catalog) (*roomManager, error)
+	models              func(startupConfig) (*modelExecution, error)
+	modelController     func(context.Context, *roomManager, startupConfig, func(context.Context, dsh.Options) (dsh.ProbeResult, error)) (*modelController, error)
+	computer            func(context.Context, startupConfig, *systemSettings, ServiceInfo, string, string, func(MemberIdentity) (bool, error)) (*computerController, error)
+	setup               func(context.Context, net.Listener, startupConfig, *systemSettings, *serverAccess, func(any) error, io.Writer, func(context.Context, dsh.Options) (dsh.ProbeResult, error)) error
+	migration           func(context.Context, net.Listener, startupConfig, *serverAccess, func(any) error) error
 }
 
 func personalDeployment(create func(string, string, serviceConfig) (*service, error)) deploymentComposition {
@@ -42,8 +46,9 @@ func personalDeployment(create func(string, string, serviceConfig) (*service, er
 		create = newConfiguredService
 	}
 	return deploymentComposition{factories: spaceFactories{
-		authentication: func(c externalAuthConfig) (authn.Provider, error) { return c.provider() },
-		hostTools:      deploymentHostTools,
+		hostedResetAccepted: runtime.GOOS == "linux" && multiUserDevelopmentBuild(distributionVersion),
+		authentication:      func(c externalAuthConfig) (authn.Provider, error) { return c.provider() },
+		hostTools:           deploymentHostTools,
 		platformClients: func() *lark.ClientFactory {
 			return lark.NewClientFactory(lark.AccountRequestInterval, time.Second, time.Minute)
 		},

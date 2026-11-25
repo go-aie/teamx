@@ -88,7 +88,7 @@ async function launch(api, saved = new Map(), hash = "") {
   el("model-form").elements=[...html.matchAll(/<(?:input|select|button) id="([^"]+)"/g)].map(([,id])=>el(id)).filter(field=>![el("login-submit"),el("logout"),el("retry-migration"),el("check-setup-operation"),el("reload-model-draft"),el("toggle-token"),el("token")].includes(field));
   const timers=[],navigation=[],documentEvents=new Map();
   const document={hidden:false,body:{},activeElement:null,getElementById:el,addEventListener:(name,fn)=>documentEvents.set(name,fn)};
-  vm.runInNewContext(source, {...modelForm,randomUUID,URL,crypto:webcrypto, spaceURL:path=>path,spaceStorage:storage=>storage,mountSpacePicker:()=>{},
+  vm.runInNewContext(source, {...modelForm,randomUUID,URL,crypto:webcrypto, spaceURL:path=>path,spaceStorage:storage=>storage,mountSpacePicker:()=>{},mountSpaceReset:()=>{},
     document,navigator:{onLine:true},
     location:{origin:"http://fixture",hash,replace:path=>navigation.push(path),assign:path=>navigation.push(path)},addEventListener(){},
     sessionStorage:{getItem:key=>saved.get(key),setItem:(key,value)=>saved.set(key,value),removeItem:key=>saved.delete(key)},

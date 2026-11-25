@@ -145,7 +145,7 @@ func (c *Client) Image(ctx context.Context, account platform.AccountIdentity, so
 		if !validImageMessage(wire.Items, id, source.Reference.ChatID.Value, key) {
 			return attachment.ErrUnavailable
 		}
-		dir, err := os.MkdirTemp("", "teamx-lark-image-")
+		dir, err := c.temporaryDirectory("teamx-lark-image-")
 		if err != nil {
 			return attachment.ErrUnavailable
 		}

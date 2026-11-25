@@ -56,6 +56,9 @@ func (c *spaceDirectoryClaims) restore() error {
 	}
 	// Adopt existing external directories before any manager starts recovery.
 	for _, record := range c.directory.Spaces {
+		if record.resetting() {
+			continue
+		} // retain durable claims; do not scan partially cleaned indexes
 		startup, err := readStartupConfig(filepath.Join(record.Roots.Home, "config.toml"), true, false)
 		if err == nil && startup.Computer.InstanceID != "" {
 			if err := c.reserveComputer(record.ID, startup.Computer.InstanceID); err != nil {
@@ -253,5 +256,27 @@ func (c *spaceDirectoryClaims) checkNewSpaceLocked(record SpaceRecord) error {
 			}
 		}
 	}
+	return nil
+}
+
+// Reset releases only business directory bindings after all old writers settle.
+// Computer instance reservations remain owned by this same Space.
+func (c *spaceDirectoryClaims) releaseResetSpace(space string) error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	next := c.saved
+	next.Claims = nil
+	for _, claim := range c.saved.Claims {
+		if claim.SpaceID != space {
+			next.Claims = append(next.Claims, claim)
+		}
+	}
+	if len(next.Claims) == len(c.saved.Claims) {
+		return nil
+	}
+	if err := c.writer.save(filepath.Join(c.home, "workspace-claims.json"), next, maxPrivateFileBytes); err != nil {
+		return err
+	}
+	c.saved = next
 	return nil
 }

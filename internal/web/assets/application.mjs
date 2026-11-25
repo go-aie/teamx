@@ -1,4 +1,4 @@
-import { spaceURL, spaceStorage } from "./space-context.mjs";
+import { spaceURL, spaceStorage, observeSpaceReset } from "./space-context.mjs";
 import { createBrowserLifecycle } from "./features/browser-lifecycle.mjs";
 import { createBrowserNavigation } from "./features/browser-navigation.mjs";
 import { request, sameService, compactViewport } from "./client.mjs";
@@ -156,6 +156,9 @@ export async function createApp(overrides = {}) {
     });
     return recoveryTask;
   }
+  window.addEventListener("teamx:space-reset", () => {
+    ++viewVersion; suspend(); scheduler.pause(); roomViews.clear?.();
+  });
   const lifecycle = createBrowserLifecycle({ env, suspend, resume, save:() => conversationUI.saveDraft() });
 
   let storage;
@@ -265,7 +268,7 @@ export async function createApp(overrides = {}) {
   async function readSettings({ current = () => true } = {}) {
     const version = viewVersion;
     const config = await request("/v1/ui");
-    if (!currentView(version) || !current()) return;
+    if (!currentView(version) || !current() || !observeSpaceReset(config)) return;
     const identity = [config.installation_id || "", config.service_epoch];
     if (serverIdentity && identity.some((part, i) => part !== serverIdentity[i])) {
       conversationUI.saveDraft();

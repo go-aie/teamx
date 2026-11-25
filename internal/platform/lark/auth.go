@@ -282,7 +282,7 @@ func validVerificationURL(raw, brand string) bool {
 }
 
 func (c *Client) qrcode(ctx context.Context, link string) (string, error) {
-	dir, err := os.MkdirTemp("", "teamx-lark-auth-")
+	dir, err := c.temporaryDirectory("teamx-lark-auth-")
 	if err != nil {
 		return "", failure("query_failed")
 	}

@@ -16,7 +16,7 @@ func spaceLifecyclePath(path string) bool {
 		return false
 	}
 	id, action, ok := strings.Cut(strings.TrimPrefix(path, "/v1/spaces/"), "/")
-	return ok && validSpaceID(id) && (action == "archive" || action == "restore")
+	return ok && validSpaceID(id) && (action == "archive" || action == "restore" || action == "reset")
 }
 func spaceControlPath(path string) bool {
 	return path == "/v1/spaces" || spaceLifecyclePath(path) ||
@@ -55,6 +55,9 @@ func (s *spaceServer) changeSpaceStatus(id, action string, version uint64, subje
 			continue
 		}
 		entry := s.entries[id]
+		if record.resetting() || s.resetBusy[id] {
+			return SpaceRecord{}, ErrBusy
+		}
 		if action == "archive" && record.Status == "suspended" || action == "restore" && record.Status == "active" {
 			return record, nil
 		}

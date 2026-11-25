@@ -23,12 +23,13 @@ type User struct {
 }
 
 type SpaceRecord struct {
-	ID          string     `json:"id"`
-	OwnerUserID string     `json:"owner_user_id"`
-	Name        string     `json:"name"`
-	Status      string     `json:"status"`
-	Version     uint64     `json:"version"`
-	Roots       spaceRoots `json:"roots"`
+	ID          string               `json:"id"`
+	OwnerUserID string               `json:"owner_user_id"`
+	Name        string               `json:"name"`
+	Status      string               `json:"status"`
+	Version     uint64               `json:"version"`
+	Roots       spaceRoots           `json:"roots"`
+	Reset       *spaceResetOperation `json:"reset,omitempty"`
 }
 
 // Existing resources are registered in place, including Computer's home-based
@@ -287,6 +288,13 @@ func readIdentitySnapshotForUID(path string, value any, owner uint32) error {
 func requestSpaceID(r *http.Request) string {
 	if scope, ok := r.Context().Value(spaceContextKey{}).(authorizedSpace); ok {
 		return scope.SpaceID
+	}
+	return ""
+}
+
+func requestResetID(r *http.Request) string {
+	if access, ok := r.Context().Value(accessContextKey{}).(*serverAccess); ok && access.identity != nil {
+		return access.identity.Space.ResetID()
 	}
 	return ""
 }

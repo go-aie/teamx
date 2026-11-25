@@ -75,6 +75,7 @@ func (s *service) serveUI(w http.ResponseWriter, r *http.Request) bool {
 		_ = json.NewEncoder(w).Encode(struct {
 			ServiceInfo
 			settingsView
+			ResetRequestID      string        `json:"reset_request_id"`
 			SpaceID             string        `json:"space_id,omitempty"`
 			InstallationID      string        `json:"installation_id,omitempty"`
 			Operator            string        `json:"operator"`
@@ -82,7 +83,7 @@ func (s *service) serveUI(w http.ResponseWriter, r *http.Request) bool {
 			Profiles            []string      `json:"profiles"`
 			IsDirect            bool          `json:"is_direct"`
 			Storage             *storagePaths `json:"storage,omitempty"`
-		}{s.info, s.settings.snapshot().settingsView, requestSpaceID(r), requestInstallationID(r), operator, requestOperatorDisplayName(r), s.uiProfiles, s.isDirect, s.settings.storagePaths(s.store.dir)})
+		}{s.info, s.settings.snapshot().settingsView, requestResetID(r), requestSpaceID(r), requestInstallationID(r), operator, requestOperatorDisplayName(r), s.uiProfiles, s.isDirect, s.settings.storagePaths(s.store.dir)})
 		return true
 	}
 	return false

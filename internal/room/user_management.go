@@ -146,6 +146,22 @@ func (s *spaceServer) settleUser(ctx context.Context, id string) error {
 		if record.OwnerUserID != id {
 			continue
 		}
+		// The reset worker is the unique close/cleanup owner. User disable
+		// already revoked admission; it must not archive over the reset phase or
+		// wait for completion while holding adminMu (completion takes it too).
+		s.mu.Lock()
+		resetting := false
+		for _, current := range s.directory.Spaces {
+			if current.ID == record.ID {
+				resetting = current.resetting() || s.resetBusy[current.ID]
+				break
+			}
+		}
+		s.mu.Unlock()
+		if resetting {
+			result = errors.Join(result, ErrBusy)
+			continue
+		}
 		if record.Status != "suspended" {
 			_, err := s.changeSpaceStatus(record.ID, "archive", record.Version)
 			result = errors.Join(result, err)
@@ -186,7 +202,7 @@ func (s *spaceServer) userSettled(id string) bool {
 		if record.OwnerUserID != id {
 			continue
 		}
-		if record.Status != "suspended" {
+		if record.Status != "suspended" || record.resetting() || s.resetBusy[record.ID] {
 			return false
 		}
 		if entry := s.entries[record.ID]; entry != nil {

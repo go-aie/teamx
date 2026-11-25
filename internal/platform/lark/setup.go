@@ -301,6 +301,9 @@ func validRegistrationURL(raw, brand string) bool {
 }
 
 func (c *Client) runRegistration(ctx context.Context, name, brand string, ready func(string, string)) ([]byte, error) {
+	if c.tempRoot != "" && privateCLIDirectory(c.tempRoot) != nil {
+		return nil, failure("invalid_cli_storage")
+	}
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	stdout := &limitedBuffer{limit: 64 << 10, cancel: cancel}

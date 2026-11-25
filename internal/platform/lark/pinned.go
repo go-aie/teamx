@@ -62,7 +62,7 @@ func (f *ClientFactory) Pin(ctx context.Context, p platform.CLIProfile, expected
 	if config.DPoPMode != "required" && config.DPoPMode != "preferred" && config.DPoPMode != "disabled" {
 		return nil, failure("account_pinning_unavailable")
 	}
-	dir, err := os.MkdirTemp("", "teamx-lark-pinned-")
+	dir, err := c.temporaryDirectory("teamx-lark-pinned-")
 	if err != nil {
 		return nil, failure("account_pinning_unavailable")
 	}

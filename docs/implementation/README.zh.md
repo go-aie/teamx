@@ -6,6 +6,9 @@
 
 | 记录 | 范围 |
 | --- | --- |
+| [个人空间重置](space-reset-personal.zh.md) | 重置阶段 1：持久操作、结清与保护清理、配置／模板初始化、页面与缓存隔离；真实 DSH／模型、浏览器及进程中断验证 |
+| [Linux 多用户空间重置](space-reset-hosted.zh.md) | 重置阶段 2：私有 CLI／临时材料清理、用户停用与资源准入、默认模型和隔离；真实 Linux 凭证材料与网关验证，正式安装组合门槛保留 |
+| [Space 重置安装交付验证](space-reset-delivery.zh.md) | Linux amd64 standard／SRT 开发包的新装、旧包升级、正式服务与重置冒烟通过；修复 root 维护的登记 UID 检查，日常服务未变 |
 | [空间部署与恢复验收](space-deployment.zh.md) | 本轮开发部署与实机预验收已收尾，alpha 留存人工验证；真实登录／模型首用、同模式升级及旧运行指纹通过；源码补包、备份容量、完整恢复及正式 S5a 出口保留 |
 | [Linux standard 的 SRT 打包与安装](srt-packaging.zh.md) | 空间 S5.0：固定 SRT 资源、宿主依赖、安装／升级与开发归档验证；首发冻结及 S5a／S5b 门槛保留 |
 | [空间归档、结清与恢复](spaces-archive-restore-s2b.zh.md) | 空间 S2b：原 owner 结清、超时保留、新运行对象恢复及独立后台运行 |

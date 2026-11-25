@@ -113,8 +113,17 @@ func runBundleWithCatalog(command string, args []string, stdout, stderr io.Write
 		}
 		managedBinary = filepath.Join(layout.Root, "current", "bin", "dsh")
 	}
-	if err = initializeBundleRuntime(*root, *home, managedBinary); err != nil {
+	pending, err := homeHasPendingReset(*home)
+	if err != nil {
 		return err
+	}
+	if pending && command == "init" {
+		return rejectPendingSpaceReset(*home)
+	}
+	if !pending {
+		if err = initializeBundleRuntime(*root, *home, managedBinary); err != nil {
+			return err
+		}
 	}
 	startup, err := readStartupConfig(*config, true, false)
 	if err != nil {

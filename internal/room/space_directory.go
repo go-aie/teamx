@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"unicode"
 
@@ -94,6 +95,21 @@ func (s *spaceServer) serveDirectory(w http.ResponseWriter, r *http.Request) {
 				gitlab = gitlab && s.gitlabApplications != nil
 			}
 			spaces = append(spaces, view{record, lifecycleBusy, lifecycleError, state, map[string]bool{"gitlab_application_management": s.access.users == nil, "gitlab": gitlab, "lark": (legacy || s.assembly.config.hostTools.restricted) && lark, "scion": legacy && scion, "computer": !s.assembly.config.hostTools.restricted, "managed_repositories": !s.assembly.config.hostTools.restricted}})
+			spaces[len(spaces)-1].Capabilities["space_reset"] = s.spaceResetAvailable()
+			spaces[len(spaces)-1].Capabilities["native_lark_login_preserved"] = runtime.GOOS == "darwin" && s.access.users == nil && !s.assembly.config.hostTools.restricted
+			spaces[len(spaces)-1].Capabilities["reset_default_model"] = s.access.users != nil
+			if record.resetting() || s.resetBusy[record.ID] && record.Reset != nil {
+				spaces[len(spaces)-1].LifecycleBusy = s.resetBusy[record.ID]
+				if s.resetBusy[record.ID] && errors.Is(s.writer.checkWriter(true), ErrCommitUnknown) {
+					op := *record.Reset
+					op.Code = "commit_unknown"
+					op.Message = "重置登记结果尚未确定，请重启服务后核对并继续原操作。"
+					spaces[len(spaces)-1].Reset = &op
+				}
+				if record.resetting() {
+					spaces[len(spaces)-1].State = "resetting"
+				}
+			}
 		}
 		_ = writeJSON(w, map[string]any{"version": 1, "can_create": true, "default_space_id": s.access.defaultSpace(scope.Subject), "spaces": spaces})
 		return
@@ -110,6 +126,10 @@ func (s *spaceServer) serveDirectory(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if spaceLifecyclePath(path) {
+		if strings.HasSuffix(path, "/reset") {
+			s.serveSpaceReset(w, r, input)
+			return
+		}
 		s.serveSpaceLifecycle(w, r, input)
 		return
 	}
@@ -141,6 +161,10 @@ func (s *spaceServer) serveDirectory(w http.ResponseWriter, r *http.Request) {
 	for i, record := range s.directory.Spaces {
 		if record.ID != id || record.OwnerUserID != scope.Subject.UserID {
 			continue
+		}
+		if record.resetting() || s.resetBusy[id] {
+			writeAPIError(w, ErrBusy)
+			return
 		}
 		if record.Version != input.ExpectedVersion {
 			writeAPIError(w, ErrConflict)

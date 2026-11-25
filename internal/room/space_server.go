@@ -47,6 +47,7 @@ type spaceServer struct {
 	closing            bool
 	lifecycle          sync.WaitGroup
 	claims             *spaceDirectoryClaims
+	resetBusy          map[string]bool // guarded by mu; operation authority remains spaces.json
 }
 
 type spaceServerEntry struct {
@@ -206,7 +207,7 @@ func openSpaceServer(ctx context.Context, initial *SpaceRuntime, assembly spaceR
 		// interrupted after its durable user fence without opening business.
 		for i, record := range s.directory.Spaces {
 			user, ok := access.users.user(record.OwnerUserID)
-			if ok && user.Status == "disabled" && record.Status != "suspended" {
+			if ok && user.Status == "disabled" && record.Status != "suspended" && !record.resetting() {
 				record.Status = "suspended"
 				record.Version++
 				if err := s.saveSpaceLocked(i, record); err != nil {
@@ -305,7 +306,7 @@ func (s *spaceServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 					break
 				}
 			}
-			active = record.Status == "active"
+			active = record.Status == "active" && !record.resetting()
 			known = true
 			break
 		}
@@ -469,7 +470,7 @@ func (s *spaceServer) startLocked(record SpaceRecord, initial *SpaceRuntime, add
 				return
 			}
 			// Setup workers and both locks have settled. Never restart old objects.
-			if record.ID == s.access.space.SpaceID {
+			if record.ID == s.access.space.SpaceID && record.Reset == nil {
 				startup, loadErr := readStartupConfig(s.assembly.config.settings.path, true, false)
 				if loadErr != nil {
 					entry.mu.Lock()
@@ -510,19 +511,36 @@ func (s *spaceServer) Serve(ctx context.Context, listener net.Listener, ready fu
 	if s.initial != nil {
 		s.homeLock, s.initial.homeLock = s.initial.homeLock, nil
 	}
-	for _, record := range s.directory.Spaces {
+	s.mu.Lock()
+	records := append([]SpaceRecord{}, s.directory.Spaces...)
+	s.mu.Unlock()
+	for _, record := range records {
+		if record.resetting() {
+			if record.ID == s.access.space.SpaceID {
+				s.access.configFenced.Store(true)
+			}
+			s.mu.Lock()
+			if s.resetBusy == nil {
+				s.resetBusy = map[string]bool{}
+			}
+			s.resetBusy[record.ID] = true
+			s.lifecycle.Add(1)
+			s.mu.Unlock()
+			go s.runSpaceReset(record, nil)
+			continue
+		}
 		if record.Status == "archiving" {
 			if _, err := s.changeSpaceStatus(record.ID, "archive", record.Version); err != nil {
 				return errors.Join(err, s.closeWithTimeout())
 			}
 		}
 	}
-	for _, record := range s.directory.Spaces {
-		if record.Status != "active" {
+	for _, record := range records {
+		if record.Status != "active" || record.resetting() {
 			continue
 		}
 		var initial *SpaceRuntime
-		if record.ID == s.access.space.SpaceID {
+		if record.ID == s.access.space.SpaceID && record.Reset == nil {
 			initial = s.initial
 			initial.config.directoryClaims = s.claims
 		}
@@ -685,6 +703,17 @@ func (s *spaceServer) assemble(record SpaceRecord) (*SpaceRuntime, error) {
 	}
 	config := s.assembly.config
 	config.access, config.settings = access, newSystemSettings(startup)
+	if record.ID == s.access.space.SpaceID {
+		s.access.mu.Lock()
+		s.access.document = config.settings.configDocument
+		s.access.setupRequired = modelSetupRequired(startup)
+		s.access.configFenced.Store(false)
+		s.access.mu.Unlock()
+	}
+	config, err = mapSpaceBusinessConfig(config, startup)
+	if err != nil {
+		return nil, err
+	}
 	if s.gitlabApplications != nil {
 		config.gitlabApplications = s.gitlabApplications.ForSpace(record.OwnerUserID, record.ID)
 	}

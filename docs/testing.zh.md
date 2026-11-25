@@ -369,3 +369,7 @@ python3 scripts/computer_view_acceptance.py --run --group \
 ```
 
 最后一个命令运行真实固定 AIO Runtime、TeamX HTTP、两个 DSH／模型 Agent 和 Chromium 接管交还，使用一次性虚构账号。省略 `--agent-config` 时 Agent 为受控后端；两种证据分别标记。`390x844` 只是移动视口模拟，不代表实际手机验收。图像任务、实际请求 Schema 卸载及无容器真实模型恢复另见[成员能力验收](implementation/computer/agent-capabilities.zh.md)。旧 `TEAMX_ENVIRONMENT_CONFIG` 裸网关验收已移除，历史证据保留。
+
+## Space 重置
+
+个人及 Linux 多用户的行为、恢复边界和复验命令分别见[个人空间重置](implementation/space-reset-personal.zh.md)与[多用户空间重置](implementation/space-reset-hosted.zh.md)；最终归档的新装／升级及重置冒烟见[安装交付验证](implementation/space-reset-delivery.zh.md)。核心测试不读取日常凭据；真实 DSH／模型、Linux 凭证材料、Chromium 与独立进程中断均通过显式开关运行，不能用夹具结果代替真实验收。Linux 开发版已接通重置，正式发行沿用既有前置。

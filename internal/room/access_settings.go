@@ -228,6 +228,10 @@ func (a *serverAccess) serveSettings(w http.ResponseWriter, r *http.Request) {
 		accessError(w, 405, "method_not_allowed")
 		return
 	}
+	if a.configFenced.Load() {
+		writeAPIError(w, ErrClosing)
+		return
+	}
 	var input accessSettingsInput
 	dec := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096))
 	dec.DisallowUnknownFields()

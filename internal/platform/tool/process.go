@@ -8,6 +8,8 @@ import (
 	"os"
 	"os/exec"
 	"strings"
+
+	"github.com/go-aie/teamx/internal/platform"
 )
 
 // Definition registers a reusable executable or a bounded built-in dispatcher.
@@ -41,6 +43,7 @@ func Help(args []string) bool {
 }
 
 type Process struct {
+	TempRoot      string   `json:"-"` // trusted Space-private root; never supplied by tool requests
 	Args          []string `json:"-"`
 	Definition    Definition
 	Directory     string
@@ -61,7 +64,7 @@ func (p Process) Run(ctx context.Context, args []string) int {
 		io.WriteString(p.Error, "tool dependency unavailable on TeamX server (exit 127). Operator: repair the registered executable dependencies beside the tool or on the server PATH, or fix the configured dependency override. Agent shell PATH/env changes do not affect server tools.\n")
 		return 127
 	}
-	private, err := os.MkdirTemp("", "teamx-tool-")
+	private, err := platform.PrivateTemp(p.TempRoot, "teamx-tool-")
 	if err != nil {
 		io.WriteString(p.Error, "cannot prepare tool environment\n")
 		return 127

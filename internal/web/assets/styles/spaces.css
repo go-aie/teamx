@@ -12,3 +12,15 @@
 .space-actions { display:flex; flex-wrap:wrap; justify-content:flex-end; gap:8px; }
 .space-actions button { padding:8px 10px; border:1px solid #ddd; border-radius:7px; font:inherit; cursor:pointer; background:#fafafa; }
 @media(max-width:640px) { .space-picker select { max-width:110px; } }
+
+.space-reset-control { margin-top: 2rem; padding-top: 1rem; border-top: 1px solid var(--border, #ddd); }
+.space-reset-control p { font-size: .9rem; line-height: 1.6; }
+.space-reset-control .danger, .space-dialog .danger { color: #b42318; }
+.space-dialog p { line-height: 1.7; }
+
+.space-reset-dialog { width:min(460px,calc(100vw - 32px)); border:1px solid #ddd; border-radius:14px; padding:24px; color:#242424; background:#fff; }
+.space-reset-dialog::backdrop { background:#0004; }
+.space-reset-dialog h2 { font-size:18px; margin:0 0 16px; }
+.space-reset-dialog p { line-height:1.7; }
+.space-reset-dialog button { padding:8px 12px; margin:8px 8px 0 0; border:1px solid #ddd; border-radius:7px; font:inherit; cursor:pointer; background:#fafafa; }
+.space-reset-dialog .danger { color:#b42318; }

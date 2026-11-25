@@ -85,6 +85,7 @@ type serverAccess struct {
 	disabled              bool // Only anonymous human access; Agent credentials remain mandatory.
 	config                startupConfig
 	document              *configDocument
+	configFenced          atomic.Bool // Deployment config writes pause while its owner is being replaced.
 	version               uint64
 	activeListen          string
 	activeMode            string

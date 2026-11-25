@@ -63,6 +63,42 @@ func TestProcessCancelAndMissingExecutable(t *testing.T) {
 		t.Fatal("private executable path leaked")
 	}
 }
+
+func TestProcessPrivateTemporaryRootAndCleanup(t *testing.T) {
+	root, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(root, 0700); err != nil {
+		t.Fatal(err)
+	}
+	var out, diagnostic bytes.Buffer
+	p := Process{TempRoot: root, Definition: Definition{Executable: processScript(t, `printf '%s' "$TMPDIR"
+test "$TMPDIR" = "$HOME" || exit 91
+printf secret > "$TMPDIR/candidate"
+`)}, Output: &out, Error: &diagnostic}
+	if code := p.Run(t.Context(), nil); code != 0 {
+		t.Fatal(code, diagnostic.String())
+	}
+	if !strings.HasPrefix(out.String(), root+string(filepath.Separator)) {
+		t.Fatal("temporary files escaped Space")
+	}
+	if _, err := os.Stat(out.String()); !os.IsNotExist(err) {
+		t.Fatal("normal cleanup missing", err)
+	}
+	if err := os.Remove(root); err != nil {
+		t.Fatal(err)
+	}
+	if code := p.Run(t.Context(), nil); code != 127 {
+		t.Fatal("missing private root fell back to global temp", code)
+	}
+	if err := os.Symlink(t.TempDir(), root); err != nil {
+		t.Fatal(err)
+	}
+	if code := p.Run(t.Context(), nil); code != 127 {
+		t.Fatal("symlink private root accepted", code)
+	}
+}
 func TestHelpDoesNotInspectArgumentsAfterSeparator(t *testing.T) {
 	for _, args := range [][]string{nil, {"help", "issue"}, {"work-items", "close", "--help"}, {"version"}} {
 		if !Help(args) {

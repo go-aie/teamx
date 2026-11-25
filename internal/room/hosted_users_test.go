@@ -163,6 +163,15 @@ func hostedFixtureWithProvider(t *testing.T, home string, admission externalAuth
 }
 
 func hostedRequest(s *spaceServer, path string, body any, cookie *http.Cookie, token string) *httptest.ResponseRecorder {
+	if setup, ok := body.(setupModelInput); ok && setup.RuntimeEpoch == "" {
+		response := hostedRequest(s, strings.TrimSuffix(path, "/model"), nil, cookie, token)
+		var state struct {
+			RuntimeEpoch string `json:"runtime_epoch"`
+		}
+		_ = json.Unmarshal(response.Body.Bytes(), &state)
+		setup.RuntimeEpoch = state.RuntimeEpoch
+		body = setup
+	}
 	method := http.MethodGet
 	var reader io.Reader
 	if body != nil {

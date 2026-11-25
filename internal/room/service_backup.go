@@ -80,6 +80,10 @@ func acquireStoppedHome(ctx context.Context, r serviceRegistration) (func(), err
 	for {
 		lock, err := lockBundleHome(r.Home)
 		if err == nil {
+			if err := rejectPendingSpaceReset(r.Home, uint32(r.UID)); err != nil {
+				_ = unlockDirectory(lock)
+				return nil, err
+			}
 			return func() { _ = unlockDirectory(lock) }, nil
 		}
 		if !errors.Is(err, ErrLocked) {
@@ -242,6 +246,9 @@ func serviceOperationStep(output io.Writer, label string, operation func() error
 }
 
 func createServiceBackupWithProgress(r serviceRegistration, dest string, output io.Writer) error {
+	if err := rejectPendingSpaceReset(r.Home, uint32(r.UID)); err != nil {
+		return err
+	}
 	dest, err := resolveFutureDirectory(dest)
 	if err != nil {
 		return err

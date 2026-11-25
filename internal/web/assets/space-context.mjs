@@ -2,24 +2,71 @@
 // disposing its requests, caches and streams while server work keeps running.
 export const pageSpaceID = /^\/s\/([a-f0-9]{32})\//.exec(globalThis.location?.pathname || "")?.[1] || "";
 export function spaceURL(path) {
-  if (!pageSpaceID || typeof path !== "string" || !path.startsWith("/") || path.startsWith("//") || path.startsWith("/s/") || path.startsWith("/ui/")) return path;
-  return `/s/${pageSpaceID}${path}`;
+  const id=pageSpaceID || resolvedSpaceID;
+  if (!id || typeof path !== "string" || !path.startsWith("/") || path.startsWith("//") || path.startsWith("/s/") || path.startsWith("/ui/")) return path;
+  return `/s/${id}${path}`;
 }
-let defaultSpaceID = "";
+let defaultSpaceID = "", resolvedSpaceID = pageSpaceID, pageResetID, cacheWritable = true;
+const resetMarker = id => `teamx.space-reset:${id}`;
+const businessKey = key => key.startsWith("teamx.") && !key.startsWith("teamx.space:") && !key.startsWith("teamx.space-reset:") && !key.startsWith("teamx.space-reset-pending:") && !key.startsWith("teamx.space-create:") || /^\["teamx\./.test(key);
+function stores() { const result=[]; for (const name of ["localStorage","sessionStorage"]) { try { if (globalThis[name]) result.push(globalThis[name]); } catch {} } return result; }
+function clearSpaceStorage(storage, id, resetID, expectedOld) {
+  const marker=resetMarker(id), prefix=`teamx.space:${id}:`;
+  const previous=storage.getItem(marker);
+  if (previous === resetID || expectedOld !== undefined && previous != null && previous !== expectedOld) return;
+  if (resetID || previous) {
+    const keys=[]; for(let i=0;i<storage.length;i++) keys.push(storage.key(i));
+    for(const key of keys) if (key?.startsWith(prefix) || id === defaultSpaceID && key && businessKey(key)) storage.removeItem(key);
+  }
+  storage.setItem(marker,resetID);
+}
+export function spaceCacheCurrent() {
+  if (!cacheWritable) return false;
+  if (pageResetID !== undefined && resolvedSpaceID) {
+    try { const shared=globalThis.localStorage?.getItem(resetMarker(resolvedSpaceID)); if (shared != null && shared !== pageResetID) { freezeSpaceCache(); return false; } } catch {}
+  }
+  return true;
+}
+export function freezeSpaceCache() {
+  if (!cacheWritable) return;
+  cacheWritable=false;
+  if (typeof globalThis.dispatchEvent === "function" && typeof globalThis.Event === "function") globalThis.dispatchEvent(new Event("teamx:space-reset"));
+}
+export function observeSpaceReset(space) {
+  if (!space?.id && !space?.space_id) return true;
+  const id=space.id || space.space_id, next=space.reset?.request_id || space.reset_request_id || "";
+  if (resolvedSpaceID && resolvedSpaceID!==id) return false;
+  resolvedSpaceID=id;
+  if (pageResetID !== undefined && pageResetID !== next) {
+    freezeSpaceCache();
+    // A newer tab may already have initialized new caches. Only clear stores
+    // whose own marker is old, never the fresh data written by that tab.
+    for (const storage of stores()) try { clearSpaceStorage(storage,id,next,pageResetID); } catch {}
+    globalThis.location?.replace?.(`/s/${id}/`);
+    return false;
+  }
+  if (pageResetID === undefined) {
+    cacheWritable=false;
+    for (const storage of stores()) try { clearSpaceStorage(storage,id,next); } catch {}
+    pageResetID=next;cacheWritable=true;
+  }
+  return spaceCacheCurrent();
+}
 export function spaceStorage(storage) {
-  if (!storage || !pageSpaceID) return storage;
-  const key = value => `teamx.space:${pageSpaceID}:${value}`;
+  if (!storage) return storage;
+  const key = value => `teamx.space:${resolvedSpaceID}:${value}`;
   return {
     getItem(value) {
+      if (!spaceCacheCurrent() || !resolvedSpaceID) return null;
       let saved = storage.getItem(key(value));
-      if (saved == null && pageSpaceID === defaultSpaceID) {
+      if (saved == null && resolvedSpaceID === defaultSpaceID && !pageResetID) {
         saved = storage.getItem(value);
         if (saved != null) storage.setItem(key(value), saved);
       }
       return saved;
     },
-    setItem: (value, data) => storage.setItem(key(value), data),
-    removeItem(value) { storage.removeItem(key(value)); if (pageSpaceID === defaultSpaceID) storage.removeItem(value); },
+    setItem(value, data) { if (spaceCacheCurrent() && resolvedSpaceID) storage.setItem(key(value), data); },
+    removeItem(value) { if (!spaceCacheCurrent() || !resolvedSpaceID) return; storage.removeItem(key(value)); if (resolvedSpaceID === defaultSpaceID && !pageResetID) storage.removeItem(value); },
   };
 }
 
@@ -35,6 +82,7 @@ export async function mountSpacePicker() {
   const id = pageSpaceID || result.default_space_id;
   const current = result.spaces?.find(space => space.id === id);
   if (!current) return;
+  if (!observeSpaceReset(current)) return;
   capabilities = current.capabilities || {};
   for (const brand of document.querySelectorAll('a.brand[href="/"]')) brand.href = spaceURL("/");
   // Effective capability declarations come from the server, including builds

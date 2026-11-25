@@ -10,6 +10,7 @@ import (
 // owns an isolated set of queues with the supplied pacing; queue ordering,
 // cancellation and self-send capacity remain enforced even with zero intervals.
 type ClientFactory struct {
+	tempRoot string
 	storage  *cliStorage
 	requests *requestBudget
 	selfSend *requestBudget

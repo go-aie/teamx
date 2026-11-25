@@ -37,6 +37,7 @@ func modelSetupRequired(config startupConfig) bool {
 var errModelSetupSaved = errors.New("model setup saved")
 
 type setupModelInput struct {
+	RuntimeEpoch    string `json:"runtime_epoch"`
 	RequestID       string `json:"request_id"`
 	ExpectedVersion uint64 `json:"expected_version"`
 	ModelParameters
@@ -61,20 +62,25 @@ type savedSetupOperation struct {
 }
 
 type firstModelSetup struct {
-	blocked    error
-	mu         sync.Mutex
-	service    *modelService
-	prefill    ModelParameters
-	prefillKey string
-	path       string
-	operation  *savedSetupOperation
-	saved      chan struct{}
-	ctx        context.Context
-	workers    sync.WaitGroup
+	spaceID, runtimeEpoch, resetRequestID string
+	blocked                               error
+	mu                                    sync.Mutex
+	service                               *modelService
+	prefill                               ModelParameters
+	prefillKey                            string
+	path                                  string
+	operation                             *savedSetupOperation
+	saved                                 chan struct{}
+	ctx                                   context.Context
+	workers                               sync.WaitGroup
 }
 
-func newFirstModelSetup(ctx context.Context, config startupConfig, settings *systemSettings, probe func(context.Context, dsh.Options) (dsh.ProbeResult, error)) (*firstModelSetup, error) {
-	if err := requireFreshModelHome(config); err != nil {
+func newFirstModelSetup(ctx context.Context, config startupConfig, settings *systemSettings, probe func(context.Context, dsh.Options) (dsh.ProbeResult, error), protected ...[]string) (*firstModelSetup, error) {
+	freshErr := requireFreshModelHome(config)
+	if len(protected) > 0 {
+		freshErr = requireFreshModelHomeKeeping(config, protected[0])
+	}
+	if err := freshErr; err != nil {
 		prefill := ModelParameters{}
 		if config.Runtime != nil {
 			prefill = parametersFromLegacyModel(config.Runtime.Model)
@@ -97,7 +103,7 @@ func newFirstModelSetup(ctx context.Context, config startupConfig, settings *sys
 		runtime.Model = dsh.ModelConfig{}
 		config.Runtime = &runtime
 	}
-	s, err := newModelService(config, settings, filepath.Dir(config.path))
+	s, err := newModelService(config, settings, filepath.Dir(config.path), protected...)
 	if err != nil {
 		return nil, err
 	}
@@ -164,6 +170,9 @@ func (f *firstModelSetup) state() any {
 		version = f.service.snapshot().Version
 	}
 	return struct {
+		SpaceID              string          `json:"space_id"`
+		RuntimeEpoch         string          `json:"runtime_epoch"`
+		ResetRequestID       string          `json:"reset_request_id"`
 		Writable             bool            `json:"writable"`
 		Message              string          `json:"message,omitempty"`
 		SetupRequired        bool            `json:"setup_required"`
@@ -171,7 +180,7 @@ func (f *firstModelSetup) state() any {
 		Model                ModelParameters `json:"model"`
 		CredentialConfigured bool            `json:"credential_configured"`
 		Operation            *setupOperation `json:"operation,omitempty"`
-	}{f.blocked == nil, setupBlockedMessage(f.blocked), true, version, f.prefill, f.prefillKey != "", operation}
+	}{f.spaceID, f.runtimeEpoch, f.resetRequestID, f.blocked == nil, setupBlockedMessage(f.blocked), true, version, f.prefill, f.prefillKey != "", operation}
 }
 
 func (f *firstModelSetup) submit(input setupModelInput) (setupOperation, error) {
@@ -291,10 +300,19 @@ func serveSetupRequired(ctx context.Context, listener net.Listener, config start
 	defer func() { runErr = errors.Join(runErr, unlockDirectory(lock)) }()
 	workerCtx, stop := context.WithCancel(ctx)
 	defer stop()
-	setup, err := newFirstModelSetup(workerCtx, config, settings, probe)
+	var protected [][]string
+	if spaces := access.authority().spaces; spaces != nil && access.identity.Space.Reset != nil && !access.identity.Space.resetting() {
+		paths, err := spaces.resetProtection(access.identity.Space, config.path)
+		if err != nil {
+			return err
+		}
+		protected = append(protected, paths)
+	}
+	setup, err := newFirstModelSetup(workerCtx, config, settings, probe, protected...)
 	if err != nil {
 		return err
 	}
+	setup.spaceID, setup.runtimeEpoch, setup.resetRequestID = access.space.SpaceID, access.space.RuntimeEpoch, access.identity.Space.ResetID()
 	defer func() { stop(); setup.workers.Wait() }()
 	if access != nil && access.authority().users != nil {
 		setup.followGatewayCredential(workerCtx, access.authority().users, access.space.OwnerUserID)
@@ -316,6 +334,10 @@ func serveSetupRequired(ctx context.Context, listener net.Listener, config start
 				dec.DisallowUnknownFields()
 				if dec.Decode(&input) != nil || dec.Decode(new(any)) != io.EOF {
 					accessError(w, 400, "invalid_request")
+					return
+				}
+				if input.RuntimeEpoch == "" || input.RuntimeEpoch != access.space.RuntimeEpoch {
+					writeAPIError(w, ErrIdentity)
 					return
 				}
 				op, err := setup.submit(input)

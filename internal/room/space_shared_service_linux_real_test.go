@@ -192,7 +192,7 @@ func TestLinuxSharedServiceArchiveWithModelCallbacks(t *testing.T) {
 		child := client
 		child.endpoint += spaceRoute(id)
 		var operation setupOperation
-		if err := child.request(ctx, "/v1/setup/model", setupModelInput{RequestID: "shared-model-" + id, ExpectedVersion: 1, ModelParameters: entry.ModelParameters.clone(), APIKey: credential.Value}, &operation); err != nil {
+		if err := child.request(ctx, "/v1/setup/model", setupModelInput{RuntimeEpoch: setupEpochForTest(t, child), RequestID: "shared-model-" + id, ExpectedVersion: 1, ModelParameters: entry.ModelParameters.clone(), APIKey: credential.Value}, &operation); err != nil {
 			t.Fatal("model setup", err)
 		}
 		// Model validation has an existing service-wide bounded slot. Wait for

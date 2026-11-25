@@ -147,6 +147,18 @@ func (r *SpaceRuntime) serveManager(ctx context.Context, listener net.Listener, 
 
 	manager.larkClients = r.factories.platformClients()
 	if config.hostTools.restricted {
+		if err := checkWorkspaceDirectory(r.roots.Home, "platform-tmp"); err != nil {
+			return err
+		}
+		config.platformTempRoot = filepath.Join(r.roots.Home, "platform-tmp")
+		if err := makeDurableDir(config.platformTempRoot); err != nil {
+			return err
+		}
+		manager.config.platformTempRoot = config.platformTempRoot
+		manager.larkClients, err = manager.larkClients.WithTemporaryRoot(config.platformTempRoot)
+		if err != nil {
+			return err
+		}
 		// Same platform implementation; only its CLI storage/executable binding
 		// changes. Legacy personal profiles remain on their original backend.
 		if err := checkWorkspaceDirectory(r.roots.Home, "platform-cli/lark"); err != nil {

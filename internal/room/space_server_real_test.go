@@ -116,7 +116,7 @@ func testSpacesInstalledDSHRecovery(t *testing.T, archive bool) {
 			child := client
 			child.endpoint += spaceRoute(b)
 			var operation setupOperation
-			if err := child.request(ctx, "/v1/setup/model", setupModelInput{RequestID: "real-space-b", ExpectedVersion: 1, ModelParameters: entry.ModelParameters.clone(), APIKey: credential.Value}, &operation); err != nil {
+			if err := child.request(ctx, "/v1/setup/model", setupModelInput{RuntimeEpoch: setupEpochForTest(t, child), RequestID: "real-space-b", ExpectedVersion: 1, ModelParameters: entry.ModelParameters.clone(), APIKey: credential.Value}, &operation); err != nil {
 				t.Fatal(err)
 			}
 		}

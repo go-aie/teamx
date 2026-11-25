@@ -706,7 +706,7 @@ func (m *roomManager) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	if r.URL.Path == "/v1/setup" && r.Method == "GET" {
 		w.Header().Set("Content-Type", "application/json")
-		io.WriteString(w, `{"setup_required":false}`)
+		_ = writeJSON(w, map[string]any{"setup_required": false, "space_id": requestSpaceID(r), "reset_request_id": requestResetID(r)})
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")
@@ -735,13 +735,14 @@ func (m *roomManager) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		// Bootstrap remains available with an empty catalog and during switching.
 		_ = json.NewEncoder(w).Encode(struct {
 			Managed             bool   `json:"managed"`
+			ResetRequestID      string `json:"reset_request_id"`
 			SpaceID             string `json:"space_id,omitempty"`
 			InstallationID      string `json:"installation_id,omitempty"`
 			ServiceEpoch        string `json:"service_epoch"`
 			OperatorDisplayName string `json:"operator_display_name"`
 			settingsView
 			Storage *storagePaths `json:"storage,omitempty"`
-		}{true, requestSpaceID(r), requestInstallationID(r), m.epoch, requestOperatorDisplayName(r), m.settings.snapshot().settingsView, m.settings.storagePaths(m.store.dir)})
+		}{true, requestResetID(r), requestSpaceID(r), requestInstallationID(r), m.epoch, requestOperatorDisplayName(r), m.settings.snapshot().settingsView, m.settings.storagePaths(m.store.dir)})
 		return
 	}
 	if r.URL.Path == "/v1/settings" || r.URL.Path == "/v1/settings/save" {

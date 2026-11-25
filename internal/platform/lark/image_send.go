@@ -437,7 +437,7 @@ func (p *Pinned) SendImages(ctx context.Context, target platform.TargetIdentity,
 	if !uploadReady {
 		return notSent()
 	}
-	dir, err := os.MkdirTemp("", "teamx-lark-images-")
+	dir, err := c.temporaryDirectory("teamx-lark-images-")
 	if err != nil {
 		return notSent()
 	}

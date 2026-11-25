@@ -63,7 +63,7 @@ test("Loading an archived Space needs no management controls and never reloads i
   const heading = {}, status = {}, reloadButton = {};
   let reloads = 0;
   const context = {
-    pageSpaceID:"a".repeat(32), mountSpacePicker:()=>{},
+    pageSpaceID:"a".repeat(32), mountSpacePicker:async()=>{},mountSpaceReset:()=>{},
     window:{addEventListener(){}}, location:{reload(){ reloads++; }},
     document:{
       querySelector:()=>heading,
@@ -80,4 +80,37 @@ test("Loading an archived Space needs no management controls and never reloads i
   assert.doesNotMatch(status.textContent,/空间设置|切换其他空间/);
   assert.equal(reloads,0);
   reloadButton.click(); assert.equal(reloads,1);
+});
+
+test("reset invalidates only one Space and old tabs cannot restore or overwrite fresh caches", async () => {
+  const source=await readFile(new URL("../assets/space-context.mjs",import.meta.url),"utf8");
+  const a="a".repeat(32),b="b".repeat(32);
+  function memory() {const values=new Map();return {get length(){return values.size;},key:i=>[...values.keys()][i],getItem:key=>values.get(key)??null,setItem:(key,value)=>values.set(key,String(value)),removeItem:key=>values.delete(key)};}
+  const local=memory(),sessionA=memory(),sessionB=memory();
+  function tab(session) {
+    const navigation=[],events=[];
+    const context={location:{pathname:`/s/${a}/`,replace:path=>navigation.push(path)},localStorage:local,sessionStorage:session,
+      Event:class {constructor(type){this.type=type;}},dispatchEvent:event=>events.push(event.type)};
+    vm.runInNewContext(source.replace(/^export /gm,"")+"\nglobalThis.api={spaceStorage,observeSpaceReset,spaceCacheCurrent};",context);
+    return {...context.api,navigation,events};
+  }
+  const old=tab(sessionA),fresh=tab(sessionB);
+  old.observeSpaceReset({id:a});fresh.observeSpaceReset({id:a});
+  const oldLocal=old.spaceStorage(local),oldSession=old.spaceStorage(sessionA),newLocal=fresh.spaceStorage(local);
+  oldLocal.setItem("draft","old");oldSession.setItem("draft","old-tab");
+  local.setItem(`teamx.space:${b}:draft`,"other-space");local.setItem("auth-session","login");
+  assert.equal(fresh.observeSpaceReset({id:a,reset:{request_id:"reset-1"}}),false);
+  // Navigating constructs a new document with the new server marker.
+  const after=tab(sessionB);after.observeSpaceReset({id:a,reset:{request_id:"reset-1"}});
+  after.spaceStorage(local).setItem("draft","fresh");
+  assert.equal(old.spaceCacheCurrent(),false);
+  oldLocal.setItem("draft","late-pagehide");oldSession.setItem("draft","late-callback");oldLocal.removeItem("draft");
+  assert.equal(old.observeSpaceReset({id:a,reset:{request_id:"reset-1"}}),false);
+  assert.equal(after.spaceStorage(local).getItem("draft"),"fresh");
+  assert.equal(sessionA.getItem(`teamx.space:${a}:draft`),null);
+  assert.equal(local.getItem(`teamx.space:${b}:draft`),"other-space");assert.equal(local.getItem("auth-session"),"login");
+  assert.equal(old.navigation.length,1);assert.deepEqual(old.events,["teamx:space-reset"]);
+  const restarted=tab(sessionB);restarted.observeSpaceReset({id:a,reset:{request_id:"reset-1"}});
+  assert.equal(restarted.spaceStorage(local).getItem("draft"),"fresh","ordinary restart retains drafts");
+  assert.equal(newLocal.getItem("draft"),null,"discarded document stays frozen");
 });

@@ -84,6 +84,14 @@ func startSpaceServerFixture(t *testing.T, home string, configure ...func(*Space
 
 func spaceHTTPRequest(t *testing.T, endpoint, path string, input any, out any) int {
 	t.Helper()
+	if setup, ok := input.(setupModelInput); ok && setup.RuntimeEpoch == "" {
+		var state struct {
+			RuntimeEpoch string `json:"runtime_epoch"`
+		}
+		spaceHTTPRequest(t, endpoint, strings.TrimSuffix(path, "/model"), nil, &state)
+		setup.RuntimeEpoch = state.RuntimeEpoch
+		input = setup
+	}
 	var body io.Reader
 	method := http.MethodGet
 	if input != nil {

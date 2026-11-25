@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -75,6 +76,23 @@ func TestScopedLarkLifecycleKeepsCredentialsAndPinInOriginalContext(t *testing.T
 		f, err := NewClientFactory(0, 0, 0).WithStorage(filepath.Join(dir, string(rune('a'+i))), bin)
 		if err != nil {
 			t.Fatal(err)
+		}
+		tmp, err := filepath.EvalSymlinks(t.TempDir())
+		if err != nil {
+			t.Fatal(err)
+		}
+		// Assert every CLI child inherits the selected temporary root. Includes
+		// init/QR, login, normal reads and pinning, not just Process.Run.
+		if err := os.Chmod(tmp, 0700); err != nil {
+			t.Fatal(err)
+		}
+		f, err = f.WithTemporaryRoot(tmp)
+		if err != nil {
+			t.Fatal(err)
+		}
+		clientForTemp := &Client{tempRoot: tmp}
+		if env := clientForTemp.command(t.Context(), "", "--version").Env; !slices.Contains(env, "TMPDIR="+tmp) {
+			t.Fatal("CLI inherited global temporary root")
 		}
 		factories[i] = f
 		result, err := f.ConfigureApplication(t.Context(), "", "feishu", func(SetupProgress) {})

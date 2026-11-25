@@ -72,6 +72,7 @@ type Reader interface {
 	Message(context.Context, platform.AccountIdentity, string) (Message, error)
 }
 type Client struct {
+	tempRoot  string
 	configDir string // internal pinned context; never accepted from an Agent
 	dataDir   string
 	storage   *cliStorage
@@ -99,7 +100,14 @@ func (f *ClientFactory) New(p platform.CLIProfile) (*Client, error) {
 			return nil, err
 		}
 	}
+	if f != nil {
+		c.tempRoot = f.tempRoot
+	}
 	return c, nil
+}
+
+func (c *Client) temporaryDirectory(pattern string) (string, error) {
+	return platform.PrivateTemp(c.tempRoot, pattern)
 }
 
 // Shared gates include independently constructed clients and Rooms. Waiting is
@@ -155,6 +163,9 @@ func (c *Client) runCheck(ctx context.Context, args ...string) ([]byte, error) {
 	return c.runProcess(ctx, "", 30*time.Second, true, args...)
 }
 func (c *Client) runProcess(ctx context.Context, dir string, timeout time.Duration, allowCheck bool, args ...string) ([]byte, error) {
+	if c.tempRoot != "" && privateCLIDirectory(c.tempRoot) != nil {
+		return nil, failure("invalid_cli_storage")
+	}
 	if c.storage != nil && (privateCLIDirectory(c.configDir) != nil || privateCLIDirectory(c.dataDir) != nil || privateCLIDirectory(c.storage.root) != nil) {
 		return nil, failure("invalid_cli_storage")
 	}
@@ -212,9 +223,15 @@ func (c *Client) command(ctx context.Context, dir string, args ...string) *exec.
 	cmd := exec.CommandContext(ctx, c.profile.Executable, argv...)
 	cmd.Dir = dir
 	for _, k := range []string{"HOME", "USER", "LOGNAME", "PATH", "TMPDIR", "LANG", "LC_ALL", "TZ", "SSL_CERT_FILE", "SSL_CERT_DIR", "HTTPS_PROXY", "HTTP_PROXY", "ALL_PROXY", "NO_PROXY", "https_proxy", "http_proxy", "all_proxy", "no_proxy"} {
+		if k == "TMPDIR" && c.tempRoot != "" {
+			continue
+		}
 		if v, ok := os.LookupEnv(k); ok {
 			cmd.Env = append(cmd.Env, k+"="+v)
 		}
+	}
+	if c.tempRoot != "" {
+		cmd.Env = append(cmd.Env, "TMPDIR="+c.tempRoot)
 	}
 	cmd.Env = append(cmd.Env, "LARKSUITE_CLI_NO_UPDATE_NOTIFIER=1", "LARKSUITE_CLI_NO_SKILLS_NOTIFIER=1")
 	if c.configDir != "" {

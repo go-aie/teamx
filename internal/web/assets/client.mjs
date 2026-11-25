@@ -1,4 +1,4 @@
-import { spaceURL } from "./space-context.mjs";
+import { spaceURL, observeSpaceReset, spaceCacheCurrent } from "./space-context.mjs";
 import { savedAttachments } from "./attachment-drafts.mjs";
 
 export async function request(path, payload, fetcher = globalThis.fetch, timeout = 10000, signal) {
@@ -23,6 +23,7 @@ export async function request(path, payload, fetcher = globalThis.fetch, timeout
       error.outcome = result.outcome;
       throw error;
     }
+    if (!spaceCacheCurrent() || result.space_id && !observeSpaceReset(result)) throw new Error("此空间已重置，正在重新加载。");
     return result;
   } finally { clearTimeout(timer); signal?.removeEventListener("abort", abort); }
 }

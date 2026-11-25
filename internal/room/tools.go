@@ -478,6 +478,7 @@ func (m *roomManager) prepareToolLocked(ctx context.Context, req toolsRequest) (
 		return p, nil, nil, err
 	}
 	p.Definition = admission.definition
+	p.TempRoot = m.config.platformTempRoot
 	if m.config.hostTools.restricted {
 		// Built-in Lark never reaches Process. The existing wrapper limits native
 		// glab to API requests with an explicit selected host and project.

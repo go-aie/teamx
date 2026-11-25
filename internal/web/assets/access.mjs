@@ -1,4 +1,5 @@
 import { spaceURL, spaceStorage, mountSpacePicker } from "./space-context.mjs";
+import { mountSpaceReset } from "./space-reset.mjs";
 import { randomUUID } from "./random-id.mjs";
 import { fillModelParameters, readModelParameters, syncModelProtocol, modelDraftFields, snapshotModelFields, restoreModelFields, setModelKeyVisible } from "./model-form.mjs";
 const $ = id => document.getElementById(id);
@@ -6,6 +7,7 @@ function returnToApp() {
   const hash=location.hash || "";
   location.replace(spaceURL("/") + (hash.startsWith("#platform-connection=") || hash==="#platform-settings" ? hash : ""));
 }
+let runtimeEpoch = "";
 let version = 0, requestID, polling = false, configuredKey = false, active = true;
 let setupRead = 0, submitting = false;
 let operator, draftKey, draftReady=false, loginEnabled=true;
@@ -125,6 +127,7 @@ async function showSession() {
     if (generation !== setupRead) return;
     operator=session.operator;
     await mountSpacePicker();
+    mountSpaceReset();
     loginEnabled=session.login_enabled !== false;
     const nextKey=JSON.stringify(["teamx.setup-draft",session.installation_id || location.origin,operator]);
     if (draftKey !== nextKey) { requestID=undefined; draftReady=false; }
@@ -169,6 +172,7 @@ async function showSession() {
   $("model").hidden = false;
   document.title = "TeamX · 设置模型";
   version = state.version;
+  runtimeEpoch = state.runtime_epoch || "";
   const m = state.model || {};
   fillModelParameters($, m);
   configuredKey = state.credential_configured; $("replace-key-label").hidden = !configuredKey;
@@ -276,7 +280,7 @@ $("model-form").addEventListener("submit", async event => {
   if (requestID || $("save-model").disabled) return;
   ++setupRead; submitting=true; $("check-setup-operation").disabled=true;
   clearSetupErrors();
-  const data = {request_id:requestID ||= randomUUID(), expected_version:version, ...readModelParameters($)};
+  const data = {request_id:requestID ||= randomUUID(), expected_version:version, runtime_epoch:runtimeEpoch, ...readModelParameters($)};
   saveDraft();
   if (!configuredKey || $("replace-key").checked) data.api_key = $("api-key").value;
   $("api-key").value = ""; setModelKeyVisible($, false); busy(true);

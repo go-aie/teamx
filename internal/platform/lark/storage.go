@@ -16,6 +16,25 @@ import (
 
 type cliStorage struct{ root, executable string }
 
+// WithTemporaryRoot binds all adapter and CLI temporary output to the Space.
+// Validate now and again for each call; a missing root never falls back to /tmp.
+func (f *ClientFactory) WithTemporaryRoot(root string) (*ClientFactory, error) {
+	if root == "" {
+		return nil, failure("invalid_cli_storage")
+	}
+	probe, err := platform.PrivateTemp(root, ".check-")
+	if err != nil {
+		return nil, failure("invalid_cli_storage")
+	}
+	if err := os.Remove(probe); err != nil {
+		return nil, failure("invalid_cli_storage")
+	}
+	if f == nil {
+		f = NewClientFactory(AccountRequestInterval, 0, 0)
+	}
+	return &ClientFactory{requests: f.requests, selfSend: f.selfSend, storage: f.storage, tempRoot: root}, nil
+}
+
 // WithStorage binds a trusted Space root and deployment executable. Profiles
 // are opaque references; neither browser nor Agent supplies filesystem paths.
 // Each newly configured profile owns one stable config/data pair. Explicit
@@ -37,7 +56,7 @@ func (f *ClientFactory) WithStorage(root, executable string) (*ClientFactory, er
 	if f == nil {
 		f = NewClientFactory(AccountRequestInterval, 0, 0)
 	}
-	return &ClientFactory{requests: f.requests, selfSend: f.selfSend, storage: &cliStorage{root, executable}}, nil
+	return &ClientFactory{requests: f.requests, selfSend: f.selfSend, storage: &cliStorage{root, executable}, tempRoot: f.tempRoot}, nil
 }
 
 func privateCLIDirectory(path string) error {
@@ -105,12 +124,12 @@ func (f *ClientFactory) discoverScoped(ctx context.Context, executable, brand st
 	}
 	// Version discovery has an isolated empty context too; it cannot inspect
 	// the deployment account's native CLI configuration.
-	private, err := os.MkdirTemp("", "teamx-lark-discovery-")
+	private, err := platform.PrivateTemp(f.tempRoot, "teamx-lark-discovery-")
 	if err != nil {
 		return result, failure("invalid_cli_storage")
 	}
 	defer os.RemoveAll(private)
-	c := &Client{profile: platform.CLIProfile{Executable: f.storage.executable}, configDir: private, dataDir: private, requests: f.requests, selfSend: f.selfSend, gates: &f.gates}
+	c := &Client{profile: platform.CLIProfile{Executable: f.storage.executable}, configDir: private, dataDir: private, tempRoot: f.tempRoot, requests: f.requests, selfSend: f.selfSend, gates: &f.gates}
 	version, err := c.run(ctx, "--version")
 	if err != nil {
 		return result, err

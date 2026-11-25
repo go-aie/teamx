@@ -344,7 +344,13 @@ func TestAccessBrowserModelSetupStartsNormalServer(t *testing.T) {
 	if _, err = os.Stat(filepath.Join(home, "data", "rooms.json")); !os.IsNotExist(err) {
 		t.Fatal("setup started business early", err)
 	}
-	good := setupModelInput{RequestID: "good-request", ModelParameters: parametersFromLegacyModel(runtime.Model), APIKey: "model-test-secret"}
+	var setupState struct {
+		RuntimeEpoch string `json:"runtime_epoch"`
+	}
+	if err := client.request(context.Background(), "/v1/setup", nil, &setupState); err != nil {
+		t.Fatal(err)
+	}
+	good := setupModelInput{RuntimeEpoch: setupState.RuntimeEpoch, RequestID: "good-request", ModelParameters: parametersFromLegacyModel(runtime.Model), APIKey: "model-test-secret"}
 	good.ModelID = "fixture"
 	if err = client.request(context.Background(), "/v1/setup/model", good, &result); err != nil {
 		t.Fatal(err)
