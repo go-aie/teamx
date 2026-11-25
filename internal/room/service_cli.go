@@ -38,7 +38,7 @@ func runServiceWithManager(args []string, stdout, stderr io.Writer, runner servi
 		return superviseService(args[1:], stdout, stderr)
 	}
 	switch action {
-	case "install", "inspect", "start", "status", "stop", "restart", "enable", "disable", "backup", "restore", "upgrade", "uninstall", "logs":
+	case "install", "inspect", "start", "status", "stop", "restart", "enable", "disable", "backup", "restore", "upgrade", "uninstall", "logs", "prune":
 	default:
 		return fmt.Errorf("未知服务命令 %q；使用 teamx service --help 查看可用命令", action)
 	}
@@ -50,6 +50,7 @@ func runServiceWithManager(args []string, stdout, stderr io.Writer, runner servi
 	lines, follow := new(int), new(bool)
 	execution := new(string)
 	initialConfigPath := new(string)
+	keepReleases, keepBackups := new(int), new(int)
 	var initialConfig map[string]any
 	var srtEndpoints []string
 	if action == "install" {
@@ -74,6 +75,11 @@ func runServiceWithManager(args []string, stdout, stderr io.Writer, runner servi
 	if action == "restore" {
 		flags.StringVar(source, "from", "", "同一实例、原路径的一致备份目录")
 	}
+	if action == "prune" {
+		flags.StringVar(source, "from", "", "本次成功部署的升级前备份；仅登记过的备份参与自动清理")
+		flags.IntVar(keepReleases, "keep-releases", 2, "成功程序版本保留数，至少 2；被引用版本额外保留")
+		flags.IntVar(keepBackups, "keep-backups", 2, "成功部署备份保留数，至少 1；手工和失败部署备份不清理")
+	}
 	if action == "logs" {
 		flags.IntVar(lines, "lines", 100, "显示最近多少行日志（1–10000）")
 		flags.BoolVar(follow, "follow", false, "持续查看新日志，Ctrl-C 退出")
@@ -91,6 +97,9 @@ func runServiceWithManager(args []string, stdout, stderr io.Writer, runner servi
 		if err := validateServiceExecutionSelection(*execution, srtEndpoints); err != nil {
 			return err
 		}
+	}
+	if action == "prune" && (*keepReleases < 2 || *keepBackups < 1) {
+		return errors.New("keep-releases must be at least 2 and keep-backups at least 1")
 	}
 	if action == "install" && *archive == "" {
 		return errors.New("安装需要 --archive FILE；首次安装请运行官方 install.sh，已有安装请使用 teamx service upgrade")
@@ -325,6 +334,25 @@ func runServiceWithManager(args []string, stdout, stderr io.Writer, runner servi
 	}
 	manager := func(action string) error { return serviceManager(ctx, runner, r, action) }
 	switch action {
+	case "prune":
+		status, err := authenticatedServiceStatus(ctx, r)
+		if err != nil {
+			return fmt.Errorf("清理前服务认证检查失败；未清理: %w", err)
+		}
+		if status["authenticated"] != true || status["ready"] != true {
+			return errors.New("服务尚未就绪；未清理")
+		}
+		if *source != "" {
+			*source, err = resolveFutureDirectory(*source)
+			if err != nil {
+				return err
+			}
+		}
+		result, err := pruneServiceDeployment(r, *source, *keepReleases, *keepBackups)
+		if err != nil {
+			return err
+		}
+		return writeJSON(stdout, result)
 	case "status":
 		managerState, managerErr := serviceManagerState(ctx, r)
 		status, err := authenticatedServiceStatus(ctx, r)
@@ -421,18 +449,21 @@ func runServiceWithManager(args []string, stdout, stderr io.Writer, runner servi
 			}
 		}
 		if action == "upgrade" {
-			if *archive == "" {
-				next, err = prepareServiceOnlineUpgrade(ctx, r, *version, stderr, officialServiceReleases())
-			} else {
-				fmt.Fprintln(stderr, "正在校验离线升级包…")
-				next, err = publishServiceArchive(*root, *archive, *digest)
-				if err == nil {
-					if current, linkErr := filepath.EvalSymlinks(filepath.Join(r.Root, "current")); linkErr == nil && current == next {
-						fmt.Fprintln(stderr, "已选用同一归档，无需升级；未停止服务。")
-						return nil
+			err = serviceOperationStep(stderr, "校验并准备升级包（服务继续运行）", func() error {
+				if *archive == "" {
+					next, err = prepareServiceOnlineUpgrade(ctx, r, *version, stderr, officialServiceReleases())
+				} else {
+					fmt.Fprintln(stderr, "正在校验离线升级包…")
+					next, err = publishServiceArchive(*root, *archive, *digest)
+					if err == nil {
+						if current, linkErr := filepath.EvalSymlinks(filepath.Join(r.Root, "current")); linkErr == nil && current == next {
+							fmt.Fprintln(stderr, "已选用同一归档，无需升级；未停止服务。")
+							next = ""
+						}
 					}
 				}
-			}
+				return err
+			})
 			if err != nil {
 				return err
 			}
@@ -461,15 +492,31 @@ func runServiceWithManager(args []string, stdout, stderr io.Writer, runner servi
 				return err
 			}
 		}
+		if action == "upgrade" || action == "backup" {
+			// Resolve dependencies before stopping; repeat under the stopped
+			// home/data locks when creating the actual consistent snapshot.
+			if _, err := serviceRequiredReleases(r); err != nil {
+				return err
+			}
+		}
+		downtimeStarted := time.Now()
+		defer func() {
+			fmt.Fprintf(stderr, "[service] 停服流程耗时（含备份、切换及启动检查）：%.2fs\n", time.Since(downtimeStarted).Seconds())
+		}()
 		stopped = true
-		if err := manager("stop"); err != nil {
+		if err := serviceOperationStep(stderr, "停止服务", func() error { return manager("stop") }); err != nil {
 			return err
 		}
 		acquire := acquireStoppedService
 		if action == "stop" || action == "uninstall" {
 			acquire = acquireStoppedHome
 		}
-		release, err := acquire(ctx, r)
+		var release func()
+		err = serviceOperationStep(stderr, "等待服务退出并锁定数据", func() error {
+			var lockErr error
+			release, lockErr = acquire(ctx, r)
+			return lockErr
+		})
 		if err != nil {
 			return err
 		}
@@ -489,7 +536,7 @@ func runServiceWithManager(args []string, stdout, stderr io.Writer, runner servi
 				return err
 			}
 		}
-		if err := createServiceBackup(r, *backup); err != nil {
+		if err := createServiceBackupWithProgress(r, *backup, stderr); err != nil {
 			return fmt.Errorf("service remains stopped; backup: %w", err)
 		}
 		backedUp = true
@@ -506,10 +553,12 @@ func runServiceWithManager(args []string, stdout, stderr io.Writer, runner servi
 				return err
 			}
 			selected = true // Configuration and release switching can partially succeed.
-			if err := configureServiceExecution(r, next); err != nil {
-				return err
-			}
-			if err := selectServiceRelease(r.Root, next); err != nil {
+			if err := serviceOperationStep(stderr, "配置执行环境并切换版本", func() error {
+				if err := configureServiceExecution(r, next); err != nil {
+					return err
+				}
+				return selectServiceRelease(r.Root, next)
+			}); err != nil {
 				return err
 			}
 		}
@@ -519,10 +568,15 @@ func runServiceWithManager(args []string, stdout, stderr io.Writer, runner servi
 		if err := checkServicePort(ctx, r, false); err != nil {
 			return err
 		}
-		if err := manager("start"); err != nil {
+		if err := serviceOperationStep(stderr, "启动服务", func() error { return manager("start") }); err != nil {
 			return fmt.Errorf("backup preserved at %s; startup: %w", *backup, err)
 		}
-		status, err := waitServiceStatus(ctx, r)
+		var status map[string]any
+		err = serviceOperationStep(stderr, "等待认证控制面就绪", func() error {
+			var statusErr error
+			status, statusErr = waitServiceStatus(ctx, r)
+			return statusErr
+		})
 		if err != nil {
 			_ = manager("stop")
 			return fmt.Errorf("新版已选用，服务启动失败并已停止；备份保留在 %s: %w", *backup, err)

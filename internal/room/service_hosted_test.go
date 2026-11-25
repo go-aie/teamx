@@ -18,12 +18,12 @@ import (
 
 func TestServiceHostedInstallGuidesAccountLoginWithoutPrintingTokenCommand(t *testing.T) {
 	home := t.TempDir()
-	serviceTestFile(t, filepath.Join(home, "config.toml"), "[server]\naccess_mode='proxy'\npublic_base_url='https://alpha.teamx.opencsg.com'\ntrusted_proxies=['127.0.0.1']\n[deployment]\nmode='multi-user'\n[deployment.authentication]\nprovider='opencsg'\nallowed_subjects=['subject']\n", 0600)
+	serviceTestFile(t, filepath.Join(home, "config.toml"), "[server]\naccess_mode='proxy'\npublic_base_url='https://assistant.example.com'\ntrusted_proxies=['127.0.0.1']\n[deployment]\nmode='multi-user'\n[deployment.authentication]\nprovider='opencsg'\nallowed_subjects=['subject']\n", 0600)
 	var stdout, stderr bytes.Buffer
 	if err := writeServiceInstallResult(serviceRegistration{Home: home}, map[string]any{"authenticated": true}, &stdout, &stderr); err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(stderr.String(), "https://alpha.teamx.opencsg.com") || !strings.Contains(stderr.String(), "使用部署配置的账号登录") || strings.Contains(stderr.String(), "cat '") {
+	if !strings.Contains(stderr.String(), "https://assistant.example.com") || !strings.Contains(stderr.String(), "使用部署配置的账号登录") || strings.Contains(stderr.String(), "cat '") {
 		t.Fatal("incorrect multi-user login guidance", stderr.String())
 	}
 }

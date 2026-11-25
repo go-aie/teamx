@@ -13,9 +13,11 @@ __pycache__/
 .ruff_cache/
 
 # Local runtime data and binaries
-/.teamx/config.toml
-/.teamx/agent-mcp.json
-/.teamx/data/
+# Runtime identities, credentials and workspace state are private by default.
+# Only public configuration and team templates belong in version control.
+/.teamx/*
+!/.teamx/config.example.toml
+!/.teamx/teams/
 .local/
 /data/
 /bin/

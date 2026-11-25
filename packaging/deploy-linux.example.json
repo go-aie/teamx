@@ -1,0 +1,17 @@
+{
+  "work_dir": "/var/tmp/teamx-deploy",
+  "server_root": "/opt/teamx",
+  "home": "/var/lib/teamx",
+  "bin_dir": "/usr/local/bin",
+  "backup_root": "/var/backups/teamx",
+  "keep_releases": 2,
+  "keep_backups": 2,
+  "node_binary": "node",
+  "build_path": [],
+  "service_user": "teamx",
+  "execution": "srt",
+  "srt_endpoints": [
+    "http://127.0.0.1:8088",
+    "https://model.example.com"
+  ]
+}

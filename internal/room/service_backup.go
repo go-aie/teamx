@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"sort"
 	"sync"
 	"time"
 
@@ -25,6 +26,10 @@ type serviceBackup struct {
 	HomeAssets    []serviceAsset      `json:"home_assets"`
 	ReleaseAssets []serviceAsset      `json:"release_assets"`
 }
+
+// Several standard releases already exceed 64 MiB of inventory metadata.
+// Keep a finite file bound while allowing normal multi-version backups.
+const maxServiceBackupManifestBytes = 512 << 20
 
 // Private backups cover managed state at its original absolute paths. External
 // runtime/data/template/credential roots require a separate deployment recipe.
@@ -220,6 +225,23 @@ func defaultServiceUpgradeBackup(r serviceRegistration) (string, error) {
 }
 
 func createServiceBackup(r serviceRegistration, dest string) error {
+	return createServiceBackupWithProgress(r, dest, io.Discard)
+}
+
+// Progress is written to stderr by the CLI; JSON results remain on stdout.
+func serviceOperationStep(output io.Writer, label string, operation func() error) error {
+	fmt.Fprintf(output, "[service] %s：开始\n", label)
+	started := time.Now()
+	err := operation()
+	status := "完成"
+	if err != nil {
+		status = "失败"
+	}
+	fmt.Fprintf(output, "[service] %s：%s（%.2fs）\n", label, status, time.Since(started).Seconds())
+	return err
+}
+
+func createServiceBackupWithProgress(r serviceRegistration, dest string, output io.Writer) error {
 	dest, err := resolveFutureDirectory(dest)
 	if err != nil {
 		return err
@@ -240,25 +262,48 @@ func createServiceBackup(r serviceRegistration, dest string) error {
 		return errors.New("invalid current release")
 	}
 	backup := serviceBackup{Version: 1, Created: time.Now().UTC(), Registration: r, Current: filepath.Base(current)}
-	backup.HomeAssets, err = serviceInventory(r.Home)
+	required, err := serviceRequiredReleases(r)
 	if err != nil {
 		return err
 	}
-	backup.ReleaseAssets, err = serviceInventory(filepath.Join(r.Root, "releases"))
-	if err != nil {
+	if err := serviceOperationStep(output, "备份：生成 home 与 releases 校验清单", func() error {
+		backup.HomeAssets, err = serviceInventory(r.Home)
+		if err != nil {
+			return err
+		}
+		for _, name := range required {
+			assets, err := serviceInventory(filepath.Join(r.Root, "releases", name))
+			if err != nil {
+				return err
+			}
+			for _, asset := range assets {
+				asset.Path = name + "/" + asset.Path
+				backup.ReleaseAssets = append(backup.ReleaseAssets, asset)
+			}
+		}
+		sort.Slice(backup.ReleaseAssets, func(i, j int) bool { return backup.ReleaseAssets[i].Path < backup.ReleaseAssets[j].Path })
+		return nil
+	}); err != nil {
 		return err
 	}
-	if err := copyServiceTree(r.Home, filepath.Join(stage, "home")); err != nil {
+	if err := serviceOperationStep(output, "备份：复制 home 并同步落盘", func() error { return copyServiceTree(r.Home, filepath.Join(stage, "home")) }); err != nil {
 		return err
 	}
-	if err := copyServiceTree(filepath.Join(r.Root, "releases"), filepath.Join(stage, "releases")); err != nil {
+	if err := serviceOperationStep(output, "备份：复制恢复所需 releases 并同步落盘", func() error {
+		for _, name := range required {
+			if err := copyServiceTree(filepath.Join(r.Root, "releases", name), filepath.Join(stage, "releases", name)); err != nil {
+				return err
+			}
+		}
+		return nil
+	}); err != nil {
 		return err
 	}
 	if err := writeServiceJSON(filepath.Join(stage, "backup.json"), backup); err != nil {
 		return err
 	}
 	// Read back both trees so incomplete copies are never published as backups.
-	if _, err := verifyServiceBackup(stage, r); err != nil {
+	if err := serviceOperationStep(output, "备份：回读并核对完整副本", func() error { _, err := verifyServiceBackup(stage, r); return err }); err != nil {
 		return err
 	}
 	return os.Rename(stage, dest)
@@ -266,7 +311,7 @@ func createServiceBackup(r serviceRegistration, dest string) error {
 
 func verifyServiceBackup(dir string, r serviceRegistration) (serviceBackup, error) {
 	var b serviceBackup
-	if err := readSnapshot(filepath.Join(dir, "backup.json"), &b, 64<<20); err != nil {
+	if err := readSnapshot(filepath.Join(dir, "backup.json"), &b, maxServiceBackupManifestBytes); err != nil {
 		return b, err
 	}
 	if b.Version != 1 || b.Registration.Root != r.Root || b.Registration.Home != r.Home || b.Registration.InstallationID != r.InstallationID || b.Registration.UID != r.UID || b.Current == "" || filepath.Base(b.Current) != b.Current {

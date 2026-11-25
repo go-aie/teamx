@@ -171,7 +171,7 @@ curl -fsS https://assistant.example.com/v1/access/method
 
 ## 6. 升级、备份与恢复
 
-先确认运行版本、目标包摘要、原登记路径和足够磁盘空间。备份包含整个 home 与全部 releases，不只是聊天记录；一份 standard 展开可能超过 1 GiB，多版本与逐文件校验会明显增加停服时间。备份父目录须存在，目标目录须全新，且在安装根／home 之外：
+先确认运行版本、目标包摘要、原登记路径和足够磁盘空间。备份包含整个 home、当时的 current，以及部署／Space 配置、Room 和 Session 执行记录引用的程序版本，不复制未引用的历史 releases 或尚未切换的新版本。每份备份独立可恢复，不依赖其他备份。单个 standard 展开可能超过 1 GiB，逐文件校验和落盘仍需停服时间。备份父目录须存在，目标目录须全新，且在安装根／home 之外：
 
 ```sh
 sudo install -d -m 700 /srv/teamx-backups
@@ -182,9 +182,9 @@ sudo /usr/local/bin/teamx service upgrade --server-root /opt/teamx \
 
 升级复用登记的账号、home、执行方式和端点；不再传首次 `--deployment-config`、`--execution` 或 `--srt-endpoint`。它校验目标包后停服、结清、取得锁、一致备份、切换 `current`、生成新描述并启动认证检查。仅使用受信任且已验收的对应版本；生产机建议固定离线包与摘要，避免无意追随 `latest`。
 
-托管已有 Space 保留其固定旧 release 的 DSH、原执行描述和 CLI；新 Space 使用当前 release。不要手工删除旧 releases／`home/execution` 来节省空间，或编辑模型收据／成员快照来消除运行指纹不匹配。旧依赖缺失或恢复条件不符时，应保留现场并明确处理，不重置 Session 或重放业务。
+托管已有 Space 保留其固定旧 release 的 DSH、原执行描述和 CLI；新 Space 使用当前 release。备份和自动清理均保护已有配置、归档 Space、Room 和冻结 Session 引用的版本；被引用版本可使总数超过保留数。不要手工删除旧 releases／`home/execution`，或编辑模型收据／成员快照来消除运行指纹不匹配。旧依赖缺失或恢复条件不符时，应保留现场并明确处理，不重置 Session 或重放业务。
 
-**当前已知容量边界**：alpha 三份发布目录的备份清单已有 66,694,220 字节，接近当前读取上限 64 MiB。继续增加版本前必须处理并复验该上限；本轮不将这条多版本升级链宣布为无限可用。不要以删备份、删历史 release 或跳过一致备份替代修复。
+**旧包容量边界**：alpha 旧包三份发布目录的备份清单已有 66,694,220 字节，接近其 64 MiB 读取上限。源码现将上限扩为有界的 512 MiB，并收窄为恢复所需程序版本；旧格式的完整备份仍可校验和恢复。下一次升级须先将这些修复纳入构建 commit，使用新包安装器引导；直接调用旧 `teamx service upgrade` 仍会使用旧逻辑。不跳过一致备份或降低完整性检查。
 
 升级后的检查包括：正确安装身份、原 User／Space／Room／成员身份、原模型收据与运行指纹、原 Session 能否恢复、有效浏览器会话、进行中操作状态，以及真实模型与所选平台。自然过期的登录会话应重新登录；控制面 ready 和归档 smoke 都不能替代这些业务检查。当前阶段尚未完成完整业务 Session 升级／故障恢复及备份还原验收。
 
@@ -208,29 +208,80 @@ sudo /usr/local/bin/teamx service restore --server-root /opt/teamx \
 
 ## 7. 本轮 alpha 留存环境
 
-以下是 2026-11-25 交接时只读核对的状态，供继续人工验证；本节不要求再次安装、升级、重启或恢复：
+2026-11-25 交接时已保留多用户开发验收环境，包含 HTTPS／OpenCSG、普通账号 systemd、SRT、原个人数据与一致备份。已完成与未完成范围见[阶段交接](implementation/space-deployment.zh.md#阶段交接2026-11-25)。
 
-| 项目 | 当前值 |
-| --- | --- |
-| 登录入口 | https://alpha.teamx.opencsg.com/ |
-| SSH | `root@8.152.215.150` |
-| 运行组合 | Ubuntu 22.04.5 amd64、glibc 2.35、standard＋SRT、多用户开发验收 |
-| 当前版本 | `dev-f7d7360b0d4b`；SHA-256 `36d1f0ff9b6b4261761f478a8fbc948f4adaec0b9e63f921b345f56e864264c6` |
-| 程序／私有 home | `/data/teamx-alpha-hosted/server`；`/data/teamx-alpha-hosted/home` |
-| 管理入口 | `/data/teamx-alpha-hosted/bin/teamx` |
-| 服务 | `teamx.service`，普通账号 `teamx`（UID/GID 997），active／enabled |
-| 访问链 | Caddy → bridge `10.251.0.1:18089` → `teamx-alpha-proxy.socket`／service → `127.0.0.1:18088` |
-| 准入 | 所有通过所选 OpenCSG 认证源验证的账号；原名单兼容项保留，新账号自己配置模型 |
-| 原个人环境 | `/data/teamx-alpha-final` 保留，原服务登记已注销，不与当前服务同时运行 |
-| 一致备份 | `/data/teamx-alpha-backups/personal-before-hosted`、`/data/teamx-alpha-backups/hosted-before-open-admission`；其他历史备份也保留 |
-| 构建／私有证据 | `/data/teamx-acceptance`；当前包位于其 `open-admission-final/` |
+实际 SSH 主机／IP、域名、内部代理地址、安装／数据／备份目录和工具链路径仅保存在本地被 Git 忽略的文件中：
 
-只读查看当前环境：
+- `.local/linux-environment.md`：实际访问入口、路径表、只读状态／日志命令及部署命令。
+- `.local/deploy-linux.json`：当前主机的实际部署参数，不含 SSH host／port。
+- `.local/space-deployment-private.zh.md`：脱敏前的验收记录，用于定位历史证据。
 
-```sh
-ssh root@8.152.215.150
-/data/teamx-alpha-hosted/bin/teamx service status --server-root /data/teamx-alpha-hosted/server
-/data/teamx-alpha-hosted/bin/teamx service logs --server-root /data/teamx-alpha-hosted/server --lines 100
-```
+仓库文档及配置示例只保留模板或脱敏别名；请勿把它们当作当前实例的真实路径。上述本地文件以 `0600` 保存，不随仓库分发，另换工作区时须自行安全保管。
 
 环境继续留存供人工测试，本轮收尾不变更 DNS／Caddy、服务配置、账号、数据、版本或备份。后续维护另按明确安排执行；优先补齐[阶段交接中的未完成项](implementation/space-deployment.zh.md#阶段交接2026-11-25)，再冻结生产候选。
+
+## 8. 一条命令部署本地最新 commit
+
+仓库提供 [deploy-linux.sh](../scripts/deploy-linux.sh)，本地需要 Node、Git、tar 和可非交互登录的 SSH；远端需要原生 Linux amd64、Git、tar、Go／Node 及所选运行依赖。仓库配置只含通用占位值，须先在忽略的本地副本中填写实际工具链、目录及 SRT 上游；当前留存环境的副本已保存在 `.local/deploy-linux.json`，沿用时不要被模板覆盖。SSH 主机必须使用 `--host` 指定，非默认 SSH 端口使用 `--port`，JSON 不接受这两个字段。非 root SSH 账号还须有可用的 `sudo -n` 管理权限。
+
+在本地仓库根目录准备配置：
+
+```sh
+mkdir -p .local
+# 仅为新环境创建副本；已有文件时保留原值。
+if [ ! -e .local/deploy-linux.json ]; then
+  cp packaging/deploy-linux.example.json .local/deploy-linux.json
+fi
+chmod 600 .local/deploy-linux.json
+```
+
+`teamx-linux` 是 SSH 别名示例，也可传 `user@server`。可在仓库外的 `~/.ssh/config` 配置实际地址、账号、端口和私钥位置，命令只引用别名；私钥继续由 SSH 管理，不写入 JSON。若需要覆盖端口，在命令追加 `--port 2222`。
+
+`server_root`／`home`／`bin_dir` 必须指向原安装登记的路径；`node_binary`／`build_path` 指向可用工具链。SRT 的 loopback 端口、模型域名也必须换成实际 origin；`https://model.example.com` 仅为占位值。这些环境参数及初始配置路径也只保存在本地副本中。
+
+先确认要交付的代码已提交到本地 Git，包含本节脚本及备份清单上限修复；不要求 push。脚本在启动时固定 HEAD 的完整 commit，使用 Git bundle 传输已提交对象；工作区未提交修改、未跟踪文件及日常运行 home 不会混入。Git 中若误提交已知私有运行路径会提前拒绝。构建包内记录的 commit 必须与请求一致。
+
+```sh
+# 查看固定的 commit、主机、远端新任务目录，不连接 SSH、不部署。
+./scripts/deploy-linux.sh --host teamx-linux --config .local/deploy-linux.json --dry-run
+
+# 实际上传并只构建、校验归档，不执行安装／升级。
+./scripts/deploy-linux.sh --host teamx-linux --config .local/deploy-linux.json --build-only
+
+# 上传、构建、校验，并自动选择首次安装或升级。
+./scripts/deploy-linux.sh --host teamx-linux --config .local/deploy-linux.json
+```
+
+缓存完整时可追加 `--offline`；新增固定依赖缺缓存时，使用默认联网模式补齐，不修改 lock。每次调用仍创建新的任务目录，但会自动复用已验证结果：
+
+- **依赖复用**：`<cache_dir>/prepared-dependencies/<key>/` 保存已展开依赖的归档、文件清单与元数据。key 包含目标平台、包型、libc、固定依赖及组装代码摘要；仅应用源码变化可命中，锁文件／工具版本／组装代码变化会重新准备。复用时核对缓存归档、文件哈希／权限／内部链接，并重新执行原生模块检查；新分发包继续跑完整 smoke。
+- **同 commit 归档复用**：`<work_dir>/artifacts/<key>/` 保存通过完整 smoke 的原归档、摘要和报告。key 包含完整 commit、目标／包型、构建宿主信息及部署运行器摘要。命中后再次核对归档 SHA-256、完整源码身份、报告摘要和 smoke 验证器指纹，复用原字节与原报告。`--build-only` 后可直接执行普通部署；安装失败后重试也不必重新编译和 smoke。
+
+构建失败或 smoke 未通过的产物不进入可复用归档缓存。缓存损坏／身份不匹配时在安装前拒绝，保留现场；检查后只移走报错指向的缓存项再重试。依赖缓存和归档缓存用途不同：需要同 commit 强制重建时，只移走对应 `artifacts/<key>/`，下一次仍可复用未变化的依赖。旧脚本任务未登记这些缓存，首次执行新脚本仍需构建。
+
+流程为：本地固定 HEAD → SSH 上传 bundle／运行器 → 远端检出同一 commit → 复用 Go／依赖缓存打 `linux-amd64 standard` 开发包 → 核对摘要、smoke 报告和包内源码身份 → **使用新归档内的安装器** → 检查已安装 CLI 的 commit 和认证服务状态 → 清理过期版本和成功部署备份。已有 `service.json` 时升级，不再传首次 home／账号／执行选择；否则新装。升级使用全新备份目录，不跳过备份，不自动回滚。
+
+JSON 配置可设置 `"keep_releases": 2`、`"keep_backups": 2`，省略时均为 2。程序版本至少保留 2 个（当前及上一个成功版本），配置／Space／Room／Session 仍引用的版本额外保留；完整备份至少保留 1 份，默认保留最近两次成功部署的升级前快照。每份新备份只收录自身恢复所需的版本。
+
+清理调用 `teamx service prune`，在安装根的私有 `retention.json` 中登记成功部署的版本和备份路径，按部署顺序保留，不以目录修改时间判断新旧。只清理已登记的部署备份；既有手工备份、其他实例及失败部署的未登记备份保持原样，不会因目录名相似而被删除。首次使用新策略时，这些旧备份仍需按实际恢复价值手工整理。相同归档重跑未切版本时不登记不存在的备份。
+
+归档校验、安装／升级或服务身份检查失败时不执行清理。清理前再次认证服务、核对版本引用，并完整校验要保留的备份；不能确认依赖或备份时停止清理。清理自身失败会单独告警并记录 `deployment.json` 的 `retention.error`，部署状态仍为 `deployed`，新版服务继续运行；检查原因后可重新执行 `teamx service prune --server-root DIR` 重试。直接调用 `service upgrade`／`backup` 不会自动执行保留策略。
+
+任务目录是 `<work_dir>/jobs/<commit>-<time>-<random>/`，不覆盖旧源码快照。每个任务保留 `source/`、`dist/`、`source.bundle` 和 `deployment.json`；后者记录源码 commit、归档 SHA-256、动作、备份路径、缓存命中、各阶段耗时及最终状态。失败保留现场，以服务状态／日志和一致备份诊断，不把旧服务仍可访问当作新部署成功。
+
+终端会显示 `[local]` 的 bundle／上传／远端总耗时，`[deploy]` 的构建或复用／校验／安装／认证检查耗时。首次构建还有 `[package]` 的依赖、原生模块、各个 Go 程序、清单、压缩及完整 smoke 耗时；smoke 各检查显示相邻检查之间的耗时和累计时间。SSH 与远端长任务期间每 15 秒报告仍在执行。
+
+远端任务内可回看 `build.log`（实际构建时产生）、`installer.log`（安装或升级时产生）、`deployment.json` 和 `retention.json`（成功部署后的清理结果或错误输出），实际构建另有 `dist/*-timing.json`。升级 CLI 把归档准备、停服、锁定、备份清单、home／恢复所需 releases 复制落盘、回读核对、版本切换、启动和认证检查分别计时，并显示停服流程耗时；详细输出留在 `installer.log`。日志及缓存含环境路径，按私有运维材料保存，不提交到仓库。
+
+先将本次脚本、打包辅助模块、备份和保留策略改动纳入 commit，再使用上述命令测量。构建／完整 smoke 发生在旧服务继续运行期间，备份和切换阶段才进入停服流程；清理在新版启动认证后进行。恢复所需内容、完整 smoke 和落盘校验仍保留，未引用的程序版本不再重复进入每份备份。
+
+新装其他主机时，先按第 3–5 节准备宿主依赖、HTTPS、专用部署目录和认证配置。在 JSON 中增加 `"deployment_config": "/remote/private/initial.toml"`，仅引用远端已存在的 0600 文件，不在本地配置中写 Key／密码。首次选择 SRT 时，`execution`／`srt_endpoints` 必须与私有初始配置匹配。脚本不配置 Caddy、DNS、模型 Key 或平台登录，也不绕过当前正式多用户生产门槛。
+
+`.local/`、`.env*` 和私有运行文件不应提交；公开示例不写真实主机、域名、账号标识或 Key。命令行和终端日志可能显示 SSH 目标，有保密要求时优先使用 SSH 别名。当前文件脱敏不会删除已经进入 Git 历史的信息；脚本传输的 Git bundle 也包含 HEAD 的可达历史，不能当作历史脱敏工具。
+
+脚本的 Git／tar／SSH 传输、commit 固定、新装／升级参数、失败阻断、只构建、保留数量、同包重跑与清理失败隔离有本地夹具回归；备份依赖选择、独立恢复、旧格式兼容、引用保护和中断清理另有 Go 回归。此次保留策略尚未在 alpha 执行真实升级与清理。检查入口：
+
+```sh
+node --test scripts/deploy-linux.test.mjs scripts/package-cache.test.mjs
+go test -race ./internal/room -run '^(TestService|TestSpaceExecution)' -count=1 -timeout=180s
+```

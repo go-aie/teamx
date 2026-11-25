@@ -142,7 +142,7 @@ bash install.sh --archive /absolute/teamx-archive.tar.gz --execution srt \
 [server]
 listen = "127.0.0.1:18088"
 access_mode = "proxy"
-public_base_url = "https://alpha.teamx.opencsg.com"
+public_base_url = "https://assistant.example.com"
 trusted_proxies = ["127.0.0.1"]
 
 [deployment]

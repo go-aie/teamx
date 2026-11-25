@@ -4,6 +4,10 @@
 
 Linux 维护者从构建到服务器操作的路径、当前生产门槛与 alpha 环境留存信息，见 [Linux 打包、部署与升级](../docs/linux-deployment.zh.md)。
 
+从本地最新 commit 经 SSH 自动构建／部署 Linux amd64 standard，使用 [deploy-linux.sh](../scripts/deploy-linux.sh)；配置示例为 [deploy-linux.example.json](deploy-linux.example.json)，操作见[一条命令部署](../docs/linux-deployment.zh.md#8-一条命令部署本地最新-commit)。脚本只部署已提交 HEAD，支持预演、仅构建、依赖与已验证归档复用，并输出阶段耗时；不更改代理或复制本地运行数据。
+
+SSH 目标用 `--host` 指定，端口可用 `--port` 覆盖；JSON 不接受 host／port。示例只含占位值，实际目录、工具链及 SRT 上游写在被 Git 忽略的 `.local/deploy-linux.json`；私钥由 SSH 配置管理。
+
 | 目的 | 入口 | 产物位置 |
 | --- | --- | --- |
 | 用 GitHub Actions 构建开发快照 | [Package snapshots](../.github/workflows/package.yml) | 对应 Actions 运行的 Artifacts |

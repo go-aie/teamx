@@ -73,5 +73,5 @@ export function extract(archive, dest, strip = 0) {
   run('tar', ['-xpf', archive, '-C', dest, `--strip-components=${strip}`], {
     env: { ...process.env, COPYFILE_DISABLE: '1' }
   });
-  inventory(dest);
+  return inventory(dest);
 }

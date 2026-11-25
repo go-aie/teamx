@@ -73,7 +73,7 @@ go test -tags=e2e ./internal/room -run '^TestOpenCSGSSOLoopback$' -v -count=1 -t
 
 测试监听 `127.0.0.1:18088`，等待用户在本机浏览器完成登录，只写入不含 token 的私有身份收据；不授予业务访问，用以取得管理员允许名单所需的服务端稳定主体。它验证登录事务与真实身份交换，不能替代真实 Linux 多用户、双账号及撤销验收。
 
-远端验收可显式提供 `TEAMX_SSO_ACCEPTANCE_LISTEN=127.0.0.1:8088` 和 `TEAMX_SSO_ACCEPTANCE_ORIGIN=https://alpha.teamx.opencsg.com`。监听仍限于 loopback，复用正式 Host／可信代理校验，只信任 loopback TLS 代理的 `X-Forwarded-Proto: https`；代理须保留 Host 并移除 `X-Forwarded-Host`／`Forwarded`。验证页使用 `Referrer-Policy: same-origin`，使浏览器原生表单 POST 保留有效 Origin；敏感登录／回调继续使用 `no-referrer`。只有真实受保护身份交换成功并写入收据，才计为登录验证通过。
+远端验收可显式提供 `TEAMX_SSO_ACCEPTANCE_LISTEN=127.0.0.1:8088` 和 `TEAMX_SSO_ACCEPTANCE_ORIGIN=https://assistant.example.com`。监听仍限于 loopback，复用正式 Host／可信代理校验，只信任 loopback TLS 代理的 `X-Forwarded-Proto: https`；代理须保留 Host 并移除 `X-Forwarded-Host`／`Forwarded`。验证页使用 `Referrer-Policy: same-origin`，使浏览器原生表单 POST 保留有效 Origin；敏感登录／回调继续使用 `no-referrer`。只有真实受保护身份交换成功并写入收据，才计为登录验证通过。
 
 S3b.2a 的真实飞书 OAuth／刷新／DPoP 和 S3b.3 的正式出口继续依原记录判断，生产 `multi-user` 启动门槛没有移除。本轮不改写这些前置状态，不声明 Gordis 插件化、S4b、迁移、内置账号、可选 Computer 或 S5 完成。
 

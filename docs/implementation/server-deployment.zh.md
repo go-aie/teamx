@@ -14,8 +14,8 @@
 - 服务使用明确、最少的账号环境，不读 shell rc、不继承 export Key。缺模型是认证后的 `setup_required`，不启动业务或触发模型验证。受管 `serve` 始终要求登录保护；仅本机与 HTTPS 代理模式保持 loopback，局域网模式可切换为全接口监听并限制私有来源和本机 IP Host。管理器认证探针仍通过 loopback 运行。普通可移动 bundle 的本机默认免登录保持原行为，归档 smoke 先测该首启，再显式启用 token 完成凭据测试。随包提供 Caddy 与 journald 示例，安装不修改主机证书、代理或防火墙。
 - systemd：45 秒停止预算、`KillMode=mixed`、10 秒退避、10 分钟内最多 5 次启动。LaunchAgent：45 秒预算，有界监管最多 5 次失败重试、间隔 10 秒；`stop` 使用 bootout，不由 KeepAlive 拉起。启停与持久 enable/disable 分离。Mac 监管进程负责 10 MiB 日志轮转，保留 5 份历史；Linux 使用主机 journald 保留策略。
 - `status` 区分管理器、所有者认证、安装身份、设置／业务状态、ServiceEpoch、成员数和模型操作概况；启动核对 token 与 installation ID，业务态还读取模型／成员恢复概况。端口连通或公开 health 不能替代认证检查。单个平台故障不作为管理器重启依据。
-- 升级先校验发布，停止旧服务，取得 home 和 data 独占锁，完整备份后原子切换 current，再启动认证检查。保留全部旧 releases；启动检查失败保持新选择、停服和备份，不冒险自动切回旧 binary。
-- 备份复制整个 home 和所有 releases，记录原 current、安装／账号登记与文件 inventory；包括托管 Key 历史、首启状态、验证／模型操作／有限迁移、模板、Session／rotation 和 Workspace。备份发布和恢复前均校验。外部 data／teams／token／Runtime 及越界链接明确拒绝，平台官方凭据另行备份或重新授权。
+- 升级先校验发布，停止旧服务，取得 home 和 data 独占锁，完整备份后原子切换 current，再启动认证检查。启动检查失败保持新选择、停服和备份，不冒险自动切回旧 binary。2026-11-25 起，部署脚本在成功认证后调用 `service prune`，默认保留当前与上一个成功版本、最近两份已登记的成功部署备份；Space／Room／Session 引用的版本额外保留，手工及失败部署备份不自动清理。
+- 备份复制整个 home、原 current 与配置／Space／Room／Session 引用的 releases，记录安装／账号登记与文件 inventory；不重复复制未引用的历史版本。包括托管 Key 历史、首启状态、验证／模型操作／有限迁移、模板、Session／rotation 和 Workspace，每份独立恢复。备份发布和恢复前均校验，兼容旧的全 releases 备份。外部 data／teams／token／Runtime 及越界链接明确拒绝，平台官方凭据另行备份或重新授权。
 - 恢复仅对同一登记、账号和原绝对路径执行，先备份当前状态；保留 `home.before-restore-*`、新旧程序版本，再按备份选择启动。模型迁移和中断查询／重试复用已有控制器，不另建迁移／Session 状态机，不由部署命令重放验证或平台动作。
 - standard 目标的候选资格新增 `resident_server`（仅 Linux amd64、macOS arm64），manifest 绑定[模型阶段 4 交付记录](model-deletion-migration-delivery.zh.md)摘要。真实部署、适用迁移与模型操作恢复缺失时保持 `not_run`；Linux 固定账号发送也是明确门槛。原四目标和 core／standard 发行矩阵保留。
 

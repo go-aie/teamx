@@ -30,10 +30,16 @@ if (args.length) {
 }
 const temp = fs.mkdtempSync(p.join(os.tmpdir(), 'teamx archive smoke ')),
   children = new Set();
-const checks = [];
+const checks = [], timings = [];
+const started = performance.now();
+let previousCheck = started;
+console.log('Smoke: started (extracting archive and checking inventory)');
 const pass = (name) => {
   checks.push(name);
-  console.log(`Smoke: ${name}`);
+  const now = performance.now();
+  timings.push({ stage: name, duration_ms: Math.round(now - previousCheck) });
+  previousCheck = now;
+  console.log(`Smoke: ${name} (${(timings.at(-1).duration_ms / 1000).toFixed(2)}s; total ${((now - started) / 1000).toFixed(2)}s)`);
 };
 const pause = () => new Promise((resolve) => setTimeout(resolve, 100));
 async function until(fn, description) {
@@ -467,6 +473,8 @@ try {
     profile: manifest.profile,
     environment: { os_release: os.release(), process_arch: process.arch, machine: os.machine(), platform: process.platform },
     checks,
+    timings,
+    duration_ms: Math.round(performance.now() - started),
     srt_execution: manifest.execution_runtimes?.srt ? 'not_run' : 'not_selected',
     real_dsh_acp: 'not_run',
     real_platforms: 'not_run',

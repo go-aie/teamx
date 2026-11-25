@@ -16,6 +16,8 @@ import { assembleSRT } from './package-srt.mjs';
 import { hasDependency } from './package-profiles.mjs';
 import { assertReleaseSource, releaseBatch } from './package-release-source.mjs';
 import { signingPolicy, signBundle, notarizeBundle } from './package-signing.mjs';
+import { preparedDependencies } from './package-cache.mjs';
+import { progress } from './package-progress.mjs';
 const root = p.resolve(p.dirname(fileURLToPath(import.meta.url)), '..');
 const opts = {
   channel: 'dev',
@@ -23,7 +25,10 @@ const opts = {
   target: `${process.platform}-${process.arch === 'x64' ? 'amd64' : process.arch}`,
   offline: false
 };
-let stage, pending, outputLock;
+let stage, pending, outputLock, timingFile;
+const timing = progress('package');
+const totalStarted = performance.now();
+let finishStage = timing.start('preflight and source inputs');
 try {
   const args = process.argv.slice(2);
   while (args.length) {
@@ -60,7 +65,7 @@ try {
     lock.dependencies.glab.contract,
     ...assets.files.map(a => a.source),
     ...['package.mjs', 'package-lib.mjs', 'package-platform.mjs', 'package-profiles.mjs',
-      'package-smoke.mjs', 'check-packaging.mjs', 'check-dsh-native.mjs',
+      'package-smoke.mjs', 'package-cache.mjs', 'package-progress.mjs', 'check-packaging.mjs', 'check-dsh-native.mjs',
       'package-release-source.mjs', 'package-signing.mjs', 'package-srt.mjs',
       'fixtures/acp.mjs', 'fixtures/models.mjs'].map(f => `scripts/${f}`),
     'packaging/node-entitlements.plist'
@@ -154,6 +159,8 @@ try {
       ? opts.version
       : `dev-${commit.slice(0, 12)}${dirty ? '-dirty' : ''}`;
   const name = `teamx-${version}-${opts.target}-${opts.profile}`;
+  finishStage();
+  finishStage = undefined;
   const lockPath = p.join(out, `.${name}.build-lock`);
   try {
     fs.mkdirSync(lockPath);
@@ -161,6 +168,7 @@ try {
     throw Error(`Cannot acquire output lock ${lockPath}: ${error.code}`);
   }
   outputLock = lockPath;
+  timingFile = p.join(out, name + '-timing.json');
   stage = fs.mkdtempSync(p.join(root, '.packaging/build-'));
   const bundle = p.join(stage, name);
   fs.mkdirSync(bundle);
@@ -214,116 +222,139 @@ try {
       fs.rmSync(tmp, { force: true });
     }
   }
-  const nodeEntry = dep.node.platforms[opts.target];
-  extract(
-    await download(nodeEntry),
-    p.join(bundle, nodeEntry.layout.destination),
-    nodeEntry.layout.strip_components
-  );
-  const node = p.join(bundle, 'runtime/node/bin/node'),
-    npm = p.join(bundle, 'runtime/node/lib/node_modules/npm/bin/npm-cli.js');
-  must(
-    run(node, ['--version']).trim() === dep.node.expected_version,
-    'Node version mismatch'
-  );
-  must(
-    run(node, [npm, '--version']).trim() === lock.build_tools.npm,
-    'npm version mismatch'
-  );
-  const dsh = p.join(bundle, dep.dsh.layout.destination);
-  fs.mkdirSync(dsh, { recursive: true });
-  for (const file of ['package.json', 'package-lock.json'])
-    fs.copyFileSync(p.join(root, 'packaging/dsh', file), p.join(dsh, file));
   const buildHome = p.join(stage, 'build-home');
   fs.mkdirSync(buildHome);
-  const npmEnv = {
-    ...process.env,
-    HOME: buildHome,
-    PATH: `${p.dirname(node)}:/usr/bin:/bin`,
-    NPM_CONFIG_USERCONFIG: p.join(buildHome, 'npmrc'),
-    NPM_CONFIG_GLOBALCONFIG: p.join(buildHome, 'global-npmrc'),
-    NPM_CONFIG_CACHE: p.join(
-      cache,
-      `npm-${opts.target}-${dep.dsh.deployment_lock.sha256}`
-    ),
-    NPM_CONFIG_UPDATE_NOTIFIER: 'false'
-  };
-  // Native binaries ship in integrity-locked optional packages/prebuilds. Do not
-  // allow lifecycle scripts to fetch mutable, unverified GitHub assets.
-  console.log(
-    'Deploying pinned DSH production closure (lifecycle scripts disabled)'
-  );
-  run(
-    node,
-    [
-      npm,
-      'ci',
-      '--omit=dev',
-      '--ignore-scripts',
-      '--no-audit',
-      '--no-fund',
-      ...(opts.offline ? ['--offline'] : [])
-    ],
-    { cwd: dsh, env: npmEnv, stdio: 'inherit' }
-  );
-  must(
-    hash(fs.readFileSync(p.join(dsh, 'package-lock.json'))) ===
-      dep.dsh.deployment_lock.sha256,
-    'npm changed deployment lock'
-  );
-  // node-pty normally installs these permissions in a lifecycle script.
-  for (const file of files(dsh).filter((f) =>
-    /node-pty\/prebuilds\/.*\/spawn-helper$/.test(f)
-  ))
-    fs.chmodSync(p.join(dsh, file), 0o755);
-  for (const asset of assets.files) {
-    const dest = p.join(bundle, asset.destination);
-    fs.mkdirSync(p.dirname(dest), { recursive: true });
-    fs.copyFileSync(p.join(root, asset.source), dest);
-  }
-  for (const dest of ['start', 'install.sh', 'bin/dsh'])
-    fs.chmodSync(p.join(bundle, dest), 0o755);
-  await assemblePlatformDependencies({
-    root, bundle, target: opts.target, profile: opts.profile, lock,
-    glabLock: json(p.join(root, dep.glab.contract)), download
-  });
-  const srt = assembleSRT({ root, bundle, target: opts.target, profile: opts.profile, cache, buildHome, offline: opts.offline });
-  const notices = [];
-  for (const file of files(p.join(dsh, 'node_modules')).filter((f) =>
-    /(?:^|\/)(?:licen[cs]e|copying|notice|copyright)(?:[^/]*?)$/i.test(f)
-  )) {
-    const src = p.join(dsh, 'node_modules', file);
-    if (fs.lstatSync(src).isFile())
-      notices.push({
-        path: `runtime/dsh/node_modules/${file}`,
-        sha256: hash(fs.readFileSync(src))
+  const dependencyBundle = bundle;
+  // Include assembly code as well as locks. Application-only commits reuse the
+  // closure; any dependency/assembly change selects a different entry.
+  const dependencyInputs = [
+    'packaging/dependencies.lock.json', 'packaging/dsh/package.json', 'packaging/dsh/package-lock.json',
+    'packaging/srt/package.json', 'packaging/srt/package-lock.json', 'packaging/srt/runtime.lock.json',
+    dep.glab.contract, 'packaging/glab-launcher', 'packaging/git-launcher',
+    'scripts/package.mjs', 'scripts/package-lib.mjs', 'scripts/package-cache.mjs',
+    'scripts/package-platform.mjs', 'scripts/package-profiles.mjs', 'scripts/package-srt.mjs',
+    'scripts/check-dsh-native.mjs'
+  ].map(path => ({ path, sha256: hash(fs.readFileSync(p.join(root, path))) }));
+  const { srt } = await timing.run('prepare dependencies', () => preparedDependencies({
+    cache, destination: dependencyBundle,
+    identity: { version: 1, target: opts.target, profile: opts.profile,
+      libc: process.report?.getReport().header.glibcVersionRuntime || null, inputs: dependencyInputs },
+    validate: directory => timing.step('native dependency check', () => {
+      const node = p.join(directory, 'runtime/node/bin/node');
+      run(node, [p.join(root, 'scripts/check-dsh-native.mjs'), p.join(directory, dep.dsh.layout.destination)], {
+        cwd: buildHome, env: { ...process.env, HOME: buildHome, PATH: `${p.dirname(node)}:/usr/bin:/bin` }
       });
-  }
-  const installed = [];
-  for (const file of files(p.join(dsh, 'node_modules')).filter((f) =>
-    /(?:^|\/)package.json$/.test(f)
-  )) {
-    const pkg = json(p.join(dsh, 'node_modules', file));
-    if (pkg.name && pkg.version)
-      installed.push({
-        name: pkg.name,
-        version: pkg.version,
-        license: pkg.license || 'see package notices',
-        path: `runtime/dsh/node_modules/${file}`
+    }),
+    build: async () => {
+      for (const name of ['bin', 'THIRD_PARTY_NOTICES']) fs.mkdirSync(p.join(dependencyBundle, name), { recursive: true });
+      const nodeEntry = dep.node.platforms[opts.target];
+      extract(
+        await download(nodeEntry),
+        p.join(dependencyBundle, nodeEntry.layout.destination),
+        nodeEntry.layout.strip_components
+      );
+      const node = p.join(dependencyBundle, 'runtime/node/bin/node'),
+        npm = p.join(dependencyBundle, 'runtime/node/lib/node_modules/npm/bin/npm-cli.js');
+      must(
+        run(node, ['--version']).trim() === dep.node.expected_version,
+        'Node version mismatch'
+      );
+      must(
+        run(node, [npm, '--version']).trim() === lock.build_tools.npm,
+        'npm version mismatch'
+      );
+      const dsh = p.join(dependencyBundle, dep.dsh.layout.destination);
+      fs.mkdirSync(dsh, { recursive: true });
+      for (const file of ['package.json', 'package-lock.json'])
+        fs.copyFileSync(p.join(root, 'packaging/dsh', file), p.join(dsh, file));
+      const npmEnv = {
+        ...process.env,
+        HOME: buildHome,
+        PATH: `${p.dirname(node)}:/usr/bin:/bin`,
+        NPM_CONFIG_USERCONFIG: p.join(buildHome, 'npmrc'),
+        NPM_CONFIG_GLOBALCONFIG: p.join(buildHome, 'global-npmrc'),
+        NPM_CONFIG_CACHE: p.join(
+          cache,
+          `npm-${opts.target}-${dep.dsh.deployment_lock.sha256}`
+        ),
+        NPM_CONFIG_UPDATE_NOTIFIER: 'false'
+      };
+      // Native binaries ship in integrity-locked optional packages/prebuilds. Do not
+      // allow lifecycle scripts to fetch mutable, unverified GitHub assets.
+      console.log(
+        'Deploying pinned DSH production closure (lifecycle scripts disabled)'
+      );
+      run(
+        node,
+        [
+          npm,
+          'ci',
+          '--omit=dev',
+          '--ignore-scripts',
+          '--no-audit',
+          '--no-fund',
+          ...(opts.offline ? ['--offline'] : [])
+        ],
+        { cwd: dsh, env: npmEnv, stdio: 'inherit' }
+      );
+      must(
+        hash(fs.readFileSync(p.join(dsh, 'package-lock.json'))) ===
+          dep.dsh.deployment_lock.sha256,
+        'npm changed deployment lock'
+      );
+      // node-pty normally installs these permissions in a lifecycle script.
+      for (const file of files(dsh).filter((f) =>
+        /node-pty\/prebuilds\/.*\/spawn-helper$/.test(f)
+      ))
+        fs.chmodSync(p.join(dsh, file), 0o755);
+      await assemblePlatformDependencies({
+        root, bundle: dependencyBundle, target: opts.target, profile: opts.profile, lock,
+        glabLock: json(p.join(root, dep.glab.contract)), download
       });
-  }
-  writeJSON(p.join(bundle, 'THIRD_PARTY_NOTICES/dsh-dependencies.json'), {
-    packages: installed,
-    notices
-  });
-  // Load the actual native addons without any model/platform network request.
-  run(node, [p.join(root, 'scripts/check-dsh-native.mjs'), dsh], {
-    cwd: buildHome,
-    env: npmEnv
+      const srt = assembleSRT({ root, bundle: dependencyBundle, target: opts.target, profile: opts.profile, cache, buildHome, offline: opts.offline });
+      const notices = [];
+      for (const file of files(p.join(dsh, 'node_modules')).filter((f) =>
+        /(?:^|\/)(?:licen[cs]e|copying|notice|copyright)(?:[^/]*?)$/i.test(f)
+      )) {
+        const src = p.join(dsh, 'node_modules', file);
+        if (fs.lstatSync(src).isFile())
+          notices.push({
+            path: `runtime/dsh/node_modules/${file}`,
+            sha256: hash(fs.readFileSync(src))
+          });
+      }
+      const installed = [];
+      for (const file of files(p.join(dsh, 'node_modules')).filter((f) =>
+        /(?:^|\/)package.json$/.test(f)
+      )) {
+        const pkg = json(p.join(dsh, 'node_modules', file));
+        if (pkg.name && pkg.version)
+          installed.push({
+            name: pkg.name,
+            version: pkg.version,
+            license: pkg.license || 'see package notices',
+            path: `runtime/dsh/node_modules/${file}`
+          });
+      }
+      writeJSON(p.join(dependencyBundle, 'THIRD_PARTY_NOTICES/dsh-dependencies.json'), {
+        packages: installed,
+        notices
+      });
+      return { srt };
+    }
+  }));
+  timing.step('copy public assets', () => {
+    for (const asset of assets.files) {
+      const dest = p.join(bundle, asset.destination);
+      fs.mkdirSync(p.dirname(dest), { recursive: true });
+      fs.copyFileSync(p.join(root, asset.source), dest);
+    }
+    for (const dest of ['start', 'install.sh', 'bin/dsh'])
+      fs.chmodSync(p.join(bundle, dest), 0o755);
   });
   for (const build of assets.builds) {
     console.log(`Building ${build.destination}`);
-    run(
+    timing.step(`compile ${build.destination}`, () => run(
       'go',
       [
         'build',
@@ -339,7 +370,7 @@ try {
         build.package
       ],
       { cwd: root, env: buildEnv }
-    );
+    ));
   }
   for (const input of [...sourceInputs, ...packagingInputs])
     must(
@@ -348,6 +379,7 @@ try {
     );
   const signing = opts.channel === 'release'
     ? signBundle(bundle, root, opts.target, opts['macos-signing'] || 'unsigned') : undefined;
+  finishStage = timing.start('inventory and manifest');
   const dependencyRecords = {};
   for (const key of lock.profiles[opts.profile].required_dependencies) {
     const runtime = key === 'lark-cli' ? 'lark' : key;
@@ -399,16 +431,18 @@ try {
   checkBinaries(bundle, opts.target, opts.profile);
   const immutable = inventory(bundle);
   writeJSON(p.join(bundle, 'checksums.txt'), immutable);
+  finishStage();
+  finishStage = undefined;
   const notarization = signing ? notarizeBundle(bundle, stage, signing) : undefined;
-  run('tar', ['-czf', pending, '-C', stage, name], {
+  timing.step('compress archive', () => run('tar', ['-czf', pending, '-C', stage, name], {
     env: { ...process.env, COPYFILE_DISABLE: '1' }
-  });
+  }));
   const report = p.join(stage, 'smoke-report.json');
-  run(
+  await timing.run('full archive smoke', () => run(
     process.execPath,
     [p.join(root, 'scripts/package-smoke.mjs'), pending, '--report', report],
     { stdio: 'inherit' }
-  );
+  ));
   for (const input of [...sourceInputs, ...packagingInputs])
     must(hash(fs.readFileSync(p.join(root, input.path))) === input.sha256,
       `Source changed during archive verification: ${input.path}`);
@@ -432,6 +466,8 @@ try {
   });
   console.log(`Verified archive: ${archive}\nSHA256: ${archiveHash}`);
 } catch (error) {
+  finishStage?.(error);
+  finishStage = undefined;
   console.error(`Package failed: ${error.message}`);
   if (pending && fs.existsSync(pending)) {
     const failed = p.join(root, '.packaging/last-failed.tar.gz');
@@ -441,7 +477,15 @@ try {
   }
   process.exitCode = 1;
 } finally {
-  if (pending) fs.rmSync(pending, { force: true });
-  if (stage) fs.rmSync(stage, { recursive: true, force: true });
-  if (outputLock) fs.rmdirSync(outputLock);
+  try {
+    timing.step('cleanup build workspace', () => {
+      if (pending) fs.rmSync(pending, { force: true });
+      if (stage) fs.rmSync(stage, { recursive: true, force: true });
+      if (outputLock) fs.rmdirSync(outputLock);
+    });
+  } finally {
+    const elapsed = Math.round(performance.now() - totalStarted);
+    console.log(`[package] total: ${(elapsed / 1000).toFixed(2)}s`);
+    if (timingFile) writeJSON(timingFile, { total_ms: elapsed, stages: timing.records });
+  }
 }

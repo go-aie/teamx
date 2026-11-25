@@ -29,6 +29,8 @@ func writeServiceCommandHelp(out io.Writer, action string, flags *flag.FlagSet) 
 		fmt.Fprintln(out, "一致备份会停服并保持停止。父目录须已存在且可写，目标目录须尚不存在。\n  teamx service backup --backup-dir /path/to/new-backup\n完成后需要继续运行时，执行 teamx service start。")
 	case "restore":
 		fmt.Fprintln(out, "恢复同一实例与原绝对路径；同时为恢复前状态创建新的备份。\n  teamx service restore --from /path/to/backup --backup-dir /path/to/new-pre-restore-backup\n不要仅切回旧程序代替数据恢复。")
+	case "prune":
+		fmt.Fprintln(out, "仅在成功部署和服务认证检查后清理；保留被 Space/Room/Session 引用的程序版本。\n  teamx service prune --from /path/to/this-deployment-backup --keep-releases 2 --keep-backups 2\n--from 将本次完整备份登记到自动保留列表；手工、异实例及失败部署的未登记备份不清理。")
 	case "install":
 		fmt.Fprintln(out, "从本机 standard 归档安装/重新登记服务。首次安装优先使用官方 install.sh。\n  teamx service install --archive /path/to/package.tar.gz\n已有安装升级请使用 teamx service upgrade。")
 	case "logs":

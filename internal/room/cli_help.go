@@ -39,6 +39,7 @@ const serviceCLIHelp = `Usage: teamx service COMMAND [OPTIONS]
   upgrade --archive FILE        离线升级；摘要读取 FILE.sha256
   backup --backup-dir DIR       停服并创建一致备份，完成后保持停止
   restore --from DIR --backup-dir DIR  恢复备份，并保存恢复前状态
+  prune                         成功部署后清理旧版本和已登记备份
   uninstall                     停止并注销服务，保留数据、版本和命令
   install --archive FILE        安装/重新登记本机 standard 包（安装器调用）
 通用参数：--server-root DIR；默认从已安装的 teamx 命令发现。

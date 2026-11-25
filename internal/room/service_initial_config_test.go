@@ -15,7 +15,7 @@ import (
 const hostedServiceSeed = `[server]
 listen = "127.0.0.1:18088"
 access_mode = "proxy"
-public_base_url = "https://alpha.teamx.opencsg.com"
+public_base_url = "https://assistant.example.com"
 trusted_proxies = ["127.0.0.1"]
 [deployment]
 mode = "multi-user"
@@ -94,7 +94,7 @@ func TestServiceInitialConfigSelectsCompositionBeforeIdentityReservation(t *test
 	if err := toml.Unmarshal(before, &c); err != nil {
 		t.Fatal(err)
 	}
-	if c.Deployment.Mode != "multi-user" || c.Runtime == nil || c.Runtime.DSH.BinaryPath != filepath.Join(r.Root, "current/bin/dsh") || c.Access.LoginEnabled == nil || !*c.Access.LoginEnabled || c.Server.PublicBaseURL != "https://alpha.teamx.opencsg.com" {
+	if c.Deployment.Mode != "multi-user" || c.Runtime == nil || c.Runtime.DSH.BinaryPath != filepath.Join(r.Root, "current/bin/dsh") || c.Access.LoginEnabled == nil || !*c.Access.LoginEnabled || c.Server.PublicBaseURL != "https://assistant.example.com" {
 		t.Fatal("composition did not preserve managed runtime and authentication")
 	}
 	if err := initializeServiceConfig(r, "/published/release", seed); err != nil {
