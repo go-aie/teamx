@@ -58,6 +58,10 @@ export function assembleSRT({ root, bundle, target, profile, cache, buildHome, o
   });
   must(hash(fs.readFileSync(p.join(runtime, 'package-lock.json'))) === lock.npm_lock_sha256,
     'npm changed SRT lock');
+  // Dependency preparation runs before public assets are copied, including
+  // when building a fresh prepared-dependency cache. Own our output parents.
+  for (const directory of ['share/teamx', 'THIRD_PARTY_NOTICES'])
+    fs.mkdirSync(p.join(bundle, directory), { recursive: true });
   writeJSON(p.join(bundle, 'share/teamx/srt-runtime.json'), lock);
   const items = inventory(runtime);
   writeJSON(p.join(bundle, 'THIRD_PARTY_NOTICES/srt-dependencies.json'), {

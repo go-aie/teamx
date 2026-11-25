@@ -4,8 +4,9 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as p from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { checkSRTLock, checkSRTArchive, checkSRTHosts, includesSRT } from './package-srt.mjs';
+import { assembleSRT, checkSRTLock, checkSRTArchive, checkSRTHosts, includesSRT } from './package-srt.mjs';
 import { hash, inventory, json, writeJSON } from './package-lib.mjs';
+import { preparedDependencies } from './package-cache.mjs';
 
 const source = p.resolve(p.dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -29,6 +30,42 @@ test('each supported host has a complete independent pinned tool set', () => {
     const copy = structuredClone(lock); mutate(copy);
     assert.throws(() => checkSRTHosts(copy), /SRT host/);
   }
+});
+
+test('SRT dependency cache builds and reuses its contract before public asset assembly', async t => {
+  const directory = fs.mkdtempSync(p.join(os.tmpdir(), 'teamx SRT dependency assembly '));
+  t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
+  const cache = p.join(directory, 'cache'), buildHome = p.join(directory, 'build-home');
+  fs.mkdirSync(buildHome);
+  let builds = 0;
+  const identity = { target: 'linux-amd64', profile: 'standard', test: 'SRT assembly before public assets' };
+  const prepare = name => {
+    const bundle = p.join(directory, name);
+    return preparedDependencies({ cache, identity, destination: bundle,
+      build: () => {
+        builds++;
+        const node = p.join(bundle, 'runtime/node/bin/node');
+        fs.mkdirSync(p.dirname(node), { recursive: true });
+        // Substitute only npm execution. The real SRT assembly, lock checks,
+        // output writing, inventory and prepared-cache round trip all run.
+        fs.writeFileSync(node, '#!/bin/sh\nset -eu\ncase "$1" in\n */npm-cli.js) test "$2" = ci;;\n *) exit 2;;\nesac\nmkdir -p node_modules\nprintf synthetic > node_modules/fixture\nprintf "npm-ci\\n" >> "$HOME/npm-invocations"\n', { mode: 0o755 });
+        assert.equal(fs.existsSync(p.join(bundle, 'share')), false);
+        assert.equal(fs.existsSync(p.join(bundle, 'THIRD_PARTY_NOTICES')), false);
+        return { srt: assembleSRT({ root: source, bundle, target: 'linux-amd64', profile: 'standard', cache, buildHome, offline: true }) };
+      },
+      validate: (bundle, metadata) => {
+        assert.deepEqual(json(p.join(bundle, metadata.srt.contract)), checkSRTLock(source));
+        assert.equal(metadata.srt.runtime_sha256, hash(JSON.stringify(inventory(p.join(bundle, 'runtime/srt')))));
+        assert.ok(json(p.join(bundle, 'THIRD_PARTY_NOTICES/srt-dependencies.json')).packages.length > 0);
+      }
+    });
+  };
+  const cold = await prepare('cold');
+  fs.writeFileSync(p.join(directory, 'cold/share/teamx/public-asset'), 'separate assembly step');
+  assert.deepEqual(await prepare('warm'), cold);
+  assert.equal(builds, 1);
+  assert.equal(fs.readFileSync(p.join(buildHome, 'npm-invocations'), 'utf8'), 'npm-ci\n');
+  assert.equal(fs.existsSync(p.join(directory, 'warm/share/teamx/public-asset')), false);
 });
 
 test('archive rejects missing, mismatched or modified SRT resources before launch', t => {
