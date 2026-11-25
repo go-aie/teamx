@@ -684,10 +684,12 @@ export function createMembers({ env, runtime, notificationsUI, workspaceUI, onbo
     $("room-members-heading").hidden = roomsUI.isDirect();
     renderActivityControls();
     renderExecutionHint();
-    $("member-count").textContent = participantCount();
+    const loading = !!state.info && !state.membersReady && !state.messagePreview && !state.members.length;
+    $("member-loading").hidden = roomsUI.isDirect() || !loading;
+    $("member-count").textContent = loading ? "…" : participantCount();
     $("room-title-count").textContent = `(${participantCount()})`;
-    $("member-empty").hidden = state.members.length > 0;
-    const human = showHumanMember() ? {id:state.operator, name:userMenuUI.displayName()} : null;
+    $("member-empty").hidden = loading || state.members.length > 0;
+    const human = showHumanMember() && !loading ? {id:state.operator, name:userMenuUI.displayName()} : null;
     // Keep focus and controls stable when polling reports no visible changes.
     const signature = JSON.stringify([state.members, human]) + [...memberBusy].join(",") + state.connected + discussionBusy();
     if ($("members").dataset.signature === signature) return;

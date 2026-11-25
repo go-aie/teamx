@@ -113,6 +113,7 @@
       <div id="timeline-wrap" class="timeline-wrap">
         <div id="timeline" class="timeline" tabindex="0" aria-label="消息记录">
           <div class="history-control"><button id="load-history" class="text-button" hidden>加载更早消息</button></div>
+          <div id="conversation-loading" class="conversation-loading" role="status" hidden><span class="sr-only">正在读取会话…</span><div class="conversation-loading-row" aria-hidden="true"></div><div class="conversation-loading-row" aria-hidden="true"></div><div class="conversation-loading-row" aria-hidden="true"></div></div>
           <div id="empty" class="empty"><span id="empty-conversation-icon" class="empty-mark" aria-hidden="true">#</span><h2>从一条消息开始</h2><p>发送任务或想法，让房间里的 Agent 一起参与。</p><div id="direct-suggestions" class="direct-suggestions" hidden><button type="button" class="secondary-button" data-suggestion="帮我整理一下待办事项">整理待办</button><button type="button" class="secondary-button" data-suggestion="介绍一下你能帮我做什么">你能做什么</button><button type="button" class="secondary-button" data-suggestion="帮我连接飞书">连接飞书</button></div></div>
 
           <div id="messages" role="log" aria-label="公共消息" aria-live="polite" aria-relevant="additions"></div>
@@ -304,6 +305,7 @@
             <button id="add-member" class="primary" type="submit">添加成员</button>
             <div id="add-error" class="form-error" role="alert" hidden></div>
           </form>
+          <p id="member-loading" class="quiet" role="status" hidden>正在读取成员…</p>
           <div id="member-empty" class="member-empty"><span class="member-empty-icon">◎</span><p>还没有 Agent 加入</p><span>添加成员后，启用它的自动协作。</span></div>
           <div id="members" class="members-compact"></div>
           <p id="notification-next-step" class="quiet" role="status" tabindex="-1" hidden></p>
@@ -321,7 +323,7 @@
           <section id="conversation-settings" class="conversation-settings" aria-label="会话设置">
             <p id="connection" class="connection quiet" role="status">正在连接</p>
             <button id="open-general-settings" class="text-button" type="button" aria-haspopup="dialog" aria-controls="settings-dialog" hidden>设置</button>
-            <button id="restart-discussion" class="text-button" type="button" disabled>重新开始</button>
+            <button id="restart-discussion" class="text-button" type="button" disabled hidden>重新开始</button>
           </section>
         </div>
       </div>

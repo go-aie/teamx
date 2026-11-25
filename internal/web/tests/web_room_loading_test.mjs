@@ -196,6 +196,88 @@ test("late reads from a superseded Room never install messages or release the ne
 
 const messageText = (ui, seq) => ui.el("messages").children.find(node => node.id === `message-${seq}`)?.querySelector(".message-text").textContent;
 
+for (const seen of [true, false]) test(`cached mentions wait for the current reading state before highlighting (seen=${seen})`, async () => {
+  const api = roomFixture(), reading = deferred();
+  const readingState = body => ({version:2,room_id:body.room_id,room_instance:body.room_instance,operator_id:body.caller.id,
+    revision:1,snapshot_seq:1,cleared_through:0,opened_through:1,mention_seen_seqs:seen ? [1] : [],unseen_mention_seqs:seen ? [] : [1],
+    unread_count:seen ? 0 : 1,mention_count:seen ? 0 : 1,...(body.include_new_messages ? {new_message_seqs:[]} : {})});
+  let pending = false, input;
+  api.roomHook = (path, body) => {
+    if (path === "/v1/read") return {...page(body.room_id),messages:[{...page(body.room_id).messages[0],text:"@tester 请确认"}]};
+    if (path === "/v1/human-read/state") {
+      if (pending && body.room_id === "R") { input = body; return reading.promise; }
+      return readingState(body);
+    }
+  };
+  const ui = await launch(api); await ui.select("S"); pending = true;
+  await ui.select("R");
+  const node = ui.el("messages").children.find(node => node.id === "message-1");
+  assert.equal(node.classList.contains("mentioned"), false, "unknown reading state must not highlight old mentions");
+  assert.equal(node.querySelector(".message-text").textContent, "@tester 请确认");
+  reading.resolve(readingState(input)); await settle();
+  assert.equal(node.classList.contains("mentioned"), !seen, "verified unread mentions still highlight");
+  assert.equal(ui.el("messages").children.find(node => node.id === "message-1"), node);
+});
+
+for (const direct of [false, true]) test(`uncached ${direct ? "direct" : "group"} entry waits for verified empty states`, async () => {
+  const api = roomFixture(), messages = deferred(), members = deferred();
+  for (const room of api.rooms) room.is_direct = direct;
+  if (direct) api.members.splice(1);
+  const ui = await launch(api);
+  api.roomHook = path => path === "/v1/read" ? messages.promise : path === "/v1/member/list" ? members.promise : undefined;
+  await ui.select("S");
+  assert.equal(ui.el("conversation-loading").hidden, false);
+  assert.equal(ui.el("empty").hidden, true);
+  assert.equal(ui.el("member-empty").hidden, true);
+  assert.equal(ui.el("member-loading").hidden, direct);
+  assert.equal(ui.el("room-title-count").hidden, true);
+  assert.equal(messageText(ui, 1), undefined, "never display another Room's messages while loading");
+  messages.resolve({messages:[],snapshot_seq:0,cleared_through:0,has_more:false}); await settle();
+  assert.equal(ui.el("conversation-loading").hidden, true);
+  assert.equal(ui.el("empty").hidden, false, "only a verified empty read shows the welcome view");
+  assert.equal(ui.el("member-empty").hidden, true);
+  assert.equal(ui.el("send").disabled, true);
+  members.resolve({members:[]}); await settle();
+  assert.equal(ui.el("member-loading").hidden, true);
+  assert.equal(ui.el("member-empty").hidden, false);
+});
+
+test("preview revalidation retains unchanged message bodies without replaying entry animations", async () => {
+  const api = roomFixture(), ui = await launch(api), messages = deferred();
+  await ui.select("S");
+  api.roomHook = path => path === "/v1/read" ? messages.promise : undefined;
+  await ui.select("R");
+  await ui.draft("Draft R");
+  const node = ui.el("messages").children.find(node => node.id === "message-1");
+  const body = node.querySelector(".message-text");
+  assert.equal(node.classList.contains("message-history"), true);
+  assert.equal(ui.el("conversation-loading").hidden, true);
+  messages.resolve(page("R")); await settle();
+  assert.equal(ui.el("messages").children.find(node => node.id === "message-1"), node);
+  assert.equal(node.querySelector(".message-text"), body);
+  assert.equal(ui.el("send").disabled, false);
+});
+
+test("preview reconciliation preserves retained nodes while removing missing messages and replacing changed bodies", async () => {
+  const api = roomFixture();
+  const original = {...page("R"),messages:[...page("R").messages,...page("R",2).messages],snapshot_seq:2};
+  api.roomHook = path => path === "/v1/read" ? original : undefined;
+  const ui = await launch(api); await ui.select("S");
+  const messages = deferred();
+  api.roomHook = path => path === "/v1/read" ? messages.promise : undefined;
+  await ui.select("R");
+  const node = ui.el("messages").children.find(node => node.id === "message-1");
+  messages.resolve({...original,messages:[original.messages[0],...page("R",3).messages],snapshot_seq:3}); await settle();
+  assert.equal(ui.el("messages").children.find(node => node.id === "message-1"), node);
+  assert.equal(messageText(ui, 2), undefined);
+  assert.equal(messageText(ui, 3), "Message R");
+  await ui.select("S");
+  api.roomHook = path => path === "/v1/read" ? {...page("R",3),messages:[{...original.messages[0],text:"Updated body"}]} : undefined;
+  await ui.select("R");
+  assert.equal(messageText(ui, 1), "Updated body");
+  assert.equal(messageText(ui, 3), undefined);
+});
+
 test("returning to a Room displays cached messages and members before HTTP and gates sending until both reads succeed", async () => {
   const api = roomFixture(), ui = await launch(api), workspace = deferred(), members = deferred();
   await ui.draft("Draft R"); await ui.select("S");

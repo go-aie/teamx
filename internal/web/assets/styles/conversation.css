@@ -70,6 +70,12 @@
   padding:12px 32px;
   animation:arrive .2s ease-out;
 }
+.message-history { animation:none; }
+.conversation-loading { display:flex; flex-direction:column; gap:32px; padding:28px 32px; }
+.conversation-loading-row { display:flex; gap:12px; max-width:560px; }
+.conversation-loading-row::before { content:""; flex:none; width:32px; height:32px; border-radius:50%; background:var(--surface-muted); }
+.conversation-loading-row::after { content:""; width:80%; height:72px; border-radius:var(--radius-control); background:var(--surface-muted); }
+.conversation-loading-row:nth-child(3) { align-self:flex-end; width:70%; flex-direction:row-reverse; }
 .room-event {
   padding:8px clamp(16px,4vw,32px);
   color:var(--muted);

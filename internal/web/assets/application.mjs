@@ -93,7 +93,7 @@ export async function createApp(overrides = {}) {
 
   const state = { info: null, operator: "operator", messages: new Map(), lastSeq: 0, oldest: 0,
     clearedThrough: 0,
-    messagePreview: false, messagesReady: false, membersReady: false,
+    messagePreview: false, messagesReady: false, membersReady: false, messagesLoading: false,
     members: [], profiles: [], teams: [], connected: false, managed: false, catalog: null, catalogConnected: false,
     isDirect: false, management: null, managementSending: false, managementError: "", draft: {}, restart: null };
 
@@ -238,6 +238,7 @@ export async function createApp(overrides = {}) {
     membersUI.resetActivity();
     state.info = info; state.operator = operator; state.connected = false;
     state.messagesReady = state.membersReady = false; state.messagePreview = !!cached;
+    state.messagesLoading = !!info;
     $("connection").textContent = cached ? "正在同步…" : "正在加载会话…";
     $("connection").classList.add("offline");
     syncFailureSince = null; notice("sync-error", "");
@@ -252,7 +253,7 @@ export async function createApp(overrides = {}) {
  conversationUI.resetMessageNodes();
     conversationUI.resetReadingContext();
     conversationUI.resetRestartNotice();
-    conversationUI.showDraft(); conversationUI.renderMessages(); membersUI.renderMembers();
+    conversationUI.showDraft(); conversationUI.renderMessages({ animate: false }); membersUI.renderMembers();
     $("jump-latest").hidden = true;
     if (cached) conversationUI.restorePosition(cached.position);
     notice("restart-notice", "");
@@ -359,14 +360,14 @@ export async function createApp(overrides = {}) {
     const read = await conversationUI.readPages(initial ? { mode: "latest", latest: 50 } : { mode: "range", after }, info);
     if (!currentView(version) || !current() || read.clearedThrough < state.clearedThrough || read.snapshot < state.lastSeq) return;
     const position = preview ? conversationUI.capturePosition() : null;
-    if (preview) { state.messages.clear(); conversationUI.resetMessageNodes(); }
     const cleared = conversationUI.applyClear(read.clearedThrough);
-    state.messagePreview = false; state.messagesReady = !observation;
-    if (read.messages.length || cleared || preview) {
-      for (const message of read.messages) state.messages.set(message.seq, message);
-      conversationUI.renderMessages();
+    state.messagePreview = false; state.messagesReady = !observation; state.messagesLoading = false;
+    if (preview) conversationUI.replaceMessages(read.messages);
+    if (read.messages.length || cleared || initial) {
+      if (!preview) for (const message of read.messages) state.messages.set(message.seq, message);
+      conversationUI.renderMessages({ animate: !initial });
       if (preview && position) conversationUI.restorePosition(position);
-      else if (stick) conversationUI.bottom();
+      else if (stick && (read.messages.length || cleared)) conversationUI.bottom();
       else { $("timeline").scrollTop = scrollTop; if (read.messages.length) $("jump-latest").hidden = false; }
     }
     state.lastSeq = read.snapshot;

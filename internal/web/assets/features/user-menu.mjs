@@ -61,6 +61,7 @@ export function createUserMenu({ env, runtime, conversationUI, roomsUI, membersU
       const response = await fetch(spaceURL("/v1/access/session"), { cache: "no-store" });
       const session = response.ok ? await response.json() : null;
       state.deploymentManaged = session?.deployment_managed === true;
+      runtime.conversationToolsChanged();
       if ($("profile-security")) $("profile-security").hidden=state.deploymentManaged;
       const enabled = response.ok && session?.login_enabled !== false;
       $("access-logout").hidden = !enabled;

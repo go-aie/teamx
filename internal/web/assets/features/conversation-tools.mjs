@@ -14,7 +14,8 @@ export function createConversationTools({ env, runtime, roomsUI, layoutUI, files
   let key = "", pinned = {}, storage;
   try { storage = env.localStorage; } catch { /* Preferences also work in memory. */ }
 
-  const available = tool => tool.key !== "calendar" || roomsUI.isDirect();
+  const available = tool => (tool.key !== "calendar" || roomsUI.isDirect()) &&
+    (tool.key !== "environment" || !state.deploymentManaged);
   const visibleTools = () => tools.filter(available);
   function load() {
     const next = JSON.stringify(["teamx.conversation-tools", state.installationID || "", state.operator]);

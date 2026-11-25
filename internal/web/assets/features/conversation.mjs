@@ -41,6 +41,7 @@ export function createConversation({ env, runtime, roomsUI, membersUI, settingsU
   newDivider.className = "new-message-divider";
   newDivider.textContent = "以下为新消息";
   const ownMessage = message => message.author.kind === "human" && message.author.id === state.operator;
+  const unreadMention = seq => !!humanRead.summary() && !humanRead.seen(seq);
   const readingKey = () => state.info ? JSON.stringify([state.installationID, state.info, state.operator]) : "";
 
   function leaveConversation() {
@@ -235,7 +236,7 @@ export function createConversation({ env, runtime, roomsUI, membersUI, settingsU
 
   // Reading-only sync must not rebuild the timeline or change its scroll state.
   function renderReading() {
-    for (const message of mentionMessages) messageNodes.get(message.seq)?.element.classList.toggle("mentioned", !humanRead.seen(message.seq));
+    for (const message of mentionMessages) messageNodes.get(message.seq)?.element.classList.toggle("mentioned", unreadMention(message.seq));
     if (visit) for (const seq of visit.remainingSeqs) if (humanRead.seen(seq) || seq <= state.clearedThrough) visit.remainingSeqs.delete(seq);
     unreadCandidates.clear();
     for (const [seq, cached] of messageNodes) if (!ownMessage(state.messages.get(seq)) &&
@@ -282,7 +283,7 @@ export function createConversation({ env, runtime, roomsUI, membersUI, settingsU
       if (message && mentionRanges(message.text, operatorNames()).length && state.connected && !discussionBusy()) humanRead.observe(seq);
       // Keep an unconfirmed mention eligible while the service is read-only/busy.
       if (!message || !mentionRanges(message.text, operatorNames()).length || humanRead.seen(seq)) unreadCandidates.delete(seq);
-      el.classList.toggle("mentioned", !!message && mentionRanges(message.text, operatorNames()).length > 0 && !humanRead.seen(seq));
+      el.classList.toggle("mentioned", !!message && mentionRanges(message.text, operatorNames()).length > 0 && unreadMention(seq));
       changed = true;
     }
     if (changed) renderMentionNotice();
@@ -345,13 +346,16 @@ export function createConversation({ env, runtime, roomsUI, membersUI, settingsU
   function finishMessages() {
     filesUI?.observeMessages();
     calendarUI?.renderLinks?.();
-    $("empty").hidden = state.messages.size !== 0;
+    const loading = state.messagesLoading && !state.messagePreview && state.messages.size === 0;
+    $("conversation-loading").hidden = !loading;
+    $("messages").setAttribute("aria-busy", String(loading));
+    $("empty").hidden = loading || state.messages.size !== 0;
     $("load-history").hidden = state.oldest <= state.clearedThrough + 1;
     renderDivider(); renderReply(); renderMentionNotice();
     scheduleMessageViewing();
   }
 
-  function messageElement(message) {
+  function messageElement(message, animate = true) {
     if (message.type === "event") {
       const event = document.createElement("div");
       event.id = `message-${message.seq}`;
@@ -362,6 +366,7 @@ export function createConversation({ env, runtime, roomsUI, membersUI, settingsU
     }
     const el = $("message-template").content.firstElementChild.cloneNode(true);
     el.id = `message-${message.seq}`;
+    el.classList.toggle("message-history", !animate);
     el.classList.toggle("own", ownMessage(message));
     const agent = message.author.kind === "agent", integration = message.author.kind === "integration";
     el.classList.toggle("integration", integration);
@@ -392,7 +397,7 @@ export function createConversation({ env, runtime, roomsUI, membersUI, settingsU
     const ranges = mentionRanges(message.text, operatorNames());
     renderMessageBody(text, message.text, state.operator, messageOptions(message));
     attachmentsUI.renderMessage(text, message);
-    el.classList.toggle("mentioned", !humanRead.seen(message.seq) && ranges.length > 0 && !(message.author.kind === "human" && message.author.id === state.operator));
+    el.classList.toggle("mentioned", unreadMention(message.seq) && ranges.length > 0 && !ownMessage(message));
     const time = el.querySelector("time");
     time.textContent = settingsUI.formatDate(message.created_at, {hour:"2-digit",minute:"2-digit"});
     time.dateTime = message.created_at;
@@ -407,7 +412,17 @@ export function createConversation({ env, runtime, roomsUI, membersUI, settingsU
     return el;
   }
 
-  function renderMessages() {
+  // Revalidate a preview without replacing unchanged message bodies or images.
+  function replaceMessages(messages) {
+    for (const message of messages) {
+      if (JSON.stringify(state.messages.get(message.seq)) !== JSON.stringify(message)) messageNodes.delete(message.seq);
+    }
+    state.messages.clear();
+    for (const message of messages) state.messages.set(message.seq, message);
+    renderedKey = null;
+  }
+
+  function renderMessages({ animate = true } = {}) {
     humanRead.prune();
     // Ordinary polling after a long history load only constructs new messages.
     // Identity/time-zone changes still use the existing complete reconciliation.
@@ -420,7 +435,7 @@ export function createConversation({ env, runtime, roomsUI, membersUI, settingsU
         const fragment = document.createDocumentFragment();
         for (const message of added) {
           if (messageDay(message) !== day) { day = messageDay(message); fragment.append(dayElement(message)); }
-          const cached = {element:messageElement(message),memberNames:key,mentioned:mentionRanges(message.text,operatorNames()).length>0,day:messageDay(message)};
+          const cached = {element:messageElement(message, animate),memberNames:key,mentioned:mentionRanges(message.text,operatorNames()).length>0,day:messageDay(message)};
           rememberMessage(message,cached); trackMessage(message,cached); fragment.append(cached.element);
         }
         $("messages").append(fragment);
@@ -447,7 +462,7 @@ export function createConversation({ env, runtime, roomsUI, membersUI, settingsU
         nodes.push(divider);
       }
       let cached=messageNodes.get(message.seq);
-      if(!cached){cached={element:messageElement(message),memberNames:memberNamesKey};rememberMessage(message,cached);}
+      if(!cached){cached={element:messageElement(message, animate),memberNames:memberNamesKey};rememberMessage(message,cached);}
       const el=cached.element;
       cached.mentioned = mentionRanges(message.text,operatorNames()).length > 0;
       cached.day = day;
@@ -466,7 +481,7 @@ export function createConversation({ env, runtime, roomsUI, membersUI, settingsU
         renderMessageBody(el.querySelector(".message-text"), message.text, state.operator, messageOptions(message));
         cached.memberNames = memberNamesKey;
       }
-      el.classList.toggle("mentioned", !humanRead.seen(message.seq) && cached.mentioned && !own);
+      el.classList.toggle("mentioned", unreadMention(message.seq) && cached.mentioned && !own);
       el.querySelector("time").textContent=settingsUI.formatDate(message.created_at,{hour:"2-digit",minute:"2-digit"});
       el.querySelector("time").title=settingsUI.formatDate(message.created_at);
       if (message.reply_to) renderReference(message,el);
@@ -775,7 +790,7 @@ export function createConversation({ env, runtime, roomsUI, membersUI, settingsU
     $("rename-room-name").setAttribute("aria-label", `${type}名称`);
     $("room-detail-name").textContent = name;
     $("room-title-count").textContent = `(${membersUI.participantCount()})`;
-    $("room-title-count").hidden = direct || !state.info;
+    $("room-title-count").hidden = direct || !state.info || !state.membersReady && !state.messagePreview && !state.members.length;
     $("room-details").hidden = direct;
     $("room-members-heading").hidden = direct;
     $("restart-discussion").title = direct ? "重新开始私信，清空消息并重置助理会话" : "重新开始房间讨论";
@@ -982,6 +997,7 @@ export function createConversation({ env, runtime, roomsUI, membersUI, settingsU
     interactionHost,
     locateMessage,
     renderMessages,
+    replaceMessages,
     composerState,
     beginReply,
     nearBottom,
