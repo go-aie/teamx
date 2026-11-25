@@ -230,7 +230,16 @@ export function createConnections({ env, settingsUI, runtime, scionUI, gitlabUI,
     $("connection-form").hidden = false; $("platforms-list-view").hidden = true;
     $("connection-title").textContent = item?.provider === "lark" ? `${item.cli_profile?.brand === "lark" ? "Lark" : "飞书"}设置` : item ? "平台详情" : "添加平台";
     $("connection-name").value = item?.name || "";
-    setSelectOptions("connection-provider",[new Option("GitLab","gitlab"),new Option("Scion","scion"),new Option("飞书","feishu"),new Option("Lark","lark")].filter(option => spaceCapabilities()[option.value === "feishu" ? "lark" : option.value] !== false),item?.provider === "lark" ? item.cli_profile?.brand || "feishu" : item?.provider || "gitlab");
+    const providers=[new Option("GitLab","gitlab"),new Option("Scion","scion"),new Option("飞书","feishu"),new Option("Lark","lark")].filter(option => spaceCapabilities()[option.value === "feishu" ? "lark" : option.value] !== false);
+    const provider=item?.provider === "lark" ? item.cli_profile?.brand || "feishu" : item?.provider;
+    const selected=provider ? providers.find(option=>option.value===provider)?.value : providers[0]?.value;
+    setSelectOptions("connection-provider",providers,selected || "");
+    $("connection-fields").hidden=!selected;
+    if (!selected) {
+      $("connection-fields").disabled=true;
+      connectionFeedback(item ? "此平台在当前部署中暂不可用，请联系管理员。" : "此部署暂未开放可连接的平台，请联系管理员。", "error");
+      return;
+    }
     $("connection-provider").disabled = !!item;
     $("connection-url").value = item?.url || ""; $("connection-url").readOnly = !!item;
     setSelectOptions("connection-profile",[new Option("", item?.cli_profile?.profile || "")],item?.cli_profile?.profile || "");
@@ -429,6 +438,7 @@ export function createConnections({ env, settingsUI, runtime, scionUI, gitlabUI,
       if (connectionIsLark()) return larkUI.detectLarkPlatform();
       if (connectionIsScion()) return scionUI.detectScionPlatform();
       gitlabUI.renderGitLabAccount();
+      return gitlabUI.discoverGitLabSetup();
     });
 
     $("connection-url").addEventListener("change", () => { platforms.gitlabApplicationID="";scionUI.renderScionPATLink(); if(connectionIsScion()) return scionUI.detectScionPlatform(); return gitlabUI.discoverGitLabSetup(); });

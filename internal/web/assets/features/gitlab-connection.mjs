@@ -93,8 +93,8 @@ export function createGitLabConnection({ env, connectionsUI, runtime, settingsUI
     $("gitlab-initial-hint").hidden=hasApp;
     if (!hasApp && !connectionsUI.platforms.gitlabSetup) $("gitlab-setup").hidden=false;
     renderGitLabReuse();onboardingUI.renderOnboarding();
-    $("gitlab-service-application-row").hidden=!managedApplication() || !!item || !!connectionsUI.platforms.connectOperation;
-    if (managedApplication()) $("connection-url-row").hidden=!item && serviceApplications.length>0 && !connectionsUI.platforms.connectOperation;
+    $("gitlab-service-application-row").hidden=!managedApplication() || serviceApplications.length<2 || !!item || !!connectionsUI.platforms.connectOperation;
+    if (managedApplication()) $("connection-url-row").hidden=!item && serviceApplications.length!==1 && !connectionsUI.platforms.connectOperation;
     if (managedApplication()) {
       for (const id of ["gitlab-app-config-row","gitlab-setup","gitlab-client-fields","gitlab-edit-application","gitlab-edit-cancel","gitlab-repair-application"]) $(id).hidden=true;
       if (spaceCapabilities().managed_repositories === false) { $("gitlab-scope-write-repository").checked=false; $("gitlab-scope-write-repository").disabled=true; }
@@ -119,7 +119,7 @@ export function createGitLabConnection({ env, connectionsUI, runtime, settingsUI
       $("connection-actions").hidden=true;
     }
     if (needsChoice) $("gitlab-import").disabled=true;
-    $("gitlab-client-fields").hidden=needsChoice;
+    $("gitlab-client-fields").hidden=needsChoice || managedApplication();
     if(onboardingUI.onboarding.active && onboardingUI.onboarding.pending){$("connection-provider").disabled=true;$("connection-url").readOnly=true;}
   }
 
