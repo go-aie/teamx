@@ -67,7 +67,7 @@ function child(command, args, options = {}) {
   return { process:subprocess, done };
 }
 
-export async function deployLocal(repo, config, { host, port, dryRun = false, buildOnly = false, offline = false } = {}) {
+export async function deployLocal(repo, config, { host, port, dryRun = false, buildOnly = false, offline = false, fullSmoke = false } = {}) {
   check(typeof host === 'string' && /^(?:[a-zA-Z0-9_][a-zA-Z0-9_.-]*@)?(?:[a-zA-Z0-9][a-zA-Z0-9_.-]*|\[[0-9a-fA-F:]+\])$/.test(host), 'Specify --host [user@]host (an SSH config alias is also accepted)');
   if (port !== undefined) check(Number.isInteger(port) && port > 0 && port < 65536, 'Invalid SSH --port; expected 1..65535');
   const c = deploymentConfig(config), commit = sourceCommit(repo);
@@ -83,9 +83,12 @@ export async function deployLocal(repo, config, { host, port, dryRun = false, bu
   if (port) sshArgs.push('-p', String(port));
   try {
     timing.step('create committed Git bundle', () => makeSourceBundle(repo, p.join(temp, 'source.bundle'), commit));
-    fs.copyFileSync(p.join(root, 'scripts/deploy-linux-remote.mjs'), p.join(temp, 'runner.mjs'));
-    fs.copyFileSync(p.join(root, 'scripts/package-progress.mjs'), p.join(temp, 'package-progress.mjs'));
-    fs.writeFileSync(p.join(temp, 'request.json'), JSON.stringify({ config:c, commit, job, build_only:buildOnly, offline }), { mode:0o600 });
+    // The runner and packager share a protocol; upload both from the pinned
+    // commit even when this launcher is running from a modified working tree.
+    for (const [source, target] of [['scripts/deploy-linux-remote.mjs', 'runner.mjs'], ['scripts/package-progress.mjs', 'package-progress.mjs']]) {
+      fs.writeFileSync(p.join(temp, target), execFileSync('git', ['-C', repo, 'show', `${commit}:${source}`]));
+    }
+    fs.writeFileSync(p.join(temp, 'request.json'), JSON.stringify({ config:c, commit, job, build_only:buildOnly, offline, full_smoke:fullSmoke }), { mode:0o600 });
     await timing.run('SSH upload', async () => {
       const upload = child('ssh', [...sshArgs,host,`umask 077; mkdir -p -- ${shellQuote(job)} && tar -xf - -C ${shellQuote(job)}`], { stdio:['pipe','inherit','inherit'] });
       const archive = child('tar', ['-cf','-','-C',temp,'source.bundle','runner.mjs','package-progress.mjs','request.json'], { stdio:['ignore','pipe','inherit'], env:{...process.env,COPYFILE_DISABLE:'1'} });
@@ -106,7 +109,7 @@ export async function deployLocal(repo, config, { host, port, dryRun = false, bu
 }
 
 async function main() {
-  let file, host, port, dryRun=false, buildOnly=false, offline=false;
+  let file, host, port, dryRun=false, buildOnly=false, offline=false, fullSmoke=false;
   const args=process.argv.slice(2);
   while (args.length) {
     const arg=args.shift();
@@ -116,10 +119,11 @@ async function main() {
     else if (arg==='--dry-run') dryRun=true;
     else if (arg==='--build-only') buildOnly=true;
     else if (arg==='--offline') offline=true;
-    else if (arg==='--help' || arg==='-h') { console.log('Usage: scripts/deploy-linux.sh --host [user@]host --config FILE.json [--port PORT] [--dry-run] [--build-only] [--offline]\nDeploy committed HEAD via SSH; build Linux amd64 standard remotely and use its installer.\nSSH host and port are command arguments only; keep environment settings in an ignored local JSON file.'); return; }
+    else if (arg==='--full-smoke') fullSmoke=true;
+    else if (arg==='--help' || arg==='-h') { console.log('Usage: scripts/deploy-linux.sh --host [user@]host --config FILE.json [--port PORT] [--dry-run] [--build-only] [--offline] [--full-smoke]\nDeploy committed HEAD via SSH; build Linux amd64 standard remotely and use its installer.\nSSH host and port are command arguments only; keep environment settings in an ignored local JSON file.'); return; }
     else throw Error(`Unknown argument: ${arg}`);
   }
   check(file,'Specify --config FILE.json; see packaging/deploy-linux.example.json');
-  await deployLocal(root,JSON.parse(fs.readFileSync(file,'utf8')),{host,port,dryRun,buildOnly,offline});
+  await deployLocal(root,JSON.parse(fs.readFileSync(file,'utf8')),{host,port,dryRun,buildOnly,offline,fullSmoke});
 }
 if (process.argv[1] && p.resolve(process.argv[1])===fileURLToPath(import.meta.url)) main().catch(error=>{console.error(`Deploy: ${error.message}`);process.exitCode=1;});

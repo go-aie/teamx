@@ -41,6 +41,7 @@ try {
         '--target',
         '--version',
         '--macos-signing',
+        '--smoke',
         '--cache-dir',
         '--output-dir'
       ].includes(arg)
@@ -49,7 +50,7 @@ try {
       opts[arg.slice(2)] = args.shift();
     } else if (arg === '--help') {
       console.log(
-        'package.sh [--channel dev|release] [--profile core|standard|full] [--target OS-ARCH] [--offline] [--cache-dir DIR] [--output-dir DIR] [--version vX.Y.Z] [--macos-signing unsigned|developer-id]'
+        'package.sh [--channel dev|release] [--smoke quick|full] [--profile core|standard|full] [--target OS-ARCH] [--offline] [--cache-dir DIR] [--output-dir DIR] [--version vX.Y.Z] [--macos-signing unsigned|developer-id]'
       );
       process.exit(0);
     } else throw Error(`Unknown argument: ${arg}`);
@@ -65,12 +66,15 @@ try {
     lock.dependencies.glab.contract,
     ...assets.files.map(a => a.source),
     ...['package.mjs', 'package-lib.mjs', 'package-platform.mjs', 'package-profiles.mjs',
-      'package-smoke.mjs', 'package-cache.mjs', 'package-progress.mjs', 'check-packaging.mjs', 'check-dsh-native.mjs',
+      'package-smoke.mjs', 'package-quick.mjs', 'package-cache.mjs', 'package-progress.mjs', 'check-packaging.mjs', 'check-dsh-native.mjs',
       'package-release-source.mjs', 'package-signing.mjs', 'package-srt.mjs',
       'fixtures/acp.mjs', 'fixtures/models.mjs'].map(f => `scripts/${f}`),
     'packaging/node-entitlements.plist'
   ])].sort().map(path => ({ path, sha256: hash(fs.readFileSync(p.join(root, path))) }));
   must(['dev', 'release'].includes(opts.channel), 'Unknown channel');
+  opts.smoke ??= opts.channel === 'release' ? 'full' : 'quick';
+  must(['quick','full'].includes(opts.smoke), '--smoke must be quick or full');
+  must(opts.channel !== 'release' || opts.smoke === 'full', 'Official releases require full smoke');
   must(!opts['macos-signing'] || opts.channel === 'release', '--macos-signing requires --channel release');
   signingPolicy(opts.target, opts['macos-signing']);
   must(Object.hasOwn(lock.profiles, opts.profile), 'Unknown profile');
@@ -438,9 +442,10 @@ try {
     env: { ...process.env, COPYFILE_DISABLE: '1' }
   }));
   const report = p.join(stage, 'smoke-report.json');
-  await timing.run('full archive smoke', () => run(
+  await timing.run(opts.smoke === 'full' ? 'full archive smoke' : 'application check', () => run(
     process.execPath,
-    [p.join(root, 'scripts/package-smoke.mjs'), pending, '--report', report],
+    opts.smoke === 'full' ? [p.join(root, 'scripts/package-smoke.mjs'), pending, '--report', report]
+      : [p.join(root, 'scripts/package-quick.mjs'), bundle, report],
     { stdio: 'inherit' }
   ));
   for (const input of [...sourceInputs, ...packagingInputs])
@@ -459,7 +464,14 @@ try {
     archive + '.sha256',
     `${archiveHash}  ${p.basename(archive)}\n`
   );
-  fs.copyFileSync(report, p.join(out, name + '-report.json'));
+  const checked = json(report);
+  checked.smoke_level = opts.smoke;
+  checked.archive_sha256 = archiveHash;
+  if(opts.smoke === 'quick') {
+    for(const [field,file] of Object.entries({smoke_sha256:'package-smoke.mjs',quick_sha256:'package-quick.mjs',srt_check_sha256:'package-srt.mjs',native_check_sha256:'check-dsh-native.mjs',fixture_sha256:'fixtures/acp.mjs'}))
+      checked[field]=hash(fs.readFileSync(p.join(root,'scripts',file)));
+  }
+  writeJSON(p.join(out, name + '-report.json'), checked);
   if (signing) writeJSON(p.join(out, name + '-security.json'), {
     schema_version: 1, archive_sha256: archiveHash, target: opts.target, profile: opts.profile,
     signing, notarization, downloaded_machine_gatekeeper: 'not_run'

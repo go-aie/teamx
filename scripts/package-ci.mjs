@@ -70,7 +70,7 @@ export function inspectSnapshot(directory, target, profile, commit, sourceRoot =
   const digest = hash(fs.readFileSync(archive));
   must(fs.readFileSync(archive + '.sha256', 'utf8') === `${digest}  ${archiveName}\n`, 'Archive checksum mismatch');
   const report = json(p.join(directory, reportName));
-  must(report.status === 'passed' && report.archive_sha256 === digest && report.target === target && report.profile === profile,
+  must(report.status === 'passed' && (report.smoke_level ?? 'full') === 'full' && report.archive_sha256 === digest && report.target === target && report.profile === profile,
     'Build smoke report does not match the snapshot');
   for (const [key, file] of Object.entries(smokeInputs))
     must(report[key] === hash(fs.readFileSync(p.join(sourceRoot, file))), `Build smoke verifier differs: ${file}`);

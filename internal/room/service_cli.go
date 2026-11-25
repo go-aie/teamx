@@ -25,6 +25,8 @@ func runService(args []string, stdout, stderr io.Writer) error {
 }
 
 func runServiceWithManager(args []string, stdout, stderr io.Writer, runner serviceRunner) (resultErr error) {
+	// Heartbeats and download/installer progress may write concurrently.
+	stderr = &spaceLogWriter{output: stderr}
 	if len(args) == 0 {
 		_, err := io.WriteString(stdout, serviceCLIHelp)
 		return err
@@ -348,7 +350,7 @@ func runServiceWithManager(args []string, stdout, stderr io.Writer, runner servi
 				return err
 			}
 		}
-		result, err := pruneServiceDeployment(r, *source, *keepReleases, *keepBackups)
+		result, err := pruneServiceDeploymentContext(ctx, r, *source, *keepReleases, *keepBackups)
 		if err != nil {
 			return err
 		}
@@ -434,7 +436,7 @@ func runServiceWithManager(args []string, stdout, stderr io.Writer, runner servi
 			}
 		}
 		if action == "restore" {
-			if _, err := verifyServiceBackup(*source, r); err != nil {
+			if _, err := verifyServiceBackupContext(ctx, *source, r); err != nil {
 				return err
 			}
 		}
@@ -536,7 +538,7 @@ func runServiceWithManager(args []string, stdout, stderr io.Writer, runner servi
 				return err
 			}
 		}
-		if err := createServiceBackupWithProgress(r, *backup, stderr); err != nil {
+		if err := createServiceArchiveBackup(ctx, r, *backup, stderr); err != nil {
 			return fmt.Errorf("service remains stopped; backup: %w", err)
 		}
 		backedUp = true

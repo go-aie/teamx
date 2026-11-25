@@ -254,11 +254,12 @@ if [[ -n $backup_dir ]]; then install_args+=(--backup-dir "$backup_dir"); fi
 # The private download directory stays 0700, while the managed executable tree
 # must be traversable by Linux's ordinary service account. Go creates home and
 # credential files with their own private modes.
-if (umask 022; run_privileged "$work/teamx" "${install_args[@]}" </dev/null > "$work/install-result.json") 2> "$work/deployment.log"; then
-  cat "$work/deployment.log"
+# Stream progress while retaining a private failure log. pipefail preserves the
+# deployment exit status; stdout remains reserved for the JSON result file.
+if (umask 022; run_privileged "$work/teamx" "${install_args[@]}" </dev/null > "$work/install-result.json") 2>&1 | tee "$work/deployment.log" >&2; then
+  :
 else
   deployment_status=$?
-  cat "$work/deployment.log" >&2
   saved_log=$(mktemp "${TMPDIR:-/tmp}/teamx-install-failed.XXXXXXXX")
   cp "$work/deployment.log" "$saved_log"
   printf 'TeamX 部署失败（退出码 %s）。日志已保留：%s\n安装位置：%s\n请按上述状态与恢复提示处理；首次安装失败可核对原因后重试。\n' "$deployment_status" "$saved_log" "$server_root" >&2

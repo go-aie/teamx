@@ -12,9 +12,7 @@ import (
 func TestServiceBackupManifestAboveOldCapacityStillVerifiesInventory(t *testing.T) {
 	r := serviceTestRegistration(t)
 	dir := filepath.Join(filepath.Dir(r.Root), "large-manifest-backup")
-	if err := createServiceBackup(r, dir); err != nil {
-		t.Fatal(err)
-	}
+	createLegacyServiceTestBackup(t, r, dir)
 	p := filepath.Join(dir, "backup.json")
 	f, err := os.OpenFile(p, os.O_APPEND|os.O_WRONLY, 0)
 	if err != nil {

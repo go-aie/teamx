@@ -11,7 +11,6 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
-	"sort"
 	"sync"
 	"time"
 
@@ -25,6 +24,8 @@ type serviceBackup struct {
 	Current       string              `json:"current"`
 	HomeAssets    []serviceAsset      `json:"home_assets"`
 	ReleaseAssets []serviceAsset      `json:"release_assets"`
+	ArchiveSHA256 string              `json:"archive_sha256,omitempty"`
+	ArchiveSize   int64               `json:"archive_size,omitempty"`
 }
 
 // Several standard releases already exceed 64 MiB of inventory metadata.
@@ -236,7 +237,23 @@ func createServiceBackup(r serviceRegistration, dest string) error {
 func serviceOperationStep(output io.Writer, label string, operation func() error) error {
 	fmt.Fprintf(output, "[service] %s：开始\n", label)
 	started := time.Now()
+	stop, done := make(chan struct{}), make(chan struct{})
+	go func() {
+		defer close(done)
+		ticker := time.NewTicker(15 * time.Second)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-stop:
+				return
+			case <-ticker.C:
+				fmt.Fprintf(output, "[service] %s：执行中（%.0fs）\n", label, time.Since(started).Seconds())
+			}
+		}
+	}()
 	err := operation()
+	close(stop)
+	<-done
 	status := "完成"
 	if err != nil {
 		status = "失败"
@@ -246,6 +263,10 @@ func serviceOperationStep(output io.Writer, label string, operation func() error
 }
 
 func createServiceBackupWithProgress(r serviceRegistration, dest string, output io.Writer) error {
+	return createServiceArchiveBackup(context.Background(), r, dest, output)
+}
+
+func createServiceArchiveBackup(ctx context.Context, r serviceRegistration, dest string, output io.Writer) error {
 	if err := rejectPendingSpaceReset(r.Home, uint32(r.UID)); err != nil {
 		return err
 	}
@@ -268,61 +289,47 @@ func createServiceBackupWithProgress(r serviceRegistration, dest string, output 
 	if filepath.Dir(current) != filepath.Join(r.Root, "releases") {
 		return errors.New("invalid current release")
 	}
-	backup := serviceBackup{Version: 1, Created: time.Now().UTC(), Registration: r, Current: filepath.Base(current)}
-	required, err := serviceRequiredReleases(r)
-	if err != nil {
+	// Resolve external/missing execution dependencies before accepting a full
+	// managed snapshot. Every installed version is archived, not just these roots.
+	if _, err := serviceRequiredReleases(r); err != nil {
 		return err
 	}
-	if err := serviceOperationStep(output, "备份：生成 home 与 releases 校验清单", func() error {
-		backup.HomeAssets, err = serviceInventory(r.Home)
-		if err != nil {
-			return err
-		}
-		for _, name := range required {
-			assets, err := serviceInventory(filepath.Join(r.Root, "releases", name))
-			if err != nil {
-				return err
-			}
-			for _, asset := range assets {
-				asset.Path = name + "/" + asset.Path
-				backup.ReleaseAssets = append(backup.ReleaseAssets, asset)
-			}
-		}
-		sort.Slice(backup.ReleaseAssets, func(i, j int) bool { return backup.ReleaseAssets[i].Path < backup.ReleaseAssets[j].Path })
-		return nil
-	}); err != nil {
+	backup := serviceBackup{Version: 2, Created: time.Now().UTC(), Registration: r, Current: filepath.Base(current)}
+	if err := serviceOperationStep(output, "备份：流式归档程序与 home 并同步落盘", func() error {
+		backup.ArchiveSHA256, backup.ArchiveSize, err = writeServiceBackupArchive(ctx, r, filepath.Join(stage, serviceBackupArchive))
 		return err
-	}
-	if err := serviceOperationStep(output, "备份：复制 home 并同步落盘", func() error { return copyServiceTree(r.Home, filepath.Join(stage, "home")) }); err != nil {
-		return err
-	}
-	if err := serviceOperationStep(output, "备份：复制恢复所需 releases 并同步落盘", func() error {
-		for _, name := range required {
-			if err := copyServiceTree(filepath.Join(r.Root, "releases", name), filepath.Join(stage, "releases", name)); err != nil {
-				return err
-			}
-		}
-		return nil
 	}); err != nil {
 		return err
 	}
 	if err := writeServiceJSON(filepath.Join(stage, "backup.json"), backup); err != nil {
 		return err
 	}
-	// Read back both trees so incomplete copies are never published as backups.
-	if err := serviceOperationStep(output, "备份：回读并核对完整副本", func() error { _, err := verifyServiceBackup(stage, r); return err }); err != nil {
+	if err := serviceOperationStep(output, "备份：顺序回读并校验归档", func() error { _, err := verifyServiceBackupContext(ctx, stage, r); return err }); err != nil {
 		return err
 	}
-	return os.Rename(stage, dest)
+	if err := syncDirectory(stage); err != nil {
+		return err
+	}
+	if err := os.Rename(stage, dest); err != nil {
+		return err
+	}
+	return syncDirectory(filepath.Dir(dest))
 }
 
 func verifyServiceBackup(dir string, r serviceRegistration) (serviceBackup, error) {
+	return verifyServiceBackupContext(context.Background(), dir, r)
+}
+
+func verifyServiceBackupContext(ctx context.Context, dir string, r serviceRegistration) (serviceBackup, error) {
 	var b serviceBackup
 	if err := readSnapshot(filepath.Join(dir, "backup.json"), &b, maxServiceBackupManifestBytes); err != nil {
 		return b, err
 	}
-	if b.Version != 1 || b.Registration.Root != r.Root || b.Registration.Home != r.Home || b.Registration.InstallationID != r.InstallationID || b.Registration.UID != r.UID || b.Current == "" || filepath.Base(b.Current) != b.Current {
+	if (b.Version != 1 && b.Version != 2) || b.Registration.Root != r.Root || b.Registration.Home != r.Home || b.Registration.InstallationID != r.InstallationID || b.Registration.UID != r.UID || b.Current == "" || b.Current == "." || b.Current == ".." || filepath.Base(b.Current) != b.Current {
 		return b, errors.New("backup does not belong to this registered instance and original paths")
+	}
+	if b.Version == 2 {
+		return b, readServiceBackupArchive(ctx, dir, b, "")
 	}
 	home, err := serviceInventory(filepath.Join(dir, "home"))
 	if err != nil {
@@ -344,11 +351,23 @@ func verifyServiceBackup(dir string, r serviceRegistration) (serviceBackup, erro
 // Restore only the same installation at the same absolute paths. Keep the
 // replaced home, every existing release and a pre-restore backup for recovery.
 func restoreServiceBackup(ctx context.Context, r serviceRegistration, source string) error {
-	b, err := verifyServiceBackup(source, r)
+	b, err := verifyServiceBackupContext(ctx, source, r)
 	if err != nil {
 		return err
 	}
-	entries, err := os.ReadDir(filepath.Join(source, "releases"))
+	releases := filepath.Join(source, "releases")
+	if b.Version == 2 {
+		stage, err := os.MkdirTemp(filepath.Dir(r.Home), ".teamx-backup-restore-*")
+		if err != nil {
+			return err
+		}
+		defer os.RemoveAll(stage)
+		if err := readServiceBackupArchive(ctx, source, b, stage); err != nil {
+			return err
+		}
+		source, releases = stage, filepath.Join(stage, "server", "releases")
+	}
+	entries, err := os.ReadDir(releases)
 	if err != nil {
 		return err
 	}
@@ -356,7 +375,7 @@ func restoreServiceBackup(ctx context.Context, r serviceRegistration, source str
 		if !entry.IsDir() {
 			return errors.New("backup releases must be directories")
 		}
-		src, dest := filepath.Join(source, "releases", entry.Name()), filepath.Join(r.Root, "releases", entry.Name())
+		src, dest := filepath.Join(releases, entry.Name()), filepath.Join(r.Root, "releases", entry.Name())
 		if _, err := os.Lstat(dest); err == nil {
 			a, err := serviceInventory(src)
 			if err != nil {

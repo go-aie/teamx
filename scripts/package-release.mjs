@@ -27,7 +27,7 @@ export function releasePlan(sourceRoot, version) {
 }
 
 function checkSmoke(report, receipt, sourceRoot) {
-  must(report?.status === 'passed' && report.archive_sha256 === receipt.archive_sha256 &&
+  must(report?.status === 'passed' && (report.smoke_level ?? 'full') === 'full' && report.archive_sha256 === receipt.archive_sha256 &&
     report.target === receipt.manifest.target && report.profile === receipt.manifest.profile, 'Candidate smoke report mismatch');
   const native = { 'darwin-arm64': ['darwin', 'arm64', 'arm64'], 'darwin-amd64': ['darwin', 'x64', 'x86_64'],
     'linux-arm64': ['linux', 'arm64', 'aarch64'], 'linux-amd64': ['linux', 'x64', 'x86_64'] }[receipt.manifest.target];

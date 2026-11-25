@@ -82,13 +82,16 @@ Pull request 也会自动构建快照，默认使用 standard。快照流程不�
 | --- | --- |
 | `--profile core\|standard\|full` | 包的能力；默认 standard |
 | `--channel dev\|release` | 开发快照或版本构建；开发快照会记录 commit 和 dirty 状态 |
+| `--smoke quick\|full` | 开发包默认 quick；正式发行和 CI 要求 full |
 | `--cache-dir DIR` | 依赖缓存目录，默认 `.packaging/cache/` |
 | `--output-dir DIR` | 产物目录，默认 `dist/` |
 | `--offline` | 缺少任何固定依赖、目标 npm 缓存或 Go 模块缓存即失败 |
 
 成功后生成 `teamx-dev-<commit>[-dirty]-<target>-<profile>.tar.gz`、同名 `.sha256` 和 `-report.json`。归档通过检查后才进入成功产物目录；参数、依赖或检查失败均以非零状态退出。
 
-可以对归档单独重跑检查；将路径替换为实际文件：
+开发包默认快速检查真实应用启动、匿名登录资源依赖、私有路由鉴权、认证后的模型设置和干净退出；不调用上游模型或平台。需要完整归档检查时，打包传入 `--smoke full`。报告通过 `smoke_level` 区分快速和完整检查，快速报告不能作为 CI 快照或正式发行证据。
+
+可以对归档单独重跑完整检查；将路径替换为实际文件：
 
 ```sh
 ./scripts/package-smoke.sh /absolute/teamx-archive.tar.gz --report /absolute/new-report.json

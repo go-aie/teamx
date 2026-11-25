@@ -352,7 +352,7 @@ func TestServiceConsistentBackupRestorePreservesPrivateStateAndVersions(t *testi
 	if _, err := verifyServiceBackup(backup, wrong); err == nil {
 		t.Fatal("accepted other installation")
 	}
-	serviceTestFile(t, filepath.Join(backup, "home/model-credentials/historical-key"), "corrupt", 0600)
+	serviceTestFile(t, filepath.Join(backup, serviceBackupArchive), "corrupt", 0600)
 	if _, err := verifyServiceBackup(backup, r); err == nil {
 		t.Fatal("accepted corrupt backup")
 	}

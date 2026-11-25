@@ -385,7 +385,11 @@ func authenticatedServiceStatus(ctx context.Context, r serviceRegistration) (map
 	}
 	defer endpoint.close()
 	if endpoint.config.Deployment.Mode == "multi-user" {
-		return endpoint.deploymentStatus(ctx)
+		status, err := endpoint.deploymentStatus(ctx)
+		if err == nil {
+			status["browser_url"] = serviceBrowserURL(endpoint.config)
+		}
+		return status, err
 	}
 	if err := endpoint.authenticate(ctx); err != nil {
 		return nil, err
@@ -397,6 +401,7 @@ func authenticatedServiceStatus(ctx context.Context, r serviceRegistration) (map
 	}
 	status["authenticated"] = true
 	status["installation_id"] = r.InstallationID
+	status["browser_url"] = serviceBrowserURL(endpoint.config)
 	if r.Platform == "linux" {
 		status["platform_capabilities"] = map[string]string{"lark_send": "account_pinning_unavailable"}
 	}

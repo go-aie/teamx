@@ -4,7 +4,7 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as p from 'node:path';
 import { createHash } from 'node:crypto';
-import { spawnSync, execFileSync } from 'node:child_process';
+import { spawn, spawnSync, execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
 const source = fs.readFileSync(fileURLToPath(new URL('../packaging/install.sh', import.meta.url)), 'utf8');
@@ -55,6 +55,14 @@ if (args[0] === 'service' && args[1] === 'upgrade' && args[2] === '--help') {
 }
 fs.appendFileSync(env.INSTALL_TEST_RECORD, JSON.stringify(args) + '\\n');
 if (process.umask() !== 0o022) process.exit(11);
+if (env.INSTALL_TEST_PROGRESS_ACK) {
+  console.error('fixture upgrade progress');
+  const deadline = Date.now() + 5000;
+  while (!fs.existsSync(env.INSTALL_TEST_PROGRESS_ACK)) {
+    if (Date.now() >= deadline) process.exit(15);
+    await new Promise(resolve => setTimeout(resolve, 10));
+  }
+}
 if (env.INSTALL_TEST_DEPLOY_FAIL === 'true') { console.error('fixture deployment failed'); process.exit(7); }
 if (args[0] !== 'service' || !['install', 'upgrade'].includes(args[1])) process.exit(8);
 const get = name => args[args.indexOf(name) + 1];
@@ -327,6 +335,32 @@ test('invalid checksum, missing metadata and failed downloads execute no bundle 
     assert.equal(f.calls().length, 0);
     assert.equal(fs.existsSync(p.join(f.bin, 'teamx')), false);
   }
+});
+
+test('upgrade progress reaches the caller before deployment completes', { timeout: 15000 }, async t => {
+  const f = fixture(t, 'Linux', 'x86_64');
+  assert.equal(f.run(['--archive', f.archive]).status, 0);
+  const ack = p.join(f.temp, 'progress-ack');
+  const child = spawn('/bin/bash', ['-s', '--', '--upgrade', '--archive', f.archive,
+    '--server-root', f.root, '--bin-dir', f.bin], {
+    env: { ...f.env, INSTALL_TEST_PROGRESS_ACK: ack }
+  });
+  t.after(() => { if (child.exitCode === null) child.kill(); });
+  let stderr = '';
+  child.stdout.resume();
+  child.stderr.on('data', data => {
+    stderr += data;
+    if (stderr.includes('fixture upgrade progress') && !fs.existsSync(ack)) fs.writeFileSync(ack, 'observed');
+  });
+  const done = new Promise((resolve, reject) => {
+    child.once('error', reject);
+    child.once('close', code => resolve(code));
+  });
+  child.stdin.end(source);
+  assert.equal(await done, 0, stderr);
+  assert.equal(fs.existsSync(ack), true);
+  assert.equal(stderr.match(/fixture upgrade progress/g)?.length, 1);
+  assert.match(stderr, /TeamX 已完成升级并启动/);
 });
 
 test('an unrelated command is preserved, and deployment failure publishes no CLI or success', t => {

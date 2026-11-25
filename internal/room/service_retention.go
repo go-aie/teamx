@@ -3,6 +3,7 @@
 package room
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -249,6 +250,10 @@ type servicePruneResult struct {
 }
 
 func pruneServiceDeployment(r serviceRegistration, backup string, keepReleases, keepBackups int) (servicePruneResult, error) {
+	return pruneServiceDeploymentContext(context.Background(), r, backup, keepReleases, keepBackups)
+}
+
+func pruneServiceDeploymentContext(ctx context.Context, r serviceRegistration, backup string, keepReleases, keepBackups int) (servicePruneResult, error) {
 	var result servicePruneResult
 	if keepReleases < 2 || keepBackups < 1 {
 		return result, errors.New("keep-releases must be at least 2 and keep-backups at least 1")
@@ -274,7 +279,7 @@ func pruneServiceDeployment(r serviceRegistration, backup string, keepReleases, 
 		if err := servicePhysicalDirectory(backup); err != nil {
 			return result, err
 		}
-		b, err := verifyServiceBackup(backup, r)
+		b, err := verifyServiceBackupContext(ctx, backup, r)
 		if err != nil {
 			return result, err
 		}
@@ -357,12 +362,12 @@ func pruneServiceDeployment(r serviceRegistration, backup string, keepReleases, 
 		if err := readSnapshot(filepath.Join(name, "backup.json"), &b, maxServiceBackupManifestBytes); err != nil {
 			return result, err
 		}
-		if b.Version != 1 || b.Registration.Root != r.Root || b.Registration.Home != r.Home || b.Registration.InstallationID != r.InstallationID || b.Registration.UID != r.UID {
+		if (b.Version != 1 && b.Version != 2) || b.Registration.Root != r.Root || b.Registration.Home != r.Home || b.Registration.InstallationID != r.InstallationID || b.Registration.UID != r.UID {
 			return result, errors.New("retained backup belongs to another installation")
 		}
 		if i < keepBackups {
 			if !verified[name] {
-				if _, err := verifyServiceBackup(name, r); err != nil {
+				if _, err := verifyServiceBackupContext(ctx, name, r); err != nil {
 					return result, err
 				}
 			}

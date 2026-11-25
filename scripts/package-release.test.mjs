@@ -118,6 +118,12 @@ test('release archive identity binds immutable bytes, signing and verifier', t =
   assert.throws(f.inspect, /source\/tag\/target\/profile\/channel mismatch/);
 });
 
+test('official candidates reject quick application reports',t=>{
+  const f=fixture(t),file=p.join(f.directory,f.name+'-report.json'),report=json(file);
+  report.smoke_level='quick';writeJSON(file,report);
+  assert.throws(f.inspect,/Candidate smoke report mismatch/);
+});
+
 test('dev, old qualification format or retargeted archives cannot substitute release archives', t => {
   const f = fixture(t);
   for (const [key, value] of [['channel', 'dev'], ['version', 'v0.0.1'], ['profile', 'full'], ['target', 'linux-unknown']]) {

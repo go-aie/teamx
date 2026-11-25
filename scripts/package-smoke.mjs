@@ -59,7 +59,7 @@ async function until(fn, description) {
 try {
   const archiveHash = hash(fs.readFileSync(archive));
   const extracted = p.join(temp, 'extracted');
-  extract(archive, extracted);
+  const extractedInventory = extract(archive, extracted);
   const entries = fs.readdirSync(extracted);
   must(entries.length === 1, 'Archive must have a single root');
   const bundle = fs.realpathSync(p.join(extracted, entries[0])),
@@ -74,7 +74,7 @@ try {
     'Private runtime home in archive'
   );
   const expected = json(p.join(bundle, 'checksums.txt')),
-    actual = inventory(bundle).filter((f) => f.path !== 'checksums.txt');
+    actual = extractedInventory.map(f => ({...f,path:f.path.slice(entries[0].length+1)})).filter((f) => f.path !== 'checksums.txt');
   must(
     JSON.stringify(actual) === JSON.stringify(expected),
     'Immutable contents/permissions/checksums differ'
@@ -478,6 +478,7 @@ try {
   const report = {
     schema_version: 1,
     status: 'passed',
+    smoke_level: 'full',
     archive_sha256: archiveHash,
     target: manifest.target,
     profile: manifest.profile,

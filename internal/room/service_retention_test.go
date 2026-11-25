@@ -91,7 +91,7 @@ func TestServiceReleaseReferencesRequireRegisteredIdentityOwner(t *testing.T) {
 	}
 }
 
-func TestServiceBackupIncludesPinnedSpacesAndSessionsWithoutUnusedReleases(t *testing.T) {
+func TestServiceBackupArchivesAllReleasesAndRestoresIndependently(t *testing.T) {
 	r := serviceTestRegistration(t)
 	original, _ := filepath.EvalSymlinks(filepath.Join(r.Root, "current"))
 	unused := serviceRetentionRelease(t, r, "dev-unused")
@@ -109,7 +109,15 @@ func TestServiceBackupIncludesPinnedSpacesAndSessionsWithoutUnusedReleases(t *te
 	if err := createServiceBackup(r, backup); err != nil {
 		t.Fatal(err)
 	}
-	entries, err := os.ReadDir(filepath.Join(backup, "releases"))
+	b, err := verifyServiceBackup(backup, r)
+	if err != nil {
+		t.Fatal(err)
+	}
+	extracted := t.TempDir()
+	if err := readServiceBackupArchive(context.Background(), backup, b, extracted); err != nil {
+		t.Fatal(err)
+	}
+	entries, err := os.ReadDir(filepath.Join(extracted, "server", "releases"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -117,13 +125,13 @@ func TestServiceBackupIncludesPinnedSpacesAndSessionsWithoutUnusedReleases(t *te
 	for _, entry := range entries {
 		got = append(got, entry.Name())
 	}
-	want := []string{filepath.Base(original), filepath.Base(pinned), filepath.Base(frozen)}
+	want := []string{filepath.Base(original), filepath.Base(pinned), filepath.Base(frozen), filepath.Base(unused)}
 	slices.Sort(want)
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("backed up releases %v; want %v", got, want)
 	}
 	// Restore independently, after all required installed releases disappeared.
-	for _, release := range []string{original, pinned, frozen} {
+	for _, release := range []string{original, pinned, frozen, unused} {
 		if err := os.RemoveAll(release); err != nil {
 			t.Fatal(err)
 		}
@@ -142,24 +150,7 @@ func TestServiceBackupRestoresLegacyFullReleaseInventory(t *testing.T) {
 	r := serviceTestRegistration(t)
 	unused := serviceRetentionRelease(t, r, "dev-unused")
 	backup := filepath.Join(filepath.Dir(r.Root), "legacy-full-backup")
-	if err := createServiceBackup(r, backup); err != nil {
-		t.Fatal(err)
-	}
-	b, err := verifyServiceBackup(backup, r)
-	if err != nil {
-		t.Fatal(err)
-	}
-	// Old backups also included unreferenced releases, using the same schema.
-	if err := copyServiceTree(unused, filepath.Join(backup, "releases", filepath.Base(unused))); err != nil {
-		t.Fatal(err)
-	}
-	b.ReleaseAssets, err = serviceInventory(filepath.Join(backup, "releases"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := writeServiceJSON(filepath.Join(backup, "backup.json"), b); err != nil {
-		t.Fatal(err)
-	}
+	createLegacyServiceTestBackup(t, r, backup)
 	if err := os.RemoveAll(filepath.Join(r.Root, "releases")); err != nil {
 		t.Fatal(err)
 	}
@@ -236,7 +227,7 @@ func TestServiceRetentionRejectsUncertainReferencesOrRecoveryMaterialBeforeDelet
 			case "missing-runtime":
 				serviceTestFile(t, filepath.Join(r.Home, "data/room-config.json"), `{"runtime":{"binary_path":"`+filepath.Join(r.Root, "releases/missing/bin/dsh")+`"}}`, 0600)
 			case "corrupt-backup":
-				serviceTestFile(t, filepath.Join(backup, "home/config.toml"), "damaged", 0600)
+				serviceTestFile(t, filepath.Join(backup, serviceBackupArchive), "damaged", 0600)
 			case "foreign-state":
 				if err := writeServiceJSON(filepath.Join(r.Root, "retention.json"), serviceRetention{Version: 1, InstallationID: "foreign"}); err != nil {
 					t.Fatal(err)

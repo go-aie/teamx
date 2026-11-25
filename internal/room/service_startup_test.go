@@ -290,7 +290,7 @@ func TestServiceUpgradeStopsBacksUpAndStartsSameInstallation(t *testing.T) {
 				t.Fatal("consistent backup missing", err)
 			}
 			previous := -1
-			for _, label := range []string{"校验并准备升级包", "停止服务", "等待服务退出并锁定数据", "备份：生成 home 与 releases 校验清单", "备份：复制 home 并同步落盘", "备份：复制恢复所需 releases 并同步落盘", "备份：回读并核对完整副本", "配置执行环境并切换版本", "启动服务", "等待认证控制面就绪", "停服流程耗时"} {
+			for _, label := range []string{"校验并准备升级包", "停止服务", "等待服务退出并锁定数据", "备份：流式归档程序与 home 并同步落盘", "备份：顺序回读并校验归档", "配置执行环境并切换版本", "启动服务", "等待认证控制面就绪", "停服流程耗时"} {
 				index := strings.Index(stderr.String(), "[service] "+label)
 				if index <= previous {
 					t.Fatalf("missing or unordered progress %q: %s", label, stderr.String())

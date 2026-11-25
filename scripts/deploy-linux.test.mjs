@@ -6,7 +6,7 @@ import p from 'node:path';
 import { execFileSync, spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { deploymentConfig, sourceCommit, makeSourceBundle, deployLocal, shellQuote } from './deploy-linux.mjs';
-import { deployRemote } from './deploy-linux-remote.mjs';
+import { deployRemote, deploymentSmoke, saveDeployment } from './deploy-linux-remote.mjs';
 
 const git=(repo,...args)=>execFileSync('git',['-C',repo,...args],{encoding:'utf8'}).trim();
 const runtime={platform:'linux',arch:'x64',machine:'x86_64',uid:0};
@@ -19,7 +19,18 @@ function fixture(t, options={}) {
   git(repo,'init','-q');git(repo,'config','user.name','Fixture');git(repo,'config','user.email','fixture@localhost');
   const write=(name,text)=>{const file=p.join(repo,name);fs.mkdirSync(p.dirname(file),{recursive:true});fs.writeFileSync(file,text);};
   write('README.md','committed source');
-  for (const file of ['scripts/package-smoke.mjs','scripts/package-srt.mjs','scripts/check-dsh-native.mjs','scripts/fixtures/acp.mjs']) write(file,'fixture verifier: '+file);
+  write('scripts/package-progress.mjs',`export const source = 'committed progress';\n`);
+  write('scripts/deploy-linux-remote.mjs',`import fs from 'node:fs';import {source} from './package-progress.mjs';
+const request=JSON.parse(fs.readFileSync(process.argv[2],'utf8'));
+fs.writeFileSync(request.job+'/runner-executed',source);
+`);
+  for (const file of ['scripts/package-smoke.mjs','scripts/package-srt.mjs','scripts/check-dsh-native.mjs','scripts/fixtures/acp.mjs','scripts/package-quick.mjs']) write(file,'fixture verifier: '+file);
+  write('scripts/package-smoke.mjs',`import fs from 'node:fs';import {createHash} from 'node:crypto';
+const hash=file=>createHash('sha256').update(fs.readFileSync(file)).digest('hex');
+const report={status:'passed',smoke_level:'full',target:'linux-amd64',profile:'standard',archive_sha256:hash(process.argv[2])};
+for(const [key,file] of Object.entries({smoke_sha256:'scripts/package-smoke.mjs',srt_check_sha256:'scripts/package-srt.mjs',native_check_sha256:'scripts/check-dsh-native.mjs',fixture_sha256:'scripts/fixtures/acp.mjs'}))report[key]=hash(file);
+fs.writeFileSync(process.argv[process.argv.indexOf('--report')+1],JSON.stringify(report));
+`);
   write('scripts/package.mjs',`
 import fs from 'node:fs';import p from 'node:path';import {execFileSync} from 'node:child_process';import {createHash} from 'node:crypto';
 const arg=name=>process.argv[process.argv.indexOf(name)+1];
@@ -65,7 +76,7 @@ fs.writeFileSync(p.join(bundle,'manifest.json'),JSON.stringify({channel:'dev',ta
 const archive=p.join(out,name+'.tar.gz');execFileSync('tar',['-czf',archive,'-C',stage,name],{env:{...process.env,COPYFILE_DISABLE:'1'}});
 const digest=createHash('sha256').update(fs.readFileSync(archive)).digest('hex');
 fs.writeFileSync(archive+'.sha256',digest+'  '+name+'.tar.gz\\n');
-fs.writeFileSync(p.join(out,name+'-report.json'),JSON.stringify({status:${JSON.stringify(options.badReport?'failed':'passed')},archive_sha256:digest,target:'linux-amd64',profile:'standard',
+fs.writeFileSync(p.join(out,name+'-report.json'),JSON.stringify({status:${JSON.stringify(options.badReport?'failed':'passed')},smoke_level:arg('--smoke'),quick_sha256:createHash('sha256').update(fs.readFileSync('scripts/package-quick.mjs')).digest('hex'),archive_sha256:digest,target:'linux-amd64',profile:'standard',
 ...Object.fromEntries(Object.entries({smoke_sha256:'scripts/package-smoke.mjs',srt_check_sha256:'scripts/package-srt.mjs',native_check_sha256:'scripts/check-dsh-native.mjs',fixture_sha256:'scripts/fixtures/acp.mjs'}).map(([key,file])=>[key,createHash('sha256').update(fs.readFileSync(file)).digest('hex')]))}));
 `);
   git(repo,'add','.');git(repo,'commit','-qm','fixture source');
@@ -234,16 +245,20 @@ test('same-archive no-op does not enroll a nonexistent backup',async t=>{
   assert.equal(fs.readFileSync(p.join(f.root,'prune-args'),'utf8').trim().split('\n').includes('--from'),false);
 });
 
-test('SSH transport uploads the pinned bundle safely through quoted paths',async t=>{
+test('SSH transport executes the committed runner and helper despite working tree changes',async t=>{
   const f=fixture(t),mock=p.join(f.root,'mocks');fs.mkdirSync(mock);
+  f.write('scripts/deploy-linux-remote.mjs',`throw Error('uncommitted runner must not execute');\n`);
+  f.write('scripts/package-progress.mjs',`throw Error('uncommitted helper must not execute');\n`);
   const program=p.join(mock,'ssh.mjs');
-  fs.writeFileSync(program,`import {spawnSync} from 'node:child_process';import fs from 'node:fs';const cmd=process.argv.at(-1);fs.appendFileSync(${JSON.stringify(p.join(f.root,'ssh-arguments'))},JSON.stringify(process.argv.slice(2))+'\\n');if(cmd.startsWith('umask ')){const r=spawnSync('sh',['-c',cmd],{stdio:'inherit'});process.exit(r.status??1);}fs.writeFileSync(${JSON.stringify(p.join(f.root,'remote-command'))},cmd);`);
+  fs.writeFileSync(program,`import {spawnSync} from 'node:child_process';import fs from 'node:fs';const cmd=process.argv.at(-1);fs.appendFileSync(${JSON.stringify(p.join(f.root,'ssh-arguments'))},JSON.stringify(process.argv.slice(2))+'\\n');if(!cmd.startsWith('umask '))fs.writeFileSync(${JSON.stringify(p.join(f.root,'remote-command'))},cmd);const r=spawnSync('sh',['-c',cmd],{stdio:'inherit'});process.exit(r.status??1);`);
   fs.writeFileSync(p.join(mock,'ssh'),`#!/bin/sh\nexec ${shellQuote(process.execPath)} ${shellQuote(program)} "$@"\n`,{mode:0o755});
   const previous=process.env.PATH;process.env.PATH=mock+':'+previous;t.after(()=>{process.env.PATH=previous;});
   const result=await deployLocal(f.repo,f.config,{...sshTarget,port:2222,buildOnly:true});
   const request=JSON.parse(fs.readFileSync(p.join(result.job,'request.json'),'utf8'));
   assert.equal(request.commit,f.commit);assert.equal(request.build_only,true);
-  assert.equal(fs.readFileSync(p.join(result.job,'package-progress.mjs'),'utf8'),fs.readFileSync(fileURLToPath(new URL('./package-progress.mjs',import.meta.url)),'utf8'));
+  for(const [source,target] of [['scripts/deploy-linux-remote.mjs','runner.mjs'],['scripts/package-progress.mjs','package-progress.mjs']])
+    assert.equal(fs.readFileSync(p.join(result.job,target),'utf8').trim(),git(f.repo,'show',`${f.commit}:${source}`));
+  assert.equal(fs.readFileSync(p.join(result.job,'runner-executed'),'utf8'),'committed progress');
   assert.equal(Object.hasOwn(request.config,'host'),false);assert.equal(Object.hasOwn(request.config,'port'),false);
   const calls=fs.readFileSync(p.join(f.root,'ssh-arguments'),'utf8').trim().split('\n').map(JSON.parse);
   assert.equal(calls.length,2);
@@ -264,4 +279,37 @@ test('SSH failure aborts transport instead of reporting a completed build',async
   const previous=process.env.PATH;process.env.PATH=mock+':'+previous;t.after(()=>{process.env.PATH=previous;});
   await assert.rejects(deployLocal(f.repo,f.config,{...sshTarget,buildOnly:true}),/exited/);
   assert.equal(fs.existsSync(f.config.server_root),false);
+});
+
+test('an unavailable installed commit selects full smoke without a fatal Git diagnostic',t=>{
+  const f=fixture(t),module=new URL('./deploy-linux-remote.mjs',import.meta.url).href;
+  const result=spawnSync(process.execPath,['--input-type=module','-e',`import {deploymentSmoke} from ${JSON.stringify(module)};console.log(deploymentSmoke(process.argv[1],process.argv[2]));`,f.repo,'b'.repeat(40)],{encoding:'utf8'});
+  assert.equal(result.status,0);assert.equal(result.stdout,'full\n');assert.equal(result.stderr,'');
+});
+
+test('application changes use quick checks; full smoke upgrades a cached report without rebuilding',async t=>{
+  const f=fixture(t);
+  const first=await deployRemote(f.request('initial'),runtime);
+  assert.equal(first.smoke_level,'full');
+  const baseline=f.commit;
+  f.write('internal/web/assets/app.js','application change');git(f.repo,'add','.');git(f.repo,'commit','-qm','application');
+  assert.equal(deploymentSmoke(f.repo,baseline),'quick');
+  assert.equal(deploymentSmoke(f.repo,baseline,true),'full');
+  assert.equal(deploymentSmoke(f.repo,'b'.repeat(40)),'full');
+  const quick=await deployRemote(f.request('quick',{build_only:true}),runtime);
+  assert.equal(quick.smoke_level,'quick');assert.equal(f.builds(),2);
+  const full=await deployRemote(f.request('promote',{build_only:true,full_smoke:true}),runtime);
+  assert.equal(full.smoke_level,'full');assert.equal(full.artifact_cache.reused,true);assert.equal(f.builds(),2);
+  const again=await deployRemote(f.request('cached-full',{build_only:true,full_smoke:true}),runtime);
+  assert.equal(again.smoke_level,'full');assert.ok(!again.timings.some(s=>s.stage==='full smoke for cached archive'));
+  f.write('internal/room/service_backup.go','installer change');git(f.repo,'add','.');git(f.repo,'commit','-qm','installer');
+  assert.equal(deploymentSmoke(f.repo,baseline),'full');
+});
+
+test('deployment receipts publish complete private JSON atomically',t=>{
+  const f=fixture(t),file=p.join(f.root,'receipt.json');
+  for(const status of ['preparing','deploying','deployed']){
+    saveDeployment(file,{status});assert.deepEqual(JSON.parse(fs.readFileSync(file,'utf8')),{status});
+    assert.equal(fs.statSync(file).mode&0o777,0o600);assert.equal(fs.existsSync(file+'.pending'),false);
+  }
 });

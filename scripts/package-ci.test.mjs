@@ -68,6 +68,11 @@ test('standard transport requires its platform CLIs, rejects bundled Git, and re
   assert.throws(() => releaseProfiles(lock), /Incomplete/);
 });
 
+test('quick application reports cannot replace full snapshot smoke evidence',t=>{
+  const f=fixture(t),report=json(f.reportPath);report.smoke_level='quick';writeJSON(f.reportPath,report);
+  assert.throws(()=>f.inspect(),/Build smoke report/);
+});
+
 test('inventory ignores historical acceptance and enforces actual full Git runtime limits', () => {
   for (const profile of ['core', 'standard', 'full']) {
     const result = spawnSync(process.execPath, [p.join(root, 'scripts/check-packaging.mjs'),

@@ -173,7 +173,7 @@ curl -fsS https://assistant.example.com/v1/access/method
 
 ## 6. 升级、备份与恢复
 
-先确认运行版本、目标包摘要、原登记路径和足够磁盘空间。备份包含整个 home、当时的 current，以及部署／Space 配置、Room 和 Session 执行记录引用的程序版本，不复制未引用的历史 releases 或尚未切换的新版本。每份备份独立可恢复，不依赖其他备份。单个 standard 展开可能超过 1 GiB，逐文件校验和落盘仍需停服时间。备份父目录须存在，目标目录须全新，且在安装根／home 之外：
+先确认运行版本、目标包摘要、原登记路径和足够磁盘空间。新备份把整个 home、整个程序安装目录（含所有已安装 releases）及可用的服务单元写入私有未压缩归档 `snapshot.tar`，另存小型 `backup.json`。归档流式写入并同步落盘，再顺序回读一次验证完整性，不生成逐文件摘要清单。每份备份独立可恢复，不依赖部署缓存；完整备份会占用所有版本的空间。备份父目录须存在，目标目录须全新，且在安装根／home 之外：
 
 ```sh
 sudo install -d -m 700 /srv/teamx-backups
@@ -186,7 +186,7 @@ sudo /usr/local/bin/teamx service upgrade --server-root /opt/teamx \
 
 托管已有 Space 保留其固定旧 release 的 DSH、原执行描述和 CLI；新 Space 使用当前 release。备份和自动清理均保护已有配置、归档 Space、Room 和冻结 Session 引用的版本；被引用版本可使总数超过保留数。不要手工删除旧 releases／`home/execution`，或编辑模型收据／成员快照来消除运行指纹不匹配。旧依赖缺失或恢复条件不符时，应保留现场并明确处理，不重置 Session 或重放业务。
 
-**旧包容量边界**：alpha 旧包三份发布目录的备份清单已有 66,694,220 字节，接近其 64 MiB 读取上限。源码现将上限扩为有界的 512 MiB，并收窄为恢复所需程序版本；旧格式的完整备份仍可校验和恢复。下一次升级须先将这些修复纳入构建 commit，使用新包安装器引导；直接调用旧 `teamx service upgrade` 仍会使用旧逻辑。不跳过一致备份或降低完整性检查。
+旧的逐文件清单备份仍可校验和恢复，其清单保留 512 MiB 有界读取上限。使用新包内安装器才能采用整目录归档；直接调用旧 CLI 仍使用旧版本逻辑。恢复继续要求相同实例、相同绝对路径，并保留恢复前数据及已有版本。
 
 升级后的检查包括：正确安装身份、原 User／Space／Room／成员身份、原模型收据与运行指纹、原 Session 能否恢复、有效浏览器会话、进行中操作状态，以及真实模型与所选平台。自然过期的登录会话应重新登录；控制面 ready 和归档 smoke 都不能替代这些业务检查。当前阶段尚未完成完整业务 Session 升级／故障恢复及备份还原验收。
 
@@ -224,7 +224,7 @@ sudo /usr/local/bin/teamx service restore --server-root /opt/teamx \
 
 ## 8. 一条命令部署本地最新 commit
 
-仓库提供 [deploy-linux.sh](../scripts/deploy-linux.sh)，本地需要 Node、Git、tar 和可非交互登录的 SSH；远端需要原生 Linux amd64、Git、tar、Go／Node 及所选运行依赖。仓库配置只含通用占位值，须先在忽略的本地副本中填写实际工具链、目录及 SRT 上游；当前留存环境的副本已保存在 `.local/deploy-linux.json`，沿用时不要被模板覆盖。SSH 主机必须使用 `--host` 指定，非默认 SSH 端口使用 `--port`，JSON 不接受这两个字段。非 root SSH 账号还须有可用的 `sudo -n` 管理权限。
+仓库提供 [deploy-linux.sh](../scripts/deploy-linux.sh)，本地需要 Node、Git、tar 和可非交互登录的 SSH；远端需要原生 Linux amd64、systemd（含 systemd-run）、Git、tar、Go／Node 及所选运行依赖。仓库配置只含通用占位值，须先在忽略的本地副本中填写实际工具链、目录及 SRT 上游；当前留存环境的副本已保存在 `.local/deploy-linux.json`，沿用时不要被模板覆盖。SSH 主机必须使用 `--host` 指定，非默认 SSH 端口使用 `--port`，JSON 不接受这两个字段。非 root SSH 账号还须有可用的 `sudo -n` 管理权限。
 
 在本地仓库根目录准备配置：
 
@@ -241,7 +241,7 @@ chmod 600 .local/deploy-linux.json
 
 `server_root`／`home`／`bin_dir` 必须指向原安装登记的路径；`node_binary`／`build_path` 指向可用工具链。SRT 的 loopback 端口、模型域名也必须换成实际 origin；`https://model.example.com` 仅为占位值。这些环境参数及初始配置路径也只保存在本地副本中。
 
-先确认要交付的代码已提交到本地 Git，包含本节脚本及备份清单上限修复；不要求 push。脚本在启动时固定 HEAD 的完整 commit，使用 Git bundle 传输已提交对象；工作区未提交修改、未跟踪文件及日常运行 home 不会混入。Git 中若误提交已知私有运行路径会提前拒绝。构建包内记录的 commit 必须与请求一致。
+先确认要交付的代码已提交到本地 Git；不要求 push。脚本在启动时固定 HEAD 的完整 commit，使用 Git bundle 传输已提交对象；远端运行器及其依赖也取自同一 commit，避免与打包脚本的参数协议不一致。工作区未提交修改、未跟踪文件及日常运行 home 不会混入；新增部署能力也须提交后才会在远端生效。Git 中若误提交已知私有运行路径会提前拒绝。构建包内记录的 commit 必须与请求一致。
 
 ```sh
 # 查看固定的 commit、主机、远端新任务目录，不连接 SSH、不部署。
@@ -252,30 +252,35 @@ chmod 600 .local/deploy-linux.json
 
 # 上传、构建、校验，并自动选择首次安装或升级。
 ./scripts/deploy-linux.sh --host teamx-linux --config .local/deploy-linux.json
+
+# 显式要求完整 smoke；已缓存的快速检查产物只补跑 smoke，不重新构建。
+./scripts/deploy-linux.sh --host teamx-linux --config .local/deploy-linux.json --full-smoke
 ```
 
 缓存完整时可追加 `--offline`；新增固定依赖缺缓存时，使用默认联网模式补齐，不修改 lock。每次调用仍创建新的任务目录，但会自动复用已验证结果：
 
-- **依赖复用**：`<cache_dir>/prepared-dependencies/<key>/` 保存已展开依赖的归档、文件清单与元数据。key 包含目标平台、包型、libc、固定依赖及组装代码摘要；仅应用源码变化可命中，锁文件／工具版本／组装代码变化会重新准备。复用时核对缓存归档、文件哈希／权限／内部链接，并重新执行原生模块检查；新分发包继续跑完整 smoke。
-- **同 commit 归档复用**：`<work_dir>/artifacts/<key>/` 保存通过完整 smoke 的原归档、摘要和报告。key 包含完整 commit、目标／包型、构建宿主信息及部署运行器摘要。命中后再次核对归档 SHA-256、完整源码身份、报告摘要和 smoke 验证器指纹，复用原字节与原报告。`--build-only` 后可直接执行普通部署；安装失败后重试也不必重新编译和 smoke。
+- **依赖复用**：`<cache_dir>/prepared-dependencies/<key>/` 保存已展开依赖的归档、文件清单与元数据。key 包含目标平台、包型、libc、固定依赖及组装代码摘要；仅应用源码变化可命中，锁文件／工具版本／组装代码变化会重新准备。复用时核对缓存归档、文件哈希／权限／内部链接，并重新执行原生模块检查；普通应用更新执行快速应用检查；首次部署、无法确定基线、运行时依赖／打包／安装恢复逻辑变化时执行完整 smoke。
+- **同 commit 归档复用**：`<work_dir>/artifacts/<key>/` 保存通过相应检查的原归档、摘要和报告，报告明确标记 `smoke_level: quick|full`。key 包含完整 commit、目标／包型、构建宿主信息及部署运行器摘要。命中后再次核对归档 SHA-256、完整源码身份、报告摘要和 smoke 验证器指纹，复用原字节与原报告。`--build-only` 后可直接执行普通部署；安装失败后重试也不必重新编译和 smoke。
 
 构建失败或 smoke 未通过的产物不进入可复用归档缓存。缓存损坏／身份不匹配时在安装前拒绝，保留现场；检查后只移走报错指向的缓存项再重试。依赖缓存和归档缓存用途不同：需要同 commit 强制重建时，只移走对应 `artifacts/<key>/`，下一次仍可复用未变化的依赖。旧脚本任务未登记这些缓存，首次执行新脚本仍需构建。
 
 流程为：本地固定 HEAD → SSH 上传 bundle／运行器 → 远端检出同一 commit → 复用 Go／依赖缓存打 `linux-amd64 standard` 开发包 → 核对摘要、smoke 报告和包内源码身份 → **使用新归档内的安装器** → 检查已安装 CLI 的 commit 和认证服务状态 → 清理过期版本和成功部署备份。已有 `service.json` 时升级，不再传首次 home／账号／执行选择；否则新装。升级使用全新备份目录，不跳过备份，不自动回滚。
 
-JSON 配置可设置 `"keep_releases": 2`、`"keep_backups": 2`，省略时均为 2。程序版本至少保留 2 个（当前及上一个成功版本），配置／Space／Room／Session 仍引用的版本额外保留；完整备份至少保留 1 份，默认保留最近两次成功部署的升级前快照。每份新备份只收录自身恢复所需的版本。
+JSON 配置可设置 `"keep_releases": 2`、`"keep_backups": 2`，省略时均为 2。程序版本至少保留 2 个（当前及上一个成功版本），配置／Space／Room／Session 仍引用的版本额外保留；完整备份至少保留 1 份，默认保留最近两次成功部署的升级前快照。每份新备份完整收录备份时的程序目录和 home；清理安装目录不会改变已发布的完整备份。
 
 清理调用 `teamx service prune`，在安装根的私有 `retention.json` 中登记成功部署的版本和备份路径，按部署顺序保留，不以目录修改时间判断新旧。只清理已登记的部署备份；既有手工备份、其他实例及失败部署的未登记备份保持原样，不会因目录名相似而被删除。首次使用新策略时，这些旧备份仍需按实际恢复价值手工整理。相同归档重跑未切版本时不登记不存在的备份。
 
 归档校验、安装／升级或服务身份检查失败时不执行清理。清理前再次认证服务、核对版本引用，并完整校验要保留的备份；不能确认依赖或备份时停止清理。清理自身失败会单独告警并记录 `deployment.json` 的 `retention.error`，部署状态仍为 `deployed`，新版服务继续运行；检查原因后可重新执行 `teamx service prune --server-root DIR` 重试。直接调用 `service upgrade`／`backup` 不会自动执行保留策略。
 
-任务目录是 `<work_dir>/jobs/<commit>-<time>-<random>/`，不覆盖旧源码快照。每个任务保留 `source/`、`dist/`、`source.bundle` 和 `deployment.json`；后者记录源码 commit、归档 SHA-256、动作、备份路径、缓存命中、各阶段耗时及最终状态。失败保留现场，以服务状态／日志和一致备份诊断，不把旧服务仍可访问当作新部署成功。
+远端通过独立 systemd 临时服务执行任务，SSH 只跟随 `run.log`，断线不会中断任务。相同 commit、相同行为参数的命令可重新执行以跟随原任务；不同 commit 或检查／构建选项会明确拒绝并给出原任务位置。任务目录是 `<work_dir>/jobs/<commit>-<time>-<random>/`，不覆盖旧源码快照。每个任务保留 `source/`、`dist/`、`source.bundle` 和 `deployment.json`；后者通过原子写入和落盘记录源码 commit、归档 SHA-256、检查级别、PID、开始／更新时间、当前阶段、备份路径、缓存命中及最终状态；`finished_at` 表示收尾完成。重连回执的 `followed_job` 指向实际执行任务。失败保留现场，以服务状态／日志和一致备份诊断，不把旧服务仍可访问当作新部署成功。
 
 终端会显示 `[local]` 的 bundle／上传／远端总耗时，`[deploy]` 的构建或复用／校验／安装／认证检查耗时。首次构建还有 `[package]` 的依赖、原生模块、各个 Go 程序、清单、压缩及完整 smoke 耗时；smoke 各检查显示相邻检查之间的耗时和累计时间。SSH 与远端长任务期间每 15 秒报告仍在执行。
 
-远端任务内可回看 `build.log`（实际构建时产生）、`installer.log`（安装或升级时产生）、`deployment.json` 和 `retention.json`（成功部署后的清理结果或错误输出），实际构建另有 `dist/*-timing.json`。升级 CLI 把归档准备、停服、锁定、备份清单、home／恢复所需 releases 复制落盘、回读核对、版本切换、启动和认证检查分别计时，并显示停服流程耗时；详细输出留在 `installer.log`。日志及缓存含环境路径，按私有运维材料保存，不提交到仓库。
+新 CLI 同时提供 `browser_url`，部署后从该浏览器入口检查匿名登录页及递归依赖、私有接口仍返回 401；不以内部端口匿名访问替代公网代理验收。该检查不登录真实账号、不触发模型或平台写入。
 
-先将本次脚本、打包辅助模块、备份和保留策略改动纳入 commit，再使用上述命令测量。构建／完整 smoke 发生在旧服务继续运行期间，备份和切换阶段才进入停服流程；清理在新版启动认证后进行。恢复所需内容、完整 smoke 和落盘校验仍保留，未引用的程序版本不再重复进入每份备份。
+远端任务内可回看 `run.log`（完整后台输出）、`build.log`（实际构建时产生）、`installer.log`（安装或升级时产生）、`deployment.json` 和 `retention.json`（成功部署后的清理结果或错误输出），实际构建另有 `dist/*-timing.json`。升级 CLI 把归档准备、停服、锁定、整目录归档落盘、归档回读校验、版本切换、启动和认证检查分别计时，并在长阶段每 15 秒输出执行中状态，并显示停服流程耗时；详细输出留在 `installer.log`。日志及缓存含环境路径，按私有运维材料保存，不提交到仓库。
+
+先将本次脚本、打包辅助模块、备份和保留策略改动纳入 commit，再使用上述命令测量。构建／完整 smoke 发生在旧服务继续运行期间，备份和切换阶段才进入停服流程；清理在新版启动认证后进行。备份和落盘校验始终保留；完整 smoke 按改动范围选择，正式发行和 CI 仍要求完整检查。
 
 新装其他主机时，先按第 3–5 节准备宿主依赖、HTTPS、专用部署目录和认证配置。在 JSON 中增加 `"deployment_config": "/remote/private/initial.toml"`，仅引用远端已存在的 0600 文件，不在本地配置中写 Key／密码。首次选择 SRT 时，`execution`／`srt_endpoints` 必须与私有初始配置匹配。脚本不配置 Caddy、DNS、模型 Key 或平台登录，也不绕过当前正式多用户生产门槛。
 

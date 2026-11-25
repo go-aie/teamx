@@ -97,7 +97,7 @@ jobs:
           SNAPSHOT_PROFILE: ${{ matrix.profile }}
         run: |
           test -z "$(git status --porcelain --untracked-files=all)"
-          ./scripts/package.sh --channel dev --profile "$SNAPSHOT_PROFILE" --target "$SNAPSHOT_TARGET" --output-dir "$RUNNER_TEMP/snapshot"
+          ./scripts/package.sh --channel dev --smoke full --profile "$SNAPSHOT_PROFILE" --target "$SNAPSHOT_TARGET" --output-dir "$RUNNER_TEMP/snapshot"
           node scripts/package-ci.mjs record "$RUNNER_TEMP/snapshot" "$SNAPSHOT_TARGET" "$SNAPSHOT_PROFILE" "$GITHUB_SHA"
       # Upload sealed archives, never a staging directory (modes/hidden resources stay in tar).
       - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
