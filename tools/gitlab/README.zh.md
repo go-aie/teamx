@@ -13,6 +13,8 @@ bin/teamx-gitlab issue discussions --help
 
 从[固定版本发布页](https://gitlab.com/gitlab-org/cli/-/releases/v1.127.0)下载对应系统的 glab，并按发布校验和核对。依赖记录在 [glab.lock.json](glab.lock.json)。程序解析顺序为：显式 `TEAMX_GLAB_BIN` → `teamx-gitlab` 可执行文件同目录的 `glab` → PATH。显式路径失效不会回退到其他版本；执行原生命令前检查精确版本，不匹配或缺失返回 127。Go 扩展及其帮助无需 glab；缺少 glab 时父级帮助仍显示已知扩展，并返回 127，表示原生帮助不完整。
 
+`version check failed` 表示版本探测未能正常执行，应检查可执行文件、启动脚本、权限和系统／CPU 架构；它不表示已确认版本不匹配。只有探测成功但版本不符时才报告 `unsupported glab`。分发包中的 glab 启动脚本使用 shell 内建命令定位包内程序，兼容多用户工具收紧后的 PATH，无须放开宿主命令搜索路径。
+
 TeamX 服务按相同顺序解析工具：显式 `TEAMX_GITLAB_BIN` → TeamX 可执行文件同目录的 `teamx-gitlab` → 服务 PATH。推荐将 `teamx`、`teamx-gitlab`、`glab` 放在同一个安装目录。`tools run` 在服务端启动进程，Agent shell 的 PATH 或环境变量不会转发给服务。路径变量可写入 `config.toml` 的 `[env]`，或在启动 TeamX 服务前导出，已有服务环境优先；工具启用只选择账号，不安装程序。遇到 127 应报告安装错误，修正服务环境后重启，不让 Agent 搜索二进制或绕过入口读取凭据。
 
 工具使用标准环境变量：

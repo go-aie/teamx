@@ -1,6 +1,12 @@
 #!/bin/sh
 set -eu
-ROOT=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd -P)
+# Shared GitLab removes host tools from PATH. Resolve the bundle with shell
+# built-ins so the launcher also works in that environment.
+case "$0" in
+  */*) launcher_dir=${0%/*} ;;
+  *) launcher_dir=. ;;
+esac
+ROOT=$(CDPATH= cd -- "$launcher_dir/.." && pwd -P)
 # Keep the distribution pinned, including version/help/doctor invocations.
 GLAB_CHECK_UPDATE=false
 export GLAB_CHECK_UPDATE

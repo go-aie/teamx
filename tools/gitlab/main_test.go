@@ -137,6 +137,27 @@ func TestMissingAndWrongDependency(t *testing.T) {
 	}
 }
 
+func TestFailedDependencyProbeDoesNotClaimVersionMismatchOrExposeStderr(t *testing.T) {
+	bin := filepath.Join(t.TempDir(), "glab")
+	if err := os.WriteFile(bin, []byte("#!/bin/sh\nprintf '/private/operator-path/secret-value\\n' >&2\nexit 127\n"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	a, out, stderr := testApp(t, nil)
+	a.getenv = func(k string) string {
+		if k == "TEAMX_GLAB_BIN" {
+			return bin
+		}
+		return ""
+	}
+	if code := a.run(t.Context(), []string{"api", "user"}); code != 127 || out.Len() != 0 {
+		t.Fatalf("code=%d stdout=%q stderr=%q", code, out, stderr)
+	}
+	message := stderr.String()
+	if !strings.Contains(message, "version check failed") || !strings.Contains(message, "launcher") || !strings.Contains(message, "expected v"+glabVersion) || strings.Contains(message, "require v") || strings.Contains(message, "operator-path") || strings.Contains(message, "secret-value") {
+		t.Fatal(message)
+	}
+}
+
 func TestRegistryControlsRouteAndHelp(t *testing.T) {
 	original := extensions
 	defer func() { extensions = original }()

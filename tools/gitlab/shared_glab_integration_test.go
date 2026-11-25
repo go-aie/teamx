@@ -19,6 +19,16 @@ func TestSharedPinnedGlabUsesSelectedHostWithoutGit(t *testing.T) {
 	if bin == "" {
 		t.Skip("set TEAMX_G4_GLAB_BIN to the pinned glab executable")
 	}
+	t.Run("native", func(t *testing.T) {
+		checkSharedPinnedGlab(t, bin)
+	})
+	t.Run("packaged-launcher", func(t *testing.T) {
+		checkSharedPinnedGlab(t, packagedGlab(t, bin))
+	})
+}
+
+func checkSharedPinnedGlab(t *testing.T, bin string) {
+	t.Helper()
 	var calls atomic.Int32
 	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		calls.Add(1)

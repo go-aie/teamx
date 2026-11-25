@@ -127,7 +127,8 @@ func (a *app) native(ctx context.Context, args []string, help bool) int {
 	if a.shared {
 		resolved, err := exec.LookPath(bin)
 		if err != nil {
-			fmt.Fprintln(a.errOut, "glab dependency unavailable")
+			fmt.Fprintln(a.errOut, "glab dependency unavailable: cannot resolve executable")
+			a.dependencyGuidance()
 			return 127
 		}
 		bin = resolved
@@ -188,7 +189,7 @@ func (a *app) native(ctx context.Context, args []string, help bool) int {
 			fmt.Fprintln(a.errOut, "command interrupted before glab execution")
 			return 130
 		}
-		fmt.Fprintln(a.errOut, "glab dependency unavailable: require v"+glabVersion)
+		fmt.Fprintln(a.errOut, "glab dependency unavailable: version check failed before command execution (expected v"+glabVersion+"); check the executable, launcher, permissions and architecture")
 		a.dependencyGuidance()
 		return 127
 	}
@@ -233,7 +234,7 @@ func (a *app) native(ctx context.Context, args []string, help bool) int {
 }
 
 func (a *app) dependencyGuidance() {
-	fmt.Fprintln(a.errOut, "Operator: install the required glab beside teamx-gitlab or on its PATH, or set TEAMX_GLAB_BIN to its absolute path. When using TeamX, configure this on the TeamX service and restart it; agent shell PATH/env changes do not affect server tools. Report this error; do not search local files or bypass the launcher.")
+	fmt.Fprintln(a.errOut, "Operator: verify glab and its launcher can run in the TeamX tool environment. Install the required glab beside teamx-gitlab or on its PATH, or set TEAMX_GLAB_BIN to its absolute path. When using TeamX, configure this on the TeamX service and restart it; agent shell PATH/env changes do not affect server tools. Report this error; do not search local files or bypass the launcher.")
 }
 
 // resolveGlab returns the glab executable to run, in this order: the explicit

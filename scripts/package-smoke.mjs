@@ -166,6 +166,16 @@ try {
   }
   if (hasDependency(manifest.profile, 'glab')) {
     exec('bin/glab', ['--help']); exec('bin/teamx-gitlab', ['--help']);
+    // Shared GitLab strips host tools from PATH before probing the packaged
+    // launcher. Ordinary version/help checks above cannot detect that seam.
+    const restrictedPath = p.join(temp, 'restricted-glab-path');
+    fs.mkdirSync(restrictedPath);
+    must(
+      exec('bin/glab', ['version'], { env: { ...env, PATH: restrictedPath } }).trim()
+        .startsWith(manifest.dependencies.glab.expected_version_prefix + ' '),
+      'Packaged glab cannot run with the shared tool PATH'
+    );
+    pass('packaged glab launcher with restricted PATH');
   }
   if (hasDependency(manifest.profile, 'lark-cli')) exec('bin/lark-cli', ['--help']);
   if (hasDependency(manifest.profile, 'git')) {

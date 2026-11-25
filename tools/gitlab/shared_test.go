@@ -3,9 +3,90 @@ package main
 import (
 	"context"
 	"net/http"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
+
+// Recreate the distribution entry point, including its actual shell launcher.
+// A direct native-binary override would miss launcher/environment incompatibilities.
+func packagedGlab(t *testing.T, native string) string {
+	t.Helper()
+	root := filepath.Join(t.TempDir(), "distribution with spaces")
+	launcher := filepath.Join(root, "bin", "glab")
+	nativePath := filepath.Join(root, "runtime", "glab", "bin", "glab")
+	for _, dir := range []string{filepath.Dir(launcher), filepath.Dir(nativePath)} {
+		if err := os.MkdirAll(dir, 0700); err != nil {
+			t.Fatal(err)
+		}
+	}
+	script, err := os.ReadFile(filepath.Join("..", "..", "packaging", "glab-launcher"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(launcher, script, 0700); err != nil {
+		t.Fatal(err)
+	}
+	native, err = filepath.Abs(native)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(native, nativePath); err != nil {
+		t.Fatal(err)
+	}
+	return launcher
+}
+
+func TestPackagedGlabPreservesArgumentsAndSharedIsolation(t *testing.T) {
+	for _, shared := range []bool{false, true} {
+		name := "personal"
+		if shared {
+			name = "shared"
+		}
+		t.Run(name, func(t *testing.T) {
+			body := `test "$GLAB_CHECK_UPDATE" = false || exit 91
+test "$GITLAB_TOKEN" = secret-test-token || exit 92
+test -z "${GITLAB_PAT-}" || exit 93
+`
+			if shared {
+				body += `if command -v dirname >/dev/null 2>&1; then exit 94; fi
+if git --version >/dev/null 2>&1; then exit 95; fi
+`
+			}
+			body += `printf '%s\n' "$@"
+IFS= read -r body || :
+printf 'stdin:%s\n' "$body"
+`
+			bin := packagedGlab(t, fakeGlab(t, body))
+			t.Setenv("GITLAB_PAT", "operator-secret")
+			t.Setenv("GLAB_CHECK_UPDATE", "true")
+			a, out, stderr := testApp(t, nil)
+			a.shared = shared
+			getenv := a.getenv
+			a.getenv = func(k string) string {
+				if k == "TEAMX_GLAB_BIN" {
+					return bin
+				}
+				if k == "GITLAB_HOST" {
+					return "https://gitlab.test"
+				}
+				return getenv(k)
+			}
+			args := []string{"api", "projects/group%2Fproject/issues", "-f", "search=two words"}
+			if code := a.run(t.Context(), args); code != 0 {
+				t.Fatalf("code=%d stdout=%s stderr=%s", code, out, stderr)
+			}
+			if shared {
+				args = append(args, "--hostname", "gitlab.test")
+			}
+			want := strings.Join(args, "\n") + "\nstdin:stdin-body\n"
+			if out.String() != want || stderr.Len() != 0 {
+				t.Fatalf("streams changed: stdout=%q stderr=%q", out, stderr)
+			}
+		})
+	}
+}
 
 func TestSharedGitLabReusesCLIAndRejectsRepositoryAndFilePaths(t *testing.T) {
 	bin := fakeGlab(t, `printf '%s\n' "$@"`)
