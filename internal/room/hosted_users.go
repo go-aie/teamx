@@ -59,11 +59,12 @@ type hostedUserSnapshot struct {
 }
 
 type hostedUsers struct {
-	mu     sync.Mutex
-	failed bool
-	home   string
-	saved  hostedUserSnapshot
-	writer snapshotWriter
+	mu             sync.Mutex
+	failed         bool
+	home           string
+	saved          hostedUserSnapshot
+	writer         snapshotWriter
+	gatewayChanges map[string]chan struct{} // Broadcast credential availability to setup workers.
 }
 
 func checkDeploymentRoot(c startupConfig) error {
@@ -298,7 +299,8 @@ func (u *hostedUsers) setStatus(id, status string) (externalUser, error) {
 }
 
 // The local session is deliberately short and needs another SSO exchange after
-// expiry. No refresh token or remote credential is retained in the host.
+// expiry. No SSO or refresh token is retained in the host. Model credentials
+// are held separately in the owner's private credential store.
 const externalSessionLifetime = 15 * time.Minute
 
 func tokenDigest(token string) [32]byte { return sha256.Sum256([]byte(token)) }

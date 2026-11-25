@@ -1,5 +1,5 @@
-// Package opencsg implements the same SSO exchange used by CSGClaw. It does
-// not fetch model keys, save platform tokens, or manage local users.
+// Package opencsg implements the SSO and built-in Gateway key exchanges used
+// by CSGClaw. The host owns credential persistence and local users.
 package opencsg
 
 import (

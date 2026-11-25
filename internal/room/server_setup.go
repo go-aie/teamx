@@ -296,6 +296,9 @@ func serveSetupRequired(ctx context.Context, listener net.Listener, config start
 		return err
 	}
 	defer func() { stop(); setup.workers.Wait() }()
+	if access != nil && access.authority().users != nil {
+		setup.followGatewayCredential(workerCtx, access.authority().users, access.space.OwnerUserID)
+	}
 	server := &http.Server{ReadHeaderTimeout: 3 * time.Second, ReadTimeout: 5 * time.Second, WriteTimeout: 15 * time.Second, IdleTimeout: 30 * time.Second, MaxHeaderBytes: 16 << 10,
 		Handler: access.wrap(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			w.Header().Set("Content-Type", "application/json")

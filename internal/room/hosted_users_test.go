@@ -130,6 +130,10 @@ func hostedFixture(t *testing.T, home string) *spaceServer {
 }
 
 func hostedFixtureWithAdmission(t *testing.T, home string, admission externalAuthConfig) *spaceServer {
+	return hostedFixtureWithProvider(t, home, admission, hostedProviderFixture{})
+}
+
+func hostedFixtureWithProvider(t *testing.T, home string, admission externalAuthConfig, provider authn.Provider) *spaceServer {
 	t.Helper()
 	c := freshAccessConfig(t, home)
 	c.Deployment.Mode = "multi-user"
@@ -144,7 +148,7 @@ func hostedFixtureWithAdmission(t *testing.T, home string, admission externalAut
 		t.Fatal(err)
 	}
 	factories := personalDeployment(controlledActivationFactory(nil, nil)).factories
-	factories.authentication = func(externalAuthConfig) (authn.Provider, error) { return hostedProviderFixture{}, nil }
+	factories.authentication = func(externalAuthConfig) (authn.Provider, error) { return provider, nil }
 	config := serviceConfig{access: a, settings: newSystemSettings(c), platformCatalog: defaultPlatformCatalog(), maxTurns: 7, modelProbe: successfulModelProbe, endpoint: a.internal}
 	s, err := newHostedSpaceServer(t.Context(), c, config, factories, io.Discard)
 	if err != nil {

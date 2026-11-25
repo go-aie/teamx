@@ -112,7 +112,9 @@ allowed_subjects = ["REPLACE_WITH_VERIFIED_SUBJECT_UUID"]
 # allow_all_authenticated = true
 ```
 
-域名、端口和稳定 subject 必须换成实际值。subject 来自受保护身份验证，不是昵称。默认仅名单准入；显式开启 `allow_all_authenticated` 后，其他已认证账号也可注册，每人获得独立默认空间并配置自己的模型。alpha 当前包保留名单作为启动兼容项；只设开放开关的源码修正尚未重打包，不能把空名单配置用于该旧包。
+域名、端口和稳定 subject 必须换成实际值。subject 来自受保护身份验证，不是昵称。默认仅名单准入；显式开启 `allow_all_authenticated` 后，其他已认证账号也可注册，每人获得独立默认空间。alpha 当前包保留名单作为启动兼容项；只设开放开关的源码修正尚未重打包，不能把空名单配置用于该旧包。
+
+当前源码的 OpenCSG 多用户部署在登录时取得**该用户本人的默认 AI Gateway API Key**，为空模型目录自动配置 `https://ai.space.opencsg.com/v1`、`deepseek-v4.1-flash-1017`，完成文本与工具调用验证后初始化助理。验证和聊天均使用本人的 Key、消耗本人的额度，不使用部署账号或其他用户的 Key。已有但尚未配置模型的空间也会在下次登录后自动初始化；验证失败可在原模型配置页面重试。用户随后通过原有模型设置自行修改，其他用户的配置不受影响；后续登录不会覆盖已有模型。个人版仍由用户配置第一个模型。此能力需重新构建部署，旧 alpha 包不包含此改动。
 
 个人部署使用 `mode = "personal"`，删除整个 `[deployment.authentication]` 节；可省略下面的 SRT 参数以使用默认 native。个人与多用户必须使用各自的新业务根，修改模式不会迁移旧数据。
 

@@ -225,6 +225,7 @@ func openSpaceServer(ctx context.Context, initial *SpaceRuntime, assembly spaceR
 		if err != nil {
 			return nil, err
 		}
+		s.configureModelDefaults(provider)
 	}
 	if err := assembly.config.executionResources.checkSpaces(s.directory.Spaces); err != nil {
 		s.cancel()

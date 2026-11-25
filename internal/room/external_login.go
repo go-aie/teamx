@@ -32,7 +32,8 @@ type externalLogin struct {
 	started  int
 	// admit is the local user/session owner's commit boundary. Success must
 	// only be returned after durable admission and session publication.
-	admit func(context.Context, http.ResponseWriter, authn.Identity) error
+	admit     func(context.Context, http.ResponseWriter, authn.Identity) error
+	provision func(context.Context, authn.Identity, url.Values) error
 }
 
 type externalAttempt struct {
@@ -154,6 +155,12 @@ func (l *externalLogin) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		if err != nil || identity.Provider == "" || identity.Authority == "" || identity.Subject == "" {
 			finish(false)
 			return
+		}
+		if l.provision != nil {
+			if err := l.provision(r.Context(), identity, values); err != nil {
+				finish(false)
+				return
+			}
 		}
 		if err := l.admit(r.Context(), w, identity); err != nil {
 			finish(false)
