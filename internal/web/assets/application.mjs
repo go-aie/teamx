@@ -273,7 +273,6 @@ export async function createApp(overrides = {}) {
     const identity = [config.installation_id || "", config.service_epoch];
     if (serverIdentity && identity.some((part, i) => part !== serverIdentity[i])) {
       conversationUI.saveDraft();
-      notice("service-change", "服务已重新启动或切换，已重新读取状态；草稿保留，未确认请求不会自动重发。");
     }
     if (serverIdentity && serverIdentity[0] !== identity[0]) selectView(null, state.operator);
     state.installationID = config.installation_id || "";
