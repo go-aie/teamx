@@ -119,6 +119,9 @@ func TestHostedDefaultModelsUseEachOwnersQuotaAndOrdinaryCatalog(t *testing.T) {
 		restored.start(record, nil, spaceAddress("127.0.0.1:8088"))
 		runtime := waitSpaceState(t, restored, record.ID, "ready")
 		entry, _ := runtime.manager.config.models.catalog().resolve(modelSelection{Mode: "default"})
+		if !reflect.DeepEqual(entry.ModelParameters, hostedDefaultModelParameters()) {
+			t.Fatal("restart lost the saved advanced defaults", entry.ModelParameters)
+		}
 		key, err := runtime.manager.config.models.Credentials.get(entry.CredentialRef)
 		owner, _ := restored.access.users.user(record.OwnerUserID)
 		if err != nil || key.Value != "gk_quota-for-"+owner.Identity.Subject {
@@ -224,21 +227,5 @@ func TestHostedMissingGatewayKeyCannotUseDeploymentQuota(t *testing.T) {
 		if cookie.Name == s.access.cookieName() {
 			t.Fatal("missing user credential published a session")
 		}
-	}
-}
-
-func TestHostedLegacyDefaultUpgradesThroughSpaceStartup(t *testing.T) {
-	s := hostedFixture(t, t.TempDir())
-	cookie, _, space := hostedLogin(t, s, "alice")
-	waitSpaceState(t, s, space, "setup_required")
-	legacy := ModelParameters{Protocol: "openai-completions", BaseURL: hostedGatewayBaseURL, ModelID: hostedDefaultModel}
-	input := setupModelInput{RequestID: "legacy-default", ExpectedVersion: 1, ModelParameters: legacy, APIKey: "owner-key"}
-	if w := hostedRequest(s, spaceRoute(space)+"/v1/setup/model", input, cookie, ""); w.Code != 202 {
-		t.Fatal("legacy setup failed", w.Code)
-	}
-	runtime := waitSpaceState(t, s, space, "ready")
-	entry, err := runtime.manager.config.models.catalog().resolve(modelSelection{Mode: "default"})
-	if err != nil || !reflect.DeepEqual(entry.ModelParameters, hostedDefaultModelParameters()) {
-		t.Fatal("Space startup did not upgrade the old default", entry, err)
 	}
 }

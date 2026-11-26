@@ -288,7 +288,7 @@ func (s *modelService) save(ctx context.Context, input modelSave) (modelCatalog,
 
 // DSH's probe slot is shared across Spaces. An admission rejection has not
 // started a request, so queue briefly instead of failing another user's setup
-// or upgrade. Never retry a probe that entered execution or failed cleanup.
+// or model update. Never retry a probe that entered execution or failed cleanup.
 func (s *modelService) probeWhenAvailable(ctx context.Context, opts dsh.Options) (dsh.ProbeResult, error) {
 	ctx, cancel := context.WithTimeout(ctx, 2*time.Minute)
 	defer cancel()

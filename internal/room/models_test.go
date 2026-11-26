@@ -12,6 +12,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/go-aie/teamx/internal/agent/dsh"
 	"github.com/pelletier/go-toml/v2"
@@ -42,6 +43,43 @@ func modelTestService(t *testing.T) (*modelService, *systemSettings, startupConf
 	service.launcher = dsh.Options{BinaryPath: "/fixture-dsh"}
 	service.probe = successfulModelProbe
 	return service, settings, config
+}
+
+func TestModelServiceWaitsForSharedProbeAdmission(t *testing.T) {
+	service, _, _ := modelTestService(t)
+	attempts := 0
+	service.probe = func(ctx context.Context, opts dsh.Options) (dsh.ProbeResult, error) {
+		attempts++
+		if len(service.snapshot().Entries) != 0 {
+			t.Fatal("model published before validation completed")
+		}
+		if attempts == 1 {
+			return dsh.ProbeResult{}, &dsh.ProbeError{Stage: "admission", Code: "busy"}
+		}
+		return successfulModelProbe(ctx, opts)
+	}
+	catalog, err := service.save(t.Context(), modelSave{Entry: modelTestEntry("shared"), APIKey: "owner-key", ExpectedVersion: service.snapshot().Version})
+	if err != nil || attempts != 2 || len(catalog.Entries) != 1 {
+		t.Fatal("model validation did not wait for shared admission", attempts, err)
+	}
+}
+
+func TestModelProbeAdmissionWaitCancelsAndDoesNotReplayExecution(t *testing.T) {
+	for _, stage := range []string{"admission", "tool", "cleanup"} {
+		t.Run(stage, func(t *testing.T) {
+			attempts := 0
+			s := &modelService{probe: func(context.Context, dsh.Options) (dsh.ProbeResult, error) {
+				attempts++
+				return dsh.ProbeResult{}, &dsh.ProbeError{Stage: stage, Code: "busy"}
+			}}
+			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Millisecond)
+			defer cancel()
+			_, err := s.probeWhenAvailable(ctx, dsh.Options{})
+			if attempts != 1 || err == nil || stage == "admission" && !errors.Is(err, context.DeadlineExceeded) {
+				t.Fatal("probe cancellation or execution retry changed", attempts, err)
+			}
+		})
+	}
 }
 
 func TestModelCatalogReferenceSemantics(t *testing.T) {

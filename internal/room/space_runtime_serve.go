@@ -253,11 +253,6 @@ func (r *SpaceRuntime) serveManager(ctx context.Context, listener net.Listener, 
 	defer server.Close()
 	done := make(chan error, 1)
 	go func() { done <- serveRuntimeHTTP(server, listener) }()
-	if manager.modelControl != nil && config.access != nil && config.access.authority().users != nil {
-		if err := manager.modelControl.upgradeHostedDefaultModel(config.access.space.OwnerUserID); err != nil {
-			fmt.Fprintf(stderr, "Default model upgrade: %v\n", err)
-		}
-	}
 	// Default creation is local and independent of the browser selection. A
 	// blocked assistant must not prevent existing Rooms from being served.
 	manager.mu.Lock()
