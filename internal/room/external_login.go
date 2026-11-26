@@ -32,7 +32,8 @@ type externalLogin struct {
 	started  int
 	// admit is the local user/session owner's commit boundary. Success must
 	// only be returned after durable admission and session publication.
-	admit func(context.Context, http.ResponseWriter, authn.Identity) error
+	admit          func(context.Context, http.ResponseWriter, authn.Identity) error
+	admitRenewable func(context.Context, http.ResponseWriter, authn.Login, *http.Request) error
 }
 
 type externalAttempt struct {
@@ -121,9 +122,10 @@ func (l *externalLogin) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	case externalCallbackPath:
 		// Every callback clears sensitive URL parameters, including failure. The
 		// host's access page can render this fixed, non-sensitive error marker.
+		failureCode := "failed"
 		finish := func(ok bool) {
 			http.SetCookie(w, l.cookie("", -1))
-			target := "/access?sso=failed"
+			target := "/access?sso=" + failureCode
 			if ok {
 				target = "/"
 			}
@@ -153,6 +155,31 @@ func (l *externalLogin) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		l.mu.Unlock()
 		if !valid {
 			finish(false)
+			return
+		}
+		if l.admitRenewable != nil {
+			renewable, ok := l.provider.(authn.RenewableProvider)
+			if !ok {
+				finish(false)
+				return
+			}
+			login, err := renewable.CompleteGrant(r.Context(), values)
+			if err != nil {
+				finish(false)
+				return
+			}
+			err = l.admitRenewable(r.Context(), w, login, r)
+			if err != nil {
+				if errors.Is(err, errSessionCapacity) {
+					failureCode = "session_capacity_reached"
+				}
+				if errors.Is(err, errSessionStorage) {
+					failureCode = "session_storage_unavailable"
+				}
+				finish(false)
+				return
+			}
+			finish(true)
 			return
 		}
 		identity, err := l.provider.Complete(r.Context(), values)

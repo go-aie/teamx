@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
+	"syscall"
 )
 
 // configDocument serializes local settings/model writers and publishes memory
@@ -41,6 +42,10 @@ func (s *configDocument) unchanged() error {
 }
 
 func readSettingsFile(path string) ([]byte, os.FileInfo, error) {
+	return readSettingsFileLimit(path, 1<<20)
+}
+
+func readSettingsFileLimit(path string, limit int64) ([]byte, os.FileInfo, error) {
 	file, err := os.Lstat(path)
 	if errors.Is(err, os.ErrNotExist) {
 		return nil, nil, nil
@@ -49,10 +54,10 @@ func readSettingsFile(path string) ([]byte, os.FileInfo, error) {
 		return nil, nil, err
 	}
 	// Do not replace a symlink with a regular file or follow a newly changed link.
-	if !file.Mode().IsRegular() || file.Size() > 1<<20 {
-		return nil, nil, fmt.Errorf("config must be a regular file of at most 1 MiB")
+	if !file.Mode().IsRegular() || file.Size() > limit {
+		return nil, nil, fmt.Errorf("private file must be regular and at most %d bytes", limit)
 	}
-	f, err := os.Open(path)
+	f, err := os.OpenFile(path, os.O_RDONLY|syscall.O_NOFOLLOW, 0)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -61,9 +66,9 @@ func readSettingsFile(path string) ([]byte, os.FileInfo, error) {
 	if err != nil || !os.SameFile(file, opened) {
 		return nil, nil, ErrConflict
 	}
-	data, err := io.ReadAll(io.LimitReader(f, (1<<20)+1))
-	if err != nil || len(data) > 1<<20 {
-		return nil, nil, fmt.Errorf("cannot read config (maximum 1 MiB)")
+	data, err := io.ReadAll(io.LimitReader(f, limit+1))
+	if err != nil || int64(len(data)) > limit {
+		return nil, nil, fmt.Errorf("cannot read private file (maximum %d bytes)", limit)
 	}
 	return data, opened, nil
 }

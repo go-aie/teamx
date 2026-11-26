@@ -58,6 +58,27 @@ func (p modelBootstrapLogin) Complete(ctx context.Context, values url.Values) (a
 func (s *spaceServer) configureOAuthModelDefaults(provider oauthIdentityProvider, gateway oauthGatewaySource) {
 	// The OAuth token stays on this request's stack. Admission precedes the Key
 	// read; only the owner's Gateway key reaches the ordinary model module.
+	if renewable, ok := provider.(authn.RenewableProvider); ok && s.access.renewal != nil {
+		s.access.login.provider = renewableModelBootstrap{RenewableProvider: renewable, complete: func(ctx context.Context, values url.Values) (authn.Login, error) {
+			login, err := renewable.CompleteGrant(ctx, values)
+			if err != nil {
+				return authn.Login{}, err
+			}
+			entry, err := s.access.users.reserve(login.Identity, s.access.config.Deployment.Authentication)
+			if err != nil {
+				return authn.Login{}, err
+			}
+			key, err := gateway.GatewayAPIKey(ctx, login.Identity, login.Grant.AccessToken)
+			if err != nil {
+				return authn.Login{}, err
+			}
+			if err = s.access.users.saveGatewayKey(entry.ID, key); err != nil {
+				return authn.Login{}, err
+			}
+			return login, nil
+		}}
+		return
+	}
 	s.access.login.provider = modelBootstrapLogin{Provider: provider, complete: func(ctx context.Context, values url.Values) (authn.Identity, error) {
 		identity, token, err := provider.CompleteWithToken(ctx, values)
 		if err != nil {
@@ -176,4 +197,15 @@ func (f *firstModelSetup) followGatewayCredential(ctx context.Context, users *ho
 			}
 		}
 	}()
+}
+
+// Only initial login performs model bootstrap; refresh/verify forward directly
+// to the provider and cannot fetch a key or replace the owner's model choices.
+type renewableModelBootstrap struct {
+	authn.RenewableProvider
+	complete func(context.Context, url.Values) (authn.Login, error)
+}
+
+func (p renewableModelBootstrap) CompleteGrant(ctx context.Context, v url.Values) (authn.Login, error) {
+	return p.complete(ctx, v)
 }

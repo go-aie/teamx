@@ -1,7 +1,9 @@
+import { observeAuthentication, beforeAuthenticatedRequest, requireLogin, temporaryAuthentication, authenticationMessage } from "./session.mjs";
 import { spaceURL, observeSpaceReset, spaceCacheCurrent } from "./space-context.mjs";
 import { savedAttachments } from "./attachment-drafts.mjs";
 
-export async function request(path, payload, fetcher = globalThis.fetch, timeout = 10000, signal) {
+export async function request(path, payload, fetcher = globalThis.fetch, timeout = 45000, signal) {
+  beforeAuthenticatedRequest(path, payload);
   const controller = new AbortController();
   const abort = () => controller.abort();
   if (signal?.aborted) abort();
@@ -12,18 +14,19 @@ export async function request(path, payload, fetcher = globalThis.fetch, timeout
       headers: payload ? { "Content-Type": "application/json" } : {},
       body: payload ? JSON.stringify(payload) : undefined, signal: controller.signal });
     const result = await response.json();
+    observeAuthentication(response.status, result, path);
     if (!response.ok) {
       if (response.status === 401 && globalThis.location?.pathname !== "/access") {
-        const hash=globalThis.location?.hash || "";
-        globalThis.location?.assign(spaceURL("/access")+(hash.startsWith("#platform-connection=") || hash==="#platform-settings" ? hash : ""));
+        requireLogin();
       }
-      const error = new Error(result.message || result.error || `请求失败 (${response.status})`);
+      const error = new Error(temporaryAuthentication(result.code || result.error) ? authenticationMessage : result.message || result.error || `请求失败 (${response.status})`);
+      error.status = response.status;
       error.code = result.code;
       error.field = result.field;
       error.outcome = result.outcome;
       throw error;
     }
-    if (!spaceCacheCurrent() || result.space_id && !observeSpaceReset(result)) throw new Error("此空间已重置，正在重新加载。");
+    if (!spaceCacheCurrent() || result.space_id && !/\/v1\/access\/session(?:\/renew)?$/.test(path) && !observeSpaceReset(result)) throw new Error("此空间已重置，正在重新加载。");
     return result;
   } finally { clearTimeout(timer); signal?.removeEventListener("abort", abort); }
 }

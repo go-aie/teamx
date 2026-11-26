@@ -25,9 +25,13 @@ type externalAuthConfig struct {
 	ClientSecretFile      string   `toml:"client_secret_file"`
 	AllowedSubjects       []string `toml:"allowed_subjects"`
 	AllowAllAuthenticated bool     `toml:"allow_all_authenticated"`
+	SessionMaxAge         string   `toml:"session_max_age"`
 }
 
 func (c externalAuthConfig) provider() (authn.Provider, error) {
+	if _, err := c.sessionMaxAge(); err != nil {
+		return nil, err
+	}
 	if !c.AllowAllAuthenticated && len(c.AllowedSubjects) == 0 {
 		return nil, errors.New("authentication requires allowed_subjects or explicit allow_all_authenticated")
 	}
@@ -50,7 +54,7 @@ func (c externalAuthConfig) provider() (authn.Provider, error) {
 		}
 		secret = strings.TrimSpace(string(data))
 	}
-	return opencsg.New(strings.TrimRight(c.Issuer, "/"), c.ClientID, secret, nil)
+	return opencsg.NewRenewable(strings.TrimRight(c.Issuer, "/"), c.ClientID, secret, nil)
 }
 
 type externalUser struct {
@@ -312,9 +316,9 @@ func (u *hostedUsers) setStatus(id, status string) (externalUser, error) {
 	return externalUser{}, ErrIdentity
 }
 
-// The local session is deliberately short and needs another SSO exchange after
-// expiry. No SSO or refresh token is retained in the host. Model credentials
-// are held separately in the owner's private credential store.
+// Identity-only providers retain the short-session contract. Production OpenCSG
+// uses the renewable host owner and its separate absolute/check deadlines.
+// Gateway credentials remain in the owner's independent model credential store.
 const externalSessionLifetime = 15 * time.Minute
 
 func tokenDigest(token string) [32]byte { return sha256.Sum256([]byte(token)) }
@@ -354,6 +358,14 @@ func (a *serverAccess) browserSubject(r *http.Request) (userSubject, bool) {
 	session, exists := a.sessions[tokenDigest(cookie.Value)]
 	now := a.now()
 	a.mu.Unlock()
+	if a.renewal != nil {
+		a.mu.Lock()
+		unavailable := a.renewal.broken || a.renewal.closed || a.renewal.denied[tokenDigest(cookie.Value)]
+		a.mu.Unlock()
+		if unavailable {
+			return userSubject{}, false
+		}
+	}
 	return session.Subject, exists && now.Before(session.expires) && a.authorizeSubject(session.Subject) == nil
 }
 

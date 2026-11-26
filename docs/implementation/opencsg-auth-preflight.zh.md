@@ -10,14 +10,14 @@
 
 TeamX 发起入口为 `POST /v1/access/sso/login`，回调为 `/v1/access/sso/callback`。远程使用部署配置的 HTTPS origin；本机验收允许字面回环 IP 的 HTTP origin，如 `http://127.0.0.1:18088`，不允许普通 HTTP 域名或局域网地址。TeamX 以独立应用发起授权，使用一次性 state、nonce、S256 PKCE，验证 ID token 的签名、issuer、audience 与有效期；稳定身份来自已验证的 issuer／sub。
 
-`internal/authn` 继续提供窄 Provider 合同；`internal/authn/opencsg` 实现当前协议。配置 `hub_origin` 时，经 userinfo 核对 access token 的主体后取得本人 Gateway Key；不保存 IAM token。配置和身份目录统一使用 `opencsg`，已有身份须与配置的 provider／issuer 一致。一次性改名迁移已完成并移除，启动不再转换旧名称或改写身份。
+`internal/authn` 继续提供窄 Provider 合同；`internal/authn/opencsg` 实现当前协议。配置 `hub_origin` 时，经 userinfo 核对 access token 的主体后取得本人 Gateway Key。多用户续期 Grant 由宿主 v3 浏览器会话快照私有保存，不进入业务会话，见[续期实现记录](opencsg-session-renewal.zh.md)。配置和身份目录统一使用 `opencsg`，已有身份须与配置的 provider／issuer 一致。一次性改名迁移已完成并移除，启动不再转换旧名称或改写身份。
 
 ## 宿主与持久状态
 
 - 宿主持有五分钟随机登录尝试、浏览器 Cookie 绑定与原子单次消费；同时最多 128 个未完成尝试，每分钟最多发起 60 次。发起要求同源 POST，成功和失败均跳到固定本地地址清除 URL 敏感参数，设置 no-store／no-referrer。HTTPS 使用 Secure 和 `__Host-` Cookie；字面 HTTP 回环使用独立名称的本机 Cookie。
 - `users.json` 是多用户组合唯一用户目录，保存正式 User、auth version、外部 provider／authority／subject 绑定与默认空间的不可变登记预约。认证源在首次准入时固定，换源不会自动创建替代身份或接管旧用户。
 - 用户预约先于 `spaces.json` 发布；中断／重启沿原 UserID 和 SpaceID 补齐，不重新分配。初始化有独立持久完成记录；登记损坏、缺失及跨模式复用保留证据并拒绝，个人原接入流程不变。
-- 会话只保存随机 token 的摘要，绑定安装与认证源；有效期最多 15 分钟，且不晚于远端 token 的期限。重启重读用户状态和认证版本。普通退出只撤销当前会话；管理 token 不作为多用户业务凭据。
+- 浏览器 Cookie 只保存摘要，绑定安装与认证源；OpenCSG 本地绝对期限默认 7 天，远端复核窗口最多 1 小时且受 access token 到期限制，IAM 凭据只保存在宿主私有会话快照。重启重读用户状态和认证版本。普通退出只撤销当前会话；管理 token 不作为多用户业务凭据。
 - SpaceRuntime 继续只代表真实空间。没有登录用户时由共享控制入口服务；空间装配配方与业务运行对象分开，不创建虚构 owner 或空业务 SpaceRuntime。
 - 空间列表、默认空间、创建／重试、改名、归档／恢复、业务请求、事件流及执行凭据使用认证主体。跨用户 ID、重复 request_id、旧认证版本不授予访问；目录占用和共享 Space／Session 额度沿用原 owner。
 
@@ -58,7 +58,7 @@ teamx access users enable --user owner_<id> --config /absolute/config.toml
 
 停用先持久递增认证版本，再撤销会话、流与执行凭据，取消并等待所属空间的原生命周期 owner 结清。结清成功后空间为 suspended；超时保留同一对象、archiving、锁与证据，可重试，不返回虚假成功。启用需旧操作已结清，不复活旧 Cookie／凭据，也不自动恢复空间运行，用户仍可显式恢复原空间。中断在持久用户停用之后、运行时结清之前时，重启按 disabled 状态完成归档，不启动旧业务。
 
-本地 Cookie 的 15 分钟上限不是远端停用传播时限。OpenCSG 外部冻结／撤销的实际行为尚未验证，不声明即时同步；本地管理撤权已实现。认证服务失败不产生新会话或替代用户，已有会话到原期限结束。
+远端复核的 1 小时窗口不是 IAM 所有停用操作的传播保证。OpenCSG 外部冻结／撤销的实际行为尚未验证，不声明即时同步；本地管理撤权已实现。认证服务失败不产生新会话或替代用户，已有会话在原复核期限内可用，期限外暂时拒绝业务，恢复后按需复核。
 
 ## 验证与剩余门槛
 

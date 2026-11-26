@@ -1,3 +1,4 @@
+import { installSessionController, observeAuthentication, beforeAuthenticatedRequest, temporaryAuthentication, authenticationMessage } from "./session.mjs";
 import { spaceURL, spaceStorage, mountSpacePicker } from "./space-context.mjs";
 import { mountSpaceReset } from "./space-reset.mjs";
 import { randomUUID } from "./random-id.mjs";
@@ -27,9 +28,11 @@ function restoreDraft(versionKnown = true) {
   if (typeof draft.request_id === "string") requestID=draft.request_id;
 }
 async function request(path, data) {
+  beforeAuthenticatedRequest(path, data);
   const response = await fetch(spaceURL(path), {method: data ? "POST" : "GET", cache: "no-store", credentials: "same-origin", headers: data ? {"Content-Type":"application/json", "Accept":"application/json"} : {"Accept":"application/json"}, body: data ? JSON.stringify(data) : undefined});
   const result = await response.json();
-  if (!response.ok) {const error = new Error(response.status === 401 ? "访问令牌无效或登录已到期，请重新输入。" : response.status === 429 ? "尝试过于频繁，请稍后重试。" : result.message || "请求未完成，请稍后重试。"); error.status = response.status; error.field = result.field; error.code = result.code; throw error; }
+  observeAuthentication(response.status, result, path);
+  if (!response.ok) {const error = new Error(temporaryAuthentication(result.code || result.error) ? authenticationMessage : response.status === 401 ? "访问令牌无效或登录已到期，请重新输入。" : response.status === 429 ? "尝试过于频繁，请稍后重试。" : result.message || "请求未完成，请稍后重试。"); error.status = response.status; error.field = result.field; error.code = result.code; throw error; }
   return result;
 }
 function feedback(message, kind = "status") {
@@ -134,6 +137,7 @@ async function showSession() {
   try {
     const session=await request("/v1/access/session");
     if (generation !== setupRead) return;
+    if (sessionController?.restore(session)) return;
     operator=session.operator;
     await mountSpacePicker();
     mountSpaceReset();
@@ -143,6 +147,7 @@ async function showSession() {
     draftKey=nextKey;
   } catch (error) {
     if (generation !== setupRead) return;
+    if (error.status === 503 && temporaryAuthentication(error.code) || !error.status) { feedback(authenticationMessage); return; }
     if (error.status !== 401 && requestID) { showSetupProgress("unknown"); void poll(); return; }
     document.title = "TeamX · 登录";
     const entering = $("login").hidden || $("login-form").hidden;
@@ -154,6 +159,8 @@ async function showSession() {
       $("sso-login-form").hidden=!sso; $("login-form").hidden=sso;
       $("sso-login-submit").textContent=method.provider === "opencsg" ? "使用 OpenCSG 登录" : "使用账号登录";
       if (sso) {
+        if (location.search === "?sso=session_capacity_reached") { $("login-feedback").textContent="登录会话容量已满，请退出其他设备的登录后重试，或联系部署管理员。"; $("login-feedback").hidden=false; }
+        if (location.search === "?sso=session_storage_unavailable") { $("login-feedback").textContent="暂时无法保存登录，请稍后重试或联系部署管理员。"; $("login-feedback").hidden=false; }
         if (location.search === "?sso=failed") { $("login-feedback").textContent="登录未完成或当前账号未获准使用，请重试或联系部署管理员。"; $("login-feedback").hidden=false; }
         return;
       }
@@ -318,3 +325,10 @@ addEventListener("pageshow",resume); addEventListener("online",resume);
 addEventListener("offline",()=>{ if (requestID) showSetupProgress("unknown"); });
 document.addEventListener("visibilitychange",() => { if(document.hidden) saveDraft(); else resume(); });
 showSession().catch(error => feedback(error.message));
+
+let recoveryStorage; try { recoveryStorage = globalThis.sessionStorage; } catch {}
+const sessionController = installSessionController({ read: () => request("/v1/access/session"), renew: () => request("/v1/access/session/renew", {}),
+  readOnStart:false, document, location, storage:recoveryStorage, beforeLogin:saveDraft,
+  changed: unavailable => { if (unavailable) feedback(authenticationMessage); else void showSession(); } });
+addEventListener("pagehide", () => sessionController.stop(), {once:true});
+addEventListener("pageshow", () => sessionController.start());

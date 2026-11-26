@@ -1,3 +1,4 @@
+import { installSessionController, authenticationMessage } from "./session.mjs";
 import { spaceURL, spaceStorage, observeSpaceReset } from "./space-context.mjs";
 import { createBrowserLifecycle } from "./features/browser-lifecycle.mjs";
 import { createBrowserNavigation } from "./features/browser-navigation.mjs";
@@ -755,6 +756,7 @@ export async function createApp(overrides = {}) {
     service_epoch: state.managed ? state.catalog?.service_epoch : serverIdentity?.[1],
     ...(state.info ? {room_id:state.info.room_id, room_instance:state.info.room_instance, room_service_epoch:state.info.service_epoch} : {}) });
   function streamStatus(connected) {
+    if (state.authenticationUnavailable) { $("connection").textContent = authenticationMessage; return; }
     state.recovering = !connected;
     if (!connected) {
       state.messagesReady = state.membersReady = false;
@@ -811,6 +813,21 @@ export async function createApp(overrides = {}) {
     void refresh({ background:true });
   });
 
+  let sessionController;
+  if (!overrides.request) {
+    let recoveryStorage; try { recoveryStorage = globalThis.sessionStorage; } catch {}
+    sessionController = installSessionController({ read: async () => { const value = await request("/v1/access/session"); sessionController?.restore(value); return value; }, renew: () => request("/v1/access/session/renew", {}),
+      document, location: window.location, storage: recoveryStorage,
+      beforeLogin: () => conversationUI.saveDraft?.(),
+      changed: unavailable => {
+        state.authenticationUnavailable = unavailable;
+        if (unavailable) { $("connection").textContent = authenticationMessage; $("connection").classList.add("offline"); }
+        else { void refresh({background:true}); }
+        conversationUI.composerState();
+      } });
+    window.addEventListener("pagehide", () => sessionController.stop(), { once:true });
+    window.addEventListener("pageshow", () => sessionController.start());
+  }
   await refresh();
   updateConnection = createUpdateConnection({ env, identity: streamIdentity, reconcile: reconcileStream, invalidate,
     status: streamStatus, fence: () => scheduler.reset(), authenticate: () => request("/v1/access/session") });

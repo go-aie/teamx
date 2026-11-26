@@ -50,6 +50,12 @@ func (a *serverAccess) watchUIUpdates(r *http.Request) (*uiUpdateAccessLease, er
 			return nil, ErrIdentity
 		}
 		l.expires = s.expires
+		if s.renewal != nil && s.renewal.VerifiedUntil.Before(l.expires) {
+			l.expires = s.renewal.VerifiedUntil
+		}
+		if a.renewal != nil && (a.renewal.broken || a.renewal.closed || a.renewal.denied[l.session.hash]) || !a.now().Before(l.expires) {
+			return nil, ErrIdentity
+		}
 	}
 	if a.updateLeases == nil {
 		a.updateLeases = make(map[*uiUpdateAccessLease]struct{})
@@ -72,6 +78,9 @@ func (a *serverAccess) revokeUIUpdatesLocked(all bool) {
 		identityErr := a.authorizeSubject(s.Subject)
 		if l.anonymous {
 			identityErr = a.authorizeSubject(a.subject())
+		}
+		if exists && s.renewal != nil && l.expires.After(s.renewal.VerifiedUntil) {
+			identityErr = ErrIdentity
 		}
 		valid := identityErr == nil && (l.anonymous && a.disabled || !l.anonymous && !a.disabled && exists && s.Subject.UserID == l.operator && a.now().Before(s.expires))
 		if all || !valid {

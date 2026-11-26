@@ -109,6 +109,22 @@ func (a *serverAccess) serveUserManagement(w http.ResponseWriter, r *http.Reques
 
 func (s *spaceServer) fenceUser(id string) {
 	a := s.access
+	if a.renewal != nil {
+		a.mu.Lock()
+		for key, session := range a.sessions {
+			if session.Subject.UserID == id {
+				a.renewal.denied[key] = true
+				delete(a.sessions, key)
+				delete(a.renewal.retries, key)
+			}
+		}
+		a.revokeUIUpdatesLocked(false)
+		a.mu.Unlock()
+		// Local AuthVersion is already durable. Snapshot pruning is serialized
+		// with renewal; an unavailable store still cannot restore that version.
+		_ = a.renewal.change(func(next map[[32]byte]accessSession) error { return nil })
+	}
+
 	a.mu.Lock()
 	next := maps.Clone(a.sessions)
 	for key, session := range next {
@@ -118,7 +134,9 @@ func (s *spaceServer) fenceUser(id string) {
 	}
 	// Durable User status/auth version is already the authority even if this
 	// session pruning fails. In-memory streams are revoked immediately.
-	_ = a.replaceSessions(next)
+	if a.renewal == nil {
+		_ = a.replaceSessions(next)
+	}
 	for lease := range a.updateLeases {
 		if lease.operator == id {
 			delete(a.updateLeases, lease)

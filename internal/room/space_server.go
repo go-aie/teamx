@@ -15,6 +15,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/go-aie/teamx/internal/authn"
 	"github.com/go-aie/teamx/internal/platform/gitlaboauth"
 	"github.com/go-aie/teamx/internal/web"
 )
@@ -180,6 +181,11 @@ func openSpaceServer(ctx context.Context, initial *SpaceRuntime, assembly spaceR
 	initialized := false
 	defer func() {
 		if !initialized {
+			s.cancel()
+			if access.renewal != nil {
+				_ = access.renewal.close(context.Background())
+				_ = access.sessionStore.closeWriter(context.Background())
+			}
 			_ = unlockDirectory(lock)
 		}
 	}()
@@ -223,9 +229,24 @@ func openSpaceServer(ctx context.Context, initial *SpaceRuntime, assembly spaceR
 		if err != nil {
 			return nil, err
 		}
+		if renewable, ok := provider.(authn.RenewableProvider); ok {
+			access.renewal, err = newAccessSessionRenewal(s.ctx, access, renewable)
+			if err != nil {
+				return nil, err
+			}
+			if err := access.renewal.restore(); err != nil {
+				access.renewal.cancel()
+				return nil, err
+			}
+		} else if err := access.restoreSessions(); err != nil {
+			return nil, err
+		}
 		access.login, err = newExternalLogin(provider, access.public, s.admitExternal)
 		if err != nil {
 			return nil, err
+		}
+		if access.renewal != nil {
+			access.login.admitRenewable = s.admitRenewable
 		}
 		if err := s.configureModelDefaults(provider); err != nil {
 			s.cancel()
@@ -285,6 +306,23 @@ func (s *spaceServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if path == "/" && prefix == "" && (r.Method == http.MethodGet || r.Method == http.MethodHead) {
+		if s.access.renewal != nil && r.Header.Get("Authorization") == "" {
+			origin, valid := s.access.requestOrigin(r)
+			if !valid || r.Header.Get("Origin") != "" && r.Header.Get("Origin") != origin {
+				accessError(w, 403, "invalid_origin")
+				return
+			}
+			session, err := s.access.authenticateBrowserHTTP(w, r)
+			if err != nil {
+				if errors.Is(err, errLoginRequired) {
+					http.Redirect(w, r, "/access", http.StatusSeeOther)
+				} else {
+					writeAuthenticationError(w, err)
+				}
+				return
+			}
+			id = s.access.defaultSpace(session.Subject)
+		}
 		if id == "" {
 			http.Redirect(w, r, "/access", http.StatusSeeOther)
 			return
@@ -301,6 +339,22 @@ func (s *spaceServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if path == "/healthz" && prefix == "" || path == "/v1/spaces" || strings.HasPrefix(path, "/v1/spaces/") || strings.HasPrefix(path, "/v1/deployment/") || strings.HasPrefix(path, "/v1/access/") && (path != "/v1/access/session" || s.access.users != nil) || strings.HasPrefix(path, "/ui/") || path == "/access" {
 		s.access.wrap(http.HandlerFunc(s.serveDirectory)).ServeHTTP(w, r)
 		return
+	}
+	// Authenticate before Space ownership/state checks, without holding s.mu.
+	// Routing hints alone never authorize a request or consume OAuth state.
+	if s.access.renewal != nil && r.Header.Get("Authorization") == "" {
+		origin, ok := s.access.requestOrigin(r)
+		if !ok || r.Header.Get("Origin") != "" && r.Header.Get("Origin") != origin {
+			accessError(w, 403, "invalid_origin")
+			return
+		}
+		if _, err := s.access.authenticateBrowserHTTP(w, r); err != nil {
+			writeAuthenticationError(w, err)
+			return
+		}
+		if r.Context().Err() != nil {
+			return
+		}
 	}
 	s.mu.Lock()
 	entry := s.entries[id]
@@ -656,6 +710,11 @@ func (s *spaceServer) Close(ctx context.Context) error {
 	}
 	if s.gitlabApplications != nil {
 		if err := s.gitlabApplications.Close(ctx); err != nil {
+			return err
+		}
+	}
+	if s.access.renewal != nil {
+		if err := s.access.renewal.close(ctx); err != nil {
 			return err
 		}
 	}

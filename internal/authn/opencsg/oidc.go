@@ -24,11 +24,13 @@ const attemptLifetime = 5 * time.Minute
 type attempt struct {
 	redirect, verifier, nonce string
 	expires                   time.Time
+	authTime                  int64
 }
 
 type SSO struct {
 	issuer, clientID, secret string
 	client                   *http.Client
+	renewable                bool
 	mu                       sync.Mutex
 	attempts                 map[string]attempt
 }
@@ -37,22 +39,37 @@ var _ authn.Provider = (*SSO)(nil)
 
 // New does not contact the issuer, so configuration validation stays offline.
 // An empty secret selects a public client with PKCE; confidential clients use
-// client_secret_post in addition to PKCE. Neither mode persists provider tokens.
+// client_secret_post in addition to PKCE. Identity-only callers do not request
+// offline access; renewable grants are explicitly enabled by NewRenewable.
 func New(issuer, clientID, secret string, transport http.RoundTripper) (*SSO, error) {
 	u, err := url.Parse(issuer)
 	if err != nil || u.Scheme != "https" || u.Host == "" || u.User != nil || u.Path != "" || u.RawQuery != "" || u.ForceQuery || u.Fragment != "" || u.Opaque != "" || strings.TrimSpace(clientID) != clientID || clientID == "" || len(clientID) > 256 || strings.ContainsAny(clientID, "\x00\r\n") {
 		return nil, errors.New("OpenCSG requires an HTTPS root issuer and client_id")
 	}
 	return &SSO{issuer: issuer, clientID: clientID, secret: secret, attempts: map[string]attempt{}, client: &http.Client{
-		Transport: transport, Timeout: 10 * time.Second,
+		Transport: boundedTransport{transport}, Timeout: 10 * time.Second,
 		CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
 	}}, nil
 }
 
+// NewRenewable opts into offline authorization. The caller owns all credential
+// persistence and must commit Refresh's result before calling Verify.
+func NewRenewable(issuer, clientID, secret string, transport http.RoundTripper) (*SSO, error) {
+	s, err := New(issuer, clientID, secret, transport)
+	if err == nil {
+		s.renewable = true
+	}
+	return s, err
+}
+
 func (s *SSO) config(redirect string) oauth2.Config {
-	return oauth2.Config{ClientID: s.clientID, ClientSecret: s.secret, RedirectURL: redirect,
+	c := oauth2.Config{ClientID: s.clientID, ClientSecret: s.secret, RedirectURL: redirect,
 		Endpoint: oauth2.Endpoint{AuthURL: s.issuer + "/login/oauth/authorize", TokenURL: s.issuer + "/api/login/oauth/access_token", AuthStyle: oauth2.AuthStyleInParams},
 		Scopes:   []string{oidc.ScopeOpenID, "profile"}}
+	if s.renewable {
+		c.Scopes = append(c.Scopes, "offline_access")
+	}
+	return c
 }
 
 func (s *SSO) LoginURL(callback string) (string, error) {
@@ -84,33 +101,37 @@ func (s *SSO) LoginURL(callback string) (string, error) {
 }
 
 func (s *SSO) Complete(ctx context.Context, values url.Values) (authn.Identity, error) {
-	identity, _, err := s.complete(ctx, values, false)
+	identity, _, _, err := s.complete(ctx, values, false)
 	return identity, err
 }
 
 // CompleteWithToken additionally checks userinfo subject equality. The caller
 // can use this token during the same login to obtain the owner's credentials.
 func (s *SSO) CompleteWithToken(ctx context.Context, values url.Values) (authn.Identity, string, error) {
-	return s.complete(ctx, values, true)
+	id, token, _, err := s.complete(ctx, values, true)
+	if err != nil {
+		return authn.Identity{}, "", err
+	}
+	return id, token.AccessToken, nil
 }
 
-func (s *SSO) complete(ctx context.Context, values url.Values, exportToken bool) (authn.Identity, string, error) {
+func (s *SSO) complete(ctx context.Context, values url.Values, exportToken bool) (authn.Identity, *oauth2.Token, attempt, error) {
 	if len(values["state"]) != 1 {
-		return authn.Identity{}, "", ErrAuthentication
+		return authn.Identity{}, nil, attempt{}, ErrAuthentication
 	}
 	s.mu.Lock()
 	a, ok := s.attempts[values.Get("state")]
 	delete(s.attempts, values.Get("state"))
 	s.mu.Unlock()
 	if !ok || !time.Now().Before(a.expires) || len(values["code"]) != 1 || values.Get("code") == "" || len(values.Get("code")) > 16<<10 || values.Has("error") || values.Has("jwt") || values.Has("jwt_token") {
-		return authn.Identity{}, "", ErrAuthentication
+		return authn.Identity{}, nil, attempt{}, ErrAuthentication
 	}
 	ctx, cancel := context.WithTimeout(ctx, 15*time.Second)
 	defer cancel()
 	ctx = oidc.ClientContext(ctx, s.client)
 	provider, err := oidc.NewProvider(ctx, s.issuer)
 	if err != nil {
-		return authn.Identity{}, "", fmt.Errorf("%w: OIDC discovery rejected", ErrAuthentication)
+		return authn.Identity{}, nil, attempt{}, fmt.Errorf("%w: OIDC discovery rejected", ErrAuthentication)
 	}
 	// Keep code and token traffic pinned to this configured OpenCSG origin.
 	var metadata struct {
@@ -118,49 +139,51 @@ func (s *SSO) complete(ctx context.Context, values url.Values, exportToken bool)
 		UserInfo string `json:"userinfo_endpoint"`
 	}
 	if provider.Claims(&metadata) != nil || !strings.HasPrefix(metadata.JWKS, s.issuer+"/") || provider.Endpoint().AuthURL != s.issuer+"/login/oauth/authorize" || provider.Endpoint().TokenURL != s.issuer+"/api/login/oauth/access_token" {
-		return authn.Identity{}, "", fmt.Errorf("%w: OIDC endpoints rejected", ErrAuthentication)
+		return authn.Identity{}, nil, attempt{}, fmt.Errorf("%w: OIDC endpoints rejected", ErrAuthentication)
 	}
 	c := s.config(a.redirect)
 	token, err := c.Exchange(ctx, values.Get("code"), oauth2.VerifierOption(a.verifier))
 	if err != nil {
 		// OAuth errors can include response bodies containing credentials.
-		return authn.Identity{}, "", fmt.Errorf("%w: code exchange rejected", ErrAuthentication)
+		return authn.Identity{}, nil, attempt{}, fmt.Errorf("%w: code exchange rejected", ErrAuthentication)
 	}
 	raw, _ := token.Extra("id_token").(string)
 	if raw == "" || len(raw) > 64<<10 {
-		return authn.Identity{}, "", fmt.Errorf("%w: ID token missing", ErrAuthentication)
+		return authn.Identity{}, nil, attempt{}, fmt.Errorf("%w: ID token missing", ErrAuthentication)
 	}
 	id, err := provider.VerifierContext(ctx, &oidc.Config{ClientID: s.clientID}).Verify(ctx, raw)
 	if err != nil || id.Nonce != a.nonce || id.Subject == "" || len(id.Subject) > 256 || strings.TrimSpace(id.Subject) != id.Subject || strings.ContainsAny(id.Subject, "\x00\r\n") {
-		return authn.Identity{}, "", fmt.Errorf("%w: ID token verification rejected", ErrAuthentication)
+		return authn.Identity{}, nil, attempt{}, fmt.Errorf("%w: ID token verification rejected", ErrAuthentication)
 	}
 	if id.AccessTokenHash != "" && id.VerifyAccessToken(token.AccessToken) != nil {
-		return authn.Identity{}, "", ErrAuthentication
+		return authn.Identity{}, nil, attempt{}, ErrAuthentication
 	}
 	var claims struct {
 		Name            string `json:"name"`
 		Username        string `json:"preferred_username"`
 		AuthorizedParty string `json:"azp"`
+		AuthTime        int64  `json:"auth_time"`
 	}
 	if id.Claims(&claims) != nil || claims.AuthorizedParty != "" && claims.AuthorizedParty != s.clientID || len(id.Audience) > 1 && claims.AuthorizedParty != s.clientID {
-		return authn.Identity{}, "", ErrAuthentication
+		return authn.Identity{}, nil, attempt{}, ErrAuthentication
 	}
+	a.authTime = claims.AuthTime
 	name := claims.Name
 	if name == "" {
 		name = claims.Username
 	}
 	identity := authn.Identity{Provider: "opencsg", Authority: s.issuer, Subject: id.Subject, DisplayName: name, ValidUntil: id.Expiry}
 	if !exportToken {
-		return identity, "", nil
+		return identity, token, a, nil
 	}
 	// Bind the access token to the verified ID token before a model credential
-	// integration can use it. Neither token is persisted or put in a session.
+	// integration can use it. The host decides whether a private grant is saved.
 	if metadata.UserInfo != s.issuer+"/api/userinfo" {
-		return authn.Identity{}, "", fmt.Errorf("%w: userinfo endpoint rejected", ErrAuthentication)
+		return authn.Identity{}, nil, attempt{}, fmt.Errorf("%w: userinfo endpoint rejected", ErrAuthentication)
 	}
 	user, err := provider.UserInfo(ctx, oauth2.StaticTokenSource(token))
 	if err != nil || user.Subject != id.Subject {
-		return authn.Identity{}, "", fmt.Errorf("%w: access token identity rejected", ErrAuthentication)
+		return authn.Identity{}, nil, attempt{}, fmt.Errorf("%w: access token identity rejected", ErrAuthentication)
 	}
-	return identity, token.AccessToken, nil
+	return identity, token, a, nil
 }

@@ -1,3 +1,4 @@
+import { createSessionController, temporaryAuthentication, authenticationMessage } from "../assets/session.mjs";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
@@ -88,10 +89,13 @@ async function launch(api, saved = new Map(), hash = "") {
   el("setup-progress").hidden=true;
   el("model-form").elements=[...html.matchAll(/<(?:input|select|button) id="([^"]+)"/g)].map(([,id])=>el(id)).filter(field=>![el("login-submit"),el("logout"),el("retry-migration"),el("check-setup-operation"),el("reload-model-draft"),el("toggle-token"),el("token")].includes(field));
   const timers=[],navigation=[],documentEvents=new Map();
-  const document={hidden:false,body:{},activeElement:null,getElementById:el,addEventListener:(name,fn)=>documentEvents.set(name,fn)};
-  vm.runInNewContext(source, {...modelForm,randomUUID,URL,crypto:webcrypto, spaceURL:path=>path,spaceStorage:storage=>storage,mountSpacePicker:()=>{},mountSpaceReset:()=>{},
+  const document={hidden:false,body:{},activeElement:null,getElementById:el,addEventListener:(name,fn)=>{const previous=documentEvents.get(name);documentEvents.set(name,()=>{previous?.();fn();});}};
+  let controller;
+  vm.runInNewContext(source, {createSessionController,temporaryAuthentication,authenticationMessage,
+    installSessionController: options => { controller = createSessionController({...options,setTimer:fn=>timers.push(fn),clearTimer:()=>{}}); controller.start(false); return controller; },
+    observeAuthentication:(...args)=>controller?.observe(...args),beforeAuthenticatedRequest:(...args)=>controller?.beforeRequest(...args),...modelForm,randomUUID,URL,crypto:webcrypto, spaceURL:path=>path,spaceStorage:storage=>storage,mountSpacePicker:()=>{},mountSpaceReset:()=>{},
     document,navigator:{onLine:true},
-    location:{origin:"http://fixture",hash,replace:path=>navigation.push(path),assign:path=>navigation.push(path)},addEventListener(){},
+    location:{origin:"http://fixture",pathname:"/access",hash,replace:path=>navigation.push(path),assign:path=>navigation.push(path)},addEventListener(){},
     sessionStorage:{getItem:key=>saved.get(key),setItem:(key,value)=>saved.set(key,value),removeItem:key=>saved.delete(key)},
     setTimeout:fn=>timers.push(fn),
     fetch:async(path,options)=>{

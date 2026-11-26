@@ -41,6 +41,7 @@ type accessConfig struct {
 type accessSession struct {
 	expires time.Time
 	Subject userSubject
+	renewal *renewableSession // immutable after publication; private host state only
 }
 type executionBinding struct {
 	Subject userSubject `json:"-"`
@@ -95,6 +96,7 @@ type serverAccess struct {
 	mu                    sync.Mutex
 	sessions              map[[32]byte]accessSession
 	sessionStore          snapshotWriter
+	renewal               *accessSessionRenewal
 	executions            map[[32]byte]executionBinding
 	attempts              int
 	retryAfter            time.Time
@@ -276,9 +278,7 @@ func newServerAccess(c startupConfig, endpoint string) (*serverAccess, error) {
 			return nil, err
 		}
 		a.users = users
-		if err := a.restoreSessions(); err != nil {
-			return nil, err
-		}
+		// Restore after selecting the optional renewable provider in the host.
 		return a, nil
 	}
 	registration, err := registerPersonalSpace(c, a.installationID, &snapshotWriter{ops: defaultSnapshotOps()})
@@ -431,6 +431,9 @@ func (a *serverAccess) wrap(next http.Handler) http.Handler {
 			_ = writeJSON(w, map[string]string{"provider": "token"})
 			return
 		}
+		if auth.serveRenewableControl(w, r, origin) {
+			return
+		}
 		if a.unavailableSpacePlatform("lark") && strings.HasPrefix(r.URL.Path, "/v1/platforms/lark/") || a.unavailableSpacePlatform("scion") && strings.HasPrefix(r.URL.Path, "/v1/platforms/scion/") {
 			accessError(w, 403, "space_capability_unavailable")
 			return
@@ -452,7 +455,7 @@ func (a *serverAccess) wrap(next http.Handler) http.Handler {
 			_ = json.NewEncoder(w).Encode(status)
 			return
 		}
-		if r.URL.Path == "/access" || r.URL.Path == "/ui/access.mjs" || r.URL.Path == "/ui/access.css" || r.URL.Path == "/ui/styles/controls.css" || r.URL.Path == "/ui/model-form.mjs" || r.URL.Path == "/ui/random-id.mjs" || r.URL.Path == "/ui/space-context.mjs" || r.URL.Path == "/ui/space-reset.mjs" || r.URL.Path == "/ui/styles/spaces.css" || r.URL.Path == "/ui/brand-mark.svg" {
+		if r.URL.Path == "/access" || r.URL.Path == "/ui/access.mjs" || r.URL.Path == "/ui/session.mjs" || r.URL.Path == "/ui/access.css" || r.URL.Path == "/ui/styles/controls.css" || r.URL.Path == "/ui/model-form.mjs" || r.URL.Path == "/ui/random-id.mjs" || r.URL.Path == "/ui/space-context.mjs" || r.URL.Path == "/ui/space-reset.mjs" || r.URL.Path == "/ui/styles/spaces.css" || r.URL.Path == "/ui/brand-mark.svg" {
 			if r.URL.Path == "/access" {
 				// Native SSO form navigation needs its same-origin proof.
 				// no-referrer makes Chromium send Origin: null on that POST.
@@ -464,12 +467,12 @@ func (a *serverAccess) wrap(next http.Handler) http.Handler {
 		if r.URL.Path == gitlabCallbackPath || r.URL.Path == gitlabCompletePath {
 			subject := a.subject()
 			if auth.users != nil {
-				var ok bool
-				subject, ok = a.browserSubject(r)
-				if !ok {
-					accessError(w, 403, "identity_mismatch")
+				session, err := auth.authenticateBrowserHTTP(w, r)
+				if err != nil {
+					writeAuthenticationError(w, err)
 					return
 				}
+				subject = session.Subject
 			}
 			r, err := a.bindSpaceRequest(r, subject)
 			if err != nil {
@@ -578,15 +581,24 @@ func (a *serverAccess) wrap(next http.Handler) http.Handler {
 				auth.mu.Unlock()
 			}
 		} else if c, err := r.Cookie(a.cookieName()); err == nil {
-			hash := sha256.Sum256([]byte(c.Value))
-			auth.mu.Lock()
-			s, exists := auth.sessions[hash]
-			authenticated = exists && auth.now().Before(s.expires)
-			subject = s.Subject
-			if !authenticated {
-				delete(auth.sessions, hash)
+			if auth.renewal != nil {
+				session, err := auth.authenticateBrowserHTTP(w, r)
+				if err != nil {
+					writeAuthenticationError(w, err)
+					return
+				}
+				subject, authenticated = session.Subject, true
+			} else {
+				hash := sha256.Sum256([]byte(c.Value))
+				auth.mu.Lock()
+				s, exists := auth.sessions[hash]
+				authenticated = exists && auth.now().Before(s.expires)
+				subject = s.Subject
+				auth.mu.Unlock()
 			}
-			auth.mu.Unlock()
+		}
+		if r.Context().Err() != nil {
+			return
 		}
 		auth.mu.Lock()
 		if auth.disabled && header == "" {
@@ -599,7 +611,11 @@ func (a *serverAccess) wrap(next http.Handler) http.Handler {
 				http.Redirect(w, r, "/access", http.StatusSeeOther)
 				return
 			}
-			accessError(w, 401, "unauthorized")
+			if auth.renewal != nil && cookieAuth {
+				accessError(w, 401, "login_required")
+			} else {
+				accessError(w, 401, "unauthorized")
+			}
 			return
 		}
 		if origin == auth.executionOrigin && auth.executionOrigin != "" && binding == nil {

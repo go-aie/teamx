@@ -799,11 +799,11 @@ export function createConversation({ env, runtime, roomsUI, membersUI, settingsU
     $("message-input").readOnly = !!state.draft.pending || discussionBusy();
     mentionPicker.refresh();
     const emptyDraft = !$("message-input").value.trim() && !state.draft.attachments?.length;
-    $("send").disabled = !state.connected || state.draft.sending || discussionBusy() ||
+    $("send").disabled = !!state.authenticationUnavailable || !state.connected || state.draft.sending || discussionBusy() ||
       !state.draft.pending && (emptyDraft || !!attachmentsUI.blockReason());
     $("cancel-reply").disabled=!!state.draft.pending;
     $("discard-send").hidden = !state.draft.pending || state.draft.sending;
-    $("restart-discussion").disabled = !state.connected || workspaceUI.workspaceBusy() || roomsUI.managementBusy() || state.draft.restartStarting || state.restart?.status === "running" || !!state.draft.pending || state.draft.sending;
+    $("restart-discussion").disabled = !!state.authenticationUnavailable || !state.connected || workspaceUI.workspaceBusy() || roomsUI.managementBusy() || state.draft.restartStarting || state.restart?.status === "running" || !!state.draft.pending || state.draft.sending;
     $("restart-discussion").textContent = state.draft.restartStarting || state.restart?.status === "running" ? "重新开始中…" : state.draft.restartRequest ? "核对并重试" : "重新开始";
     $("toggle-add").disabled = !state.connected || discussionBusy();
     $("add-member").disabled = !state.connected || !state.profiles.length || discussionBusy();
