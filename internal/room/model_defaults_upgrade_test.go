@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"testing"
+	"time"
 
 	"github.com/go-aie/teamx/internal/agent/dsh"
 )
@@ -141,9 +142,37 @@ func TestHostedDefaultUpgradeValidationFailureCanRetryWithoutPublishing(t *testi
 	if string(before) != string(after) {
 		t.Fatal("failed validation published advanced defaults")
 	}
-	c.service.probe = successfulModelProbe
+	attempts := 0
+	c.service.probe = func(ctx context.Context, opts dsh.Options) (dsh.ProbeResult, error) {
+		attempts++
+		if attempts == 1 {
+			return dsh.ProbeResult{}, &dsh.ProbeError{Stage: "admission", Code: "busy"}
+		}
+		return successfulModelProbe(ctx, opts)
+	}
 	if err := c.upgradeHostedDefaultModel(humanOperator()); err != nil {
 		t.Fatal("validation retry failed", err)
+	}
+	if attempts != 2 {
+		t.Fatal("upgrade did not wait for shared probe admission", attempts)
+	}
+}
+
+func TestModelProbeAdmissionWaitCancelsAndDoesNotReplayExecution(t *testing.T) {
+	for _, stage := range []string{"admission", "tool", "cleanup"} {
+		t.Run(stage, func(t *testing.T) {
+			attempts := 0
+			s := &modelService{probe: func(context.Context, dsh.Options) (dsh.ProbeResult, error) {
+				attempts++
+				return dsh.ProbeResult{}, &dsh.ProbeError{Stage: stage, Code: "busy"}
+			}}
+			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Millisecond)
+			defer cancel()
+			_, err := s.probeWhenAvailable(ctx, dsh.Options{})
+			if attempts != 1 || err == nil || stage == "admission" && !errors.Is(err, context.DeadlineExceeded) {
+				t.Fatal("probe cancellation or execution retry changed", attempts, err)
+			}
+		})
 	}
 }
 

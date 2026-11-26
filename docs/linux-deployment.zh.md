@@ -122,6 +122,8 @@ allowed_subjects = ["REPLACE_WITH_VERIFIED_SUBJECT_UUID"]
 
 内置默认模型使用文本和图片输入、`context_window = 1048576`、`max_tokens = 32768`、`reasoning_effort = "off"`，并以 system 兼容不支持 developer 的网关。升级后，已有空间中旧版自动生成且尚未自定义的 `daily` 模型会在恢复 Room 前，通过原模型验证、配置提交及 Session 轮换流程一次性补齐参数；保留本人凭据、成员选择、历史、任务及启用／暂停意图。轮换重置私有 Session 上下文，不重放旧回合。中断的应用继续同一目标，验证失败保留旧配置，并在模型操作中显示失败；完成后不再覆盖后续手动修改。
 
+多个空间同时验证时，会有界等待共享 DSH 验证槽位；仅重试尚未开始执行的 `admission/busy`，不自动重放已进入执行或清理失败的验证。
+
 个人部署使用 `mode = "personal"`，删除整个 `[deployment.authentication]` 节；可省略下面的 SRT 参数以使用默认 native。个人与多用户必须使用各自的新业务根，修改模式不会迁移旧数据。
 
 使用**已校验归档内的安装器**。以下命令中的归档名替换为实际值，且同名 `.sha256` 留在旁边：

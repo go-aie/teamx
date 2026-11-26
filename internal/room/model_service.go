@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"time"
 
 	"github.com/go-aie/teamx/internal/agent/dsh"
 	"github.com/pelletier/go-toml/v2"
@@ -207,7 +208,7 @@ func (s *modelService) save(ctx context.Context, input modelSave) (modelCatalog,
 		opts := s.launcher
 		opts.Model = entry.materialize()
 		opts.Credential = key
-		receipt, err := s.probe(ctx, opts)
+		receipt, err := s.probeWhenAvailable(ctx, opts)
 		if err != nil {
 			return current, err
 		}
@@ -283,6 +284,31 @@ func (s *modelService) save(ctx context.Context, input modelSave) (modelCatalog,
 	})
 	retain = s.document.pending != nil || s.current.Version == next.Version && reflect.DeepEqual(s.current, next)
 	return s.current.clone(), err
+}
+
+// DSH's probe slot is shared across Spaces. An admission rejection has not
+// started a request, so queue briefly instead of failing another user's setup
+// or upgrade. Never retry a probe that entered execution or failed cleanup.
+func (s *modelService) probeWhenAvailable(ctx context.Context, opts dsh.Options) (dsh.ProbeResult, error) {
+	ctx, cancel := context.WithTimeout(ctx, 2*time.Minute)
+	defer cancel()
+	ticker := time.NewTicker(250 * time.Millisecond)
+	defer ticker.Stop()
+	for {
+		if err := ctx.Err(); err != nil {
+			return dsh.ProbeResult{}, err
+		}
+		result, err := s.probe(ctx, opts)
+		var rejected *dsh.ProbeError
+		if !errors.As(err, &rejected) || rejected.Stage != "admission" || rejected.Code != "busy" {
+			return result, err
+		}
+		select {
+		case <-ctx.Done():
+			return dsh.ProbeResult{}, ctx.Err()
+		case <-ticker.C:
+		}
+	}
 }
 
 type modelValidation struct {
