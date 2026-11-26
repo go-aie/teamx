@@ -18,7 +18,7 @@ import (
 
 func hostedResetFixture(t *testing.T) *spaceServer {
 	t.Helper()
-	s := hostedFixtureWithProvider(t, t.TempDir(), externalAuthConfig{Provider: "fixture", AllowedSubjects: []string{"alice", "bob"}}, gatewayProviderFixture{})
+	s := hostedGatewayFixture(t, t.TempDir(), externalAuthConfig{Provider: "fixture", AllowedSubjects: []string{"alice", "bob"}}, false)
 	s.assembly.factories.hostedResetAccepted = true // private acceptance only
 	s.assembly.config.resetTeamsSource = resetSeedForTest(t)
 	return s

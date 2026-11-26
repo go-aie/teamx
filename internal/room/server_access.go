@@ -808,6 +808,10 @@ func runAccessInit(args []string, stdout, stderr io.Writer) error {
 		return loadErr
 	}
 	if startup.Deployment.Mode == "multi-user" {
+		startup, err = migrateOpenCSGConfig(startup)
+		if err != nil {
+			return err
+		}
 		if err := prepareFirstAccess(startup); err != nil {
 			return err
 		}

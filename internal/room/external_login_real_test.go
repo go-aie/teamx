@@ -17,7 +17,6 @@ import (
 	"time"
 
 	"github.com/go-aie/teamx/internal/authn"
-	"github.com/go-aie/teamx/internal/authn/opencsg"
 )
 
 type observedSSOProbe struct {
@@ -35,17 +34,9 @@ func (p observedSSOProbe) Complete(ctx context.Context, values url.Values) (auth
 // obtains the server-proven stable subject for an administrator's allowlist.
 // Credentials remain in memory; the private receipt contains identity only.
 func TestOpenCSGSSOLoopback(t *testing.T) {
-	provider, err := opencsg.New("https://opencsg.com", "https://hub.opencsg.com", nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	runSSOLoopback(t, provider, "OpenCSG")
-}
-
-func TestCasdoorSSOLoopback(t *testing.T) {
-	path := os.Getenv("TEAMX_CASDOOR_ACCEPTANCE_CONFIG")
+	path := os.Getenv("TEAMX_OPENCSG_ACCEPTANCE_CONFIG")
 	if path == "" {
-		t.Skip("set TEAMX_CASDOOR_ACCEPTANCE_CONFIG to a private absolute TOML configuration")
+		t.Skip("set TEAMX_OPENCSG_ACCEPTANCE_CONFIG to a private absolute TOML configuration")
 	}
 	if !filepath.IsAbs(path) {
 		t.Fatal("acceptance configuration must be absolute")
@@ -55,14 +46,14 @@ func TestCasdoorSSOLoopback(t *testing.T) {
 		t.Fatal("acceptance configuration must be a private 0600 regular file")
 	}
 	c, err := loadStartupConfig(path, true)
-	if err != nil || c.Deployment.Authentication.Provider != "casdoor" {
-		t.Fatal("acceptance configuration requires Casdoor authentication")
+	if err != nil || c.Deployment.Authentication.Provider != "opencsg" {
+		t.Fatal("acceptance configuration requires OpenCSG authentication")
 	}
 	provider, err := c.Deployment.Authentication.provider()
 	if err != nil {
 		t.Fatal(err)
 	}
-	runSSOLoopback(t, provider, "Casdoor")
+	runSSOLoopback(t, provider, "OpenCSG")
 }
 
 func runSSOLoopback(t *testing.T, provider authn.Provider, label string) {

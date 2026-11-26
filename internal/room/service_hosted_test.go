@@ -18,7 +18,7 @@ import (
 
 func TestServiceHostedInstallGuidesAccountLoginWithoutPrintingTokenCommand(t *testing.T) {
 	home := t.TempDir()
-	serviceTestFile(t, filepath.Join(home, "config.toml"), "[server]\naccess_mode='proxy'\npublic_base_url='https://assistant.example.com'\ntrusted_proxies=['127.0.0.1']\n[deployment]\nmode='multi-user'\n[deployment.authentication]\nprovider='opencsg'\nallowed_subjects=['subject']\n", 0600)
+	serviceTestFile(t, filepath.Join(home, "config.toml"), "[server]\naccess_mode='proxy'\npublic_base_url='https://assistant.example.com'\ntrusted_proxies=['127.0.0.1']\n[deployment]\nmode='multi-user'\n[deployment.authentication]\nprovider='opencsg'\nissuer='https://iam.example'\nclient_id='teamx-client'\nallowed_subjects=['subject']\n", 0600)
 	var stdout, stderr bytes.Buffer
 	if err := writeServiceInstallResult(serviceRegistration{Home: home}, map[string]any{"authenticated": true}, &stdout, &stderr); err != nil {
 		t.Fatal(err)

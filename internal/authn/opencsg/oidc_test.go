@@ -1,4 +1,4 @@
-package casdoor
+package opencsg
 
 import (
 	"crypto/rand"
@@ -171,7 +171,7 @@ func TestOIDCCodeExchangeVerifiesIdentityAndConsumesAttempt(t *testing.T) {
 			f := newIssuerFixture(t, secret)
 			p, values := f.begin(t)
 			id, err := p.Complete(t.Context(), values)
-			if err != nil || id.Provider != "casdoor" || id.Authority != f.server.URL || id.Subject != "stable-user-id" || id.DisplayName != "Alice" || !id.ValidUntil.After(time.Now()) {
+			if err != nil || id.Provider != "opencsg" || id.Authority != f.server.URL || id.Subject != "stable-user-id" || id.DisplayName != "Alice" || !id.ValidUntil.After(time.Now()) {
 				t.Fatal("verified identity not returned", id, err)
 			}
 			if _, err := p.Complete(t.Context(), values); !errors.Is(err, ErrAuthentication) || f.tokenHits.Load() != 1 {
@@ -226,7 +226,7 @@ func TestOIDCRejectsInvalidIdentityAndUntrustedEndpoints(t *testing.T) {
 
 func TestOIDCRejectsMissingExpiredAndAmbiguousAttemptsBeforeExchange(t *testing.T) {
 	f := newIssuerFixture(t, "")
-	for _, mode := range []string{"state", "code", "duplicate-state", "duplicate-code", "error", "jwt_token", "expired", "restart"} {
+	for _, mode := range []string{"state", "code", "duplicate-state", "duplicate-code", "error", "jwt", "jwt_token", "expired", "restart"} {
 		t.Run(mode, func(t *testing.T) {
 			p, values := f.begin(t)
 			switch mode {
@@ -238,7 +238,7 @@ func TestOIDCRejectsMissingExpiredAndAmbiguousAttemptsBeforeExchange(t *testing.
 				values.Add("state", "other")
 			case "duplicate-code":
 				values.Add("code", "other")
-			case "error", "jwt_token":
+			case "error", "jwt", "jwt_token":
 				values.Set(mode, "value")
 			case "expired":
 				a := p.attempts[values.Get("state")]
@@ -264,7 +264,7 @@ func TestOIDCRequiresPinnedIssuerAndDynamicHostState(t *testing.T) {
 		}
 	}
 	p, _ := New("https://issuer.example", "client", "", nil)
-	for _, callback := range []string{"https://teamx.example/callback", "https://teamx.example/callback?state=casdoor", "http://teamx.example/callback?state=" + strings.Repeat("a", 64), "https://teamx.example/callback?state=" + strings.Repeat("a", 64) + "&state=other"} {
+	for _, callback := range []string{"https://teamx.example/callback", "https://teamx.example/callback?state=opencsg", "http://teamx.example/callback?state=" + strings.Repeat("a", 64), "https://teamx.example/callback?state=" + strings.Repeat("a", 64) + "&state=other"} {
 		if _, err := p.LoginURL(callback); err == nil {
 			t.Fatal("unbound callback accepted")
 		}

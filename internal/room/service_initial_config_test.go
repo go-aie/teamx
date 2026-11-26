@@ -21,6 +21,8 @@ trusted_proxies = ["127.0.0.1"]
 mode = "multi-user"
 [deployment.authentication]
 provider = "opencsg"
+issuer = "https://iam.example"
+client_id = "teamx-client"
 allowed_subjects = ["server-proven-subject"]
 `
 
@@ -32,16 +34,16 @@ func TestServiceInitialConfigAllowsExplicitOpenAuthentication(t *testing.T) {
 	}
 }
 
-func TestServiceInitialConfigAcceptsDirectCasdoorWithoutEmbeddingSecret(t *testing.T) {
+func TestServiceInitialConfigAcceptsDirectOpenCSGWithoutEmbeddingSecret(t *testing.T) {
 	home := t.TempDir()
 	secret := filepath.Join(home, "client-secret")
 	serviceTestFile(t, secret, "private-client-secret", 0600)
-	seed := strings.Replace(hostedServiceSeed, `provider = "opencsg"`, `provider = "casdoor"`+"\nissuer = 'https://casdoor.example'\nclient_id = 'teamx-client'\nclient_secret_file = '"+filepath.ToSlash(secret)+"'", 1)
+	seed := strings.Replace(hostedServiceSeed, `provider = "opencsg"`, `provider = "opencsg"`+"\nclient_secret_file = '"+filepath.ToSlash(secret)+"'", 1)
 	path := filepath.Join(home, "seed.toml")
 	serviceTestFile(t, path, seed, 0600)
 	document, err := readServiceInitialConfig(path)
 	if err != nil {
-		t.Fatal("Casdoor installation seed rejected", err)
+		t.Fatal("OpenCSG installation seed rejected", err)
 	}
 	r := serviceRegistration{Root: t.TempDir(), Home: t.TempDir(), UID: os.Getuid(), GID: os.Getgid(), Execution: "srt"}
 	if err := initializeServiceConfig(r, "/published/release", document); err != nil {
@@ -52,8 +54,8 @@ func TestServiceInitialConfigAcceptsDirectCasdoorWithoutEmbeddingSecret(t *testi
 		t.Fatal("installation copied raw client credentials into TOML", err)
 	}
 	c, err := loadStartupConfig(filepath.Join(r.Home, "config.toml"), true)
-	if err != nil || c.Deployment.Authentication.Provider != "casdoor" || c.Deployment.Authentication.ClientSecretFile != secret {
-		t.Fatal("installation did not preserve Casdoor settings", err)
+	if err != nil || c.Deployment.Authentication.Provider != "opencsg" || c.Deployment.Authentication.ClientSecretFile != secret {
+		t.Fatal("installation did not preserve OpenCSG settings", err)
 	}
 }
 
@@ -153,6 +155,9 @@ func TestServiceInitialConfigSelectsCompositionBeforeIdentityReservation(t *test
 
 func TestServiceInitialConfigRejectsHostOverridesAndDamagedHomes(t *testing.T) {
 	for name, data := range map[string]string{
+		"retired-provider":  strings.Replace(hostedServiceSeed, `provider = "opencsg"`, `provider = "casdoor"`, 1),
+		"broker-config":     strings.Replace(hostedServiceSeed, "issuer = \"https://iam.example\"\nclient_id = \"teamx-client\"\n", "", 1),
+		"broker-origin":     hostedServiceSeed + "login_origin = 'https://opencsg.com'\n",
 		"runtime":           hostedServiceSeed + "[runtime.dsh]\nbinary_path='/arbitrary'\n",
 		"environment":       hostedServiceSeed + "[env]\nKEY='private'\n",
 		"roots":             "[server]\ndata_dir='/other'\n[deployment]\nmode='personal'\n",

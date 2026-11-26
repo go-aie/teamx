@@ -2,7 +2,6 @@ package room
 
 import (
 	"context"
-	"encoding/json"
 	"net/http"
 	"net/url"
 	"os"
@@ -14,8 +13,8 @@ import (
 	"github.com/go-aie/teamx/internal/authn"
 )
 
-func TestCasdoorConfigurationKeepsCredentialsPrivateAndAdmissionExplicit(t *testing.T) {
-	c := externalAuthConfig{Provider: "casdoor", Issuer: "https://casdoor.example", ClientID: "teamx-client", AllowAllAuthenticated: true}
+func TestOpenCSGConfigurationKeepsCredentialsPrivateAndAdmissionExplicit(t *testing.T) {
+	c := externalAuthConfig{Provider: "opencsg", Issuer: "https://opencsg.example", ClientID: "teamx-client", AllowAllAuthenticated: true}
 	if _, err := c.provider(); err != nil {
 		t.Fatal("public PKCE configuration rejected", err)
 	}
@@ -33,8 +32,10 @@ func TestCasdoorConfigurationKeepsCredentialsPrivateAndAdmissionExplicit(t *test
 		t.Fatal("secret escaped into authorization URL", err)
 	}
 	for _, mutate := range []func(*externalAuthConfig){
+		func(c *externalAuthConfig) { c.Provider = "casdoor" }, // Migration input only, never another login mechanism.
+		func(c *externalAuthConfig) { c.Issuer = "" },
 		func(c *externalAuthConfig) { c.AllowAllAuthenticated = false },
-		func(c *externalAuthConfig) { c.Issuer = "http://casdoor.example" },
+		func(c *externalAuthConfig) { c.Issuer = "http://opencsg.example" },
 		func(c *externalAuthConfig) { c.ClientID = "" },
 		func(c *externalAuthConfig) { c.HubOrigin = "http://hub.example" },
 		func(c *externalAuthConfig) { c.HubOrigin = "https://hub.example/untrusted-path" },
@@ -66,7 +67,7 @@ func TestCasdoorConfigurationKeepsCredentialsPrivateAndAdmissionExplicit(t *test
 	}
 }
 
-// Protocol verification is covered by the Casdoor provider's TLS issuer tests.
+// Protocol verification is covered by the OpenCSG provider's TLS issuer tests.
 // This substitute exercises authorization-code callbacks through the real
 // host-owned browser transaction, user directory and persisted session store.
 type codeProviderFixture struct{}
@@ -78,11 +79,11 @@ func (codeProviderFixture) LoginURL(callback string) (string, error) {
 	}
 	state := u.Query().Get("state")
 	u.RawQuery = ""
-	return "https://casdoor.example/login/oauth/authorize?" + url.Values{"redirect_uri": {u.String()}, "state": {state}, "client_id": {"teamx-client"}, "response_type": {"code"}}.Encode(), nil
+	return "https://opencsg.example/login/oauth/authorize?" + url.Values{"redirect_uri": {u.String()}, "state": {state}, "client_id": {"teamx-client"}, "response_type": {"code"}}.Encode(), nil
 }
 
 func (codeProviderFixture) Complete(_ context.Context, values url.Values) (authn.Identity, error) {
-	return authn.Identity{Provider: "casdoor", Authority: "https://casdoor.example", Subject: values.Get("code"), DisplayName: values.Get("code"), ValidUntil: time.Now().Add(time.Hour)}, nil
+	return authn.Identity{Provider: "opencsg", Authority: "https://opencsg.example", Subject: values.Get("code"), DisplayName: values.Get("code"), ValidUntil: time.Now().Add(time.Hour)}, nil
 }
 
 func codeLogin(t *testing.T, s *spaceServer, account string) (*http.Cookie, userSubject, string) {
@@ -122,13 +123,13 @@ func codeLogin(t *testing.T, s *spaceServer, account string) (*http.Cookie, user
 	return cookie, subject, s.access.defaultSpace(subject)
 }
 
-func TestCasdoorHostCodeLoginPersistsIsolationAndRequiresOwnModel(t *testing.T) {
+func TestOpenCSGHostCodeLoginPersistsIsolationAndRequiresOwnModel(t *testing.T) {
 	home := t.TempDir()
-	c := externalAuthConfig{Provider: "casdoor", Issuer: "https://casdoor.example", ClientID: "teamx-client", AllowAllAuthenticated: true}
+	c := externalAuthConfig{Provider: "opencsg", Issuer: "https://opencsg.example", ClientID: "teamx-client", AllowAllAuthenticated: true}
 	s := hostedFixtureWithProvider(t, home, c, codeProviderFixture{})
 	aliceCookie, alice, aliceSpace := codeLogin(t, s, "alice")
 	bobCookie, bob, bobSpace := codeLogin(t, s, "bob")
-	if alice.UserID == bob.UserID || aliceSpace == bobSpace || s.access.login.provision != nil {
+	if alice.UserID == bob.UserID || aliceSpace == bobSpace {
 		t.Fatal("direct OIDC mixed identities or enabled OpenCSG key retrieval")
 	}
 	for _, pair := range []struct {
@@ -168,9 +169,9 @@ func TestCasdoorHostCodeLoginPersistsIsolationAndRequiresOwnModel(t *testing.T) 
 	}
 }
 
-func TestCasdoorIssuerAndClientChangesInvalidateSavedSessions(t *testing.T) {
+func TestOpenCSGClientChangesInvalidateSavedSessionsAndIssuerChangesRequireMigration(t *testing.T) {
 	home := t.TempDir()
-	c := externalAuthConfig{Provider: "casdoor", Issuer: "https://casdoor.example", ClientID: "teamx-client", AllowAllAuthenticated: true}
+	c := externalAuthConfig{Provider: "opencsg", Issuer: "https://opencsg.example", ClientID: "teamx-client", AllowAllAuthenticated: true}
 	s := hostedFixtureWithProvider(t, home, c, codeProviderFixture{})
 	cookie, _, _ := codeLogin(t, s, "alice")
 	if err := s.closeWithTimeout(); err != nil {
@@ -194,13 +195,9 @@ func TestCasdoorIssuerAndClientChangesInvalidateSavedSessions(t *testing.T) {
 		t.Fatal(err)
 	}
 	c.Issuer = "https://another.example"
-	s = hostedFixtureWithProvider(t, home, c, codeProviderFixture{})
-	if w := hostedRequest(s, "/v1/access/session", nil, cookie, ""); w.Code != 401 {
-		t.Fatal("issuer change retained old session", w.Code)
-	}
-	data, err := os.ReadFile(s.access.sessionPath())
-	var snapshot accessSessionSnapshot
-	if err != nil || json.Unmarshal(data, &snapshot) != nil || len(snapshot.Sessions) != 0 {
-		t.Fatal("invalidated sessions were not pruned durably", err)
+	config := s.access.config
+	config.Deployment.Authentication = c
+	if _, err := newServerAccess(config, "http://127.0.0.1:8088"); err == nil {
+		t.Fatal("another issuer adopted the saved users or sessions")
 	}
 }

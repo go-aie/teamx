@@ -1,6 +1,6 @@
-// Package casdoor implements direct authorization-code login. The host still
+// Package opencsg implements direct authorization-code login. The host still
 // owns browser binding, admission, local identities and sessions.
-package casdoor
+package opencsg
 
 import (
 	"context"
@@ -17,7 +17,7 @@ import (
 	"golang.org/x/oauth2"
 )
 
-var ErrAuthentication = errors.New("Casdoor authentication failed")
+var ErrAuthentication = errors.New("OpenCSG authentication failed")
 
 const attemptLifetime = 5 * time.Minute
 
@@ -41,7 +41,7 @@ var _ authn.Provider = (*SSO)(nil)
 func New(issuer, clientID, secret string, transport http.RoundTripper) (*SSO, error) {
 	u, err := url.Parse(issuer)
 	if err != nil || u.Scheme != "https" || u.Host == "" || u.User != nil || u.Path != "" || u.RawQuery != "" || u.ForceQuery || u.Fragment != "" || u.Opaque != "" || strings.TrimSpace(clientID) != clientID || clientID == "" || len(clientID) > 256 || strings.ContainsAny(clientID, "\x00\r\n") {
-		return nil, errors.New("Casdoor requires an HTTPS root issuer and client_id")
+		return nil, errors.New("OpenCSG requires an HTTPS root issuer and client_id")
 	}
 	return &SSO{issuer: issuer, clientID: clientID, secret: secret, attempts: map[string]attempt{}, client: &http.Client{
 		Transport: transport, Timeout: 10 * time.Second,
@@ -58,12 +58,12 @@ func (s *SSO) config(redirect string) oauth2.Config {
 func (s *SSO) LoginURL(callback string) (string, error) {
 	u, err := url.Parse(callback)
 	if err != nil || u.Scheme != "https" && !authn.LoopbackHTTP(u) || u.Host == "" || u.User != nil || u.Fragment != "" || u.Opaque != "" {
-		return "", errors.New("Casdoor callback requires HTTPS or literal HTTP loopback")
+		return "", errors.New("OpenCSG callback requires HTTPS or literal HTTP loopback")
 	}
 	query, err := url.ParseQuery(u.RawQuery)
 	state := query.Get("state")
 	if err != nil || len(query) != 1 || len(query["state"]) != 1 || len(state) < 32 || len(state) > 256 {
-		return "", errors.New("Casdoor requires the host's per-attempt state")
+		return "", errors.New("OpenCSG requires the host's per-attempt state")
 	}
 	// OAuth returns state separately. The registered redirect URI must be stable.
 	u.RawQuery, u.ForceQuery = "", false
@@ -76,7 +76,7 @@ func (s *SSO) LoginURL(callback string) (string, error) {
 		}
 	}
 	if _, exists := s.attempts[state]; exists || len(s.attempts) >= 128 {
-		return "", errors.New("Casdoor login attempt unavailable")
+		return "", errors.New("OpenCSG login attempt unavailable")
 	}
 	s.attempts[state] = a
 	c := s.config(a.redirect)
@@ -112,7 +112,7 @@ func (s *SSO) complete(ctx context.Context, values url.Values, exportToken bool)
 	if err != nil {
 		return authn.Identity{}, "", fmt.Errorf("%w: OIDC discovery rejected", ErrAuthentication)
 	}
-	// Keep code and token traffic pinned to this configured Casdoor origin.
+	// Keep code and token traffic pinned to this configured OpenCSG origin.
 	var metadata struct {
 		JWKS     string `json:"jwks_uri"`
 		UserInfo string `json:"userinfo_endpoint"`
@@ -149,7 +149,7 @@ func (s *SSO) complete(ctx context.Context, values url.Values, exportToken bool)
 	if name == "" {
 		name = claims.Username
 	}
-	identity := authn.Identity{Provider: "casdoor", Authority: s.issuer, Subject: id.Subject, DisplayName: name, ValidUntil: id.Expiry}
+	identity := authn.Identity{Provider: "opencsg", Authority: s.issuer, Subject: id.Subject, DisplayName: name, ValidUntil: id.Expiry}
 	if !exportToken {
 		return identity, "", nil
 	}

@@ -6,15 +6,11 @@
 
 ## 登录与身份
 
-独立 Casdoor Application 的直连 OIDC 入口、配置及验收边界见 [Casdoor 独立应用登录](../casdoor-login.zh.md)。以下为保留的 OpenCSG broker 协议。
+当前实现已统一为 OpenCSG IAM 的直连 OAuth／OIDC 授权码机制，配置与按钮均使用 OpenCSG 名称，详见 [OpenCSG 登录](../opencsg-login.zh.md)。原 broker 登录及其 JWT 回调交换已移除，不再作为兼容入口。
 
-沿用用户指定的 CSGClaw 自有 SSO：登录源 `https://opencsg.com`，CSGHub 默认 `https://hub.opencsg.com`，入口 `/sso/login?redirect_url=...`。不另配 JWT 公钥、服务 API key 或 IAM OAuth 应用。回调参数 `jwt_token`／`jwt` 是原协议字段，不是新增 JWT 配置。
+TeamX 发起入口为 `POST /v1/access/sso/login`，回调为 `/v1/access/sso/callback`。远程使用部署配置的 HTTPS origin；本机验收允许字面回环 IP 的 HTTP origin，如 `http://127.0.0.1:18088`，不允许普通 HTTP 域名或局域网地址。TeamX 以独立应用发起授权，使用一次性 state、nonce、S256 PKCE，验证 ID token 的签名、issuer、audience 与有效期；稳定身份来自已验证的 issuer／sub。
 
-TeamX 发起入口为 `POST /v1/access/sso/login`，回调为 `/v1/access/sso/callback`。远程使用部署配置的 HTTPS origin；本机验收允许字面回环 IP 的 HTTP origin，如 `http://127.0.0.1:18088`，不允许普通 HTTP 域名或局域网地址。浏览器完成登录后直接访问本机回调，不要求 OpenCSG 服务端连接本机端口。
-
-`internal/authn` 提供窄 Provider 合同；`internal/authn/opencsg` 仅把 payload 中的用户名当作路由提示，再向固定 CSGHub 发出 CSGClaw 同款受保护请求 `/api/v1/user/{user}/tokens?app=git`。稳定主体来自响应的 `user_name`／`user_uuid`，拒绝缺失、混合身份、错误状态、超大响应和跨站重定向。过期信息只用于缩短本地会话，不能代替远端确认。原始 token、不可信 uuid、公开 profile 和邮箱均不作为本地身份绑定依据；不获取模型 Key，不持久保存或分发业务 token。
-
-协议证据参考本机 CSGClaw HEAD `7227930b0ff534db0154c2d98e02010727b29da9` 的 `internal/auth/login.go`；身份响应依据本机 `starhub-server` HEAD `045cce6f94a11f431ab4b6294b8430520d3d3999` 的 userMatch、GetUserTokens、GetTokens 和 CheckAccessTokenResp。源码证明候选协议，公共服务实际返回仍须真实登录验证。实际无凭据 GET 已确认第一跳返回 302 到 IAM，外层 state 完整保留传入的 TeamX 回调及查询参数；这不等于整个用户登录通过。
+`internal/authn` 继续提供窄 Provider 合同；`internal/authn/opencsg` 实现当前协议。配置 `hub_origin` 时，经 userinfo 核对 access token 的主体后取得本人 Gateway Key；不保存 IAM token。已有直连 IAM 的旧 provider 名称只做同一 issuer 下的原地改名迁移，保留用户、空间与凭据，旧浏览器会话失效。旧 broker 身份不自动合并。
 
 ## 宿主与持久状态
 
@@ -37,10 +33,12 @@ mode = "multi-user"
 
 [deployment.authentication]
 provider = "opencsg"
-allowed_subjects = ["已核实的外部用户 UUID"]
+issuer = "https://iam.opencsg.com"
+client_id = "REPLACE_WITH_TEAMX_CLIENT_ID"
+client_secret_file = "/srv/teamx-opencsg/client-secret"
+allowed_subjects = ["已验证的 OIDC sub"]
 # 若明确向所有已认证账号开放，增加：
 # allow_all_authenticated = true
-# login_origin = "https://opencsg.com"
 # hub_origin = "https://hub.opencsg.com"
 ```
 
@@ -69,6 +67,7 @@ teamx access users enable --user owner_<id> --config /absolute/config.toml
 真实本机浏览器 SSO 入口由显式 e2e 测试提供：
 
 ```sh
+TEAMX_OPENCSG_ACCEPTANCE_CONFIG=/absolute/private/config.toml \
 TEAMX_SSO_ACCEPTANCE_HOME=/absolute/fresh/private-directory \
 go test -tags=e2e ./internal/room -run '^TestOpenCSGSSOLoopback$' -v -count=1 -timeout=35m
 ```
@@ -81,4 +80,4 @@ S3b.2a 的真实飞书 OAuth／刷新／DPoP 和 S3b.3 的正式出口继续依�
 
 第一轮真实本机验证已启动并等待十分钟，但未收到成功回调而到期，不计作 SSO 协议通过或错误凭据测试；未生成身份收据。第二轮延长为三十分钟等待用户浏览器操作，仍不以“已打开页面”代替完成登录。
 
-2026-11-25 远端 alpha HTTPS 实测先后暴露表单 Origin 和上游 `untrusted signin callback target`；修正表单并重新发起登录后，用户完成 OpenCSG／IAM 登录，TeamX 收到真实回调并通过受保护身份交换，取得 0600 身份收据。单账号真实 SSO 验证已通过，不等同于安装产物的多用户业务会话及完整 Linux 组合验收。当前协议复用 OpenCSG 的 Casdoor 客户端：IAM 回调 OpenCSG，OpenCSG 再按 state 中的目标回调 TeamX，无需另建 TeamX Casdoor 客户端。详情见[空间部署记录](space-deployment.zh.md)。
+2026-11-25 远端 alpha HTTPS 实测先后暴露表单 Origin 和上游 `untrusted signin callback target`；修正表单并重新发起登录后，用户完成 OpenCSG／IAM 登录，TeamX 收到真实回调并通过受保护身份交换，取得 0600 身份收据。单账号真实 SSO 验证已通过，不等同于安装产物的多用户业务会话及完整 Linux 组合验收。该记录验证的是现已移除的 broker 协议，不能作为当前直连 IAM 实现的登录验收；当前机制须使用独立应用重新验证。详情见[空间部署记录](space-deployment.zh.md)。

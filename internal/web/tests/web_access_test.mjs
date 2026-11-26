@@ -51,7 +51,7 @@ test("login waits for the session and method before showing or focusing either f
 
 test("OpenCSG starts a same-origin POST then navigates outside the form CSP",async()=>{
   const writes=[];
-  const target="https://login.example/sso/login?redirect_url=fixed-callback";
+  const target="https://iam.opencsg.example/login/oauth/authorize?client_id=teamx&state=per-attempt";
   const ui=await launch(async(path,body)=>{
     if(path==="/v1/access/method")return {status:200,data:{provider:"opencsg"}};
     if(path==="/v1/access/sso/login"){writes.push(body);return {status:200,data:{login_url:target}};}
@@ -73,17 +73,17 @@ test("external authentication can replace the provider without changing the logi
   assert.equal(ui.el("sso-login-submit").textContent,"使用账号登录");
 });
 
-test("Casdoor uses the existing external login form and same-origin navigation",async()=>{
-  const target="https://casdoor.example/login/oauth/authorize?client_id=teamx&state=per-attempt";
+test("OpenCSG uses the existing external login form and same-origin navigation",async()=>{
+  const target="https://opencsg.example/login/oauth/authorize?client_id=teamx&state=per-attempt";
   const writes=[];
   const ui=await launch(async(path,body)=>{
-    if(path==="/v1/access/method")return {status:200,data:{method:"external",provider:"casdoor"}};
+    if(path==="/v1/access/method")return {status:200,data:{method:"external",provider:"opencsg"}};
     if(path==="/v1/access/sso/login"){writes.push(body);return {status:200,data:{login_url:target}};}
     return {status:401,data:{}};
   });
   assert.equal(ui.el("sso-login-form").hidden,false);
   assert.equal(ui.el("login-form").hidden,true);
-  assert.equal(ui.el("sso-login-submit").textContent,"使用 Casdoor 登录");
+  assert.equal(ui.el("sso-login-submit").textContent,"使用 OpenCSG 登录");
   await ui.el("sso-login-form").emit("submit");
   assert.equal(writes.length,1);
   assert.deepEqual(ui.navigation,[target]);

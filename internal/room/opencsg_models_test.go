@@ -34,10 +34,10 @@ func (g *oauthModelGatewayFixture) GatewayAPIKey(_ context.Context, id authn.Ide
 	return "gk_quota-for-" + id.Subject, nil
 }
 
-func TestCasdoorGatewayResumesExistingSetupAndKeepsOwnersIsolated(t *testing.T) {
+func TestOpenCSGGatewayResumesExistingSetupAndKeepsOwnersIsolated(t *testing.T) {
 	t.Setenv("OPENAI_API_KEY", "deployment-key-must-not-be-used")
 	home := t.TempDir()
-	c := externalAuthConfig{Provider: "casdoor", Issuer: "https://casdoor.example", ClientID: "teamx-client", AllowAllAuthenticated: true}
+	c := externalAuthConfig{Provider: "opencsg", Issuer: "https://opencsg.example", ClientID: "teamx-client", AllowAllAuthenticated: true}
 	p := oauthModelProviderFixture{}
 	s := hostedFixtureWithProvider(t, home, c, p)
 	_, alice, space := codeLogin(t, s, "alice")
@@ -122,13 +122,13 @@ func TestCasdoorGatewayResumesExistingSetupAndKeepsOwnersIsolated(t *testing.T) 
 	waitSpaceState(t, s, space, "ready")
 }
 
-func TestCasdoorGatewayChecksAdmissionBeforeFetchingQuota(t *testing.T) {
+func TestOpenCSGGatewayChecksAdmissionBeforeFetchingQuota(t *testing.T) {
 	for _, variant := range []string{"denied", "disabled", "missing-key"} {
 		t.Run(variant, func(t *testing.T) {
-			c := externalAuthConfig{Provider: "casdoor", Issuer: "https://casdoor.example", ClientID: "teamx-client", AllowedSubjects: []string{"alice"}, HubOrigin: "https://hub.example"}
+			c := externalAuthConfig{Provider: "opencsg", Issuer: "https://opencsg.example", ClientID: "teamx-client", AllowedSubjects: []string{"alice"}, HubOrigin: "https://hub.example"}
 			p := oauthModelProviderFixture{}
 			s := hostedFixtureWithProvider(t, t.TempDir(), c, p)
-			if _, ok := s.access.login.provider.(modelBootstrapLogin); !ok || s.access.login.provision != nil {
+			if _, ok := s.access.login.provider.(modelBootstrapLogin); !ok {
 				t.Fatal("explicit Hub configuration did not enable OAuth model bootstrap")
 			}
 			gateway := &oauthModelGatewayFixture{fail: variant == "missing-key"}

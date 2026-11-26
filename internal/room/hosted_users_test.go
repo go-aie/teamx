@@ -107,7 +107,7 @@ func TestHostedOpenAdmissionKeepsOwnerIsolationAndDisable(t *testing.T) {
 
 func TestOpenCSGAdmissionMustBeExplicit(t *testing.T) {
 	for _, open := range []bool{false, true} {
-		_, err := (externalAuthConfig{Provider: "opencsg", AllowAllAuthenticated: open}).provider()
+		_, err := (externalAuthConfig{Provider: "opencsg", Issuer: "https://iam.example", ClientID: "teamx-client", AllowAllAuthenticated: open}).provider()
 		if (err == nil) != open {
 			t.Fatal("unexpected empty-list admission", open, err)
 		}
@@ -115,13 +115,13 @@ func TestOpenCSGAdmissionMustBeExplicit(t *testing.T) {
 }
 
 func (hostedProviderFixture) LoginURL(callback string) (string, error) {
-	return "https://login.example/sso/login?" + url.Values{"redirect_url": {callback}}.Encode(), nil
+	return fixtureLoginURL(callback)
 }
 func (hostedProviderFixture) Complete(_ context.Context, values url.Values) (authn.Identity, error) {
-	if values.Get("jwt_token") == "fail" {
+	if values.Get("code") == "fail" {
 		return authn.Identity{}, errors.New("offline")
 	}
-	return authn.Identity{Provider: "test", Authority: "https://hub.example", Subject: values.Get("jwt_token"), DisplayName: "same display name", ValidUntil: time.Now().Add(time.Hour)}, nil
+	return authn.Identity{Provider: "test", Authority: "https://hub.example", Subject: values.Get("code"), DisplayName: "same display name", ValidUntil: time.Now().Add(time.Hour)}, nil
 }
 
 func hostedFixture(t *testing.T, home string) *spaceServer {
@@ -202,8 +202,10 @@ func hostedLogin(t *testing.T, s *spaceServer, account string) (*http.Cookie, us
 		t.Fatalf("start login %d %s", start.Code, start.Body.String())
 	}
 	jump, _ := url.Parse(start.Header().Get("Location"))
-	callback, _ := url.Parse(jump.Query().Get("redirect_url"))
-	callback.RawQuery += "&jwt_token=" + url.QueryEscape(account)
+	callback, _ := url.Parse(fixtureCallbackURL(jump))
+	values := callback.Query()
+	values.Set("code", account)
+	callback.RawQuery = values.Encode()
 	w := hostedRequest(s, callback.RequestURI(), nil, start.Result().Cookies()[0], "")
 	if w.Header().Get("Location") != "/" {
 		t.Fatalf("callback failed: %d %s", w.Code, w.Header().Get("Location"))
@@ -437,7 +439,7 @@ func TestHostedRejectsCrossModeBeforeRegistration(t *testing.T) {
 
 func TestPersonalStartupIgnoresExternalAuthentication(t *testing.T) {
 	c, _ := testAccessConfig(t, t.TempDir())
-	c.Deployment.Authentication = externalAuthConfig{Provider: "invalid", LoginOrigin: "file:///untrusted", HubOrigin: "http://not-a-trusted-site"}
+	c.Deployment.Authentication = externalAuthConfig{Provider: "invalid", Issuer: "file:///untrusted", HubOrigin: "http://not-a-trusted-site"}
 	if _, err := newServerAccess(c, "http://127.0.0.1:8088"); err != nil {
 		t.Fatal("personal deployment read external authentication configuration", err)
 	}

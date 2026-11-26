@@ -17,22 +17,25 @@ import (
 	"github.com/go-aie/teamx/internal/authn"
 )
 
-type gatewayProviderFixture struct {
-	hostedProviderFixture
-	fail bool
+func hostedGatewayFixture(t *testing.T, home string, admission externalAuthConfig, fail bool) *spaceServer {
+	t.Helper()
+	p := hostedOAuthProviderFixture{}
+	s := hostedFixtureWithProvider(t, home, admission, p)
+	s.configureOAuthModelDefaults(p, &oauthModelGatewayFixture{fail: fail})
+	return s
 }
 
-func (p gatewayProviderFixture) GatewayAPIKey(_ context.Context, identity authn.Identity, _ url.Values) (string, error) {
-	if p.fail {
-		return "", errors.New("key unavailable")
-	}
-	return "gk_quota-for-" + identity.Subject, nil
+type hostedOAuthProviderFixture struct{ hostedProviderFixture }
+
+func (p hostedOAuthProviderFixture) CompleteWithToken(ctx context.Context, values url.Values) (authn.Identity, string, error) {
+	id, err := p.Complete(ctx, values)
+	return id, "iam-private-for-" + id.Subject, err
 }
 
 func TestHostedDefaultModelsUseEachOwnersQuotaAndOrdinaryCatalog(t *testing.T) {
 	t.Setenv("OPENAI_API_KEY", "deployment-key-must-not-be-used")
 	home := t.TempDir()
-	s := hostedFixtureWithProvider(t, home, externalAuthConfig{Provider: "fixture", AllowedSubjects: []string{"alice", "bob"}}, gatewayProviderFixture{})
+	s := hostedGatewayFixture(t, home, externalAuthConfig{Provider: "fixture", AllowedSubjects: []string{"alice", "bob"}}, false)
 	var mu sync.Mutex
 	probed := map[string]int{}
 	s.assembly.config.modelProbe = func(ctx context.Context, opts dsh.Options) (dsh.ProbeResult, error) {
@@ -205,7 +208,7 @@ func TestHostedDefaultValidationFailureStaysInSetupAndCanRetry(t *testing.T) {
 
 func TestHostedMissingGatewayKeyCannotUseDeploymentQuota(t *testing.T) {
 	t.Setenv("OPENAI_API_KEY", "deployment-key-must-not-be-used")
-	s := hostedFixtureWithProvider(t, t.TempDir(), externalAuthConfig{Provider: "fixture", AllowAllAuthenticated: true}, gatewayProviderFixture{fail: true})
+	s := hostedGatewayFixture(t, t.TempDir(), externalAuthConfig{Provider: "fixture", AllowAllAuthenticated: true}, true)
 	callback, cookie := beginLogin(t, s.access.login)
 	w := callbackLogin(s.access.login, callback, cookie)
 	if w.Header().Get("Location") != "/access?sso=failed" || len(s.directory.Spaces) != 0 {

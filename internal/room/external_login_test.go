@@ -38,7 +38,7 @@ func TestExternalLoginJSONNavigationRetainsBrowserBinding(t *testing.T) {
 	if !cookie.Secure || !cookie.HttpOnly {
 		t.Fatal("missing browser protection")
 	}
-	callback := u.Query().Get("redirect_url")
+	callback := fixtureCallbackURL(u)
 	callbackLogin(login, callback, cookie)
 	callbackLogin(login, callback, cookie)
 	if admissions != 1 {
@@ -52,9 +52,24 @@ type loginProviderStub struct {
 	fail   bool
 }
 
+// Fixtures follow the authorization-code redirect contract used by OpenCSG.
+func fixtureLoginURL(callback string) (string, error) {
+	u, err := url.Parse(callback)
+	if err != nil {
+		return "", err
+	}
+	state := u.Query().Get("state")
+	u.RawQuery = ""
+	return "https://login.example/login/oauth/authorize?" + url.Values{"redirect_uri": {u.String()}, "state": {state}, "response_type": {"code"}}.Encode(), nil
+}
+
+func fixtureCallbackURL(jump *url.URL) string {
+	return jump.Query().Get("redirect_uri") + "?" + url.Values{"state": {jump.Query().Get("state")}}.Encode()
+}
+
 func (p *loginProviderStub) LoginURL(callback string) (string, error) {
 	p.starts.Add(1)
-	return "https://login.example/sso/login?" + url.Values{"redirect_url": {callback}}.Encode(), nil
+	return fixtureLoginURL(callback)
 }
 func (p *loginProviderStub) Complete(context.Context, url.Values) (authn.Identity, error) {
 	p.calls.Add(1)
@@ -74,12 +89,12 @@ func beginLogin(t *testing.T, login *externalLogin) (string, *http.Cookie) {
 		t.Fatalf("start = %d", w.Code)
 	}
 	u, _ := url.Parse(w.Header().Get("Location"))
-	callback := u.Query().Get("redirect_url")
+	callback := fixtureCallbackURL(u)
 	return callback, w.Result().Cookies()[0]
 }
 
 func callbackLogin(login *externalLogin, callback string, cookie *http.Cookie) *httptest.ResponseRecorder {
-	r := httptest.NewRequest(http.MethodGet, callback+"&jwt_token=secret", nil)
+	r := httptest.NewRequest(http.MethodGet, callback+"&code=secret", nil)
 	r.AddCookie(cookie)
 	w := httptest.NewRecorder()
 	login.ServeHTTP(w, r)

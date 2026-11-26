@@ -3,6 +3,7 @@ package opencsg
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"net/url"
@@ -11,6 +12,8 @@ import (
 
 	"github.com/go-aie/teamx/internal/authn"
 )
+
+var ErrGatewayCredentials = errors.New("OpenCSG AI Gateway credential unavailable")
 
 // OAuthGateway reads only the authenticated user's personal namespace key.
 // CSGHub's OAuth middleware maps the IAM token to the local Hub user and checks
@@ -32,7 +35,7 @@ func NewOAuthGateway(hub string, transport http.RoundTripper) (*OAuthGateway, er
 }
 
 func (g *OAuthGateway) GatewayAPIKey(ctx context.Context, identity authn.Identity, accessToken string) (string, error) {
-	if identity.Provider != "casdoor" || identity.Authority == "" || identity.Subject == "" || len(identity.Subject) > 256 || strings.TrimSpace(identity.Subject) != identity.Subject || strings.ContainsAny(identity.Subject, "/\\?#\x00\r\n") || accessToken == "" || len(accessToken) > 64<<10 || strings.ContainsAny(accessToken, "\x00\r\n") {
+	if identity.Provider != "opencsg" || identity.Authority == "" || identity.Subject == "" || len(identity.Subject) > 256 || strings.TrimSpace(identity.Subject) != identity.Subject || strings.ContainsAny(identity.Subject, "/\\?#\x00\r\n") || accessToken == "" || len(accessToken) > 64<<10 || strings.ContainsAny(accessToken, "\x00\r\n") {
 		return "", ErrGatewayCredentials
 	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, g.hub+"/api/v1/namespaces/"+url.PathEscape(identity.Subject)+"/apikeys/builtin", nil)

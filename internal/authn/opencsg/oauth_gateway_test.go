@@ -47,7 +47,7 @@ func TestOAuthGatewayBindsPersonalQuotaToVerifiedSubject(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	id := authn.Identity{Provider: "casdoor", Authority: "https://iam.example", Subject: "owner-uuid", DisplayName: "display name is not a routing hint"}
+	id := authn.Identity{Provider: "opencsg", Authority: "https://iam.example", Subject: "owner-uuid", DisplayName: "display name is not a routing hint"}
 	key, err := gateway.GatewayAPIKey(t.Context(), id, "private-iam-token")
 	if err != nil || key != "gk_owners-private-quota" {
 		t.Fatal("personal Key not returned", err)

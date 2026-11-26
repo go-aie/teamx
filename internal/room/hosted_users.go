@@ -14,13 +14,11 @@ import (
 	"time"
 
 	"github.com/go-aie/teamx/internal/authn"
-	"github.com/go-aie/teamx/internal/authn/casdoor"
 	"github.com/go-aie/teamx/internal/authn/opencsg"
 )
 
 type externalAuthConfig struct {
 	Provider              string   `toml:"provider"`
-	LoginOrigin           string   `toml:"login_origin"`
 	HubOrigin             string   `toml:"hub_origin"`
 	Issuer                string   `toml:"issuer"`
 	ClientID              string   `toml:"client_id"`
@@ -33,37 +31,26 @@ func (c externalAuthConfig) provider() (authn.Provider, error) {
 	if !c.AllowAllAuthenticated && len(c.AllowedSubjects) == 0 {
 		return nil, errors.New("authentication requires allowed_subjects or explicit allow_all_authenticated")
 	}
-	if c.Provider == "casdoor" {
-		if c.HubOrigin != "" {
-			if _, err := opencsg.NewOAuthGateway(c.HubOrigin, nil); err != nil {
-				return nil, err
-			}
-		}
-		var secret string
-		if c.ClientSecretFile != "" {
-			if !filepath.IsAbs(c.ClientSecretFile) {
-				return nil, errors.New("client_secret_file must be absolute")
-			}
-			data, info, err := readSettingsFile(c.ClientSecretFile)
-			if err != nil || info == nil || info.Mode().Perm() != 0600 || len(data) > 16<<10 || strings.TrimSpace(string(data)) == "" {
-				return nil, errors.New("client_secret_file must be a nonempty private 0600 regular file (maximum 16 KiB)")
-			}
-			secret = strings.TrimSpace(string(data))
-		}
-		return casdoor.New(strings.TrimRight(c.Issuer, "/"), c.ClientID, secret, nil)
-	}
-	c.LoginOrigin = strings.TrimRight(c.LoginOrigin, "/")
-	c.HubOrigin = strings.TrimRight(c.HubOrigin, "/")
 	if c.Provider != "opencsg" {
-		return nil, errors.New("multi-user deployment requires an explicit authentication provider")
+		return nil, errors.New("multi-user deployment requires an explicit supported authentication provider")
 	}
-	if c.LoginOrigin == "" {
-		c.LoginOrigin = "https://opencsg.com"
+	if c.HubOrigin != "" {
+		if _, err := opencsg.NewOAuthGateway(c.HubOrigin, nil); err != nil {
+			return nil, err
+		}
 	}
-	if c.HubOrigin == "" {
-		c.HubOrigin = "https://hub.opencsg.com"
+	var secret string
+	if c.ClientSecretFile != "" {
+		if !filepath.IsAbs(c.ClientSecretFile) {
+			return nil, errors.New("client_secret_file must be absolute")
+		}
+		data, info, err := readSettingsFile(c.ClientSecretFile)
+		if err != nil || info == nil || info.Mode().Perm() != 0600 || len(data) > 16<<10 || strings.TrimSpace(string(data)) == "" {
+			return nil, errors.New("client_secret_file must be a nonempty private 0600 regular file (maximum 16 KiB)")
+		}
+		secret = strings.TrimSpace(string(data))
 	}
-	return opencsg.New(c.LoginOrigin, c.HubOrigin, nil)
+	return opencsg.New(strings.TrimRight(c.Issuer, "/"), c.ClientID, secret, nil)
 }
 
 type externalUser struct {
@@ -187,6 +174,9 @@ func registerHostedUsers(c startupConfig, installation string) (_ *hostedUsers, 
 		err = u.writer.save(filepath.Join(home, "spaces.json"), spaceDirectory{Version: 1}, maxPrivateFileBytes)
 	}
 	if err != nil {
+		return nil, err
+	}
+	if err := u.migrateOpenCSGProvider(c.Deployment.Authentication); err != nil {
 		return nil, err
 	}
 	if !journal.Completed {

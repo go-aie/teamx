@@ -15,12 +15,6 @@ import (
 const hostedDefaultModel = "deepseek-v4.1-flash-1017"
 const hostedGatewayBaseURL = "https://ai.space.opencsg.com/v1"
 
-// Model credential retrieval is optional and separate from authentication.
-// Identity and browser sessions never contain the returned key.
-type gatewayCredentialSource interface {
-	GatewayAPIKey(context.Context, authn.Identity, url.Values) (string, error)
-}
-
 // Login supplies the owner's Gateway key; model initialization, validation and
 // subsequent edits all use the ordinary Space model service and catalog.
 func (s *spaceServer) configureModelDefaults(provider authn.Provider) error {
@@ -30,22 +24,6 @@ func (s *spaceServer) configureModelDefaults(provider authn.Provider) error {
 			return err
 		}
 		s.configureOAuthModelDefaults(oauth, gateway)
-		return nil
-	}
-	gateway, ok := provider.(gatewayCredentialSource)
-	if !ok {
-		return nil
-	}
-	s.access.login.provision = func(ctx context.Context, identity authn.Identity, values url.Values) error {
-		entry, err := s.access.users.reserve(identity, s.access.config.Deployment.Authentication)
-		if err != nil {
-			return err
-		}
-		key, err := gateway.GatewayAPIKey(ctx, identity, values)
-		if err != nil {
-			return err
-		}
-		return s.access.users.saveGatewayKey(entry.ID, key)
 	}
 	return nil
 }

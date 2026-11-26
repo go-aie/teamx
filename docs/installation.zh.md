@@ -150,12 +150,16 @@ mode = "multi-user"
 
 [deployment.authentication]
 provider = "opencsg"
-allowed_subjects = ["服务端验证得到的用户 UUID"]
+issuer = "https://iam.opencsg.com"
+client_id = "REPLACE_WITH_TEAMX_CLIENT_ID"
+client_secret_file = "/srv/teamx-opencsg/client-secret"
+hub_origin = "https://hub.opencsg.com"
+allowed_subjects = ["已验证的 OIDC sub"]
 ```
 
 若要向所有已认证的 OpenCSG 账号开放，可在此节增加 `allow_all_authenticated = true`；启用后，`allowed_subjects` 不再限制其他已认证账号。默认不开放；这一部署配置只改变认证后的准入，各账号仍有独立用户与空间，本地停用和权限边界继续生效。
 
-配合 `--execution srt` 及上述监听端口的 `--srt-endpoint` 使用。正式版本在多用户生产门槛关闭前仍拒绝启动；`dev`／`dev-*` 开发版本允许在全新业务根开展人工验收，仍须通过 Linux、SRT、明确账号准入及完整执行检查，不代表发布支持。首次配置先于个人身份登记写入；中断保留已选组合，重复输入只能与已有设置一致，不能将已有个人 home 改绑为多用户。常规重装／修复可省略该参数，升级始终沿用原配置。OpenCSG 还须信任该公开域名下的 `/v1/access/sso/callback`，并保留动态 `state` 参数；认证服务拒绝回调时，TeamX 不会取得登录身份。
+配合 `--execution srt` 及上述监听端口的 `--srt-endpoint` 使用。正式版本在多用户生产门槛关闭前仍拒绝启动；`dev`／`dev-*` 开发版本允许在全新业务根开展人工验收，仍须通过 Linux、SRT、明确账号准入及完整执行检查，不代表发布支持。首次配置先于个人身份登记写入；中断保留已选组合，重复输入只能与已有设置一致，不能将已有个人 home 改绑为多用户。常规重装／修复可省略该参数，升级始终沿用原配置。OpenCSG IAM 应用须登记该公开域名下准确的 `/v1/access/sso/callback`，并原样返回动态 `state`；认证服务拒绝回调时，TeamX 不会取得登录身份。应用和私有 Secret 的配置及已有部署改名迁移，见 [OpenCSG 登录](opencsg-login.zh.md)。
 
 ## 首次使用与访问
 
