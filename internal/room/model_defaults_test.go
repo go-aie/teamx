@@ -57,6 +57,9 @@ func TestHostedDefaultModelsUseEachOwnersQuotaAndOrdinaryCatalog(t *testing.T) {
 		if err != nil || entry.ModelID != hostedDefaultModel || entry.BaseURL != hostedGatewayBaseURL || !models.hasValidation(entry.ID) {
 			t.Fatal("default was not published through normal model validation", err)
 		}
+		if !reflect.DeepEqual(entry.ModelParameters, hostedDefaultModelParameters()) {
+			t.Fatal("default model is missing advanced parameters", entry.ModelParameters)
+		}
 		credential, err := models.Credentials.get(entry.CredentialRef)
 		if err != nil || credential.Value != "gk_quota-for-"+account {
 			t.Fatal("runtime catalog is bound to another quota", err)
@@ -94,6 +97,9 @@ func TestHostedDefaultModelsUseEachOwnersQuotaAndOrdinaryCatalog(t *testing.T) {
 		}
 		extra := waitSpaceState(t, s, id, "ready")
 		extraEntry, _ := extra.manager.config.models.catalog().resolve(modelSelection{Mode: "default"})
+		if !reflect.DeepEqual(extraEntry.ModelParameters, hostedDefaultModelParameters()) {
+			t.Fatal("additional Space lost advanced defaults", extraEntry.ModelParameters)
+		}
 		extraKey, err := extra.manager.config.models.Credentials.get(extraEntry.CredentialRef)
 		if err != nil || extraKey.Value != credential.Value {
 			t.Fatal("extra Space charged a different owner", err)
@@ -218,5 +224,21 @@ func TestHostedMissingGatewayKeyCannotUseDeploymentQuota(t *testing.T) {
 		if cookie.Name == s.access.cookieName() {
 			t.Fatal("missing user credential published a session")
 		}
+	}
+}
+
+func TestHostedLegacyDefaultUpgradesThroughSpaceStartup(t *testing.T) {
+	s := hostedFixture(t, t.TempDir())
+	cookie, _, space := hostedLogin(t, s, "alice")
+	waitSpaceState(t, s, space, "setup_required")
+	legacy := ModelParameters{Protocol: "openai-completions", BaseURL: hostedGatewayBaseURL, ModelID: hostedDefaultModel}
+	input := setupModelInput{RequestID: "legacy-default", ExpectedVersion: 1, ModelParameters: legacy, APIKey: "owner-key"}
+	if w := hostedRequest(s, spaceRoute(space)+"/v1/setup/model", input, cookie, ""); w.Code != 202 {
+		t.Fatal("legacy setup failed", w.Code)
+	}
+	runtime := waitSpaceState(t, s, space, "ready")
+	entry, err := runtime.manager.config.models.catalog().resolve(modelSelection{Mode: "default"})
+	if err != nil || !reflect.DeepEqual(entry.ModelParameters, hostedDefaultModelParameters()) {
+		t.Fatal("Space startup did not upgrade the old default", entry, err)
 	}
 }

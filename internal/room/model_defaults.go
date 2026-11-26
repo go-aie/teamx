@@ -8,12 +8,21 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/go-aie/teamx/internal/agent/dsh"
 	"github.com/go-aie/teamx/internal/authn"
 	"github.com/go-aie/teamx/internal/authn/opencsg"
 )
 
 const hostedDefaultModel = "deepseek-v4.1-flash-1017"
 const hostedGatewayBaseURL = "https://ai.space.opencsg.com/v1"
+
+func hostedDefaultModelParameters() ModelParameters {
+	return ModelParameters{
+		Protocol: "openai-completions", BaseURL: hostedGatewayBaseURL, ModelID: hostedDefaultModel,
+		InputModalities: []string{"text", "image"}, ContextWindow: 1048576, MaxTokens: 32768,
+		ReasoningEffort: "off", Compat: dsh.ModelCompat{SupportsDeveloperRole: new(false)},
+	}
+}
 
 // Login supplies the owner's Gateway key; model initialization, validation and
 // subsequent edits all use the ordinary Space model service and catalog.
@@ -141,7 +150,7 @@ func (f *firstModelSetup) submitGatewayModel(key string) {
 		f.mu.Unlock()
 		return
 	}
-	parameters := ModelParameters{Protocol: "openai-completions", BaseURL: hostedGatewayBaseURL, ModelID: hostedDefaultModel}
+	parameters := hostedDefaultModelParameters()
 	f.prefill, f.prefillKey = parameters, key
 	id, err := newOpaqueID()
 	input := setupModelInput{RequestID: id, ExpectedVersion: f.service.snapshot().Version, ModelParameters: parameters, APIKey: key}
