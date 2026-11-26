@@ -19,6 +19,9 @@ import { signingPolicy, signBundle, notarizeBundle } from './package-signing.mjs
 import { preparedDependencies } from './package-cache.mjs';
 import { progress } from './package-progress.mjs';
 const root = p.resolve(p.dirname(fileURLToPath(import.meta.url)), '..');
+// Public distribution files must be readable/executable by the service account,
+// even when the operator protects deployment evidence with umask 077.
+process.umask(0o022);
 const opts = {
   channel: 'dev',
   profile: 'standard',
