@@ -64,7 +64,7 @@ func TestServiceArchiveBackupCorruptionCancellationAndPermissions(t *testing.T) 
 	if _, err := pruneServiceDeploymentContext(ctx, r, backup, 2, 2); !errors.Is(err, context.Canceled) {
 		t.Fatal("backup verification ignored canceled maintenance", err)
 	}
-	if b.Version != 2 || len(b.HomeAssets) != 0 || len(b.ReleaseAssets) != 0 {
+	if b.Version != 3 || len(b.HomeAssets) != 0 || len(b.ReleaseAssets) != 0 {
 		t.Fatal("new backup contains per-file inventories")
 	}
 	archive := filepath.Join(backup, serviceBackupArchive)

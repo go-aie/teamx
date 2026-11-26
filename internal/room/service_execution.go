@@ -23,14 +23,25 @@ func serviceExecutionConfig(r serviceRegistration, release string) (srt.Config, 
 // descriptor records the physical release, never the moving current symlink.
 // Old descriptors and release trees remain available to backups and recovery.
 func configureServiceExecution(r serviceRegistration, release string) error {
-	if r.Execution == "" || r.Execution == "native" {
-		return nil
-	}
-	config, err := serviceExecutionConfig(r, release)
+	apply, err := prepareServiceExecution(r, release)
 	if err != nil {
 		return err
 	}
-	return writeServiceExecutionConfig(r, release, config)
+	return apply()
+}
+
+// The expensive runtime/host inspection reads protected program inputs and is
+// done while the old service runs. The returned operation reads the latest home
+// configuration and only commits after its consistent backup under data locks.
+func prepareServiceExecution(r serviceRegistration, release string) (func() error, error) {
+	if r.Execution == "" || r.Execution == "native" {
+		return func() error { return nil }, nil
+	}
+	config, err := serviceExecutionConfig(r, release)
+	if err != nil {
+		return nil, err
+	}
+	return func() error { return writeServiceExecutionConfig(r, release, config) }, nil
 }
 
 func writeServiceExecutionConfig(r serviceRegistration, release string, config srt.Config) error {

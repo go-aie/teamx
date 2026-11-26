@@ -275,12 +275,16 @@ func pruneServiceDeploymentContext(ctx context.Context, r serviceRegistration, b
 	}
 	previous := ""
 	verified := map[string]bool{}
+	programObjects := map[string][]os.FileInfo{}
 	if backup != "" {
 		if err := servicePhysicalDirectory(backup); err != nil {
 			return result, err
 		}
 		b, err := verifyServiceBackupContext(ctx, backup, r)
 		if err != nil {
+			return result, err
+		}
+		if err := verifyServiceBackupProgramContent(ctx, backup, b, programObjects); err != nil {
 			return result, err
 		}
 		previous = b.Current
@@ -362,12 +366,16 @@ func pruneServiceDeploymentContext(ctx context.Context, r serviceRegistration, b
 		if err := readSnapshot(filepath.Join(name, "backup.json"), &b, maxServiceBackupManifestBytes); err != nil {
 			return result, err
 		}
-		if (b.Version != 1 && b.Version != 2) || b.Registration.Root != r.Root || b.Registration.Home != r.Home || b.Registration.InstallationID != r.InstallationID || b.Registration.UID != r.UID {
+		if (b.Version != 1 && b.Version != 2 && b.Version != 3) || b.Registration.Root != r.Root || b.Registration.Home != r.Home || b.Registration.InstallationID != r.InstallationID || b.Registration.UID != r.UID {
 			return result, errors.New("retained backup belongs to another installation")
 		}
 		if i < keepBackups {
 			if !verified[name] {
-				if _, err := verifyServiceBackupContext(ctx, name, r); err != nil {
+				checked, err := verifyServiceBackupContext(ctx, name, r)
+				if err != nil {
+					return result, err
+				}
+				if err := verifyServiceBackupProgramContent(ctx, name, checked, programObjects); err != nil {
 					return result, err
 				}
 			}
@@ -395,6 +403,9 @@ func pruneServiceDeploymentContext(ctx context.Context, r serviceRegistration, b
 		if err := os.RemoveAll(name); err != nil {
 			return result, err
 		}
+	}
+	if err := pruneServiceProgramObjects(r, result.DeletedReleases, state.Backups); err != nil {
+		return result, err
 	}
 	state.Releases = state.Releases[:min(len(state.Releases), keepReleases)]
 	state.Backups = result.RetainedBackups

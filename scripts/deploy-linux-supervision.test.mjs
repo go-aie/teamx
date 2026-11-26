@@ -51,3 +51,39 @@ fs.writeFileSync(${JSON.stringify(pid)},String(child.pid));child.unref();`);
   const receipt=JSON.parse(fs.readFileSync(p.join(retry,'deployment.json'),'utf8'));
   assert.equal(receipt.status,'built');assert.equal(receipt.followed_job,job);
 });
+
+test('retention survives deployment process exit and publishes its own receipt',{timeout:15000},async t=>{
+  const root=fs.realpathSync(fs.mkdtempSync(p.join(os.tmpdir(),"teamx-retention ' ")));
+  const mock=p.join(root,'mock'),job=p.join(root,'job');fs.mkdirSync(mock);fs.mkdirSync(job);
+  const module=new URL('./deploy-linux-remote.mjs',import.meta.url).href;
+  const pid=p.join(root,'pid'),entered=p.join(root,'entered');
+  const quote=s=>"'"+s.replaceAll("'","'\\''")+"'";
+  const launch=p.join(root,'launch.mjs');
+  fs.writeFileSync(launch,`import fs from 'node:fs';import {spawn} from 'node:child_process';
+const args=process.argv.slice(-4);const fd=fs.openSync(${JSON.stringify(p.join(job,'retention.log'))},'a');
+const child=spawn(args[0],args.slice(1),{detached:true,stdio:['ignore',fd,fd]});
+fs.writeFileSync(${JSON.stringify(pid)},String(child.pid));fs.closeSync(fd);child.unref();`);
+  fs.writeFileSync(p.join(mock,'systemd-run'),`#!/bin/sh\nexec ${quote(process.execPath)} ${quote(launch)} "$@"\n`,{mode:0o755});
+  fs.writeFileSync(p.join(mock,'sudo'),'#!/bin/sh\nif [ "$1" = -n ];then shift;fi\nexec "$@"\n',{mode:0o755});
+  const cli=p.join(mock,'teamx'),program=p.join(root,'prune.mjs');
+  fs.writeFileSync(program,`import fs from 'node:fs';fs.writeFileSync(${JSON.stringify(entered)},'running');await new Promise(resolve=>setTimeout(resolve,700));console.log(JSON.stringify({retained_backups:['original']}));`);
+  fs.writeFileSync(cli,`#!/bin/sh\nexec ${quote(process.execPath)} ${quote(program)} "$@"\n`,{mode:0o755});
+  const request={job,config:{server_root:p.join(root,'server'),bin_dir:mock,build_path:[mock]}};
+  const schedule=p.join(root,'schedule.mjs');
+  fs.writeFileSync(schedule,`import {scheduleRetention} from ${JSON.stringify(module)};scheduleRetention(${JSON.stringify(request)},undefined,process.env);console.log('queued');await new Promise(resolve=>setTimeout(resolve,10000));`);
+  const parent=spawn(process.execPath,[schedule],{env:{...process.env,PATH:mock+':'+process.env.PATH},stdio:['ignore','pipe','pipe']});
+  t.after(()=>{if(parent.exitCode===null&&parent.signalCode===null)parent.kill('SIGKILL');if(fs.existsSync(pid)){try{process.kill(Number(fs.readFileSync(pid,'utf8')),'SIGKILL');}catch{}}fs.rmSync(root,{recursive:true,force:true});});
+  let errors='';parent.stderr.on('data',b=>{errors+=b;});
+  await Promise.race([once(parent.stdout,'data'),once(parent,'exit').then(()=>{throw Error(errors||'Scheduler exited early');})]);
+  const exited=once(parent,'exit');parent.kill('SIGTERM');await exited;
+  const deadline=Date.now()+8000;
+  let receipt;
+  while(Date.now()<deadline){
+    const file=p.join(job,'retention.json');if(fs.existsSync(file))receipt=JSON.parse(fs.readFileSync(file,'utf8'));
+    if(receipt?.finished_at)break;
+    await new Promise(resolve=>setTimeout(resolve,25));
+  }
+  assert.equal(fs.existsSync(entered),true,errors);
+  assert.equal(receipt?.status,'passed',JSON.stringify(receipt));
+  assert.deepEqual(receipt.result.retained_backups,['original']);
+});

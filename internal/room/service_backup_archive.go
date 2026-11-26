@@ -34,6 +34,14 @@ func (r serviceBackupReader) Read(b []byte) (int, error) {
 // One metadata walk and one sequential write; no per-file hashes or fsyncs.
 // The private archive and its containing directory are synced before publish.
 func writeServiceBackupArchive(ctx context.Context, r serviceRegistration, name string) (string, int64, error) {
+	return writeServiceSnapshot(ctx, r, name, false)
+}
+
+func writeServiceDataArchive(ctx context.Context, r serviceRegistration, name string) (string, int64, error) {
+	return writeServiceSnapshot(ctx, r, name, true)
+}
+
+func writeServiceSnapshot(ctx context.Context, r serviceRegistration, name string, dataOnly bool) (string, int64, error) {
 	out, err := os.OpenFile(name, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0600)
 	if err != nil {
 		return "", 0, err
@@ -56,6 +64,21 @@ func writeServiceBackupArchive(ctx context.Context, r serviceRegistration, name 
 			}
 			if err := ctx.Err(); err != nil {
 				return err
+			}
+			if dataOnly && root.name == "server" && name != root.source {
+				rel, err := filepath.Rel(root.source, name)
+				if err != nil {
+					return err
+				}
+				// Program trees, object pools and transient publication stages
+				// are immutable inputs or scratch, never mutable snapshot data.
+				first := strings.Split(rel, string(filepath.Separator))[0]
+				if first == "releases" || first == "programs" || first == "current" || strings.HasPrefix(first, ".") {
+					if entry.IsDir() {
+						return filepath.SkipDir
+					}
+					return nil
+				}
 			}
 			info, err := entry.Info()
 			if err != nil {
@@ -149,6 +172,9 @@ func readServiceBackupArchive(ctx context.Context, dir string, b serviceBackup, 
 		if name == "" || name == "." || name == ".." || path.IsAbs(name) || path.Clean(name) != name || strings.ContainsAny(name, "\\\r\n\x00") || (root != "home" && root != "server" && name != "service-unit") || seen[name] || header.Size < 0 || header.Mode&^0777 != 0 {
 			return fmt.Errorf("invalid backup archive entry: %q", header.Name)
 		}
+		if b.Version == 3 && (name == "server/current" || name == "server/releases" || strings.HasPrefix(name, "server/releases/") || name == "server/programs" || strings.HasPrefix(name, "server/programs/")) {
+			return errors.New("program files in data-only backup")
+		}
 		seen[name] = true
 		dest := filepath.Join(stage, filepath.FromSlash(name))
 		switch header.Typeflag {
@@ -195,7 +221,7 @@ func readServiceBackupArchive(ctx context.Context, dir string, b serviceBackup, 
 	if hex.EncodeToString(hash.Sum(nil)) != b.ArchiveSHA256 {
 		return errors.New("backup archive SHA-256 mismatch")
 	}
-	if !seen["home/config.toml"] || !seen["server/releases/"+b.Current+"/manifest.json"] {
+	if !seen["home/config.toml"] || b.Version != 3 && !seen["server/releases/"+b.Current+"/manifest.json"] {
 		return errors.New("backup lacks configuration or current release")
 	}
 	if stage != "" {

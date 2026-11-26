@@ -156,16 +156,16 @@ func runServiceWithManager(args []string, stdout, stderr io.Writer, runner servi
 			return err
 		}
 	}
+	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer cancel()
 	// A long-running log reader must not block lifecycle/upgrade commands.
 	if action != "logs" {
-		lock, err := lockDirectoryFile(*root, ".service.lock")
+		lock, err := acquireServiceMaintenance(ctx, *root, action == "install" || action == "prune" || action == "upgrade" || action == "backup" || action == "restore", stderr)
 		if err != nil {
 			return fmt.Errorf("无法锁定安装根 %s；请核对 --server-root、部署账号及是否有其他维护命令运行。首次安装请运行官方 install.sh: %w", *root, err)
 		}
 		defer unlockDirectory(lock)
 	}
-	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-	defer cancel()
 	if (action == "install" || action == "upgrade") && *archive != "" {
 		if *digest == "" {
 			b, err := os.ReadFile(*archive + ".sha256")
@@ -397,6 +397,7 @@ func runServiceWithManager(args []string, stdout, stderr io.Writer, runner servi
 	case "stop", "uninstall", "backup", "upgrade", "restore":
 		// Validate all input material before taking a working service down.
 		var next string
+		var applyNextExecution func() error
 		stopped, backedUp, selected := false, false, false
 		defer func() {
 			if resultErr == nil || action == "stop" || action == "uninstall" {
@@ -472,10 +473,11 @@ func runServiceWithManager(args []string, stdout, stderr io.Writer, runner servi
 			if next == "" {
 				return nil
 			}
-			if r.Execution == "srt" {
-				if _, err := serviceExecutionConfig(r, next); err != nil {
-					return err
-				}
+			if err := serviceOperationStep(stderr, "准备执行环境（服务继续运行）", func() error {
+				applyNextExecution, err = prepareServiceExecution(r, next)
+				return err
+			}); err != nil {
+				return err
 			}
 			if *backup == "" {
 				*backup, err = defaultServiceUpgradeBackup(r)
@@ -494,10 +496,11 @@ func runServiceWithManager(args []string, stdout, stderr io.Writer, runner servi
 				return err
 			}
 		}
-		if action == "upgrade" || action == "backup" {
-			// Resolve dependencies before stopping; repeat under the stopped
-			// home/data locks when creating the actual consistent snapshot.
-			if _, err := serviceRequiredReleases(r); err != nil {
+		if action == "upgrade" || action == "backup" || action == "restore" {
+			if err := serviceOperationStep(stderr, "登记备份程序归档（服务继续运行）", func() error {
+				_, err := prepareServiceBackupPrograms(ctx, r, *backup)
+				return err
+			}); err != nil {
 				return err
 			}
 		}
@@ -563,7 +566,7 @@ func runServiceWithManager(args []string, stdout, stderr io.Writer, runner servi
 			}
 			selected = true // Configuration and release switching can partially succeed.
 			if err := serviceOperationStep(stderr, "配置执行环境并切换版本", func() error {
-				if err := configureServiceExecution(r, next); err != nil {
+				if err := applyNextExecution(); err != nil {
 					return err
 				}
 				return selectServiceRelease(r.Root, next)

@@ -6,7 +6,7 @@ import p from 'node:path';
 import { execFileSync, spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { deploymentConfig, sourceCommit, makeSourceBundle, deployLocal, shellQuote } from './deploy-linux.mjs';
-import { deployRemote, deploymentSmoke, saveDeployment } from './deploy-linux-remote.mjs';
+import { deployRemote, deploymentSmoke, saveDeployment, runRetention, waitForRetention } from './deploy-linux-remote.mjs';
 
 const git=(repo,...args)=>execFileSync('git',['-C',repo,...args],{encoding:'utf8'}).trim();
 const runtime={platform:'linux',arch:'x64',machine:'x86_64',uid:0};
@@ -85,7 +85,10 @@ fs.writeFileSync(p.join(out,name+'-report.json'),JSON.stringify({status:${JSON.s
 `);
   git(repo,'add','.');git(repo,'commit','-qm','fixture source');
   const commit=sourceCommit(repo);
-  const config=deploymentConfig({work_dir:p.join(root,'jobs-root'),server_root:p.join(root,'server'),home:p.join(root,'private'),bin_dir:p.join(root,'commands'),execution:'srt',srt_endpoints:['http://127.0.0.1:18088','https://model.example'],deployment_config:p.join(root,'private-initial.toml')});
+  const mocks=p.join(root,'retention-mocks');fs.mkdirSync(mocks);
+  fs.writeFileSync(p.join(mocks,'systemctl'),'#!/bin/sh\nexit 3\n',{mode:0o755});
+  fs.writeFileSync(p.join(mocks,'systemd-run'),`#!/bin/sh\nprintf '%s\\n' "$@" > ${shellQuote(p.join(root,'scheduled-retention'))}\n`,{mode:0o755});
+  const config=deploymentConfig({work_dir:p.join(root,'jobs-root'),server_root:p.join(root,'server'),home:p.join(root,'private'),build_path:[mocks],bin_dir:p.join(root,'commands'),execution:'srt',srt_endpoints:['http://127.0.0.1:18088','https://model.example'],deployment_config:p.join(root,'private-initial.toml')});
   function request(name,extra={}) {
     const job=p.join(config.work_dir,'jobs',name);fs.mkdirSync(job,{recursive:true});
     const wantedCommit=sourceCommit(repo);
@@ -232,10 +235,13 @@ test('remote installer automatically selects install then upgrade and preserves 
   assert.ok(nextArgs.includes('--upgrade'));assert.ok(nextArgs.includes('--backup-dir'));
   assert.ok(second.backup.startsWith(f.config.backup_root+'/before-'));
   assert.equal(fs.readFileSync(p.join(f.config.home,'identity'),'utf8'),'original identity');
+  assert.equal(second.retention.status,'queued');
+  assert.equal(fs.existsSync(p.join(f.root,'prune-args')),false);
+  const retained=await runRetention(JSON.parse(fs.readFileSync(p.join(upgrade.job,'retention-request.json'),'utf8')));
   const cleanup=fs.readFileSync(p.join(f.root,'prune-args'),'utf8').trim().split('\n');
   assert.deepEqual(cleanup,['service','prune','--server-root',f.config.server_root,'--keep-releases','2','--keep-backups','2','--from',second.backup]);
-  assert.deepEqual(second.retention.retained_releases,['current','previous']);
-  assert.ok(second.timings.some(x=>x.stage==='retain successful releases and backups' && x.status==='passed'));
+  assert.deepEqual(retained.result.retained_releases,['current','previous']);
+  assert.ok(second.timings.some(x=>x.stage==='queue release and backup retention' && x.status==='passed'));
 });
 
 test('failed verification prevents installation; installer failure produces a failed receipt',async t=>{
@@ -257,7 +263,9 @@ test('identity check failure skips cleanup; cleanup failure preserves deployed s
   assert.equal(fs.existsSync(p.join(unready.root,'prune-args')),false);
   const f=fixture(t,{failPrune:true});f.config.keep_releases=3;f.config.keep_backups=4;
   const req=f.request('cleanup-failed'),result=await deployRemote(req,runtime);
-  assert.equal(result.status,'deployed');assert.match(result.retention.error,/exited 9/);
+  assert.equal(result.status,'deployed');assert.equal(result.retention.status,'queued');
+  await assert.rejects(runRetention(JSON.parse(fs.readFileSync(p.join(req.job,'retention-request.json'),'utf8'))),/exited 9/);
+  assert.equal(JSON.parse(fs.readFileSync(p.join(req.job,'retention.json'),'utf8')).status,'failed');
   const args=fs.readFileSync(p.join(f.root,'prune-args'),'utf8').trim().split('\n');
   assert.equal(args[args.indexOf('--keep-releases')+1],'3');assert.equal(args[args.indexOf('--keep-backups')+1],'4');
   assert.equal(args.includes('--from'),false);
@@ -267,7 +275,8 @@ test('identity check failure skips cleanup; cleanup failure preserves deployed s
 test('same-archive no-op does not enroll a nonexistent backup',async t=>{
   const f=fixture(t,{noopUpgrade:true});
   await deployRemote(f.request('install'),runtime);
-  const result=await deployRemote(f.request('no-op'),runtime);
+  const req=f.request('no-op');const result=await deployRemote(req,runtime);
+  await runRetention(JSON.parse(fs.readFileSync(p.join(req.job,'retention-request.json'),'utf8')));
   assert.equal(result.status,'deployed');assert.equal(result.backup,undefined);
   assert.equal(fs.readFileSync(p.join(f.root,'prune-args'),'utf8').trim().split('\n').includes('--from'),false);
 });
@@ -339,4 +348,29 @@ test('deployment receipts publish complete private JSON atomically',t=>{
     saveDeployment(file,{status});assert.deepEqual(JSON.parse(fs.readFileSync(file,'utf8')),{status});
     assert.equal(fs.statSync(file).mode&0o777,0o600);assert.equal(fs.existsSync(file+'.pending'),false);
   }
+});
+
+test('retention scheduling failure is recorded without changing successful deployment',async t=>{
+  const f=fixture(t);
+  fs.writeFileSync(p.join(f.config.build_path[0],'systemd-run'),'#!/bin/sh\nexit 8\n',{mode:0o755});
+  const req=f.request('cannot-queue');
+  const result=await deployRemote(req,runtime);
+  assert.equal(result.status,'deployed');assert.equal(result.retention.status,'failed');
+  assert.equal(JSON.parse(fs.readFileSync(p.join(req.job,'retention.json'),'utf8')).status,'failed');
+  assert.equal(fs.existsSync(p.join(f.root,'prune-args')),false);
+});
+
+test('the next installation waits for earlier cleanup without serializing its build',async t=>{
+  const f=fixture(t),req=f.request('queued-cleanup');
+  const result=await deployRemote(req,runtime);
+  fs.writeFileSync(p.join(f.config.build_path[0],'systemctl'),'#!/bin/sh\necho active\n',{mode:0o755});
+  let finished=false;
+  const timer=setTimeout(()=>{
+    finished=true;
+    saveDeployment(result.retention.receipt,{status:'passed',finished_at:new Date().toISOString()});
+  },100);
+  try {
+    await waitForRetention(req,{...process.env,PATH:f.config.build_path.join(':')+':'+process.env.PATH},0);
+    assert.equal(finished,true,'installation bypassed active earlier cleanup');
+  } finally { clearTimeout(timer); }
 });

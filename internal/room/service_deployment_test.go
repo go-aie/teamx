@@ -208,6 +208,7 @@ func serviceTestArchive(t *testing.T, root string, extra ...*tar.Header) (string
 
 func TestServiceArchivePublicationAndValidation(t *testing.T) {
 	root := t.TempDir()
+	root, _ = filepath.EvalSymlinks(root)
 	archive, digest := serviceTestArchive(t, serviceTestRelease(t, "dev-test"))
 	first, err := publishServiceArchive(root, archive, digest)
 	if err != nil {

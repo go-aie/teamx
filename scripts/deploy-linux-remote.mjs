@@ -176,6 +176,7 @@ export async function deployRemote(request, runtime = { platform: process.platfo
       return receipt;
     }
     const upgrade = fs.existsSync(p.join(c.server_root, 'service.json')), privileged = runtime.uid !== 0;
+    await timing.run('wait for previous retention before installation', () => waitForRetention(request, env, runtime.uid));
     const previousRelease = upgrade ? fs.realpathSync(p.join(c.server_root, 'current')) : undefined;
     const installArgs = [installer, '--archive', archive, '--sha256', archiveDigest, '--server-root', c.server_root, '--bin-dir', c.bin_dir];
     if (upgrade) {
@@ -211,22 +212,13 @@ export async function deployRemote(request, runtime = { platform: process.platfo
     if (upgrade && fs.realpathSync(p.join(c.server_root, 'current')) === previousRelease) delete receipt.backup;
     receipt.status = 'deployed';
     save();
-    // Cleanup is a separate post-success operation. Installation/identity
-    // failures never enroll backups or delete recovery materials.
+    // A separate systemd service owns cleanup and its receipt. Deployment
+    // completion and SSH lifetime no longer include backup verification/GC.
     try {
-      await timing.run('retain successful releases and backups', async () => {
-        const cli = p.join(c.bin_dir, 'teamx');
-        const args = ['service', 'prune', '--server-root', c.server_root, '--keep-releases', String(c.keep_releases ?? 2), '--keep-backups', String(c.keep_backups ?? 2)];
-        if (receipt.backup) args.push('--from', receipt.backup);
-        // A full backup verification may take time; run asynchronously so the
-        // progress heartbeat remains visible, and keep stdout as JSON.
-        const result = p.join(job, 'retention.json');
-        await run(privileged ? 'sudo' : cli, privileged ? ['-n', cli, ...args] : args, { env, logFile: result });
-        receipt.retention = json(result);
-      });
+      receipt.retention = timing.step('queue release and backup retention', () => scheduleRetention(request, receipt.backup, env, runtime.uid));
     } catch (error) {
-      receipt.retention = { error: error.message };
-      console.error(`Deployment succeeded; retention cleanup needs attention: ${error.message}. See ${job}/retention.json; service remains on the deployed version.`);
+      receipt.retention = { status: 'failed', error: error.message, receipt: p.join(job, 'retention.json') };
+      console.error(`Deployment succeeded; retention could not be queued: ${error.message}. Service remains on the deployed version.`);
     }
     return receipt;
   } catch (error) { receipt.status = 'failed'; receipt.error = error.message; throw error; }
@@ -238,6 +230,79 @@ export async function deployRemote(request, runtime = { platform: process.platfo
   }
 }
 function jsonOutput(cmd, args, env) { return JSON.parse(output(cmd, args, { env })); }
+
+function retentionPointer(request) {
+  return p.join(request.config.work_dir ?? p.dirname(request.job), 'retention-' + digest(request.config.server_root).slice(0, 20) + '.json');
+}
+
+// Builds may overlap the previous cleanup. Installation waits for it, keeping
+// deployment/backup enrollment order stable even when cleanup is expensive.
+export async function waitForRetention(request, env = process.env, uid = process.getuid?.()) {
+  const file = retentionPointer(request);
+  if (!fs.existsSync(file)) return;
+  const previous = json(file), deadline = Date.now() + 15 * 60 * 1000;
+  for (;;) {
+    if (fs.existsSync(previous.receipt) && json(previous.receipt).finished_at) return;
+    let active;
+    const args = ['is-active', previous.unit];
+    try { active = output(uid !== 0 ? 'sudo' : 'systemctl', uid !== 0 ? ['-n', 'systemctl', ...args] : args, { env, stdio: ['ignore', 'pipe', 'pipe'] }) === 'active'; }
+    catch (error) { if (![3, 4].includes(error.status)) throw error; active = false; }
+    if (!active) {
+      console.error(`Previous retention did not finish successfully; inspect ${previous.receipt} and ${previous.log}. Continuing without deleting its recovery materials.`);
+      return;
+    }
+    check(Date.now() < deadline, `Previous retention is still active: ${previous.unit}; service was not stopped`);
+    await new Promise(resolve => setTimeout(resolve, 250));
+  }
+}
+
+export function scheduleRetention(request, backup, env = process.env, uid = process.getuid?.()) {
+  const job = request.job, unit = 'teamx-retention-' + digest(job).slice(0, 20) + '.service';
+  const file = p.join(job, 'retention-request.json'), receipt = p.join(job, 'retention.json');
+  const queued = { status: 'queued', unit, receipt, log: p.join(job, 'retention.log'), queued_at: new Date().toISOString() };
+  saveDeployment(file, { config: request.config, job, backup, privileged: uid !== 0 });
+  saveDeployment(receipt, queued);
+  saveDeployment(retentionPointer(request), queued);
+  const args = ['--quiet', '--collect', '--unit', unit, '--property=Type=exec', '--property=UMask=0077',
+    '--property=User=' + process.getuid(), '--property=Group=' + process.getgid(),
+    '--setenv=PATH=' + env.PATH, '--setenv=HOME=' + (env.HOME ?? '/'),
+    '--property=StandardOutput=append:' + queued.log, '--property=StandardError=inherit',
+    process.execPath, fileURLToPath(import.meta.url), file, '--retention'];
+  try { output(uid !== 0 ? 'sudo' : 'systemd-run', uid !== 0 ? ['-n', 'systemd-run', ...args] : args, { env }); }
+  catch (error) { saveDeployment(receipt, { ...queued, status: 'failed', error: error.message }); throw error; }
+  console.log(`Retention queued: ${unit}; receipt: ${receipt}`);
+  return queued;
+}
+
+export async function runRetention(request) {
+  const { config: c, job, backup, privileged } = request;
+  const file = p.join(job, 'retention.json'), started = performance.now();
+  const receipt = { status: 'running', started_at: new Date().toISOString(), server_root: c.server_root };
+  saveDeployment(file, receipt);
+  try {
+    const cli = p.join(c.bin_dir, 'teamx');
+    const args = ['service', 'prune', '--server-root', c.server_root, '--keep-releases', String(c.keep_releases ?? 2), '--keep-backups', String(c.keep_backups ?? 2)];
+    if (backup) args.push('--from', backup);
+    const env = { ...process.env, PATH: [...c.build_path, process.env.PATH].join(':') };
+    receipt.result = await new Promise((resolve, reject) => {
+      const child = spawn(privileged ? 'sudo' : cli, privileged ? ['-n', cli, ...args] : args, { env, stdio: ['ignore', 'pipe', 'inherit'] });
+      const chunks = []; let size = 0;
+      child.stdout.on('data', chunk => { size += chunk.length; if (size > 16 * 1024 * 1024) { child.kill(); reject(Error('Retention result exceeds 16 MiB')); } else chunks.push(chunk); });
+      child.once('error', reject);
+      child.once('close', code => {
+        if (code !== 0) return reject(Error(`retention command exited ${code}`));
+        try { resolve(JSON.parse(Buffer.concat(chunks).toString('utf8'))); } catch (error) { reject(error); }
+      });
+    });
+    receipt.status = 'passed';
+    return receipt;
+  } catch (error) { receipt.status = 'failed'; receipt.error = error.message; throw error; }
+  finally {
+    receipt.finished_at = new Date().toISOString(); receipt.duration_ms = Math.round(performance.now() - started);
+    saveDeployment(file, receipt);
+    console.log(`Retention ${receipt.status}: ${file}`);
+  }
+}
 
 // The system service owns the job. SSH only follows its log; disconnecting a
 // terminal cannot strand an installer without a receipt owner.
@@ -286,7 +351,7 @@ export async function superviseDeployment(request, requestFile) {
 }
 if (process.argv[1] && p.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   const request=json(process.argv[2]);
-  (process.argv[3]==='--worker'?deployRemote(request):superviseDeployment(request,process.argv[2])).catch(error => {
+  (process.argv[3]==='--retention'?runRetention(request):process.argv[3]==='--worker'?deployRemote(request):superviseDeployment(request,process.argv[2])).catch(error => {
     console.error(`Remote deploy: ${error.message}\nKeep the job/backup and inspect service status/logs; no automatic rollback.`);
     process.exitCode = 1;
   });

@@ -91,7 +91,7 @@ func TestServiceReleaseReferencesRequireRegisteredIdentityOwner(t *testing.T) {
 	}
 }
 
-func TestServiceBackupArchivesAllReleasesAndRestoresIndependently(t *testing.T) {
+func TestServiceBackupReferencesRequiredProgramsAndRestoresIndependently(t *testing.T) {
 	r := serviceTestRegistration(t)
 	original, _ := filepath.EvalSymlinks(filepath.Join(r.Root, "current"))
 	unused := serviceRetentionRelease(t, r, "dev-unused")
@@ -117,6 +117,12 @@ func TestServiceBackupArchivesAllReleasesAndRestoresIndependently(t *testing.T) 
 	if err := readServiceBackupArchive(context.Background(), backup, b, extracted); err != nil {
 		t.Fatal(err)
 	}
+	if _, err := os.Stat(filepath.Join(extracted, "server/releases")); !os.IsNotExist(err) {
+		t.Fatal("data snapshot contains program files", err)
+	}
+	if err := restoreServicePrograms(context.Background(), backup, b, extracted); err != nil {
+		t.Fatal(err)
+	}
 	entries, err := os.ReadDir(filepath.Join(extracted, "server", "releases"))
 	if err != nil {
 		t.Fatal(err)
@@ -125,12 +131,19 @@ func TestServiceBackupArchivesAllReleasesAndRestoresIndependently(t *testing.T) 
 	for _, entry := range entries {
 		got = append(got, entry.Name())
 	}
-	want := []string{filepath.Base(original), filepath.Base(pinned), filepath.Base(frozen), filepath.Base(unused)}
+	want := []string{filepath.Base(original), filepath.Base(pinned), filepath.Base(frozen)}
 	slices.Sort(want)
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("backed up releases %v; want %v", got, want)
 	}
-	// Restore independently, after all required installed releases disappeared.
+	// Restore independently, after all installed releases, program registrations
+	// and the shared backup pool disappeared. Each backup owns its program links.
+	if err := os.RemoveAll(filepath.Join(r.Root, "programs")); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.RemoveAll(filepath.Join(filepath.Dir(backup), ".teamx-programs")); err != nil {
+		t.Fatal(err)
+	}
 	for _, release := range []string{original, pinned, frozen, unused} {
 		if err := os.RemoveAll(release); err != nil {
 			t.Fatal(err)
@@ -139,7 +152,7 @@ func TestServiceBackupArchivesAllReleasesAndRestoresIndependently(t *testing.T) 
 	if err := restoreServiceBackup(context.Background(), r, backup); err != nil {
 		t.Fatal(err)
 	}
-	for _, release := range []string{original, pinned, frozen, unused} {
+	for _, release := range []string{original, pinned, frozen} {
 		if _, err := os.Stat(filepath.Join(release, "bin/dsh")); err != nil {
 			t.Fatal("release unavailable after restore", err)
 		}

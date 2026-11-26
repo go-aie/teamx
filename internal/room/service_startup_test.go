@@ -14,6 +14,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -302,6 +303,7 @@ func TestServiceUpgradeStopsBacksUpAndStartsSameInstallation(t *testing.T) {
 				t.Fatalf("new selection was lost: %s: %v", selected, err)
 			}
 			entries, err := os.ReadDir(r.Home + "-backups")
+			entries = slices.DeleteFunc(entries, func(entry os.DirEntry) bool { return strings.HasPrefix(entry.Name(), ".") })
 			if err != nil || len(entries) != 1 {
 				t.Fatalf("automatic backup missing: %v: %v", entries, err)
 			}
@@ -309,7 +311,7 @@ func TestServiceUpgradeStopsBacksUpAndStartsSameInstallation(t *testing.T) {
 				t.Fatal("consistent backup missing", err)
 			}
 			previous := -1
-			for _, label := range []string{"校验并准备升级包", "停止服务", "等待服务退出并锁定数据", "备份：流式归档程序与 home 并同步落盘", "备份：顺序回读并校验归档", "配置执行环境并切换版本", "启动服务", "等待认证控制面就绪", "停服流程耗时"} {
+			for _, label := range []string{"校验并准备升级包", "准备执行环境", "登记备份程序归档", "停止服务", "等待服务退出并锁定数据", "备份：流式归档数据与登记信息并同步落盘", "备份：顺序回读并校验归档", "配置执行环境并切换版本", "启动服务", "等待认证控制面就绪", "停服流程耗时"} {
 				index := strings.Index(stderr.String(), "[service] "+label)
 				if index <= previous {
 					t.Fatalf("missing or unordered progress %q: %s", label, stderr.String())

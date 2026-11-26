@@ -3,6 +3,7 @@ package room
 import (
 	"archive/tar"
 	"compress/gzip"
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -295,11 +296,17 @@ func publishServiceArchive(root, archive, digest string) (string, error) {
 		if err != nil || !reflect.DeepEqual(a, b) {
 			return "", errors.New("build ID already contains different content")
 		}
+		if err := registerServiceProgram(context.Background(), root, dest, archive, digest); err != nil {
+			return "", err
+		}
 		return dest, nil
 	} else if !errors.Is(err, os.ErrNotExist) {
 		return "", err
 	}
 	if err := os.Rename(bundle, dest); err != nil {
+		return "", err
+	}
+	if err := registerServiceProgram(context.Background(), root, dest, archive, digest); err != nil {
 		return "", err
 	}
 	return dest, nil
