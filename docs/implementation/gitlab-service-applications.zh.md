@@ -8,6 +8,8 @@
 
 服务应用保存在部署 Home 的 `gitlab-applications.json`，文件权限为 0600，使用控制面的原子 writer。Secret 只在受控实现内用于 OAuth 请求，不返回普通用户，不写入空间配置、平台快照或 Agent 环境。管理员返回值和影响清单也不包含 Secret。
 
+服务应用与登录认证 Provider 无关。Casdoor 部署固定使用同一 Home，日常升级保留原目录；`service upgrade` 在停服后记录已有应用目录，启动后核对完整配置仍然一致，缺失、不可读或变化时报告失败并保留备份，不进入远程部署的成功清理。核对包括应用身份、版本及私有凭据，但输出不包含目录内容。未配置过应用的部署仍允许升级；恢复备份继续使用其原有整目录恢复语义。切换认证源若需新建 Home，应显式带入服务应用，用户和个人授权另按身份边界处理。
+
 空间的 `platform-connections.json` 保存无 Secret 的应用引用与版本，以及各自的 access／refresh token。服务 grant 增加本地 `owner_user_id`、`space_id` 和授权 `operation_id`；加载时核对实际空间 owner，复制另一空间的快照不能认领其 grant。GitLab 应用所有者和授权用户分别保存，授权不要求用户拥有应用。
 
 个人与共享应用、默认与其他空间统一使用固定回调 `/v1/platforms/gitlab/callback`。授权开始时固定用户、空间、运行实例、应用版本、操作、state、PKCE 和浏览器 Cookie；公共入口按临时 state 绑定定位原运行实例，原空间重新验证登录主体和空间权限。路由不再由共享应用目录保存；state 在消费、取消或授权结束时移除，过期和已停止的运行实例不能接收回调。短时 OAuth Cookie 使用根路径，以同时覆盖空间内操作与共享回调；Cookie 名包含独立会话 ID，并保持 HttpOnly／SameSite=Lax 及 HTTPS Secure。完成页显式返回原空间，不受当前默认空间或其他标签页影响。重启结束未完成授权，不重放授权码。带空间前缀的回调入口不再接收授权；曾使用此地址的个人应用需显式更新 GitLab 和 TeamX 应用配置后重新授权，已有 grant 不自动改绑。
@@ -69,6 +71,8 @@ teamx access gitlab-applications settle --config /absolute/config.toml --applica
 ## 用户使用与远端撤销
 
 用户在空间内添加 GitLab，使用服务提供的平台授权本人账号，无需填写 Client ID／Secret。只有一个服务应用时自动选中，隐藏平台选择下拉，只展示不可编辑的实例地址；多个应用时明确选择。配置缺失或不兼容时提示联系管理员，不能转入个人导入流程。Agent 发起的连接卡片也使用同一目录和授权编排，不能修改服务应用。
+
+Agent 的 `platforms list` 返回 `gitlab_managed`、`gitlab_enabled` 及公开应用列表。托管模式只存在一个兼容应用时，直接使用返回的实例和应用发起授权；多个候选才选择，缺失或不兼容时提示联系管理员。个人应用保留原配置流程。
 
 未启用托管 GitLab 时，平台类型列表不提供 GitLab，并默认选择实际可用的类型；没有可用类型时显示部署未开放平台的提示，不请求已禁用的平台接口。从其他类型切回 GitLab 时重新读取服务应用目录，托管模式始终隐藏应用凭据字段。
 

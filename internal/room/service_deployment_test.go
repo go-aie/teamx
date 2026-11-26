@@ -289,6 +289,8 @@ func TestServiceConsistentBackupRestorePreservesPrivateStateAndVersions(t *testi
 	r := serviceTestRegistration(t)
 	files := map[string]string{
 		"auth/admin-token":                        "synthetic-admin-token",
+		"auth/casdoor-client-secret":              "synthetic-casdoor-secret",
+		"gitlab-applications.json":                `{"version":1,"applications":[{"id":"app","origin":"https://gitlab.example","secret":"synthetic-app-secret"}]}`,
 		"model-credentials/historical-key":        "synthetic-key",
 		"model-operations/committed.json":         `{"status":"interrupted","committed":true,"completed":["member-a"]}`,
 		"model-migration.json":                    `{"status":"completed"}`,

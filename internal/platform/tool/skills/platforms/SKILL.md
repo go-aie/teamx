@@ -407,9 +407,27 @@ or interruptions; clarify collection versus lasting reminder rules as needed.
 
 ## GitLab connection and first application
 
-Match the canonical `--origin` without a trailing slash and expected username.
-`platforms list` includes public `gitlab_applications` IDs and compatibility
-reasons. Application references, connection IDs and account identities are distinct.
+Read `platforms list` before asking for an instance address. It includes
+`gitlab_managed`, `gitlab_enabled` and public `gitlab_applications` with IDs,
+canonical origins and compatibility reasons. Match the expected username when
+the human specifies one; do not ask for it merely to fill an optional field.
+Application references, connection IDs and account identities are distinct.
+
+When `gitlab_managed=true`, the administrator owns application configuration.
+If `gitlab_enabled=false`, explain that this deployment has not enabled GitLab.
+Otherwise reuse an unambiguous verified account. For a new connection, use the
+only compatible service application and its origin directly, including when the
+human only says "connect GitLab"; no instance-address or application-setup
+question is needed. If several compatible applications remain, ask the human to
+choose among the actual configured candidates, respecting an explicit instance.
+If none matches, explain the returned availability/compatibility issue and ask
+the human to contact the administrator. Never ask a managed user to create or
+import an application, provide Client ID/Secret, or supply an arbitrary instance
+address as a workaround. Continue with the existing authorization component.
+
+For personal applications (`gitlab_managed=false`), reuse an unambiguous known
+account/application origin. Ask for the instance only if it remains unknown or
+ambiguous. Canonical `--origin` has no trailing slash.
 
 ```sh
 # Reuse the exact verified account; no fresh OAuth is needed.
@@ -419,7 +437,7 @@ teamx platforms connect start --provider gitlab --origin URL --name NAME --appli
 ```
 
 A unique compatible application on the exact instance needs no redundant approval.
-When none is compatible, or the human must choose/configure one, omit
+For personal applications, when none is compatible, or the human must choose/configure one, omit
 `--application-id`. The same operation waits at application and returns `setup`:
 official management URL, actual callback, required `api` scope and compatibility.
 Direct the human to Configure GitLab application on the original message, then

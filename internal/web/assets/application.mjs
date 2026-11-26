@@ -768,9 +768,9 @@ export async function createApp(overrides = {}) {
     const info = state.info;
     if (data.room_id && (!info || data.room_id !== info.room_id || data.room_instance !== info.room_instance || data.room_service_epoch !== info.service_epoch)) return;
     if (data.agent_id && (data.agent_id !== membersUI.selectedAgent()?.agent_id || data.membership_id !== membersUI.selectedAgent()?.membership_id)) {
-      // Member status and subscription summaries cover the whole Room; private
-      // inspectors only observe the selected membership.
-      if (!["members", "notifications"].includes(data.topic)) return;
+      // Member status, subscription summaries and conversation cards cover the
+      // whole Room; private inspectors only observe the selected membership.
+      if (!["members", "notifications", "interactions"].includes(data.topic)) return;
     }
     delete confirmedGlobalVersions[data.topic];
     if (data.topic === "notifications" && data.kind !== "diagnostics") notificationSummaryPending = true;

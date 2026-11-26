@@ -436,9 +436,11 @@ func (m *roomManager) servePlatformConnect(w http.ResponseWriter, r *http.Reques
 			list = append(list, v)
 		}
 		_ = json.NewEncoder(w).Encode(struct {
-			Platforms    []connection               `json:"platforms"`
-			Applications []gitlabConnectApplication `json:"gitlab_applications"`
-		}{list, m.gitlabConnectApplicationsLocked(file)})
+			Platforms     []connection               `json:"platforms"`
+			Applications  []gitlabConnectApplication `json:"gitlab_applications"`
+			GitLabManaged bool                       `json:"gitlab_managed"`
+			GitLabEnabled bool                       `json:"gitlab_enabled"`
+		}{list, m.gitlabConnectApplicationsLocked(file), m.gitlabApplications().Managed(), m.gitlabEnabled()})
 		return
 	}
 	if (req.Intent != "" || req.PlatformID != "") && (action != "status" || req.SourceSeq == 0 || req.OperationID != "" || req.Intent != "authorize" || !tool.OpaqueID(req.PlatformID)) {

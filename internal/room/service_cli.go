@@ -538,6 +538,13 @@ func runServiceWithManager(args []string, stdout, stderr io.Writer, runner servi
 				return err
 			}
 		}
+		var checkGitLabApplications func() error
+		if action == "upgrade" {
+			checkGitLabApplications, err = preserveServiceGitLabApplications(r)
+			if err != nil {
+				return err
+			}
+		}
 		if err := createServiceArchiveBackup(ctx, r, *backup, stderr); err != nil {
 			return fmt.Errorf("service remains stopped; backup: %w", err)
 		}
@@ -582,6 +589,11 @@ func runServiceWithManager(args []string, stdout, stderr io.Writer, runner servi
 		if err != nil {
 			_ = manager("stop")
 			return fmt.Errorf("新版已选用，服务启动失败并已停止；备份保留在 %s: %w", *backup, err)
+		}
+		if checkGitLabApplications != nil {
+			if err := serviceOperationStep(stderr, "核对 GitLab 服务应用保留", checkGitLabApplications); err != nil {
+				return fmt.Errorf("升级配置核对失败；备份保留在 %s: %w", *backup, err)
+			}
 		}
 		status["backup"] = *backup
 		status["recovery_review"] = "Re-login and inspect model operations and member sessions; retry interrupted targets explicitly. No validation or platform action was replayed by the deployment command."

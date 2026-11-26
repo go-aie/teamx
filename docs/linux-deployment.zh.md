@@ -106,13 +106,17 @@ trusted_proxies = ["127.0.0.1"]
 mode = "multi-user"
 
 [deployment.authentication]
-provider = "opencsg"
+provider = "casdoor"
+issuer = "https://iam.opencsg.com"
+client_id = "REPLACE_WITH_TEAMX_CLIENT_ID"
+client_secret_file = "/srv/teamx-casdoor/client-secret"
+hub_origin = "https://hub.opencsg.com"
 allowed_subjects = ["REPLACE_WITH_VERIFIED_SUBJECT_UUID"]
 # 明确向所有通过所选认证源验证的账号开放时启用：
 # allow_all_authenticated = true
 ```
 
-域名、端口和稳定 subject 必须换成实际值。subject 来自受保护身份验证，不是昵称。默认仅名单准入；显式开启 `allow_all_authenticated` 后，其他已认证账号也可注册，每人获得独立默认空间。alpha 当前包保留名单作为启动兼容项；只设开放开关的源码修正尚未重打包，不能把空名单配置用于该旧包。
+域名、端口、Casdoor 应用和稳定 subject 必须换成实际值，具体要求见 [Casdoor 独立应用登录](casdoor-login.zh.md)。安装前准备服务账号可读的私有 Secret 文件及目录，文件权限为 `0600`；示例放在新 Home 之外以便首次安装读取，此外部凭据需单独备份。subject 来自受保护身份验证，不是昵称。默认仅名单准入；显式开启 `allow_all_authenticated` 后，其他已认证账号也可注册，每人获得独立默认空间。
 
 当前源码的 OpenCSG 多用户部署在登录时取得**该用户本人的默认 AI Gateway API Key**，为空模型目录自动配置 `https://ai.space.opencsg.com/v1`、`deepseek-v4.1-flash-1017`，完成文本与工具调用验证后初始化助理。验证和聊天均使用本人的 Key、消耗本人的额度，不使用部署账号或其他用户的 Key。已有但尚未配置模型的空间也会在下次登录后自动初始化；验证失败可在原模型配置页面重试。用户随后通过原有模型设置自行修改，其他用户的配置不受影响；后续登录不会覆盖已有模型。个人版仍由用户配置第一个模型。此能力需重新构建部署，旧 alpha 包不包含此改动。
 
@@ -157,7 +161,7 @@ sudo systemctl reload caddy
 
 保留公开 Host，代理传递 HTTPS 信息；TeamX 仅信任配置中的代理来源。若 Caddy 在容器里，`127.0.0.1` 指向容器自身，须另外设计容器到宿主 loopback 的受控上游。当前 alpha 的 bridge／socket 转发是该主机专用配置，不应照搬到另一台机器。
 
-OpenCSG 必须允许最终回调 `https://assistant.example.com/v1/access/sso/callback`，保留动态 `state` 参数。当前协议使用 OpenCSG broker：TeamX → OpenCSG → IAM → OpenCSG → TeamX；IAM 的 `redirect_uri` 指向 OpenCSG 自己的回调是正常行为，不需要因此为 TeamX 新建 Casdoor client。不要把聊天中的旧授权链接或回调 token 当作可复用登录入口。
+OpenCSG 多用户部署统一使用 Casdoor 独立应用，登记准确回调 `https://assistant.example.com/v1/access/sso/callback`，保留动态 `state` 参数。登录路径为 TeamX → Casdoor → TeamX；配置 `hub_origin` 后取得本人模型 Key。个人版登录不受此项影响，其他用户管理方式继续通过认证 Provider 扩展。旧 OpenCSG broker 部署转换认证源属于一次性切换，需明确保留服务级配置和处理旧身份；完成后固定使用同一 Home，日常升级不重建目录。不要把聊天中的旧授权链接或回调 token 当作可复用登录入口。
 
 安装后检查：
 

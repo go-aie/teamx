@@ -212,9 +212,14 @@ func TestServiceUpgradeStopsBacksUpAndStartsSameInstallation(t *testing.T) {
 	if runtime.GOOS != "darwin" {
 		t.Skip("CLI registration requires a native account and service-unit path; portable endpoint checks run separately")
 	}
-	for _, lateConflict := range []bool{false, true} {
-		t.Run(fmt.Sprintf("late_conflict=%v", lateConflict), func(t *testing.T) {
+	for _, scenario := range []string{"preserved", "unconfigured", "removed", "changed", "late_conflict"} {
+		t.Run(scenario, func(t *testing.T) {
+			lateConflict := scenario == "late_conflict"
 			r, server := serviceStartupFixture(t, nil)
+			catalogPath := filepath.Join(r.Home, "gitlab-applications.json")
+			if scenario != "unconfigured" {
+				serviceTestFile(t, catalogPath, `{"version":1,"applications":[{"id":"app","origin":"https://gitlab.example","secret":"private-app-secret"}]}`, 0600)
+			}
 			address := server.Listener.Addr().String()
 			handler := server.Config.Handler
 			archive, digest := serviceTestArchive(t, serviceTestRelease(t, "dev-new"))
@@ -234,6 +239,13 @@ func TestServiceUpgradeStopsBacksUpAndStartsSameInstallation(t *testing.T) {
 					running = false
 				case "bootstrap":
 					phases = append(phases, "start")
+					if scenario == "removed" {
+						if err := os.Remove(catalogPath); err != nil {
+							return nil, err
+						}
+					} else if scenario == "changed" {
+						serviceTestFile(t, catalogPath, `{"version":1,"applications":[]}`, 0600)
+					}
 					selected, err := filepath.EvalSymlinks(filepath.Join(r.Root, "current"))
 					if err != nil || !strings.Contains(selected, "dev-new") {
 						return nil, fmt.Errorf("start before selecting new release: %s: %v", selected, err)
@@ -256,7 +268,14 @@ func TestServiceUpgradeStopsBacksUpAndStartsSameInstallation(t *testing.T) {
 			}
 			var stdout, stderr bytes.Buffer
 			err := runServiceWithManager([]string{"upgrade", "--server-root", r.Root, "--archive", archive, "--sha256", digest}, &stdout, &stderr, runner)
-			if lateConflict {
+			if scenario == "removed" || scenario == "changed" {
+				if err == nil || !strings.Contains(err.Error(), "GitLab") || stdout.Len() != 0 || strings.Join(phases, ",") != "stop,start" {
+					t.Fatalf("configuration loss reported as successful upgrade: phases=%v err=%v", phases, err)
+				}
+				if strings.Contains(stderr.String(), "private-app-secret") || strings.Contains(err.Error(), "private-app-secret") {
+					t.Fatal("upgrade diagnostic leaked the catalog")
+				}
+			} else if lateConflict {
 				var permanent *serviceStartupError
 				if !errors.As(err, &permanent) || !strings.Contains(err.Error(), "HTTP 401") || errors.Is(err, context.DeadlineExceeded) {
 					t.Fatalf("late conflict was not reported immediately: %v", err)

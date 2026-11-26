@@ -1,6 +1,6 @@
 # Casdoor 独立应用登录
 
-TeamX 可直接作为 Casdoor OIDC 客户端，使用独立 Application 的授权码登录，不经过 OpenCSG broker。原有 `provider = "opencsg"` 入口保留。
+多用户版接入 OpenCSG 用户时，统一使用独立 Casdoor Application 的 OAuth／OIDC 授权码登录。TeamX 直接作为客户端，不经过 OpenCSG broker。个人版继续使用原登录方式；多用户认证保留 Provider 扩展点，其他用户管理方式可独立接入。原有 `provider = "opencsg"` 保留为旧部署兼容入口，不作为新的 OpenCSG 多用户部署路线。
 
 ## 应用与部署配置
 
@@ -42,6 +42,8 @@ https://alpha.teamx.opencsg.com/v1/access/sso/callback
 ## 现有身份和模型
 
 OpenCSG broker 与 Casdoor 直连是不同认证源。现有数据目录固定原来的 provider／authority，不能通过改配置自动接管或合并旧用户。首次验证应使用全新的独立 Home；原 Home 和配置保留，切回 OpenCSG 时仍使用原目录。正式沿用旧数据需要另行设计明确的身份迁移。
+
+完成一次性切换后固定使用 Casdoor 部署的 Home，日常发布沿用 `service upgrade`，保留配置、服务级应用、用户及空间。更新程序、模型配置或轮换 Secret 不需要重新创建 Home。切换认证源时，用户／空间及个人授权按身份边界处理；`gitlab-applications.json` 是部署级配置，应单独保留并核对应用身份、实例和回调，不能随新用户目录初始化而遗漏。共享应用不替新身份自动恢复个人 GitLab 授权。
 
 配置 `hub_origin` 后，TeamX 在本次登录中核对 IAM access token 的 userinfo 与已验证 ID token 的 `sub` 一致，再通过 Hub 的 OAuth 认证读取该用户个人 namespace 的内置 AI Gateway Key。请求不接受回调中的 namespace 或用户名提示，不使用部署账号的 Key；返回值须属于该用户个人 namespace、应用为 `aigateway` 且处于启用状态。IAM token 随登录请求结束即丢弃，只有本人 Gateway Key 保存至私有用户凭据目录。
 

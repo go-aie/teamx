@@ -16,8 +16,50 @@ import (
 
 	"github.com/go-aie/teamx/internal/platform"
 	"github.com/go-aie/teamx/internal/platform/gitlab"
+	"github.com/go-aie/teamx/internal/platform/gitlaboauth"
 	"github.com/go-aie/teamx/internal/platform/registry"
 )
+
+func TestGitLabConnectDiscoveryManagedAvailability(t *testing.T) {
+	m, _, _, req := connectFixture(t)
+	f := managedGitLabFixture(t)
+	m.config.endpoint = f.users[0].h.m.config.endpoint
+	empty, err := gitlaboauth.Open(gitlaboauth.Store{Load: func() (gitlaboauth.Snapshot, error) {
+		return gitlaboauth.Snapshot{Version: 1, Applications: []gitlaboauth.Application{}}, nil
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct {
+		name         string
+		source       gitlaboauth.Source
+		enabled      bool
+		applications int
+	}{
+		{"available", f.catalog.ForSpace("user", strings.Repeat("a", 32)), true, 1},
+		{"unconfigured", empty.ForSpace("user", strings.Repeat("a", 32)), true, 0},
+		{"disabled", gitlaboauth.Disabled{}, false, 0},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			m.config.gitlabApplications = tc.source
+			w := managerHTTP(m, "/v1/platforms/list", platformConnectRequest{ServiceInfo: req.ServiceInfo, Caller: req.Caller})
+			var got struct {
+				Managed      bool                       `json:"gitlab_managed"`
+				Enabled      bool                       `json:"gitlab_enabled"`
+				Applications []gitlabConnectApplication `json:"gitlab_applications"`
+			}
+			if w.Code != 200 || json.Unmarshal(w.Body.Bytes(), &got) != nil || !got.Managed || got.Enabled != tc.enabled || len(got.Applications) != tc.applications {
+				t.Fatal(w.Code, w.Body.String())
+			}
+			if tc.applications == 1 && (!got.Applications[0].Compatible || got.Applications[0].Origin != f.app.Origin) {
+				t.Fatal("configured origin unavailable for direct onboarding")
+			}
+			if strings.Contains(w.Body.String(), "private-client") {
+				t.Fatal("discovery leaked credentials")
+			}
+		})
+	}
+}
 
 func gitlabConnectFixture(t *testing.T) (*gitlabLoginHarness, *service, MemberState, platformConnectRequest) {
 	return gitlabConnectFixtureFor(t, connectFixture)
@@ -310,7 +352,7 @@ func TestGitLabConnectMissingApplicationAndFixedInputs(t *testing.T) {
 	// Discovery exposes references and compatibility, never credentials.
 	read := platformConnectRequest{ServiceInfo: req.ServiceInfo, Caller: req.Caller}
 	w := managerHTTP(m, "/v1/platforms/list", read)
-	if w.Code != 200 || !strings.Contains(w.Body.String(), req.Input.ApplicationID) || !strings.Contains(w.Body.String(), `"compatible":true`) || strings.Contains(w.Body.String(), "private-client-secret") {
+	if w.Code != 200 || !strings.Contains(w.Body.String(), req.Input.ApplicationID) || !strings.Contains(w.Body.String(), `"compatible":true`) || !strings.Contains(w.Body.String(), `"gitlab_managed":false`) || !strings.Contains(w.Body.String(), `"gitlab_enabled":true`) || strings.Contains(w.Body.String(), "private-client-secret") {
 		t.Fatal(w.Code, w.Body.String())
 	}
 	m.mu.Lock()

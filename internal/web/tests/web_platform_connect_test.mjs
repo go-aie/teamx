@@ -1,6 +1,6 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {launch,settle} from './web_app_harness.mjs';
+import {launch,settle,openMemberInbox} from './web_app_harness.mjs';
 import {fixture as baseFixture} from './web_member_platform_fixture.mjs';
 function fixture(){
  const api=baseFixture(),original=api.request.bind(api);
@@ -23,6 +23,43 @@ const card=ui=>ui.document.getElementById('message-1').querySelector('.message-i
 const link=card=>card.children[5].children[0];
 const cancel=card=>card.children[5].children[1];
 const writes=api=>api.calls.filter(c=>c.path==='/v1/platforms/interactions/cancel');
+
+for(const kind of ['lark_authorization','gitlab_authorization']) {
+ test(`${kind} cards update without refresh or selecting their member`,async t=>{
+  for(const view of ['mobile conversation','other member selected']) {
+   await t.test(view,async()=>{
+    const api=fixture();api.op.interaction.kind=kind;
+    if(kind==='gitlab_authorization') {api.op.origin='https://gitlab.example';api.op.stage='authorization';api.op.application.status='reused';}
+    const mobile=view==='mobile conversation';
+    if(mobile) {
+     api.members.splice(1);
+     const original=api.request.bind(api);
+     api.request=async(...args)=>{const data=await original(...args);if(args[0]==='/v1/rooms'){data.rooms[0].is_direct=true;data.default_assistant={room_id:'R',room_instance:'instance-R'};}return data;};
+    }
+    api.interactionHook=path=>path.endsWith('/list') ? {interactions:[]} : undefined;
+    const ui=await launch(api,new Map(),{beforeStart:({window})=>{window.innerWidth=mobile ? 390 : 1440;}});
+    if(mobile)assert.equal(ui.selectedAgent(),undefined);
+    else {await openMemberInbox(ui,'member-b');assert.equal(ui.selectedAgent().agent_id,'b');}
+    assert.equal(card(ui),undefined);
+    const reads=()=>api.calls.filter(c=>c.path==='/v1/platforms/interactions/list').length;
+    const before=reads();api.interactionHook=null;
+    const event={topic:'interactions',room_id:'R',room_instance:'instance-R',room_service_epoch:'runtime',agent_id:'a',membership_id:'member-a'};
+    ui.sources.at(-1).emit('invalidate',{...event,room_id:'other-room'});
+    ui.sources.at(-1).emit('invalidate',{...event,room_service_epoch:'old-runtime'});
+    await ui.clock.advance(1000);assert.equal(reads(),before);
+    ui.sources.at(-1).emit('invalidate',event);
+    await ui.clock.advance(1000);
+    assert.equal(reads(),before+1);assert.equal(card(ui).dataset.interactionId,api.op.operation_id);
+    const first=card(ui);
+    api.op.status='completed';api.op.connection.status='connected';api.op.authorization.status='applied';api.op.result_version=1;api.op.version++;
+    ui.sources.at(-1).emit('invalidate',event);
+    await ui.clock.advance(1000);
+    assert.equal(card(ui),first);assert.equal(first.dataset.status,'completed');assert.equal(link(first).hidden,true);
+    assert.equal(writes(api).length,0);assert.equal(ui.sources.length,1);
+   });
+  }
+ });
+}
 
 test('a page-only connection result does not promise automatic continuation',async()=>{
  const api=fixture();api.op.status='cancelled';api.op.result_version=1;api.op.continuation={mode:'inbox',state:'page_only'};
