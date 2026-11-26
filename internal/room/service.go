@@ -795,8 +795,12 @@ func (s *service) control(ctx context.Context, req apiRequest, action string) (M
 				}
 				req.automaticInputs = &inputs
 			}
+			stopName := ""
+			if action == "cancel" && !list.IsDirect {
+				stopName = s.agentName(id.AgentID, id.MembershipID)
+			}
 			result, err := s.target(member.MembershipID).Call[MemberStatus](callCtx, ControlMember{MemberIdentity: id, Action: action,
-				ExecutionID: req.ExecutionID, environmentID: req.environmentID, environmentOwner: req.environmentOwner,
+				ExecutionID: req.ExecutionID, stopActor: req.Caller.Author, stopName: stopName, environmentID: req.environmentID, environmentOwner: req.environmentOwner,
 				automatic: req.automatic, recovering: req.recovering, automaticInbox: req.automaticInbox, automaticInputs: req.automaticInputs, Retry: req.Retry, Cancel: req.Cancel, Resume: req.Resume, State: state, OperationID: req.OperationID, FromGeneration: req.FromGeneration, Reason: req.RotationReason, ContinueRotation: req.ContinueRotation, Replenish: rotationReplenish, lease: lease, internalPause: req.internalPause, expectedPause: req.expectedPause})
 			if err != nil {
 				lease.close()

@@ -219,6 +219,8 @@ type turnExecution struct {
 }
 
 type ControlMember struct {
+	stopActor        Author // Authenticated operator, supplied only by the service.
+	stopName         string // Frozen display name for a shared Room's stop event.
 	environmentID    string
 	environmentOwner string
 	// Internal lifecycle controls; never decoded from Agent requests.

@@ -19,6 +19,7 @@ type memberScheduling struct {
 	Enabled            bool             `json:"enabled"`
 	RecoveryAttempted  bool             `json:"recovery_attempted,omitempty"`
 	SessionRecovery    *sessionRecovery `json:"session_recovery,omitempty"`
+	UserStop           *userStop        `json:"user_stop,omitempty"`
 	Used               uint64           `json:"used"`
 	SessionGeneration  string           `json:"session_generation"`
 	SessionStartUsed   uint64           `json:"session_start_used"`
@@ -41,6 +42,9 @@ func (s *Store) loadScheduling(id MemberIdentity) (memberScheduling, error) {
 	}
 	if (state.Version != formatVersion && state.Version != schedulingVersion) || state.MemberIdentity != id {
 		return state, ErrIdentity
+	}
+	if r := state.UserStop; r != nil && (r.ExecutionID == 0 || r.ExecutionID > state.Used || r.Turn == 0 || r.Turn > state.Used || r.CreatedAt.IsZero() || r.Actor.Kind != "human" || !validText(r.Actor.ID) || r.Generation != "" && !validSessionGeneration(r.Generation) || r.Name != "" && !validText(r.Name)) {
+		return state, fmt.Errorf("%w: user stop", ErrInvalid)
 	}
 	if r := state.InboxRecovery; r != nil && (r.SnapshotSeq <= r.Start || r.SnapshotSeq-r.Start > inboxBatchSize || r.Attempts < 0 || r.Attempts > 3 || r.Since.IsZero() || r.ConsumedThrough > r.Start) {
 		return state, fmt.Errorf("%w: Inbox recovery", ErrInvalid)
@@ -92,7 +96,7 @@ func (m *MemberAgent) persistSchedulingLimit(enabled bool, used, limit uint64) e
 	if m.automaticRotation() {
 		limit = 0
 	}
-	err := m.Store.saveScheduling(memberScheduling{Version: version, MemberIdentity: m.Options.MemberIdentity, Enabled: enabled, RecoveryAttempted: m.recoveryAttempted, SessionRecovery: m.sessionRecovery, Used: used, Limit: limit, SessionGeneration: m.sessionGeneration, SessionStartUsed: m.sessionStartUsed, InboxRecovery: m.inboxRecovery, InboxContinuedAt: m.inboxContinuedAt, InboxContinueCount: m.inboxContinueCount})
+	err := m.Store.saveScheduling(memberScheduling{Version: version, MemberIdentity: m.Options.MemberIdentity, Enabled: enabled, RecoveryAttempted: m.recoveryAttempted, SessionRecovery: m.sessionRecovery, UserStop: m.userStop, Used: used, Limit: limit, SessionGeneration: m.sessionGeneration, SessionStartUsed: m.sessionStartUsed, InboxRecovery: m.inboxRecovery, InboxContinuedAt: m.inboxContinuedAt, InboxContinueCount: m.inboxContinueCount})
 	if err != nil {
 		m.fault, m.paused = true, true
 		m.lastError = "collaboration checkpoint failed: " + err.Error()
@@ -238,6 +242,7 @@ func (m *MemberAgent) initializeScheduling() error {
 	m.inboxRecovery, m.inboxContinuedAt, m.inboxContinueCount = state.InboxRecovery, state.InboxContinuedAt, state.InboxContinueCount
 	m.turnsUsed, m.turnLimit = state.Used, max(m.turnLimit, state.Limit)
 	m.sessionRecovery = state.SessionRecovery
+	m.userStop = state.UserStop
 	if m.sessionRecovery == nil && state.RecoveryAttempted {
 		// Old one-shot recovery becomes a cooled-down retry, preserving the
 		// spent attempt instead of renewing it on every service restart.

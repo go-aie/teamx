@@ -46,6 +46,7 @@ type MemberAgent struct {
 	recoveryArmed        bool
 	recoveryAttempted    bool
 	sessionRecovery      *sessionRecovery
+	userStop             *userStop
 	enabled              bool                // Durable user intent, independent of fault pause.
 	environmentControl   *environmentHandoff // Actor-owned; a lost viewer leaves durable scheduling paused.
 	rotationRequest      bool
@@ -345,8 +346,14 @@ func (m *MemberAgent) Control(ctx actorx.Context, msg ControlMember) (MemberStat
 			return m.status(), ErrConflict
 		}
 		if m.active && m.work != nil && m.cancel != nil {
+			if err := m.recordUserStop(msg.stopActor, msg.stopName); err != nil {
+				return m.status(), err
+			}
 			m.work.stopRequested = true
 			m.cancel()
+		}
+		if err := m.publishUserStop(ctx); err != nil {
+			return m.status(), err
 		}
 
 	case "pause":
@@ -465,7 +472,8 @@ func waitMemberMaintenance(ctx context.Context) error {
 }
 
 type memberTurn struct {
-	stopRequested bool // Actor-owned; inspected only after the worker has settled.
+	stopRequested bool        // Actor-owned; inspected only after the worker has settled.
+	userStopped   atomic.Bool // Worker reads only when writing the terminal checkpoint.
 	session       *ownedSession
 	state         AgentSnapshot
 	started       bool
@@ -610,6 +618,18 @@ func (m *MemberAgent) withdrawTurn() {
 
 func (m *MemberAgent) schedule() {
 	defer m.observeStatus()
+	if m.userStop != nil && !m.userStop.Published {
+		ctx, cancel := context.WithTimeout(m.owner, time.Second)
+		err := m.publishUserStop(ctx)
+		cancel()
+		if err != nil {
+			m.lastError = "stop event publication pending: " + err.Error()
+			return
+		}
+		if strings.HasPrefix(m.lastError, "stop event publication pending: ") {
+			m.lastError = ""
+		}
+	}
 	if !m.flushRelease() {
 		return
 	}
@@ -829,7 +849,7 @@ func (m *MemberAgent) startTurn(input UnreadChanged, snapshotSeq, readThrough ui
 	cancel, err := actorx.StartTask(m.owner, func(ctx context.Context) (_ struct{}, runErr error) {
 		work.state.TurnNumber++
 		work.state.LastOfferedUnreadSeq = input.NewestUnreadSeq
-		work.state.Turn = &TurnRecord{Number: work.state.TurnNumber, Status: "running", StartReadThrough: readThrough,
+		work.state.Turn = &TurnRecord{StopIntent: stopIntentNone, Number: work.state.TurnNumber, Status: "running", StartReadThrough: readThrough,
 			SnapshotSeq: snapshotSeq, OfferedUnreadSeq: input.NewestUnreadSeq}
 		if input.Inbox != nil {
 			work.state.LastOfferedInboxSeq, work.state.LastOfferedInboxThrough = input.Inbox.SnapshotSeq, input.Inbox.Through
@@ -878,6 +898,9 @@ func (m *MemberAgent) startTurn(input UnreadChanged, snapshotSeq, readThrough ui
 				work.state.Turn.Error = ctx.Err().Error()
 				runErr = errors.Join(runErr, ctx.Err())
 			}
+			if work.userStopped.Load() {
+				work.state.Turn.StopIntent = stopIntentUser
+			}
 			err := store.SaveAgent(work.state)
 			work.ended = err == nil
 			runErr = errors.Join(runErr, err)
@@ -912,6 +935,12 @@ func (m *MemberAgent) startTurn(input UnreadChanged, snapshotSeq, readThrough ui
 		m.work = nil
 		m.session = work.session
 		m.state = work.state
+		if work.userStopped.Load() && m.state.Turn != nil && m.state.Turn.StopIntent != stopIntentUser {
+			m.state.Turn.StopIntent = stopIntentUser
+			checkpointErr := m.Store.SaveAgent(m.state)
+			work.ended = work.ended && checkpointErr == nil
+			err = errors.Join(err, checkpointErr)
+		}
 		m.fault = !work.started || !work.ended || errors.Is(err, ErrCommitUnknown)
 		m.lastError = ""
 		if err != nil && !(work.stopRequested && backendTurnCancellation(backend, err)) {
@@ -922,7 +951,7 @@ func (m *MemberAgent) startTurn(input UnreadChanged, snapshotSeq, readThrough ui
 			if errors.Is(err, errBackendDisabled) {
 				m.BackendBlocked = m.lastError
 			}
-			if m.automaticRotation() && errors.Is(err, errBackendPaused) && (work.session != nil || work.openSettled) && recoverableBackendFailure(backend, err) {
+			if !work.stopRequested && m.automaticRotation() && errors.Is(err, errBackendPaused) && (work.session != nil || work.openSettled) && recoverableBackendFailure(backend, err) {
 				m.RecoveryPending, m.recoveryArmed = true, true
 				if m.sessionRecovery == nil {
 					m.sessionRecovery = &sessionRecovery{Stage: "backend"}

@@ -40,6 +40,15 @@ func (s *service) loadMembers(state RoomSnapshot) error {
 		} else if err != nil {
 			return fmt.Errorf("restore %s agent: %w", member.AgentID, err)
 		}
+		// The operator's intent is committed independently of the worker. A
+		// crash before the terminal checkpoint must still preserve a Stop.
+		if scheduling, err := s.store.loadScheduling(id); err == nil {
+			if stop := scheduling.UserStop; stop != nil && agent.Turn != nil && stop.Turn == agent.Turn.Number {
+				agent.Turn.StopIntent = stopIntentUser
+			}
+		} else if !errors.Is(err, os.ErrNotExist) {
+			return fmt.Errorf("restore %s scheduling: %w", member.AgentID, err)
+		}
 		rotation, rotationErr := s.recoverMemberRotation(id, agent)
 		if rotationErr != nil {
 			recovered.blocked = "rotation recovery blocked: " + rotationErr.Error()

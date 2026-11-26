@@ -245,7 +245,14 @@ func validMessageWorkspaceRoot(root string, author Author, membership string) bo
 	return true
 }
 
+const (
+	stopIntentNone = "none"
+	stopIntentUser = "user"
+)
+
 type TurnRecord struct {
+	// Empty identifies older checkpoints; new turns record whether the user stopped them.
+	StopIntent       string `json:"stop_intent,omitempty"`
 	InboxStart       uint64 `json:"inbox_start,omitempty"`
 	InboxSnapshotSeq uint64 `json:"inbox_snapshot_seq,omitempty"`
 	Number           uint64 `json:"number"`
@@ -278,6 +285,9 @@ func (s AgentSnapshot) validate() error {
 		return nil
 	}
 	t := s.Turn
+	if t.StopIntent != "" && t.StopIntent != stopIntentNone && t.StopIntent != stopIntentUser {
+		return ErrInvalid
+	}
 
 	if s.InputStateRef != "" {
 		if s.InputStateRef != "input-state.json" || t.Number == 0 || t.Number != s.TurnNumber || t.StartReadThrough > t.SnapshotSeq || t.OfferedUnreadSeq > t.SnapshotSeq || t.OfferedUnreadSeq != s.LastOfferedUnreadSeq || t.InboxStart != 0 || t.InboxSnapshotSeq != 0 || s.LastOfferedInboxSeq != 0 || s.LastOfferedInboxThrough != 0 {

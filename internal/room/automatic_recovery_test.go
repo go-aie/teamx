@@ -205,7 +205,7 @@ func TestAutomaticRecoveryRejectsUnsettledOwnedSession(t *testing.T) {
 }
 
 func TestAutomaticRecoveryRestoresOnlyEnabledSettledSessions(t *testing.T) {
-	for _, mode := range []string{"enabled", "paused", "unsettled", "already-attempted", "authentication", "incompatible", "corrupt-backend", "corrupt-unsettled"} {
+	for _, mode := range []string{"enabled", "paused", "unsettled", "already-attempted", "authentication", "incompatible", "corrupt-backend", "corrupt-unsettled", "internal-cancel", "user-stop", "legacy-cancel"} {
 		t.Run(mode, func(t *testing.T) {
 			synctest.Test(t, func(t *testing.T) {
 				h := newRoomHarness(t, historyRoom(1, "pending"), nil)
@@ -242,6 +242,14 @@ func TestAutomaticRecoveryRestoresOnlyEnabledSettledSessions(t *testing.T) {
 					failure += "\n" + dsh.ErrAuthentication.Error()
 				}
 				agent := AgentSnapshot{Version: formatVersion, MemberIdentity: id, TurnNumber: 1, LastOfferedUnreadSeq: 1, Turn: &TurnRecord{Number: 1, Status: "failed", SnapshotSeq: 1, OfferedUnreadSeq: 1, Error: failure}}
+				if mode == "internal-cancel" || mode == "user-stop" || mode == "legacy-cancel" {
+					agent.Turn.Error = "DSH member paused; inspect backend failure before continuing\ncontext canceled\nDSH turn cancelled"
+					if mode == "internal-cancel" {
+						agent.Turn.StopIntent = stopIntentNone
+					} else if mode == "user-stop" {
+						agent.Turn.StopIntent = stopIntentUser
+					}
+				}
 				if err := h.store.SaveAgent(agent); err != nil {
 					t.Fatal(err)
 				}
@@ -279,7 +287,7 @@ func TestAutomaticRecoveryRestoresOnlyEnabledSettledSessions(t *testing.T) {
 					if err != nil || s.Status != "recovering" || saved.SessionRecovery == nil || saved.SessionRecovery.Attempts != 1 || !saved.SessionRecovery.NextAt.After(time.Now()) || opens.Load() != 0 {
 						t.Fatal("legacy recovery was not cooled down durably", s, saved, err)
 					}
-				} else if mode == "enabled" || mode == "incompatible" || mode == "corrupt-backend" {
+				} else if mode == "enabled" || mode == "incompatible" || mode == "corrupt-backend" || mode == "internal-cancel" {
 					s := waitMember(t, h.ctx, addr, id, func(s MemberStatus) bool {
 						return !s.Active && s.Agent.TurnNumber == 2
 					})

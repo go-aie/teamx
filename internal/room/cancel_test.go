@@ -174,7 +174,14 @@ func TestCancelCurrentTurnWaitsForSettlementBeforeCorrectedInput(t *testing.T) {
 
 func TestCancelEndpointBindsOperatorMemberAndExecution(t *testing.T) {
 	b := newControlledBackend()
-	h, target, id := memberHarness(t, b, nil)
+	state := historyRoom(1, "body")
+	state.InputLog = &roomLogRoot{Version: 1}
+	h := newRoomHarness(t, state, nil)
+	id := h.memberID("A", "generation-A")
+	target, err := h.spawn(&MemberAgent{Options: SessionOptions{MemberIdentity: id}, Backend: b, Store: h.store, Room: h.addr})
+	if err != nil {
+		t.Fatal(err)
+	}
 	input := UnreadChanged{MemberIdentity: id, Revision: 1, LatestSeq: 1, NewestUnreadSeq: 1, UnreadCount: 1}
 	controlMember(t, h, target, id, "run", input, false, false)
 	awaitTurn(t, h, b)
@@ -207,4 +214,8 @@ func TestCancelEndpointBindsOperatorMemberAndExecution(t *testing.T) {
 		})
 	}
 	waitMember(t, h.ctx, target, id, func(s MemberStatus) bool { return !s.Active })
+	room, err := h.store.LoadRoom()
+	if err != nil || len(room.Messages) != 2 || room.Messages[1].Text != "用户要求停止「A」当前执行。" || room.Messages[1].Event.Actor != humanCaller.Author {
+		t.Fatal("shared Room stop event lost the member or operator", room, err)
+	}
 }

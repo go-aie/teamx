@@ -137,7 +137,7 @@ func (b dshBackend) latestModelSelection(opts SessionOptions) (dshBackend, error
 }
 
 func (b dshBackend) recoverableFailure(err error) bool {
-	if errors.Is(err, context.Canceled) || errors.Is(err, ErrInvalid) || errors.Is(err, ErrIdentity) || errors.Is(err, ErrVersion) || errors.Is(err, ErrRequest) || errors.Is(err, ErrCommitUnknown) || errors.Is(err, dsh.ErrCleanupPending) || errors.Is(err, dsh.ErrLocked) || errors.Is(err, dsh.ErrAuthentication) || errors.Is(err, dsh.ErrModelNotFound) || errors.Is(err, dsh.ErrQuotaExceeded) {
+	if errors.Is(err, ErrInvalid) || errors.Is(err, ErrIdentity) || errors.Is(err, ErrVersion) || errors.Is(err, ErrRequest) || errors.Is(err, ErrCommitUnknown) || errors.Is(err, dsh.ErrCleanupPending) || errors.Is(err, dsh.ErrLocked) || errors.Is(err, dsh.ErrAuthentication) || errors.Is(err, dsh.ErrModelNotFound) || errors.Is(err, dsh.ErrQuotaExceeded) {
 		return false
 	}
 	var status *dsh.HTTPStatusError
@@ -147,13 +147,16 @@ func (b dshBackend) recoverableFailure(err error) bool {
 	// Incompatibility authorizes a recovery candidate, never replacement by
 	// itself. The adapter reference, settlement and business receipts must all
 	// pass the existing rotation gates, including after a failed lazy resume.
-	return errors.Is(err, dsh.ErrRecoveryUnsupported) || errors.Is(err, dsh.ErrUnavailable) || errors.Is(err, dsh.ErrUncertain) || errors.Is(err, dsh.ErrModelUnavailable) ||
+	return errors.Is(err, context.Canceled) || errors.Is(err, dsh.ErrCancelled) || errors.Is(err, dsh.ErrRecoveryUnsupported) || errors.Is(err, dsh.ErrUnavailable) || errors.Is(err, dsh.ErrUncertain) || errors.Is(err, dsh.ErrModelUnavailable) ||
 		errors.Is(err, dsh.ErrRateLimited) || errors.Is(err, dsh.ErrDNS) || errors.Is(err, dsh.ErrConnection) || errors.Is(err, dsh.ErrUpstreamTimeout) || errors.Is(err, context.DeadlineExceeded)
 }
 
 // Legacy snapshots retain only safe diagnostics, so recognize only known
 // backend failures. An arbitrary saved error never authorizes replacement.
 func recoverableDSHHistory(agent AgentSnapshot) bool {
+	if agent.Turn != nil && agent.Turn.StopIntent == stopIntentUser {
+		return false
+	}
 	if agent.Turn == nil || agent.Turn.Status == "completed" || agent.Turn.Status == "interrupted" {
 		return true
 	}
@@ -166,7 +169,8 @@ func recoverableDSHHistory(agent AgentSnapshot) bool {
 			return false
 		}
 	}
-	return strings.Contains(err, "cannot inspect owned DSH processes") || strings.Contains(err, dsh.ErrUnavailable.Error()) ||
+	return agent.Turn.StopIntent == stopIntentNone && (strings.Contains(err, context.Canceled.Error()) || strings.Contains(err, dsh.ErrCancelled.Error())) ||
+		strings.Contains(err, "cannot inspect owned DSH processes") || strings.Contains(err, dsh.ErrUnavailable.Error()) ||
 		strings.Contains(err, dsh.ErrModelUnavailable.Error()) || strings.Contains(err, dsh.ErrRecoveryUnsupported.Error()) ||
 		strings.Contains(err, dsh.ErrRateLimited.Error()) || strings.Contains(err, dsh.ErrDNS.Error()) || strings.Contains(err, dsh.ErrConnection.Error()) ||
 		strings.Contains(err, dsh.ErrUpstreamTimeout.Error()) || strings.Contains(err, context.DeadlineExceeded.Error()) || strings.Contains(err, "HTTP 5") || strings.Contains(err, "HTTP 429") || strings.Contains(err, "HTTP 408")
