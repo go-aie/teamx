@@ -189,10 +189,6 @@ func runServerOnce(ctx context.Context, args []string, stdout, stderr io.Writer,
 			return err
 		}
 	}
-	startup, err = migrateOpenCSGConfig(startup)
-	if err != nil {
-		return err
-	}
 	if layout.Home != "" {
 		selectedSource := startup.source
 		selectedMode := startup.Deployment.Mode

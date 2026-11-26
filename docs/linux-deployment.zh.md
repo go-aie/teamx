@@ -161,7 +161,7 @@ sudo systemctl reload caddy
 
 保留公开 Host，代理传递 HTTPS 信息；TeamX 仅信任配置中的代理来源。若 Caddy 在容器里，`127.0.0.1` 指向容器自身，须另外设计容器到宿主 loopback 的受控上游。当前 alpha 的 bridge／socket 转发是该主机专用配置，不应照搬到另一台机器。
 
-OpenCSG 多用户部署统一使用 OpenCSG IAM 独立应用，登记准确回调 `https://assistant.example.com/v1/access/sso/callback`，保留动态 `state` 参数。登录路径为 TeamX → OpenCSG IAM → TeamX；配置 `hub_origin` 后取得本人模型 Key。个人版登录不受此项影响，其他用户管理方式继续通过认证 Provider 扩展。已有直连 IAM 部署的旧 provider 名称会在启动时原地迁移，用户与空间保持不变，浏览器需重新登录；旧 Secret 路径沿用原值。更早的 broker 认证已移除，旧 broker 身份不自动合并。日常升级不重建 Home。不要把聊天中的旧授权链接或回调 token 当作可复用登录入口。
+OpenCSG 多用户部署统一使用 OpenCSG IAM 独立应用，登记准确回调 `https://assistant.example.com/v1/access/sso/callback`，保留动态 `state` 参数。登录路径为 TeamX → OpenCSG IAM → TeamX；配置 `hub_origin` 后取得本人模型 Key。个人版登录不受此项影响，其他用户管理方式继续通过认证 Provider 扩展。部署配置与身份目录统一使用 `opencsg`，启动时校验 provider／issuer 一致性，不自动改写身份。日常升级沿用原 Home、用户、空间和 Secret 路径。不要把聊天中的旧授权链接或回调 token 当作可复用登录入口。
 
 安装后检查：
 

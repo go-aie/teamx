@@ -1,6 +1,7 @@
 package room
 
 import (
+	"bytes"
 	"context"
 	"net/http"
 	"net/url"
@@ -32,7 +33,7 @@ func TestOpenCSGConfigurationKeepsCredentialsPrivateAndAdmissionExplicit(t *test
 		t.Fatal("secret escaped into authorization URL", err)
 	}
 	for _, mutate := range []func(*externalAuthConfig){
-		func(c *externalAuthConfig) { c.Provider = "casdoor" }, // Migration input only, never another login mechanism.
+		func(c *externalAuthConfig) { c.Provider = "casdoor" },
 		func(c *externalAuthConfig) { c.Issuer = "" },
 		func(c *externalAuthConfig) { c.AllowAllAuthenticated = false },
 		func(c *externalAuthConfig) { c.Issuer = "http://opencsg.example" },
@@ -169,7 +170,7 @@ func TestOpenCSGHostCodeLoginPersistsIsolationAndRequiresOwnModel(t *testing.T) 
 	}
 }
 
-func TestOpenCSGClientChangesInvalidateSavedSessionsAndIssuerChangesRequireMigration(t *testing.T) {
+func TestOpenCSGClientChangesInvalidateSavedSessionsAndIssuerChangesAreRejected(t *testing.T) {
 	home := t.TempDir()
 	c := externalAuthConfig{Provider: "opencsg", Issuer: "https://opencsg.example", ClientID: "teamx-client", AllowAllAuthenticated: true}
 	s := hostedFixtureWithProvider(t, home, c, codeProviderFixture{})
@@ -199,5 +200,54 @@ func TestOpenCSGClientChangesInvalidateSavedSessionsAndIssuerChangesRequireMigra
 	config.Deployment.Authentication = c
 	if _, err := newServerAccess(config, "http://127.0.0.1:8088"); err == nil {
 		t.Fatal("another issuer adopted the saved users or sessions")
+	}
+}
+
+func TestOpenCSGRejectsMismatchedSavedIdentitySourcesWithoutRewritingThem(t *testing.T) {
+	for _, variant := range []string{"retired-provider", "different-issuer"} {
+		t.Run(variant, func(t *testing.T) {
+			home := t.TempDir()
+			c := externalAuthConfig{Provider: "opencsg", Issuer: "https://opencsg.example", ClientID: "teamx-client", AllowAllAuthenticated: true}
+			s := hostedFixtureWithProvider(t, home, c, codeProviderFixture{})
+			codeLogin(t, s, "alice")
+			codeLogin(t, s, "bob")
+			if err := s.closeWithTimeout(); err != nil {
+				t.Fatal(err)
+			}
+			path := filepath.Join(home, "users.json")
+			if variant == "retired-provider" {
+				var saved hostedUserSnapshot
+				if err := readIdentitySnapshot(path, &saved); err != nil {
+					t.Fatal(err)
+				}
+				saved.Source[0] = "casdoor"
+				for i := range saved.Users {
+					saved.Users[i].Identity.Provider = "casdoor"
+				}
+				if err := (&snapshotWriter{ops: defaultSnapshotOps()}).save(path, saved, maxPrivateFileBytes); err != nil {
+					t.Fatal(err)
+				}
+			} else {
+				c.Issuer = "https://another.example"
+			}
+			before := map[string][]byte{}
+			for _, path := range []string{path, filepath.Join(home, "spaces.json"), s.access.sessionPath()} {
+				data, err := os.ReadFile(path)
+				if err != nil {
+					t.Fatal(err)
+				}
+				before[path] = data
+			}
+			config := s.access.config
+			config.Deployment.Authentication = c
+			if _, err := newServerAccess(config, "http://127.0.0.1:8088"); err == nil || !strings.Contains(err.Error(), "authentication source") {
+				t.Fatal("mismatched identity source was accepted", err)
+			}
+			for path, expected := range before {
+				if data, err := os.ReadFile(path); err != nil || !bytes.Equal(data, expected) {
+					t.Fatal("rejected startup rewrote existing identity or session data", path, err)
+				}
+			}
+		})
 	}
 }

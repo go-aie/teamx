@@ -4,7 +4,7 @@
 
 ## 应用与部署配置
 
-在 OpenCSG IAM 应用 中启用 Authorization Code，登记准确的回调 URL。TeamX 请求 `openid profile`，使用每次登录独立的 `state`、nonce 和 S256 PKCE。应用有 Client secret 时同时使用 `client_secret_post`；只有确实配置为公共客户端时才省略 secret 文件。
+在 OpenCSG IAM 应用中启用 Authorization Code，登记准确的回调 URL。TeamX 请求 `openid profile`，使用每次登录独立的 `state`、nonce 和 S256 PKCE。应用有 Client secret 时同时使用 `client_secret_post`；只有确实配置为公共客户端时才省略 secret 文件。
 
 以下为生产 IAM 的配置模板，替换 Client ID 后写入私有配置，服务配置文件应为 `0600`：
 
@@ -41,11 +41,11 @@ https://alpha.teamx.opencsg.com/v1/access/sso/callback
 
 ## 现有身份和模型
 
-已有直连 IAM 部署中的旧名称 `provider = "casdoor"` 只作为一次性改名迁移输入。启动时先将私有配置改为 `opencsg`，再在身份目录中原子更新 provider；仅允许原 authority 与配置的 IAM issuer 一致。UserID、OIDC sub、SpaceID、停用状态及认证版本不变，模型凭据、个人平台授权和服务级应用继续使用原目录，不需要新建 Home。中断后重启沿原身份完成迁移，不创建替代用户。旧浏览器会话失效，用户重新登录即可进入原空间。
+部署配置和持久化身份统一使用 `opencsg`。既有部署继续沿用原 Home，日常发布使用 `service upgrade` 并保留一致备份；配置、UserID、OIDC sub、SpaceID、停用状态、模型凭据和平台授权继续使用原目录。Secret 文件按配置中的实际路径读取，无需因示例文件名不同而移动。
 
-旧 Secret 文件的实际路径保持不变，无需因示例改名而移动文件。日常发布继续使用 `service upgrade`，升级前保留一致备份。新版写入配置和身份目录后，不应直接用旧程序回退；回退应恢复对应旧版本及完整备份。
+启动要求身份目录中的 provider／authority 与配置的 `opencsg`／IAM issuer 一致；不再自动改写旧 provider 名称或身份快照，不按邮箱或昵称合并账号。未完成改名的旧配置或身份目录应先使用包含迁移能力的版本完成升级；恢复旧备份时使用对应版本。
 
-更早的 OpenCSG broker 登录已移除：不再接受 `login_origin`，不再处理 `jwt_token`／`jwt` 回调。该机制的 Hub authority 与 IAM issuer 是不同认证源，不能自动合并或接管旧用户；若仍使用 broker Home，须先单独设计身份迁移，再升级到新版。此次改名迁移不更换 issuer，也不按邮箱或昵称匹配账号。
+OpenCSG broker 登录已移除，不接受 `login_origin` 或 `jwt_token`／`jwt` 回调。
 
 配置 `hub_origin` 后，TeamX 在本次登录中核对 IAM access token 的 userinfo 与已验证 ID token 的 `sub` 一致，再通过 Hub 的 OAuth 认证读取该用户个人 namespace 的内置 AI Gateway Key。请求不接受回调中的 namespace 或用户名提示，不使用部署账号的 Key；返回值须属于该用户个人 namespace、应用为 `aigateway` 且处于启用状态。IAM token 随登录请求结束即丢弃，只有本人 Gateway Key 保存至私有用户凭据目录。
 

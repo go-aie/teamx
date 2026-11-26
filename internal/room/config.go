@@ -18,16 +18,15 @@ import (
 
 // Startup settings stay outside Room snapshots. Only the resolved runtime is frozen.
 type startupConfig struct {
-	legacyOpenCSGProvider bool                   // Read-only recognition of the former direct-OIDC name; migrated under the home lock.
-	execution             agent.ExecutionFactory // selected at deployment assembly, never decoded from Space settings
-	executionBinding      agent.ExecutionBinding
-	spaceID               string // Runtime-only Computer namespace; empty preserves legacy identity.
-	singleRoomDir         string // Resolved explicit single-Room root; not a TOML option.
-	installationID        string // Deployment identity; never part of user configuration.
-	path                  string
-	source                []byte
-	file                  os.FileInfo
-	Server                struct {
+	execution        agent.ExecutionFactory // selected at deployment assembly, never decoded from Space settings
+	executionBinding agent.ExecutionBinding
+	spaceID          string // Runtime-only Computer namespace; empty preserves legacy identity.
+	singleRoomDir    string // Resolved explicit single-Room root; not a TOML option.
+	installationID   string // Deployment identity; never part of user configuration.
+	path             string
+	source           []byte
+	file             os.FileInfo
+	Server           struct {
 		WorkspaceRoots       *[]string           `toml:"workspace_roots"`
 		TimeZone             *string             `toml:"time_zone"`
 		PublicBaseURL        string              `toml:"public_base_url"`
@@ -121,10 +120,6 @@ func readStartupConfig(name string, required, validateRuntime bool) (startupConf
 		return startupConfig{}, fmt.Errorf("deployment.gitlab requires multi-user mode")
 	}
 	config.path = path
-	if config.Deployment.Mode == "multi-user" && config.Deployment.Authentication.Provider == "casdoor" {
-		config.Deployment.Authentication.Provider = "opencsg"
-		config.legacyOpenCSGProvider = true
-	}
 	if err := config.Deployment.Resources.validate(); err != nil {
 		return startupConfig{}, err
 	}

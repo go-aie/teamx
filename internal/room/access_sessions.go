@@ -35,11 +35,8 @@ func (a *serverAccess) sessionPath() string {
 // deployment-side password replacement must invalidate sessions on restart too.
 func (a *serverAccess) sessionBinding() string {
 	if a.users != nil {
-		if c := a.config.Deployment.Authentication; c.Provider == "opencsg" {
-			hash := sha256.Sum256([]byte(a.installationID + "\x00multi-user\x00opencsg\x00" + c.Issuer + "\x00" + c.ClientID))
-			return hex.EncodeToString(hash[:])
-		}
-		hash := sha256.Sum256([]byte(a.installationID + "\x00multi-user\x00" + a.config.Deployment.Authentication.Provider + "\x00" + a.config.Deployment.Authentication.HubOrigin))
+		c := a.config.Deployment.Authentication
+		hash := sha256.Sum256([]byte(a.installationID + "\x00multi-user\x00" + c.Provider + "\x00" + c.Issuer + "\x00" + c.ClientID))
 		return hex.EncodeToString(hash[:])
 	}
 	hash := sha256.Sum256([]byte(a.installationID + "\x00" + a.identity.User.ID + "\x00" + hex.EncodeToString(a.admin[:])))

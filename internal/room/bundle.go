@@ -129,10 +129,6 @@ func runBundleWithCatalog(command string, args []string, stdout, stderr io.Write
 	if err != nil {
 		return err
 	}
-	startup, err = migrateOpenCSGConfig(startup)
-	if err != nil {
-		return err
-	}
 	if err = prepareFirstAccess(startup); err != nil {
 		return err
 	}

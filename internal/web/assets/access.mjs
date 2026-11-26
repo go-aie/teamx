@@ -150,7 +150,7 @@ async function showSession() {
     try {
       const method=await request("/v1/access/method");
       if (generation !== setupRead) return;
-      const sso=method.method === "external" || method.provider === "opencsg";
+      const sso=method.method === "external";
       $("sso-login-form").hidden=!sso; $("login-form").hidden=sso;
       $("sso-login-submit").textContent=method.provider === "opencsg" ? "使用 OpenCSG 登录" : "使用账号登录";
       if (sso) {

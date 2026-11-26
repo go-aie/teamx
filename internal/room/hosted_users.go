@@ -168,15 +168,16 @@ func registerHostedUsers(c startupConfig, installation string) (_ *hostedUsers, 
 		}
 		ids[entry.ID], keys[key] = true, true
 	}
+	if auth := c.Deployment.Authentication; auth.Provider == "opencsg" && u.saved.Source != ([2]string{}) &&
+		u.saved.Source != ([2]string{"opencsg", strings.TrimRight(auth.Issuer, "/")}) {
+		return nil, errors.New("saved authentication source does not match the configured OpenCSG issuer")
+	}
 	var spaces spaceDirectory
 	err = readIdentitySnapshot(filepath.Join(home, "spaces.json"), &spaces)
 	if errors.Is(err, os.ErrNotExist) && !journal.Completed {
 		err = u.writer.save(filepath.Join(home, "spaces.json"), spaceDirectory{Version: 1}, maxPrivateFileBytes)
 	}
 	if err != nil {
-		return nil, err
-	}
-	if err := u.migrateOpenCSGProvider(c.Deployment.Authentication); err != nil {
 		return nil, err
 	}
 	if !journal.Completed {

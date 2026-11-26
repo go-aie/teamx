@@ -10,7 +10,7 @@
 
 TeamX 发起入口为 `POST /v1/access/sso/login`，回调为 `/v1/access/sso/callback`。远程使用部署配置的 HTTPS origin；本机验收允许字面回环 IP 的 HTTP origin，如 `http://127.0.0.1:18088`，不允许普通 HTTP 域名或局域网地址。TeamX 以独立应用发起授权，使用一次性 state、nonce、S256 PKCE，验证 ID token 的签名、issuer、audience 与有效期；稳定身份来自已验证的 issuer／sub。
 
-`internal/authn` 继续提供窄 Provider 合同；`internal/authn/opencsg` 实现当前协议。配置 `hub_origin` 时，经 userinfo 核对 access token 的主体后取得本人 Gateway Key；不保存 IAM token。已有直连 IAM 的旧 provider 名称只做同一 issuer 下的原地改名迁移，保留用户、空间与凭据，旧浏览器会话失效。旧 broker 身份不自动合并。
+`internal/authn` 继续提供窄 Provider 合同；`internal/authn/opencsg` 实现当前协议。配置 `hub_origin` 时，经 userinfo 核对 access token 的主体后取得本人 Gateway Key；不保存 IAM token。配置和身份目录统一使用 `opencsg`，已有身份须与配置的 provider／issuer 一致。一次性改名迁移已完成并移除，启动不再转换旧名称或改写身份。
 
 ## 宿主与持久状态
 

@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -124,6 +125,29 @@ func TestHostedProviderFailurePrecedesPrivateRegistration(t *testing.T) {
 	for _, name := range []string{"auth", "users.json", "spaces.json", "multi-user-registration.json"} {
 		if _, err := os.Stat(filepath.Join(home, name)); !os.IsNotExist(err) {
 			t.Fatal("authentication failure reached private registration", name)
+		}
+	}
+}
+
+func TestHostedRejectsRetiredProviderWithoutRewritingConfiguration(t *testing.T) {
+	home := t.TempDir()
+	path := filepath.Join(home, "config.toml")
+	source := "[deployment]\nmode='multi-user'\n[deployment.authentication]\nprovider='casdoor'\nissuer='https://opencsg.example'\nclient_id='teamx-client'\nallow_all_authenticated=true\n"
+	if err := os.WriteFile(path, []byte(source), 0600); err != nil {
+		t.Fatal(err)
+	}
+	selection := personalDeployment(nil)
+	selection.factories.authentication = externalAuthConfig.provider
+	err := runConfiguredServer(t.Context(), []string{"--home", home}, io.Discard, io.Discard, serverOptions{deployment: &selection})
+	if err == nil || !strings.Contains(err.Error(), "supported authentication provider") {
+		t.Fatal("retired provider was accepted or converted", err)
+	}
+	if data, err := os.ReadFile(path); err != nil || string(data) != source {
+		t.Fatal("unsupported configuration was rewritten", err)
+	}
+	for _, name := range []string{"auth", "users.json", "spaces.json", "multi-user-registration.json"} {
+		if _, err := os.Stat(filepath.Join(home, name)); !os.IsNotExist(err) {
+			t.Fatal("unsupported provider reached private registration", name)
 		}
 	}
 }
