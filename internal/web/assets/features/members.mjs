@@ -590,7 +590,8 @@ export function createMembers({ env, runtime, notificationsUI, workspaceUI, onbo
       } else if (available && member.execution?.stopping) {
         request.phase = "settling";
       } else if (available && request.phase === "settling" && !member.execution?.active) {
-        request.phase = member.execution?.error || /failed|blocked|unavailable/.test(member.status) ? "error" : "stopped";
+        if (member.execution?.error || /failed|blocked|unavailable/.test(member.status)) request.phase = "error";
+        else stopRequests.delete(id);
       }
     }
     const running = available ? state.members.filter(member => member.execution?.active || member.status === "running") : [];
@@ -599,8 +600,8 @@ export function createMembers({ env, runtime, notificationsUI, workspaceUI, onbo
     const names = members => members.map(agentName).join("、");
     // Active covers Session opening, model work and tools; it does not identify a thinking phase.
     const feedback = available ? [...stopRequests].filter(([id, request]) =>
-      ["stopped", "error"].includes(request.phase) && ![...running, ...waiting].some(member => member.membership_id === id)) : [];
-    const feedbackText = feedback.some(([, request]) => request.phase === "error") ? "停止未确认" : feedback.length ? "已停止" : "";
+      request.phase === "error" && ![...running, ...waiting].some(member => member.membership_id === id)) : [];
+    const feedbackText = feedback.length ? "停止未确认" : "";
     const text = running.length ? `${names(running)} 正在处理…` : waiting.length ? `${names(waiting)} 正在等待执行…` : restoring.length ? `${names(restoring)} 正在恢复…` : feedbackText;
     const queue = running.length && waiting.length ? `${names(waiting)} 等待执行` : "";
     const hint = $("execution-hint");
@@ -657,7 +658,7 @@ export function createMembers({ env, runtime, notificationsUI, workspaceUI, onbo
       const status = document.createElement("span"); status.className = "execution-feedback";
       const member = state.members.find(member => member.membership_id === id);
       const name = agentName(member);
-      status.textContent = `${primary.length || feedback.length > 1 ? `${name} ` : ""}${request.phase === "stopped" ? "已停止" : "停止未确认"}`;
+      status.textContent = `${primary.length || feedback.length > 1 ? `${name} ` : ""}停止未确认`;
       status.title = request.error || member.execution?.error || "";
       content.append(status);
     }

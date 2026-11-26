@@ -352,9 +352,7 @@ func (m *MemberAgent) Control(ctx actorx.Context, msg ControlMember) (MemberStat
 			m.work.stopRequested = true
 			m.cancel()
 		}
-		if err := m.publishUserStop(ctx); err != nil {
-			return m.status(), err
-		}
+		// The result event is published by schedule after the worker settles.
 
 	case "pause":
 		m.inboxContinuePending = false
@@ -970,6 +968,9 @@ func (m *MemberAgent) startTurn(input UnreadChanged, snapshotSeq, readThrough ui
 				m.rotationNext = time.Time{}
 				_ = m.persistScheduling(m.enabled, m.turnsUsed)
 			}
+		}
+		if work.userStopped.Load() && m.userStop != nil && m.userStop.ExecutionID == m.turnsUsed {
+			m.finishUserStop(!m.fault && (err == nil || backendTurnCancellation(backend, err)))
 		}
 		m.releaseTurn()
 		m.inboxNext = time.Time{} // Observe formal consumption before reoffering.

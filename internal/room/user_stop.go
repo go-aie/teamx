@@ -17,8 +17,15 @@ type userStop struct {
 	Actor       Author    `json:"actor"`
 	Name        string    `json:"name,omitempty"`
 	CreatedAt   time.Time `json:"created_at"`
+	Outcome     string    `json:"outcome,omitempty"`
+	FinishedAt  time.Time `json:"finished_at,omitempty"`
 	Published   bool      `json:"published,omitempty"`
 }
+
+const (
+	userStopConfirmed   = "stopped"
+	userStopUnconfirmed = "unconfirmed"
+)
 
 func (m *MemberAgent) recordUserStop(actor Author, name string) error {
 	// Internal actor controls have no authenticated operator. They may cancel
@@ -52,19 +59,36 @@ func (m *MemberAgent) recordUserStop(actor Author, name string) error {
 
 func (m *MemberAgent) publishUserStop(ctx context.Context) error {
 	r := m.userStop
-	if r == nil || r.Published {
+	if r == nil || r.Published || m.active {
 		return nil
+	}
+	// An interrupted service may have saved the intent without saving the
+	// result. Inactivity alone is not proof that the execution settled.
+	if r.Outcome == "" {
+		m.finishUserStop(false)
+		r = m.userStop
+	}
+	// Freeze the result before publishing so a lost receipt or restart cannot
+	// retry the same event identity with a different result.
+	if err := m.persistScheduling(m.enabled, m.turnsUsed); err != nil {
+		return err
 	}
 	id := m.Options.MemberIdentity
 	operation := inputstream.Ref("user_stop_", id, r.ExecutionID, r.Generation)
-	summary := "用户要求停止当前执行。"
+	target := "当前执行"
 	if r.Name != "" {
-		summary = "用户要求停止「" + r.Name + "」当前执行。"
+		target = "「" + r.Name + "」当前执行"
+	}
+	summary := "用户已停止" + target
+	if r.Outcome != userStopConfirmed {
+		summary = "用户要求停止" + target + "（结果未确认）"
 	}
 	_, err := m.Room.Call[PostReceipt](ctx, AppendRoomEvent{RoomIdentity: id.RoomIdentity,
-		Event: RoomEvent{ID: operation, Kind: "user_stop", OperationID: operation, ResultVersion: 1,
+		// Version 1 recorded the request before settlement. A pending old
+		// publication must not conflict with this final result on restart.
+		Event: RoomEvent{ID: operation, Kind: "user_stop", OperationID: operation, ResultVersion: 2,
 			ResultRef: "execution/" + operation, Actor: r.Actor},
-		Summary: summary, CreatedAt: r.CreatedAt})
+		Summary: summary, CreatedAt: r.FinishedAt})
 	if err != nil {
 		return err
 	}
@@ -77,4 +101,17 @@ func (m *MemberAgent) publishUserStop(ctx context.Context) error {
 		return err
 	}
 	return nil
+}
+
+func (m *MemberAgent) finishUserStop(confirmed bool) {
+	r := m.userStop
+	if r == nil || r.Published || r.Outcome != "" {
+		return
+	}
+	finished := *r
+	finished.Outcome, finished.FinishedAt = userStopUnconfirmed, m.now().UTC()
+	if confirmed {
+		finished.Outcome = userStopConfirmed
+	}
+	m.userStop = &finished
 }

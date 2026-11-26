@@ -1446,7 +1446,7 @@ test("execution hints open the matching member activity without sending or chang
 });
 
 
-test("stop icon cancels only the current execution and reports stopped after settlement", async () => {
+test("stop icon cancels only the current execution and hides the hint after settlement", async () => {
   const api = server([makeRoom("A")]);
   const member = { agent_id:"reviewer", membership_id:"generation-reviewer", status:"running", runner:{profile:"runtime"},
     execution:{active:true, paused:false, execution_id:7, agent:{turn_number:6}} };
@@ -1476,9 +1476,11 @@ test("stop icon cancels only the current execution and reports stopped after set
   assert.doesNotMatch(elementText(ui.el("execution-text")),/已停止/);
   member.status="idle";member.execution.active=false;member.execution.stopping=false;delete member.execution.execution_id;
   await ui.refresh();
-  assert.equal(ui.el("execution-text").children[0].textContent,"已停止");
-  assert.equal(ui.el("execution-hint").hidden,false);
-  assert.equal(ui.el("execution-hint").dataset.phase,"stopped");
+  assert.equal(elementText(ui.el("execution-text")),"");
+  assert.equal(ui.el("execution-hint").hidden,true);
+  assert.equal(ui.el("timeline-wrap").classList.contains("has-activity"),false);
+  await ui.refresh();
+  assert.equal(ui.el("execution-hint").hidden,true);
   assert.equal(member.execution.paused,false);
   await ui.draft("纠正：只检查，不要修改"); await ui.el("compose").emit("submit");
   member.status="waiting";await ui.refresh();
@@ -1513,11 +1515,17 @@ test("stop icons isolate members and unconfirmed requests never replay on refres
   assert.equal(stop("reviewer").disabled,false);assert.equal(stop("developer").disabled,false);
   await ui.refresh();await ui.refresh();
   assert.equal(api.calls.filter(call => call.path === "/v1/member/cancel").length,1);
+  members[1].status="idle";members[1].execution.active=false;
+  await ui.refresh();
+  assert.match(elementText(ui.el("execution-text")),/developer 停止未确认/);
+  assert.equal(stop("reviewer").disabled,false);
+  members[1].status="running";members[1].execution.active=true;
+  await ui.refresh();
   fail=false;await stop("developer").emit("click");
   assert.equal(stop("developer").disabled,true);assert.equal(stop("reviewer").disabled,false);
   members[1].status="idle";members[1].execution.active=false;members[1].execution.stopping=false;
   await ui.refresh();
-  assert.match(elementText(ui.el("execution-text")),/developer 已停止/);
+  assert.doesNotMatch(elementText(ui.el("execution-text")),/developer|已停止/);
   assert.equal(stop("reviewer").disabled,false);
 });
 

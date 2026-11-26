@@ -12,6 +12,7 @@ import (
 
 	"github.com/go-aie/actorx"
 	"github.com/go-aie/teamx/internal/agent/dsh"
+	"github.com/go-aie/teamx/internal/inputstream"
 )
 
 func TestUserStopPersistsIntentAndPageOnlyEvent(t *testing.T) {
@@ -67,12 +68,26 @@ func TestUserStopPersistsIntentAndPageOnlyEvent(t *testing.T) {
 				t.Fatal(h.ctx.Err())
 			}
 			saved, err := h.store.loadScheduling(id)
-			if err != nil || saved.UserStop == nil || saved.UserStop.Turn != 1 || !saved.UserStop.Published || !saved.Enabled {
+			if err != nil || saved.UserStop == nil || saved.UserStop.Turn != 1 || saved.UserStop.Published || saved.UserStop.Outcome != "" || !saved.Enabled {
 				t.Fatal("Stop intent was not durable before settlement", saved, err)
 			}
 			room, err := h.store.LoadRoom()
-			if err != nil || len(room.Messages) != 2 || room.Messages[1].Text != "用户要求停止当前执行。" || room.Messages[1].Event.Kind != "user_stop" || len(room.Messages[1].Event.Targets) != 0 {
-				t.Fatal("missing or duplicated page-only Stop event", room, err)
+			if err != nil || len(room.Messages) != 1 {
+				t.Fatal("Stop event published before settlement", room, err)
+			}
+			unblock()
+			stopped := waitMember(t, h.ctx, addr, id, func(s MemberStatus) bool { return !s.Active })
+			wantText, wantOutcome := "用户已停止当前执行", userStopConfirmed
+			if fail != nil {
+				wantText, wantOutcome = "用户要求停止当前执行（结果未确认）", userStopUnconfirmed
+			}
+			room, err = h.store.LoadRoom()
+			if err != nil || len(room.Messages) != 2 || room.Messages[1].Text != wantText || room.Messages[1].Event.Kind != "user_stop" || len(room.Messages[1].Event.Targets) != 0 {
+				t.Fatal("missing or duplicated page-only Stop result", room, err)
+			}
+			saved, err = h.store.loadScheduling(id)
+			if err != nil || !saved.UserStop.Published || saved.UserStop.Outcome != wantOutcome || saved.UserStop.FinishedAt.Before(saved.UserStop.CreatedAt) {
+				t.Fatal("Stop result was not durable", saved, err)
 			}
 			list := h.list(t)
 			if list.Members[0].UnreadCount != 1 || list.Members[0].NewestUnreadSeq != 1 {
@@ -82,8 +97,6 @@ func TestUserStopPersistsIntentAndPageOnlyEvent(t *testing.T) {
 			if len(page.Messages) != 2 || page.Messages[1].Event == nil {
 				t.Fatal("Agent history cannot see Stop", page)
 			}
-			unblock()
-			stopped := waitMember(t, h.ctx, addr, id, func(s MemberStatus) bool { return !s.Active })
 			if stopped.Agent.Turn.StopIntent != stopIntentUser || stopped.SessionRecovery != nil {
 				t.Fatal("Stop was lost or scheduled automatic recovery", stopped)
 			}
@@ -110,40 +123,63 @@ func TestUserStopPersistsIntentAndPageOnlyEvent(t *testing.T) {
 }
 
 func TestUserStopPublicationSurvivesLostReceiptAndRestart(t *testing.T) {
-	state := historyRoom(0, "")
-	state.InputLog = &roomLogRoot{Version: 1}
-	h := newRoomHarness(t, state, nil)
-	id := h.memberID("A", "generation-A")
-	r := &userStop{ExecutionID: 1, Turn: 1, Generation: "session.json.dsh", Actor: humanCaller.Author, CreatedAt: time.Now().UTC()}
-	scheduling := memberScheduling{Version: schedulingVersion, MemberIdentity: id, Enabled: true, Used: 1,
-		SessionGeneration: r.Generation, UserStop: r}
-	if err := h.store.saveScheduling(scheduling); err != nil {
-		t.Fatal(err)
-	}
-	m := &MemberAgent{Options: adapterOptions(h.store, id), Room: h.addr, Store: h.store, PersistentScheduling: true,
-		userStop: r, enabled: true, turnsUsed: 1, schedulingVersion: schedulingVersion, sessionGeneration: r.Generation}
-	if err := m.publishUserStop(h.ctx); err != nil {
-		t.Fatal(err)
-	}
-	// Model a crash after Room publication but before the receipt checkpoint.
-	if err := h.store.saveScheduling(scheduling); err != nil {
-		t.Fatal(err)
-	}
-	restored, err := h.store.loadScheduling(id)
-	if err != nil {
-		t.Fatal(err)
-	}
-	m.userStop = restored.UserStop
-	if err := m.publishUserStop(h.ctx); err != nil {
-		t.Fatal(err)
-	}
-	room, err := h.store.LoadRoom()
-	if err != nil || len(room.Messages) != 1 {
-		t.Fatal("restart duplicated Stop event", room, err)
-	}
-	restored, err = h.store.loadScheduling(id)
-	if err != nil || !restored.UserStop.Published {
-		t.Fatal("publication receipt was not repaired", restored, err)
+	for _, test := range []struct {
+		name, outcome, memberName, text string
+	}{
+		{"confirmed", userStopConfirmed, "", "用户已停止当前执行"},
+		{"unconfirmed", userStopUnconfirmed, "", "用户要求停止当前执行（结果未确认）"},
+		{"named_confirmed", userStopConfirmed, "工作管家", "用户已停止「工作管家」当前执行"},
+		{"named_unconfirmed", userStopUnconfirmed, "工作管家", "用户要求停止「工作管家」当前执行（结果未确认）"},
+		{"legacy_receipt", userStopUnconfirmed, "", "用户要求停止当前执行（结果未确认）"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			state := historyRoom(0, "")
+			state.InputLog = &roomLogRoot{Version: 1}
+			h := newRoomHarness(t, state, nil)
+			id := h.memberID("A", "generation-A")
+			now := time.Now().UTC()
+			r := &userStop{ExecutionID: 1, Turn: 1, Generation: "session.json.dsh", Actor: humanCaller.Author,
+				Name: test.memberName, CreatedAt: now, Outcome: test.outcome, FinishedAt: now}
+			scheduling := memberScheduling{Version: schedulingVersion, MemberIdentity: id, Enabled: true, Used: 1,
+				SessionGeneration: r.Generation, UserStop: r}
+			if err := h.store.saveScheduling(scheduling); err != nil {
+				t.Fatal(err)
+			}
+			wantMessages := 1
+			if test.name == "legacy_receipt" {
+				operation := inputstream.Ref("user_stop_", id, r.ExecutionID, r.Generation)
+				roomCall[PostReceipt](t, h, AppendRoomEvent{RoomIdentity: id.RoomIdentity,
+					Event: RoomEvent{ID: operation, Kind: "user_stop", OperationID: operation, ResultVersion: 1,
+						ResultRef: "execution/" + operation, Actor: r.Actor},
+					Summary: "用户要求停止当前执行。", CreatedAt: now})
+				wantMessages++
+			}
+			m := &MemberAgent{Options: adapterOptions(h.store, id), Room: h.addr, Store: h.store, PersistentScheduling: true,
+				userStop: r, enabled: true, turnsUsed: 1, schedulingVersion: schedulingVersion, sessionGeneration: r.Generation, now: time.Now}
+			if err := m.publishUserStop(h.ctx); err != nil {
+				t.Fatal(err)
+			}
+			// Model a crash after Room publication but before the receipt checkpoint.
+			if err := h.store.saveScheduling(scheduling); err != nil {
+				t.Fatal(err)
+			}
+			restored, err := h.store.loadScheduling(id)
+			if err != nil {
+				t.Fatal(err)
+			}
+			m.userStop = restored.UserStop
+			if err := m.publishUserStop(h.ctx); err != nil {
+				t.Fatal(err)
+			}
+			room, err := h.store.LoadRoom()
+			if err != nil || len(room.Messages) != wantMessages || room.Messages[wantMessages-1].Text != test.text || !room.Messages[wantMessages-1].CreatedAt.Equal(now) {
+				t.Fatal("restart lost or duplicated Stop result", room, err)
+			}
+			restored, err = h.store.loadScheduling(id)
+			if err != nil || !restored.UserStop.Published || restored.UserStop.Outcome != test.outcome {
+				t.Fatal("publication receipt was not repaired", restored, err)
+			}
+		})
 	}
 }
 
@@ -248,7 +284,7 @@ func TestUserStopCheckpointWinsOverInterruptedWorkerOnStartup(t *testing.T) {
 		return err == nil && saved.UserStop.Published
 	})
 	room, err = h.store.LoadRoom()
-	if err != nil || len(room.Messages) != 2 || room.Messages[1].Event.Kind != "user_stop" || opens.Load() != 0 {
+	if err != nil || len(room.Messages) != 2 || room.Messages[1].Event.Kind != "user_stop" || room.Messages[1].Text != "用户要求停止当前执行（结果未确认）" || opens.Load() != 0 {
 		t.Fatal("startup did not publish the pending event without replay", room, opens.Load(), err)
 	}
 }

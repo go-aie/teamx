@@ -46,6 +46,9 @@ func (s *Store) loadScheduling(id MemberIdentity) (memberScheduling, error) {
 	if r := state.UserStop; r != nil && (r.ExecutionID == 0 || r.ExecutionID > state.Used || r.Turn == 0 || r.Turn > state.Used || r.CreatedAt.IsZero() || r.Actor.Kind != "human" || !validText(r.Actor.ID) || r.Generation != "" && !validSessionGeneration(r.Generation) || r.Name != "" && !validText(r.Name)) {
 		return state, fmt.Errorf("%w: user stop", ErrInvalid)
 	}
+	if r := state.UserStop; r != nil && (r.Outcome != "" && r.Outcome != userStopConfirmed && r.Outcome != userStopUnconfirmed || (r.Outcome == "") != r.FinishedAt.IsZero()) {
+		return state, fmt.Errorf("%w: user stop outcome", ErrInvalid)
+	}
 	if r := state.InboxRecovery; r != nil && (r.SnapshotSeq <= r.Start || r.SnapshotSeq-r.Start > inboxBatchSize || r.Attempts < 0 || r.Attempts > 3 || r.Since.IsZero() || r.ConsumedThrough > r.Start) {
 		return state, fmt.Errorf("%w: Inbox recovery", ErrInvalid)
 	}
