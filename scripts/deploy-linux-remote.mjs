@@ -53,6 +53,19 @@ async function sha256(file) {
   return hash.digest('hex');
 }
 
+export function checkoutDeploymentSource(source, bundle, commit) {
+  // Git applies the caller's umask to worktree files. These public inputs are
+  // later copied into a distribution; keep job records explicitly private.
+  const previous = process.umask(0o022);
+  try {
+    fs.mkdirSync(source);
+    output('git', ['init', '-q', source]);
+    output('git', ['-C', source, 'fetch', '--quiet', bundle, commit]);
+    output('git', ['-C', source, 'checkout', '--quiet', '--detach', 'FETCH_HEAD']);
+    check(output('git', ['-C', source, 'rev-parse', 'HEAD']) === commit, 'Remote source differs from requested HEAD');
+  } finally { process.umask(previous); }
+}
+
 export async function deployRemote(request, runtime = { platform: process.platform, arch: process.arch, machine: os.machine(), uid: process.getuid?.() }) {
   check(runtime.platform === 'linux' && runtime.arch === 'x64' && runtime.machine === 'x86_64', 'Native Linux amd64 is required');
   const { config: c, commit, job } = request;
@@ -65,13 +78,7 @@ export async function deployRemote(request, runtime = { platform: process.platfo
   save();
   const source = p.join(job, 'source'), dist = p.join(job, 'dist');
   try {
-    timing.step('checkout committed source', () => {
-      fs.mkdirSync(source);
-      output('git', ['init', '-q', source]);
-      output('git', ['-C', source, 'fetch', '--quiet', p.join(job, 'source.bundle'), commit]);
-      output('git', ['-C', source, 'checkout', '--quiet', '--detach', 'FETCH_HEAD']);
-      check(output('git', ['-C', source, 'rev-parse', 'HEAD']) === commit, 'Remote source differs from requested HEAD');
-    });
+    timing.step('checkout committed source', () => checkoutDeploymentSource(source, p.join(job, 'source.bundle'), commit));
     let baseline;
     if(fs.existsSync(p.join(c.server_root,'service.json'))){
       try {baseline=/commit=([a-f0-9]{40})/.exec(output(p.join(c.bin_dir,'teamx'),['--version']))?.[1];}catch{}

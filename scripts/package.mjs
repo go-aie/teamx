@@ -197,6 +197,7 @@ try {
       const dest = p.join(bundle, asset.destination);
       fs.mkdirSync(p.dirname(dest), { recursive: true });
       fs.copyFileSync(p.join(root, asset.source), dest);
+      fs.chmodSync(dest, 0o644);
     }
     for (const dest of ['start', 'install.sh', 'bin/dsh'])
       fs.chmodSync(p.join(bundle, dest), 0o755);
