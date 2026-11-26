@@ -43,10 +43,10 @@ type Catalog struct {
 	uses   map[*Use]binding
 }
 type binding struct {
-	user, space, operation, state, app string
-	revoking                           bool
-	cancel                             context.CancelFunc
-	done                               chan struct{}
+	user, space, operation, app string
+	revoking                    bool
+	cancel                      context.CancelFunc
+	done                        chan struct{}
 }
 
 func Open(store Store) (*Catalog, error) {
@@ -208,19 +208,6 @@ func (c *Catalog) Settle(ctx context.Context, id string) error {
 	}
 	return nil
 }
-func (c *Catalog) CallbackSpace(state string) (string, bool) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	if c.failed || state == "" {
-		return "", false
-	}
-	for _, b := range c.uses {
-		if b.state == state {
-			return b.space, true
-		}
-	}
-	return "", false
-}
 func (c *Catalog) Impact(id string) []map[string]string {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -293,13 +280,13 @@ func (s scoped) Check(app registry.OAuthApplication) error {
 	_, err := s.current(app)
 	return err
 }
-func (s scoped) Begin(ctx context.Context, app registry.OAuthApplication, operation, state string) (*Use, error) {
+func (s scoped) Begin(ctx context.Context, app registry.OAuthApplication, operation string) (*Use, error) {
 	c := s.catalog
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	return s.beginLocked(ctx, app, operation, state)
+	return s.beginLocked(ctx, app, operation)
 }
-func (s scoped) beginLocked(ctx context.Context, app registry.OAuthApplication, operation, state string) (*Use, error) {
+func (s scoped) beginLocked(ctx context.Context, app registry.OAuthApplication, operation string) (*Use, error) {
 	c := s.catalog
 	app.Scopes = slices.Clone(app.Scopes)
 	a, err := s.current(app)
@@ -313,12 +300,12 @@ func (s scoped) beginLocked(ctx context.Context, app registry.OAuthApplication, 
 		if b.app == app.ID && b.revoking {
 			return nil, registry.ErrConflict
 		}
-		if state != "" && b.state == state || b.user == s.user && b.space == s.space && b.operation == operation {
+		if b.user == s.user && b.space == s.space && b.operation == operation {
 			return nil, registry.ErrConflict
 		}
 	}
 	useCtx, cancel := context.WithCancel(ctx)
-	b := binding{user: s.user, space: s.space, operation: operation, state: state, app: app.ID, cancel: cancel, done: make(chan struct{})}
+	b := binding{user: s.user, space: s.space, operation: operation, app: app.ID, cancel: cancel, done: make(chan struct{})}
 	u := &Use{ctx: useCtx, app: app, secret: platform.NewSecret(a.Secret)}
 	u.guard = func(write func() error) error {
 		c.mu.Lock()
@@ -356,7 +343,7 @@ func (s scoped) BeginRevoke(ctx context.Context, app registry.OAuthApplication, 
 	if err != nil || other {
 		return nil, registry.ErrConflict
 	}
-	u, err := s.beginLocked(ctx, app, operation, "")
+	u, err := s.beginLocked(ctx, app, operation)
 	if err != nil {
 		return nil, err
 	}

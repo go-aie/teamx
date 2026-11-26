@@ -427,8 +427,8 @@ func TestSpacesScopedCLIAndCallback(t *testing.T) {
 	}
 	b := waitSpaceState(t, s, id, "setup_required")
 	m := &roomManager{config: b.config}
-	if redirect, err := m.gitlabRedirectLocked(); err != nil || redirect != endpoint+spaceRoute(id)+gitlabCallbackPath {
-		t.Fatal("callback lost Space", redirect, err)
+	if redirect, err := m.gitlabRedirectLocked(); err != nil || redirect != endpoint+gitlabCallbackPath {
+		t.Fatal("callback must use the fixed entry", redirect, err)
 	}
 	completion := httptest.NewRecorder()
 	completionRequest := httptest.NewRequest("GET", endpoint+gitlabCompletePath, nil)
@@ -439,10 +439,10 @@ func TestSpacesScopedCLIAndCallback(t *testing.T) {
 	}
 	recorder := httptest.NewRecorder()
 	writer := &spaceResponseWriter{ResponseWriter: recorder, prefix: spaceRoute(id)}
-	http.SetCookie(writer, &http.Cookie{Name: "synthetic-oauth", Value: "private-state", Path: gitlabCookiePath})
+	http.SetCookie(writer, &http.Cookie{Name: "synthetic-oauth", Value: "private-state", Path: "/"})
 	_, _ = writer.Write([]byte(`{}`))
-	if cookies := recorder.Result().Cookies(); len(cookies) != 1 || cookies[0].Path != spaceRoute(id)+gitlabCookiePath {
-		t.Fatal("callback cookie lost Space", cookies)
+	if cookies := recorder.Result().Cookies(); len(cookies) != 1 || cookies[0].Path != "/" {
+		t.Fatal("callback cookie cannot reach the fixed entry", cookies)
 	}
 }
 

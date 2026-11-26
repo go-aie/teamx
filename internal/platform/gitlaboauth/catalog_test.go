@@ -35,15 +35,12 @@ func catalogFixture(t *testing.T) (*Catalog, *Snapshot, Application) {
 func TestServiceApplicationRotationFencesAndJoinsOriginalUses(t *testing.T) {
 	c, saved, app := catalogFixture(t)
 	source := c.ForSpace("alice", strings.Repeat("b", 32))
-	u, err := source.Begin(t.Context(), app.OAuthApplication, "operation", "browser-state")
+	u, err := source.Begin(t.Context(), app.OAuthApplication, "operation")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if id, ok := c.CallbackSpace("browser-state"); !ok || id != strings.Repeat("b", 32) {
-		t.Fatal("lost callback binding")
-	}
-	if _, err := source.Begin(t.Context(), app.OAuthApplication, "another", "browser-state"); err == nil {
-		t.Fatal("duplicate state admitted")
+	if _, err := source.Begin(t.Context(), app.OAuthApplication, "operation"); err == nil {
+		t.Fatal("duplicate operation admitted")
 	}
 	changed := make(chan error, 1)
 	go func() {
@@ -95,7 +92,7 @@ func TestServiceApplicationDisableAndUncertainSaveNeverFallback(t *testing.T) {
 	if _, err := c.Update(t.Context(), app, 1); err == nil {
 		t.Fatal("save failure ignored")
 	}
-	if _, err := source.Begin(t.Context(), app.OAuthApplication, "after-failure", ""); err == nil {
+	if _, err := source.Begin(t.Context(), app.OAuthApplication, "after-failure"); err == nil {
 		t.Fatal("admitted after uncertain write")
 	}
 	if _, err := source.Applications(); err == nil {
@@ -109,7 +106,7 @@ func TestServiceApplicationRevocationBlocksNewUsesAndSharingGrant(t *testing.T) 
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := source.Begin(t.Context(), app.OAuthApplication, "new-login", "state"); err == nil {
+	if _, err := source.Begin(t.Context(), app.OAuthApplication, "new-login"); err == nil {
 		t.Fatal("login raced remote revoke")
 	}
 	u.Close()
@@ -123,7 +120,7 @@ func TestServiceApplicationChecksOriginScopesAndImmutablePublicIdentity(t *testi
 	source := c.ForSpace("alice", strings.Repeat("b", 32))
 	foreign := app.OAuthApplication
 	foreign.Origin = "https://evil.example"
-	if _, err := source.Begin(t.Context(), foreign, "bad", ""); err == nil {
+	if _, err := source.Begin(t.Context(), foreign, "bad"); err == nil {
 		t.Fatal("foreign origin admitted")
 	}
 	edited := app

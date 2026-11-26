@@ -46,13 +46,6 @@ func (m *roomManager) gitlabEnabled() bool {
 	return !disabled
 }
 
-func (m *roomManager) gitlabBrowserCookiePath() string {
-	if m.gitlabApplications().Managed() {
-		return "/"
-	}
-	return gitlabCookiePath
-}
-
 // The user lifecycle and this final grant write share the user directory gate.
 // Disabling a user cannot interleave between its final check and activation of
 // a grant. No network call or application lookup runs inside this callback.

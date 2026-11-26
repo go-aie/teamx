@@ -165,8 +165,13 @@ func TestSpaceArchiveRestoreRebuildsOwnersAndRevokesOldGeneration(t *testing.T) 
 	if a.State() != "stopped" || !a.config.access.revoked.Load() {
 		t.Fatal("archive left the old owner active")
 	}
-	for _, path := range []string{spaceRoute(a.SpaceID) + "/v1/rooms", "/v1/spaces/" + a.SpaceID + "/rooms", spaceRoute(a.SpaceID) + gitlabCallbackPath + "?code=old&state=old"} {
-		if status := spaceHTTPRequest(t, endpoint, path, nil, nil); status != 503 {
+	for path, expected := range map[string]int{
+		spaceRoute(a.SpaceID) + "/v1/rooms":                                503,
+		"/v1/spaces/" + a.SpaceID + "/rooms":                               503,
+		spaceRoute(a.SpaceID) + gitlabCallbackPath + "?code=old&state=old": 404,
+		gitlabCallbackPath + "?code=old&state=old":                         403,
+	} {
+		if status := spaceHTTPRequest(t, endpoint, path, nil, nil); status != expected {
 			t.Fatal("archived path admitted work", path, status)
 		}
 	}

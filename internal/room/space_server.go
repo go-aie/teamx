@@ -30,6 +30,7 @@ type spaceRuntimeAssembly struct {
 
 type spaceServer struct {
 	gitlabApplications *gitlaboauth.Catalog
+	gitlabCallbacks    gitlabCallbackRoutes
 	assembly           spaceRuntimeAssembly
 	adminMu            sync.Mutex // serializes local user status changes and settlement
 	mu                 sync.Mutex
@@ -252,13 +253,15 @@ func (s *spaceServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	path := r.URL.Path
-	if path == gitlabCallbackPath && s.gitlabApplications != nil {
-		selected, ok := s.gitlabApplications.CallbackSpace(r.URL.Query().Get("state"))
+	isGitLabCallback := path == gitlabCallbackPath
+	var callbackSpace SpaceContext
+	if isGitLabCallback {
+		selected, ok := s.gitlabCallbacks.lookup(r.URL.Query().Get("state"))
 		if !ok {
 			accessError(w, 403, "identity_mismatch")
 			return
 		}
-		id = selected
+		id, callbackSpace = selected.SpaceID, selected
 	}
 	prefix := ""
 	if strings.HasPrefix(path, "/s/") {
@@ -273,6 +276,10 @@ func (s *spaceServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		if ok {
 			id, path = selected, "/v1/"+suffix
 		}
+	}
+	if path == gitlabCallbackPath && !isGitLabCallback {
+		http.NotFound(w, r)
+		return
 	}
 	if path == "/" && prefix == "" && (r.Method == http.MethodGet || r.Method == http.MethodHead) {
 		if id == "" {
@@ -323,6 +330,10 @@ func (s *spaceServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		entry.mu.RLock()
 		runtime, listener, entryErr = entry.runtime, entry.listener, entry.err
 		entry.mu.RUnlock()
+	}
+	if isGitLabCallback && runtime != nil && runtime.SpaceContext != callbackSpace {
+		accessError(w, 403, "identity_mismatch")
+		return
 	}
 	if prefix != "" {
 		w = &spaceResponseWriter{ResponseWriter: w, prefix: prefix}
@@ -376,15 +387,6 @@ func (w *spaceResponseWriter) WriteHeader(status int) {
 	w.wrote = true
 	if location := w.Header().Get("Location"); strings.HasPrefix(location, "/") && !strings.HasPrefix(location, "//") && !strings.HasPrefix(location, "/s/") {
 		w.Header().Set("Location", w.prefix+location)
-	}
-	// OAuth's transient cookie must be sent to this Space's callback only.
-	cookies := w.Header().Values("Set-Cookie")
-	if len(cookies) > 0 {
-		w.Header().Del("Set-Cookie")
-		for _, cookie := range cookies {
-			cookie = strings.ReplaceAll(cookie, "Path="+gitlabCookiePath, "Path="+w.prefix+gitlabCookiePath)
-			w.Header().Add("Set-Cookie", cookie)
-		}
 	}
 	w.ResponseWriter.WriteHeader(status)
 }

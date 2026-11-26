@@ -69,9 +69,6 @@ func (m *roomManager) gitlabRedirectLocked() (string, error) {
 	if err != nil || u.User != nil || u.Path != "" || u.RawQuery != "" || u.ForceQuery || u.Fragment != "" || u.Opaque != "" {
 		return "", ErrRequest
 	}
-	if !m.gitlabApplications().Managed() && m.config.access != nil && m.config.access.control != nil && m.config.access.space.SpaceID != m.config.access.control.space.SpaceID {
-		endpoint += spaceRoute(m.config.access.space.SpaceID)
-	}
 	value := endpoint + gitlabCallbackPath
 	if !registry.ValidOAuthRedirect(value) {
 		return "", ErrRequest

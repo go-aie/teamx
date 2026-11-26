@@ -10,7 +10,7 @@
 
 空间的 `platform-connections.json` 保存无 Secret 的应用引用与版本，以及各自的 access／refresh token。服务 grant 增加本地 `owner_user_id`、`space_id` 和授权 `operation_id`；加载时核对实际空间 owner，复制另一空间的快照不能认领其 grant。GitLab 应用所有者和授权用户分别保存，授权不要求用户拥有应用。
 
-共享应用使用一个固定回调 `/v1/platforms/gitlab/callback`。授权开始时固定用户、空间、应用版本、操作、state、PKCE 和浏览器 Cookie；回调按原 state 路由，重新验证登录主体和空间权限。短时 OAuth Cookie 使用根路径，以同时覆盖空间内操作与共享回调；Cookie 名包含独立会话 ID，并保持 HttpOnly／SameSite=Lax 及 HTTPS Secure。完成页显式返回原空间，不受当前默认空间或其他标签页影响。重启结束未完成授权，不重放授权码。
+个人与共享应用、默认与其他空间统一使用固定回调 `/v1/platforms/gitlab/callback`。授权开始时固定用户、空间、运行实例、应用版本、操作、state、PKCE 和浏览器 Cookie；公共入口按临时 state 绑定定位原运行实例，原空间重新验证登录主体和空间权限。路由不再由共享应用目录保存；state 在消费、取消或授权结束时移除，过期和已停止的运行实例不能接收回调。短时 OAuth Cookie 使用根路径，以同时覆盖空间内操作与共享回调；Cookie 名包含独立会话 ID，并保持 HttpOnly／SameSite=Lax 及 HTTPS Secure。完成页显式返回原空间，不受当前默认空间或其他标签页影响。重启结束未完成授权，不重放授权码。带空间前缀的回调入口不再接收授权；曾使用此地址的个人应用需显式更新 GitLab 和 TeamX 应用配置后重新授权，已有 grant 不自动改绑。
 
 应用 Secret 轮换、停用和重新启用均增加版本。控制面先持久保存新状态，再取消旧使用权并等待实际结清；旧授权／刷新不能提交为可用结果，已有 grant 不因 Secret 轮换而被宣称远端撤销。在途 API 调用持有应用使用权直到响应结清。刷新已发送而结果不确定时保留原持久 intent 和不可用状态，重启不重试旧 refresh token。
 

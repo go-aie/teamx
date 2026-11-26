@@ -122,7 +122,7 @@ func (m *roomManager) acquireGitLabToken(ctx context.Context, owner RoomIdentity
 			}
 			var appUse *gitlaboauth.Use
 			if e == nil {
-				appUse, e = m.gitlabApplications().Begin(leaseCtx, app, operation, "")
+				appUse, e = m.gitlabApplications().Begin(leaseCtx, app, operation)
 			}
 			if e != nil {
 				cancel()
@@ -199,7 +199,7 @@ func (m *roomManager) refreshGitLabToken(ctx context.Context, expected registry.
 				operation, e := newOpaqueID()
 				err = e
 				if err == nil {
-					appUse, err = m.gitlabApplications().Begin(ctx, app, operation, "")
+					appUse, err = m.gitlabApplications().Begin(ctx, app, operation)
 				}
 			}
 		}

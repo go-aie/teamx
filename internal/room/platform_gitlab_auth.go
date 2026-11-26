@@ -112,6 +112,7 @@ func (m *roomManager) canonicalGitLabRequestLocked(r *http.Request) bool {
 	return r.Host == u.Host && scheme == u.Scheme
 }
 func (m *roomManager) finishGitLabAuthLocked(s *gitlabAuthSession, status, code string) {
+	m.removeGitLabCallbackLocked(s)
 	s.Status, s.ErrorCode, s.URL, s.state, s.verifier = status, code, "", "", ""
 	m.authorizationChanged(s.owner)
 	if code == "invalid_scope" && len(s.RequestedScopes) == 0 {
@@ -327,7 +328,7 @@ func (m *roomManager) serveGitLabAuth(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	secure := strings.HasPrefix(s.app.RedirectURI, "https:")
-	http.SetCookie(w, &http.Cookie{Name: gitlabCookieName(s.SessionID), Value: s.browser, Path: m.gitlabBrowserCookiePath(), HttpOnly: true, Secure: secure, SameSite: http.SameSiteLaxMode, MaxAge: 660})
+	http.SetCookie(w, &http.Cookie{Name: gitlabCookieName(s.SessionID), Value: s.browser, Path: "/", HttpOnly: true, Secure: secure, SameSite: http.SameSiteLaxMode, MaxAge: 660})
 	if action == "logout" {
 		go m.runGitLabLogout(s)
 	}
@@ -553,12 +554,19 @@ func (m *roomManager) newGitLabAuthLocked(req gitlabAuthRequest, action string) 
 	}
 	s.disconnect = action == "logout"
 	if !s.disconnect {
-		s.applicationUse, err = m.gitlabApplications().Begin(ctx, app, id, state)
+		s.applicationUse, err = m.gitlabApplications().Begin(ctx, app, id)
 		if err != nil {
 			cancel()
 			return nil, err
 		}
 		s.ctx = s.applicationUse.Context()
+		if routes := m.gitlabCallbackRoutes(); routes != nil {
+			if err := routes.register(state, m.config.access.space, s.ctx); err != nil {
+				cancel()
+				s.applicationUse.Close()
+				return nil, err
+			}
+		}
 	}
 	challenge := sha256.Sum256([]byte(verifier))
 	q := url.Values{"client_id": {app.ClientID}, "redirect_uri": {redirect}, "response_type": {"code"}, "scope": {strings.Join(scopes, " ")}, "state": {state}, "code_challenge": {base64.RawURLEncoding.EncodeToString(challenge[:])}, "code_challenge_method": {"S256"}}
@@ -624,6 +632,7 @@ func (m *roomManager) serveGitLabCallback(w http.ResponseWriter, r *http.Request
 		http.Redirect(w, r, gitlabCompletionLocation(s), 303)
 		return
 	}
+	m.removeGitLabCallbackLocked(s)
 	s.state = ""
 	s.URL = "" // consume before any network work
 	if q.Get("error") != "" || !platform.ValidCredential(q.Get("code")) {
@@ -994,7 +1003,7 @@ func gitlabAuthReferencesFingerprint(refs []managedPlatformReference) string {
 // installation, room and exact membership before reading the original receipt.
 func gitlabCompletionLocation(s *gitlabAuthSession) string {
 	prefix := ""
-	if s.app.Source != "" && s.spaceID != "" {
+	if s.spaceID != "" {
 		prefix = spaceRoute(s.spaceID)
 	}
 	if s.operationID != "" {

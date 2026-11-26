@@ -17,7 +17,7 @@ import (
 type Source interface {
 	Applications() ([]registry.OAuthApplication, error)
 	Check(registry.OAuthApplication) error
-	Begin(context.Context, registry.OAuthApplication, string, string) (*Use, error)
+	Begin(context.Context, registry.OAuthApplication, string) (*Use, error)
 	Managed() bool
 	BeginRevoke(context.Context, registry.OAuthApplication, string, int64) (*Use, error)
 }
@@ -81,7 +81,7 @@ func (p Personal) Check(app registry.OAuthApplication) error {
 	}
 	return registry.ErrConflict
 }
-func (p Personal) Begin(ctx context.Context, app registry.OAuthApplication, operation, state string) (*Use, error) {
+func (p Personal) Begin(ctx context.Context, app registry.OAuthApplication, operation string) (*Use, error) {
 	app.Scopes = slices.Clone(app.Scopes)
 	// Pending personal imports are checked by the existing owner, including remote
 	// ownership proof. No second application registry is introduced for them.
@@ -104,12 +104,12 @@ func (Disabled) Applications() ([]registry.OAuthApplication, error) {
 	return []registry.OAuthApplication{}, nil
 }
 func (Disabled) Check(registry.OAuthApplication) error { return platform.ErrCredential }
-func (Disabled) Begin(context.Context, registry.OAuthApplication, string, string) (*Use, error) {
+func (Disabled) Begin(context.Context, registry.OAuthApplication, string) (*Use, error) {
 	return nil, platform.ErrCredential
 }
 
 func (p Personal) BeginRevoke(ctx context.Context, app registry.OAuthApplication, operation string, user int64) (*Use, error) {
-	return p.Begin(ctx, app, operation, "")
+	return p.Begin(ctx, app, operation)
 }
 func (Disabled) BeginRevoke(context.Context, registry.OAuthApplication, string, int64) (*Use, error) {
 	return nil, platform.ErrCredential

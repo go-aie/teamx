@@ -246,7 +246,7 @@ func (m *roomManager) authorizeGitLabConnectLocked(w http.ResponseWriter, r *htt
 			return managedPlatformError(err)
 		}
 		s.operationID, s.targetID, s.PlatformID = op.ID, op.PlatformID, op.PlatformID
-		http.SetCookie(w, &http.Cookie{Name: gitlabCookieName(s.SessionID), Value: s.browser, Path: m.gitlabBrowserCookiePath(), HttpOnly: true, Secure: strings.HasPrefix(s.app.RedirectURI, "https:"), SameSite: http.SameSiteLaxMode, MaxAge: 660})
+		http.SetCookie(w, &http.Cookie{Name: gitlabCookieName(s.SessionID), Value: s.browser, Path: "/", HttpOnly: true, Secure: strings.HasPrefix(s.app.RedirectURI, "https:"), SameSite: http.SameSiteLaxMode, MaxAge: 660})
 	}
 	return json.NewEncoder(w).Encode(struct {
 		URL string `json:"authorization_url"`
