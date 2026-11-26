@@ -135,7 +135,7 @@ func TestReasoningEffortValidation(t *testing.T) {
 func TestUnconfiguredReasoningPreservesLegacyRecoveryDigest(t *testing.T) {
 	opts := Options{Instructions: "role", Model: ModelConfig{Protocol: "openai-completions", BaseURL: "https://example.invalid/v1", ModelID: "deepseek-v4-flash", APIKeyEnv: "FIXTURE_KEY"}}
 	// Serialized before reasoning_effort existed. Old normal sessions must
-	// retain the same recovery fingerprint and materialized provider config.
+	// retain the same recovery fingerprint and use the current provider defaults.
 	legacy := []byte(`{"Instructions":"role","Model":{"protocol":"openai-completions","base_url":"https://example.invalid/v1","model_id":"deepseek-v4-flash","api_key_env":"FIXTURE_KEY"}}`)
 	hash := sha256.Sum256(legacy)
 	if configDigest(opts) != hex.EncodeToString(hash[:]) {
@@ -145,8 +145,8 @@ func TestUnconfiguredReasoningPreservesLegacyRecoveryDigest(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	const legacyProfile = `[{"config":{"model":"deepseek-v4-flash","provider":"teamx"},"id":"acp"},{"config":{"policy":"ask"},"id":"approval"},{"config":{"mode":"workspace-write"},"id":"sandbox-policy"},{"disabled":true,"id":"llm-deepseek"},{"config":{"providers":{"teamx":{"api":"openai-completions","apiKeyEnv":"FIXTURE_KEY","baseURL":"https://example.invalid/v1","models":[{"contextWindow":65536,"id":"deepseek-v4-flash","maxTokens":4096}],"retryPolicy":{"maxRetries":0,"mode":"normal"}}}},"id":"llm-pi-ai"}]`
-	if string(data) != legacyProfile {
-		t.Fatal("unset reasoning changed original session profile", string(data))
+	const expectedProfile = `[{"config":{"model":"deepseek-v4-flash","provider":"teamx"},"id":"acp"},{"config":{"policy":"ask"},"id":"approval"},{"config":{"mode":"workspace-write"},"id":"sandbox-policy"},{"disabled":true,"id":"llm-deepseek"},{"config":{"providers":{"teamx":{"api":"openai-completions","apiKeyEnv":"FIXTURE_KEY","baseURL":"https://example.invalid/v1","models":[{"contextWindow":65536,"id":"deepseek-v4-flash","maxTokens":4096}],"retryPolicy":{"backoff":{"initialDelayMs":5000,"jitterRatio":0.2,"maxDelayMs":60000},"maxRetries":5,"mode":"normal"}}}},"id":"llm-pi-ai"}]`
+	if string(data) != expectedProfile {
+		t.Fatal("unexpected default session profile", string(data))
 	}
 }

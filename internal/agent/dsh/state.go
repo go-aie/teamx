@@ -337,7 +337,15 @@ func profile(opts Options) []map[string]any {
 	}
 	route := map[string]any{
 		"apiKeyEnv": opts.Model.APIKeyEnv, "api": "openai-completions", "baseURL": opts.Model.BaseURL,
-		"models": []map[string]any{model}, "retryPolicy": map[string]any{"mode": "normal", "maxRetries": 0},
+		"models": []map[string]any{model},
+		// Retry transient model requests within the same DSH turn. Leave enough
+		// time for rate-limit windows to clear without synchronizing callers.
+		"retryPolicy": map[string]any{
+			"mode": "normal", "maxRetries": 5,
+			"backoff": map[string]any{
+				"initialDelayMs": 5000, "maxDelayMs": 60000, "jitterRatio": 0.2,
+			},
+		},
 	}
 	if effort := opts.Model.ReasoningEffort; effort != "" {
 		route["reasoning"] = effort
