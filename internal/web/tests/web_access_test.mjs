@@ -73,6 +73,22 @@ test("external authentication can replace the provider without changing the logi
   assert.equal(ui.el("sso-login-submit").textContent,"使用账号登录");
 });
 
+test("Casdoor uses the existing external login form and same-origin navigation",async()=>{
+  const target="https://casdoor.example/login/oauth/authorize?client_id=teamx&state=per-attempt";
+  const writes=[];
+  const ui=await launch(async(path,body)=>{
+    if(path==="/v1/access/method")return {status:200,data:{method:"external",provider:"casdoor"}};
+    if(path==="/v1/access/sso/login"){writes.push(body);return {status:200,data:{login_url:target}};}
+    return {status:401,data:{}};
+  });
+  assert.equal(ui.el("sso-login-form").hidden,false);
+  assert.equal(ui.el("login-form").hidden,true);
+  assert.equal(ui.el("sso-login-submit").textContent,"使用 Casdoor 登录");
+  await ui.el("sso-login-form").emit("submit");
+  assert.equal(writes.length,1);
+  assert.deepEqual(ui.navigation,[target]);
+});
+
 async function launch(api, saved = new Map(), hash = "") {
   const elements = new Map([...html.matchAll(/id="([^"]+)"/g)].map(([,id])=>[id, {
     value:"",hidden:false,disabled:false,listeners:{},attributes:{},

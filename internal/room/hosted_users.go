@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/go-aie/teamx/internal/authn"
+	"github.com/go-aie/teamx/internal/authn/casdoor"
 	"github.com/go-aie/teamx/internal/authn/opencsg"
 )
 
@@ -21,11 +22,31 @@ type externalAuthConfig struct {
 	Provider              string   `toml:"provider"`
 	LoginOrigin           string   `toml:"login_origin"`
 	HubOrigin             string   `toml:"hub_origin"`
+	Issuer                string   `toml:"issuer"`
+	ClientID              string   `toml:"client_id"`
+	ClientSecretFile      string   `toml:"client_secret_file"`
 	AllowedSubjects       []string `toml:"allowed_subjects"`
 	AllowAllAuthenticated bool     `toml:"allow_all_authenticated"`
 }
 
 func (c externalAuthConfig) provider() (authn.Provider, error) {
+	if !c.AllowAllAuthenticated && len(c.AllowedSubjects) == 0 {
+		return nil, errors.New("authentication requires allowed_subjects or explicit allow_all_authenticated")
+	}
+	if c.Provider == "casdoor" {
+		var secret string
+		if c.ClientSecretFile != "" {
+			if !filepath.IsAbs(c.ClientSecretFile) {
+				return nil, errors.New("client_secret_file must be absolute")
+			}
+			data, info, err := readSettingsFile(c.ClientSecretFile)
+			if err != nil || info == nil || info.Mode().Perm() != 0600 || len(data) > 16<<10 || strings.TrimSpace(string(data)) == "" {
+				return nil, errors.New("client_secret_file must be a nonempty private 0600 regular file (maximum 16 KiB)")
+			}
+			secret = strings.TrimSpace(string(data))
+		}
+		return casdoor.New(strings.TrimRight(c.Issuer, "/"), c.ClientID, secret, nil)
+	}
 	c.LoginOrigin = strings.TrimRight(c.LoginOrigin, "/")
 	c.HubOrigin = strings.TrimRight(c.HubOrigin, "/")
 	if c.Provider != "opencsg" {
@@ -36,9 +57,6 @@ func (c externalAuthConfig) provider() (authn.Provider, error) {
 	}
 	if c.HubOrigin == "" {
 		c.HubOrigin = "https://hub.opencsg.com"
-	}
-	if !c.AllowAllAuthenticated && len(c.AllowedSubjects) == 0 {
-		return nil, errors.New("authentication requires allowed_subjects or explicit allow_all_authenticated")
 	}
 	return opencsg.New(c.LoginOrigin, c.HubOrigin, nil)
 }

@@ -35,6 +35,38 @@ func (p observedSSOProbe) Complete(ctx context.Context, values url.Values) (auth
 // obtains the server-proven stable subject for an administrator's allowlist.
 // Credentials remain in memory; the private receipt contains identity only.
 func TestOpenCSGSSOLoopback(t *testing.T) {
+	provider, err := opencsg.New("https://opencsg.com", "https://hub.opencsg.com", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	runSSOLoopback(t, provider, "OpenCSG")
+}
+
+func TestCasdoorSSOLoopback(t *testing.T) {
+	path := os.Getenv("TEAMX_CASDOOR_ACCEPTANCE_CONFIG")
+	if path == "" {
+		t.Skip("set TEAMX_CASDOOR_ACCEPTANCE_CONFIG to a private absolute TOML configuration")
+	}
+	if !filepath.IsAbs(path) {
+		t.Fatal("acceptance configuration must be absolute")
+	}
+	_, info, err := readSettingsFile(path)
+	if err != nil || info == nil || info.Mode().Perm() != 0600 {
+		t.Fatal("acceptance configuration must be a private 0600 regular file")
+	}
+	c, err := loadStartupConfig(path, true)
+	if err != nil || c.Deployment.Authentication.Provider != "casdoor" {
+		t.Fatal("acceptance configuration requires Casdoor authentication")
+	}
+	provider, err := c.Deployment.Authentication.provider()
+	if err != nil {
+		t.Fatal(err)
+	}
+	runSSOLoopback(t, provider, "Casdoor")
+}
+
+func runSSOLoopback(t *testing.T, provider authn.Provider, label string) {
+	t.Helper()
 	home := os.Getenv("TEAMX_SSO_ACCEPTANCE_HOME")
 	if home == "" {
 		t.Skip("set a fresh absolute TEAMX_SSO_ACCEPTANCE_HOME and complete local browser login")
@@ -73,10 +105,6 @@ func TestOpenCSGSSOLoopback(t *testing.T) {
 		boundary.public, boundary.activeMode = public, accessProxy
 		boundary.proxies = map[netip.Addr]bool{netip.MustParseAddr("127.0.0.1"): true, netip.MustParseAddr("::1"): true}
 	}
-	provider, err := opencsg.New("https://opencsg.com", "https://hub.opencsg.com", nil)
-	if err != nil {
-		t.Fatal(err)
-	}
 	var mu sync.Mutex
 	var completed bool
 	ack := make(chan struct{})
@@ -84,7 +112,7 @@ func TestOpenCSGSSOLoopback(t *testing.T) {
 	writer := &snapshotWriter{ops: defaultSnapshotOps()}
 	observed := observedSSOProbe{Provider: provider, report: func(err error) {
 		if err != nil {
-			t.Log("SSO callback received; protected identity exchange rejected (credentials omitted)")
+			t.Logf("SSO callback received; protected identity exchange rejected: %v (credentials omitted)", err)
 		} else {
 			t.Log("SSO callback received; protected identity exchange verified")
 		}
@@ -125,11 +153,11 @@ func TestOpenCSGSSOLoopback(t *testing.T) {
 		done := completed
 		mu.Unlock()
 		if done {
-			fmt.Fprint(w, "<!doctype html><meta charset=utf-8><title>TeamX SSO</title><p>OpenCSG 登录验证已完成，可以关闭此页面。</p>")
+			fmt.Fprintf(w, "<!doctype html><meta charset=utf-8><title>TeamX SSO</title><p>%s 登录验证已完成，可以关闭此页面。</p>", label)
 			once.Do(func() { close(ack) })
 			return
 		}
-		fmt.Fprint(w, "<!doctype html><meta charset=utf-8><title>TeamX SSO</title><p>TeamX 本机隔离登录验证</p><form method=post action='/v1/access/sso/login'><button>使用 OpenCSG 登录</button></form>")
+		fmt.Fprintf(w, "<!doctype html><meta charset=utf-8><title>TeamX SSO</title><p>TeamX 本机隔离登录验证</p><form method=post action='/v1/access/sso/login'><button>使用 %s 登录</button></form>", label)
 		if r.URL.Query().Get("sso") == "failed" {
 			fmt.Fprint(w, "<p>登录验证未完成，请重试。</p>")
 		}

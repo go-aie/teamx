@@ -32,6 +32,31 @@ func TestServiceInitialConfigAllowsExplicitOpenAuthentication(t *testing.T) {
 	}
 }
 
+func TestServiceInitialConfigAcceptsDirectCasdoorWithoutEmbeddingSecret(t *testing.T) {
+	home := t.TempDir()
+	secret := filepath.Join(home, "client-secret")
+	serviceTestFile(t, secret, "private-client-secret", 0600)
+	seed := strings.Replace(hostedServiceSeed, `provider = "opencsg"`, `provider = "casdoor"`+"\nissuer = 'https://casdoor.example'\nclient_id = 'teamx-client'\nclient_secret_file = '"+filepath.ToSlash(secret)+"'", 1)
+	path := filepath.Join(home, "seed.toml")
+	serviceTestFile(t, path, seed, 0600)
+	document, err := readServiceInitialConfig(path)
+	if err != nil {
+		t.Fatal("Casdoor installation seed rejected", err)
+	}
+	r := serviceRegistration{Root: t.TempDir(), Home: t.TempDir(), UID: os.Getuid(), GID: os.Getgid(), Execution: "srt"}
+	if err := initializeServiceConfig(r, "/published/release", document); err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(filepath.Join(r.Home, "config.toml"))
+	if err != nil || strings.Contains(string(data), "private-client-secret") {
+		t.Fatal("installation copied raw client credentials into TOML", err)
+	}
+	c, err := loadStartupConfig(filepath.Join(r.Home, "config.toml"), true)
+	if err != nil || c.Deployment.Authentication.Provider != "casdoor" || c.Deployment.Authentication.ClientSecretFile != secret {
+		t.Fatal("installation did not preserve Casdoor settings", err)
+	}
+}
+
 func TestServiceRegistrationIsReadableByOrdinaryCore(t *testing.T) {
 	r := serviceRegistration{Root: t.TempDir(), Home: t.TempDir(), Execution: "srt", UID: os.Getuid()}
 	if err := writeServiceRegistration(r); err != nil {

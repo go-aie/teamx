@@ -6,6 +6,8 @@
 
 ## 登录与身份
 
+独立 Casdoor Application 的直连 OIDC 入口、配置及验收边界见 [Casdoor 独立应用登录](../casdoor-login.zh.md)。以下为保留的 OpenCSG broker 协议。
+
 沿用用户指定的 CSGClaw 自有 SSO：登录源 `https://opencsg.com`，CSGHub 默认 `https://hub.opencsg.com`，入口 `/sso/login?redirect_url=...`。不另配 JWT 公钥、服务 API key 或 IAM OAuth 应用。回调参数 `jwt_token`／`jwt` 是原协议字段，不是新增 JWT 配置。
 
 TeamX 发起入口为 `POST /v1/access/sso/login`，回调为 `/v1/access/sso/callback`。远程使用部署配置的 HTTPS origin；本机验收允许字面回环 IP 的 HTTP origin，如 `http://127.0.0.1:18088`，不允许普通 HTTP 域名或局域网地址。浏览器完成登录后直接访问本机回调，不要求 OpenCSG 服务端连接本机端口。

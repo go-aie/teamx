@@ -81,12 +81,6 @@ func (l *externalLogin) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			accessError(w, 503, "login_unavailable")
 			return
 		}
-		callback := l.callback + "?" + url.Values{"state": {state}}.Encode()
-		login, err := l.provider.LoginURL(callback)
-		if err != nil {
-			accessError(w, 503, "login_unavailable")
-			return
-		}
 		l.mu.Lock()
 		now := l.now()
 		if l.window.IsZero() || !now.Before(l.window.Add(time.Minute)) {
@@ -106,6 +100,17 @@ func (l *externalLogin) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		l.started++
 		l.attempts[sha256.Sum256([]byte(state))] = externalAttempt{sha256.Sum256([]byte(browser)), now.Add(externalAttemptLifetime)}
 		l.mu.Unlock()
+		// Reserve the host attempt before a stateful provider allocates its PKCE
+		// proof, so rate-limited starts cannot exhaust the provider's pending set.
+		callback := l.callback + "?" + url.Values{"state": {state}}.Encode()
+		login, err := l.provider.LoginURL(callback)
+		if err != nil {
+			l.mu.Lock()
+			delete(l.attempts, sha256.Sum256([]byte(state)))
+			l.mu.Unlock()
+			accessError(w, 503, "login_unavailable")
+			return
+		}
 		http.SetCookie(w, l.cookie(browser, int(externalAttemptLifetime/time.Second)))
 		// Navigate separately from the same-origin POST: browsers apply a
 		// document's form-action CSP to the entire external redirect chain.

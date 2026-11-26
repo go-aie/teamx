@@ -152,9 +152,9 @@ async function showSession() {
       if (generation !== setupRead) return;
       const sso=method.method === "external" || method.provider === "opencsg";
       $("sso-login-form").hidden=!sso; $("login-form").hidden=sso;
-      $("sso-login-submit").textContent=method.provider === "opencsg" ? "使用 OpenCSG 登录" : "使用账号登录";
+      $("sso-login-submit").textContent=method.provider === "opencsg" ? "使用 OpenCSG 登录" : method.provider === "casdoor" ? "使用 Casdoor 登录" : "使用账号登录";
       if (sso) {
-        if (location.search === "?sso=failed") { $("login-feedback").textContent="OpenCSG 登录未完成或当前账号未获准使用，请重试或联系部署管理员。"; $("login-feedback").hidden=false; }
+        if (location.search === "?sso=failed") { $("login-feedback").textContent="登录未完成或当前账号未获准使用，请重试或联系部署管理员。"; $("login-feedback").hidden=false; }
         return;
       }
     } catch { /* Retain the existing token flow on older personal servers. */ }

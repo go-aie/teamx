@@ -47,11 +47,13 @@ func TestExternalLoginJSONNavigationRetainsBrowserBinding(t *testing.T) {
 }
 
 type loginProviderStub struct {
-	calls atomic.Int32
-	fail  bool
+	calls  atomic.Int32
+	starts atomic.Int32
+	fail   bool
 }
 
-func (*loginProviderStub) LoginURL(callback string) (string, error) {
+func (p *loginProviderStub) LoginURL(callback string) (string, error) {
+	p.starts.Add(1)
 	return "https://login.example/sso/login?" + url.Values{"redirect_url": {callback}}.Encode(), nil
 }
 func (p *loginProviderStub) Complete(context.Context, url.Values) (authn.Identity, error) {
@@ -149,7 +151,8 @@ func TestExternalLoginBrowserExpiryAndFailure(t *testing.T) {
 }
 
 func TestExternalLoginOriginAndPendingLimit(t *testing.T) {
-	login, _ := newExternalLogin(&loginProviderStub{}, "https://teamx.example", func(context.Context, http.ResponseWriter, authn.Identity) error { return nil })
+	provider := &loginProviderStub{}
+	login, _ := newExternalLogin(provider, "https://teamx.example", func(context.Context, http.ResponseWriter, authn.Identity) error { return nil })
 	w := httptest.NewRecorder()
 	login.ServeHTTP(w, httptest.NewRequest(http.MethodPost, "https://teamx.example"+externalLoginPath, nil))
 	if w.Code != 403 {
@@ -164,6 +167,9 @@ func TestExternalLoginOriginAndPendingLimit(t *testing.T) {
 	login.ServeHTTP(w, r)
 	if w.Code != 429 {
 		t.Fatal("pending attempts unbounded")
+	}
+	if provider.starts.Load() != 60 {
+		t.Fatal("rate-limited start allocated provider proof state")
 	}
 }
 
