@@ -31,14 +31,7 @@ const report={status:'passed',smoke_level:'full',target:'linux-amd64',profile:'s
 for(const [key,file] of Object.entries({smoke_sha256:'scripts/package-smoke.mjs',srt_check_sha256:'scripts/package-srt.mjs',native_check_sha256:'scripts/check-dsh-native.mjs',fixture_sha256:'scripts/fixtures/acp.mjs'}))report[key]=hash(file);
 fs.writeFileSync(process.argv[process.argv.indexOf('--report')+1],JSON.stringify(report));
 `);
-  write('scripts/package.mjs',`
-import fs from 'node:fs';import p from 'node:path';import {execFileSync} from 'node:child_process';import {createHash} from 'node:crypto';
-const arg=name=>process.argv[process.argv.indexOf(name)+1];
-fs.appendFileSync(${JSON.stringify(p.join(root,'build-count'))},'build\\n');
-const commit=execFileSync('git',['rev-parse','HEAD'],{encoding:'utf8'}).trim();
-const out=arg('--output-dir'),name='teamx-dev-'+commit.slice(0,12)+'-linux-amd64-standard';
-const stage=p.join(p.dirname(out),'fixture-payload'),bundle=p.join(stage,name);fs.mkdirSync(bundle,{recursive:true});fs.mkdirSync(out);
-const installer=${JSON.stringify(`#!/bin/bash
+  const installer=`#!/bin/bash
 set -eu
 printf '%s\\0' "$@" > "$(dirname "$0")/installer-args"
 ${options.failInstaller ? 'exit 7' : ''}
@@ -69,11 +62,22 @@ else
  echo '{"authenticated":${options.badStatus ? 'false' : 'true'},"ready":${options.notReady ? 'false' : 'true'}}'
 fi
 PROGRAM
+sed "s/COMMIT/$(git -C "$(dirname "$0")/source" rev-parse HEAD)/g" "$bin/teamx" > "$bin/teamx.pending"
+mv "$bin/teamx.pending" "$bin/teamx"
 chmod +x "$bin/teamx"
-`)};
-fs.writeFileSync(p.join(bundle,'install.sh'),installer.replace('COMMIT',commit));
+`;
+  write('packaging/install.sh', installer);
+  write('scripts/package.mjs',`
+import fs from 'node:fs';import p from 'node:path';import {execFileSync} from 'node:child_process';import {createHash} from 'node:crypto';
+const arg=name=>process.argv[process.argv.indexOf(name)+1];
+fs.appendFileSync(${JSON.stringify(p.join(root,'build-count'))},'build\\n');
+const commit=execFileSync('git',['rev-parse','HEAD'],{encoding:'utf8'}).trim();
+const out=arg('--output-dir'),name='teamx-dev-'+commit.slice(0,12)+'-linux-amd64-standard';
+const stage=p.join(p.dirname(out),'fixture-payload'),bundle=p.join(stage,name);fs.mkdirSync(bundle,{recursive:true});fs.mkdirSync(out);
+const installer=fs.readFileSync('packaging/install.sh','utf8');
+fs.writeFileSync(p.join(bundle,'install.sh'),${options.badInstaller ? "installer.replace('#!/bin/bash', '#!/bin/sh')" : 'installer'});
 fs.writeFileSync(p.join(bundle,'manifest.json'),JSON.stringify({channel:'dev',target:'linux-amd64',profile:'standard',source:{commit,dirty:false}}));
-const archive=p.join(out,name+'.tar.gz');execFileSync('tar',['-czf',archive,'-C',stage,name],{env:{...process.env,COPYFILE_DISABLE:'1'}});
+const archive=p.join(out,name+'.tar.gz');execFileSync('tar',['-czf',archive,'-C',stage,...(${JSON.stringify(!!options.manifestFirst)}?[name+'/manifest.json',name+'/install.sh']:[name])],{env:{...process.env,COPYFILE_DISABLE:'1'}});
 const digest=createHash('sha256').update(fs.readFileSync(archive)).digest('hex');
 fs.writeFileSync(archive+'.sha256',digest+'  '+name+'.tar.gz\\n');
 fs.writeFileSync(p.join(out,name+'-report.json'),JSON.stringify({status:${JSON.stringify(options.badReport?'failed':'passed')},smoke_level:arg('--smoke'),quick_sha256:createHash('sha256').update(fs.readFileSync('scripts/package-quick.mjs')).digest('hex'),archive_sha256:digest,target:'linux-amd64',profile:'standard',
@@ -146,6 +150,29 @@ test('remote build-only verifies actual archive without touching service',async 
   assert.equal(result.status,'built');assert.equal(fs.existsSync(p.join(f.config.server_root,'service.json')),false);
   assert.equal(fs.existsSync(f.config.home),false);
   assert.equal(fs.existsSync(p.join(f.root,'prune-args')),false);
+});
+
+test('one metadata pass accepts either member order and refuses an installer differing from committed source', async t => {
+  for (const manifestFirst of [false, true]) {
+    const f = fixture(t, { manifestFirst });
+    const realTar = execFileSync('/bin/sh', ['-c', 'command -v tar'], { encoding: 'utf8' }).trim();
+    const tools = p.join(f.root, 'tools'), record = p.join(f.root, 'metadata-tar-calls');
+    fs.mkdirSync(tools);
+    fs.writeFileSync(p.join(tools, 'tar'), `#!/bin/sh\nprintf '%s\\n' "$*" >> ${shellQuote(record)}\nexec ${shellQuote(realTar)} "$@"\n`, { mode: 0o755 });
+    const request = f.request('metadata', { build_only: true });
+    const previous = process.env.PATH;
+    let result;
+    try {
+      process.env.PATH = tools + ':' + previous;
+      result = await deployRemote(request, runtime);
+    } finally { process.env.PATH = previous; }
+    assert.equal(result.status, 'built');
+    assert.equal(fs.readFileSync(record, 'utf8').trim().split('\n').filter(line => line.startsWith('-xOf ')).length, 1);
+    assert.equal(fs.readFileSync(p.join(request.job, 'install.sh'), 'utf8'), fs.readFileSync(p.join(f.repo, 'packaging/install.sh'), 'utf8'));
+  }
+  const f = fixture(t, { badInstaller: true });
+  await assert.rejects(deployRemote(f.request('foreign-installer'), runtime), /installer differs/);
+  assert.equal(fs.existsSync(f.config.server_root), false);
 });
 
 test('build-only artifacts are reused for deployment and a new commit builds again',async t=>{

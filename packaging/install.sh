@@ -229,8 +229,19 @@ fi
 # Extract only the verified bootstrap executable to stdout. No archive paths or
 # extended attributes are restored; the Go installer validates/extracts the full
 # archive into its managed release directory. Never execute an unpacked start.
-bootstrap_entry=$(tar -tzf "$archive" | awk -F/ 'NF == 3 && $1 != "" && $1 != "." && $1 != ".." && $2 == "bin" && $3 == "teamx" { print; count++ } END { if (count != 1) exit 1 }') || fail '归档必须包含唯一的 bin/teamx'
-tar -xOzf "$archive" "$bootstrap_entry" > "$work/teamx"
+# Extract to stdout and collect matching entry names in the same tar pass.
+# GNU tar requires explicit wildcard matching; bsdtar enables it by default.
+bootstrap_options=(-xOzvf "$archive")
+bootstrap_stderr="$work/bootstrap-entries"
+if tar --version | awk 'NR == 1 && /GNU tar/ { found=1 } END { exit !found }'; then
+  bootstrap_options+=(--wildcards --no-wildcards-match-slash "--index-file=$work/bootstrap-entries")
+  bootstrap_stderr="$work/bootstrap-errors"
+fi
+if ! tar "${bootstrap_options[@]}" '*/bin/teamx' > "$work/teamx" 2> "$bootstrap_stderr"; then
+  cat "$bootstrap_stderr" >&2
+  fail '无法读取归档中的 bin/teamx'
+fi
+awk -F/ '{ sub(/^x /, ""); if (NF != 3 || $1 == "" || $1 == "." || $1 == ".." || $2 != "bin" || $3 != "teamx") exit 1; count++ } END { if (count != 1) exit 1 }' "$work/bootstrap-entries" || fail '归档必须包含唯一的 bin/teamx'
 [[ -s $work/teamx ]] || fail '归档中的 bin/teamx 不是有效的引导文件'
 chmod 0755 "$work/teamx"
 

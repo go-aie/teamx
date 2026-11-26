@@ -108,6 +108,7 @@ export async function deployRemote(request, runtime = { platform: process.platfo
       console.log(`Building ${commit} in ${source}`);
       await timing.run(smoke==='full'?'build and full smoke':'build and application check', () => run(process.execPath, args, { cwd: source, env, logFile: p.join(job, 'build.log') }));
     }
+    const installer = p.join(job, 'install.sh');
     const archiveDigest = await timing.run('verify archive, report and source', async () => {
       check(fs.readdirSync(dist).filter(x => x.endsWith('.tar.gz')).length === 1, 'Expected one successful standard archive');
       const value = await sha256(archive);
@@ -133,8 +134,18 @@ export async function deployRemote(request, runtime = { platform: process.platfo
         }
       }
       receipt.smoke_level=report.smoke_level ?? 'full';
-      const manifest = JSON.parse(output('tar', ['-xOf', archive, name + '/manifest.json']));
+      // Read both entries to stdout in one archive pass, restoring no paths or
+      // attributes. The installer must match this exact committed source; its
+      // known bytes delimit the JSON regardless of archive member ordering.
+      const expectedInstaller = fs.readFileSync(p.join(source, 'packaging/install.sh'));
+      check(expectedInstaller.length > 0, 'Source installer is empty');
+      const metadata = execFileSync('tar', ['-xOf', archive, name + '/manifest.json', name + '/install.sh'], { maxBuffer: 64 * 1024 * 1024 });
+      const first = metadata.subarray(0, expectedInstaller.length).equals(expectedInstaller);
+      const last = metadata.subarray(-expectedInstaller.length).equals(expectedInstaller);
+      check(first || last, 'Packaged installer differs from committed source');
+      const manifest = JSON.parse((first ? metadata.subarray(expectedInstaller.length) : metadata.subarray(0, -expectedInstaller.length)).toString('utf8'));
       check(manifest.source?.commit === commit && manifest.source?.dirty === false && manifest.channel === 'dev' && manifest.target === 'linux-amd64' && manifest.profile === 'standard', 'Packaged source identity mismatch');
+      fs.writeFileSync(installer, expectedInstaller, { mode: 0o700 });
       return value;
     });
     receipt.archive = archive;
@@ -157,8 +168,6 @@ export async function deployRemote(request, runtime = { platform: process.platfo
       console.log(`Build only; installed service untouched. Archive: ${archive}`);
       return receipt;
     }
-    const installer = p.join(job, 'install.sh');
-    timing.step('extract verified installer', () => fs.writeFileSync(installer, output('tar', ['-xOf', archive, name + '/install.sh']) + '\n', { mode: 0o700 }));
     const upgrade = fs.existsSync(p.join(c.server_root, 'service.json')), privileged = runtime.uid !== 0;
     const previousRelease = upgrade ? fs.realpathSync(p.join(c.server_root, 'current')) : undefined;
     const installArgs = [installer, '--archive', archive, '--sha256', archiveDigest, '--server-root', c.server_root, '--bin-dir', c.bin_dir];

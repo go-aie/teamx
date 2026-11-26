@@ -6,6 +6,7 @@ import * as p from 'node:path';
 import { createHash } from 'node:crypto';
 import { spawn, spawnSync, execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
+import { gzipSync } from 'node:zlib';
 
 const source = fs.readFileSync(fileURLToPath(new URL('../packaging/install.sh', import.meta.url)), 'utf8');
 const sha256 = file => createHash('sha256').update(fs.readFileSync(file)).digest('hex');
@@ -335,6 +336,53 @@ test('invalid checksum, missing metadata and failed downloads execute no bundle 
     assert.equal(f.calls().length, 0);
     assert.equal(fs.existsSync(p.join(f.bin, 'teamx')), false);
   }
+});
+
+test('bootstrap extraction scans the archive once and refuses duplicate executable entries', t => {
+  const f = fixture(t);
+  const tarRecord = p.join(f.temp, 'tar-invocations');
+  const realTar = execFileSync('/bin/sh', ['-c', 'command -v tar'], { encoding: 'utf8' }).trim();
+  fs.writeFileSync(p.join(f.temp, 'mocks/tar'), `#!/bin/sh\nprintf '%s\\n' "$*" >> ${quote(tarRecord)}\nexec ${quote(realTar)} "$@"\n`, { mode: 0o755 });
+  const result = f.run(['--archive', f.archive]);
+  assert.equal(result.status, 0, result.stderr);
+  const scans = fs.readFileSync(tarRecord, 'utf8').trim().split('\n').filter(line => line !== '--version');
+  assert.equal(scans.length, 1, 'listing and extraction share one archive scan');
+  const other = fixture(t), name = p.basename(other.archive, '.tar.gz');
+  const raw = p.join(other.temp, 'duplicate.tar');
+  execFileSync(realTar, ['-cf', raw, '-C', other.temp, `${name}/bin/teamx`, `${name}/bin/teamx`], { env: { ...process.env, COPYFILE_DISABLE: '1' } });
+  fs.writeFileSync(other.archive, gzipSync(fs.readFileSync(raw)));
+  const refused = other.run(['--archive', other.archive, '--sha256', sha256(other.archive)]);
+  assert.notEqual(refused.status, 0);
+  assert.match(refused.stderr, /唯一的 bin\/teamx|无法读取/);
+  assert.equal(other.calls().length, 0);
+});
+
+test('GNU tar bootstrap keeps its verbose index separate from executable bytes and diagnostics', t => {
+  const f = fixture(t, 'Linux', 'x86_64');
+  const realTar = execFileSync('/bin/sh', ['-c', 'command -v tar'], { encoding: 'utf8' }).trim();
+  // Exercise GNU option selection on a bsdtar host too. Only the option/index
+  // adapter is substituted; extraction, executable bytes and installation run.
+  const adapter = `#!/bin/bash
+set -eu
+if [[ $1 == --version ]]; then echo 'tar (GNU tar) fixture'; exit 0; fi
+if ${quote(realTar)} --version | awk 'NR == 1 && /GNU tar/ { found=1 } END { exit !found }'; then
+  exec ${quote(realTar)} "$@"
+fi
+args=() index=''
+for arg in "$@"; do
+  case "$arg" in
+    --wildcards|--no-wildcards-match-slash) ;;
+    --index-file=*) index=\${arg#--index-file=} ;;
+    *) args+=("$arg") ;;
+  esac
+done
+[[ -n $index ]]
+exec ${quote(realTar)} "\${args[@]}" 2> "$index"
+`;
+  fs.writeFileSync(p.join(f.temp, 'mocks/tar'), adapter, { mode: 0o755 });
+  const result = f.run(['--archive', f.archive]);
+  assert.equal(result.status, 0, result.stderr);
+  assert.equal(f.calls().length, 1);
 });
 
 test('upgrade progress reaches the caller before deployment completes', { timeout: 15000 }, async t => {

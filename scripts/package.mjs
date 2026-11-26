@@ -7,16 +7,16 @@ import {
   writeJSON,
   run,
   must,
-  files,
   inventory,
-  extract
+  inventoryFile,
+  inventorySubset
 } from './package-lib.mjs';
-import { assemblePlatformDependencies, checkBinaries } from './package-platform.mjs';
-import { assembleSRT } from './package-srt.mjs';
+import { checkBinaries } from './package-platform.mjs';
 import { hasDependency } from './package-profiles.mjs';
 import { assertReleaseSource, releaseBatch } from './package-release-source.mjs';
 import { signingPolicy, signBundle, notarizeBundle } from './package-signing.mjs';
-import { preparedDependencies } from './package-cache.mjs';
+import { compressArchive } from './package-archive.mjs';
+import { preparePackageDependencies } from './package-dependencies.mjs';
 import { progress } from './package-progress.mjs';
 const root = p.resolve(p.dirname(fileURLToPath(import.meta.url)), '..');
 // Public distribution files must be readable/executable by the service account,
@@ -69,7 +69,7 @@ try {
     lock.dependencies.glab.contract,
     ...assets.files.map(a => a.source),
     ...['package.mjs', 'package-lib.mjs', 'package-platform.mjs', 'package-profiles.mjs',
-      'package-smoke.mjs', 'package-quick.mjs', 'package-cache.mjs', 'package-progress.mjs', 'check-packaging.mjs', 'check-dsh-native.mjs',
+      'package-dependencies.mjs', 'package-archive.mjs', 'package-smoke.mjs', 'package-quick.mjs', 'package-cache.mjs', 'package-progress.mjs', 'check-packaging.mjs', 'check-dsh-native.mjs',
       'package-release-source.mjs', 'package-signing.mjs', 'package-srt.mjs',
       'fixtures/acp.mjs', 'fixtures/models.mjs'].map(f => `scripts/${f}`),
     'packaging/node-entitlements.plist'
@@ -185,170 +185,12 @@ try {
     'An unaccepted archive already exists; inspect it before retrying'
   );
   pending = candidate;
-  const dep = lock.dependencies;
-  async function download(entry) {
-    const path = p.join(cache, entry.sha256 + '-' + entry.archive);
-    if (fs.existsSync(path)) {
-      must(
-        hash(fs.readFileSync(path)) === entry.sha256,
-        `Corrupt cache: ${entry.archive}`
-      );
-      return path;
-    }
-    must(!opts.offline, `Offline cache missing: ${entry.archive}`);
-    console.log(`Downloading pinned ${entry.archive}`);
-    const tmp = path + `.${process.pid}.tmp`;
-    try {
-      run('curl', [
-        '--fail',
-        '--location',
-        '--silent',
-        '--show-error',
-        '--http1.1',
-        '--proto',
-        '=https',
-        '--proto-redir',
-        '=https',
-        '--retry',
-        '2',
-        '--connect-timeout',
-        '15',
-        '--max-time',
-        '300',
-        '--output',
-        tmp,
-        entry.url
-      ]);
-      must(
-        hash(fs.readFileSync(tmp)) === entry.sha256,
-        `Checksum mismatch: ${entry.archive}`
-      );
-      fs.renameSync(tmp, path);
-      return path;
-    } finally {
-      fs.rmSync(tmp, { force: true });
-    }
-  }
   const buildHome = p.join(stage, 'build-home');
   fs.mkdirSync(buildHome);
-  const dependencyBundle = bundle;
-  // Include assembly code as well as locks. Application-only commits reuse the
-  // closure; any dependency/assembly change selects a different entry.
-  const dependencyInputs = [
-    'packaging/dependencies.lock.json', 'packaging/dsh/package.json', 'packaging/dsh/package-lock.json',
-    'packaging/srt/package.json', 'packaging/srt/package-lock.json', 'packaging/srt/runtime.lock.json',
-    dep.glab.contract, 'packaging/glab-launcher', 'packaging/git-launcher',
-    'scripts/package.mjs', 'scripts/package-lib.mjs', 'scripts/package-cache.mjs',
-    'scripts/package-platform.mjs', 'scripts/package-profiles.mjs', 'scripts/package-srt.mjs',
-    'scripts/check-dsh-native.mjs'
-  ].map(path => ({ path, sha256: hash(fs.readFileSync(p.join(root, path))) }));
-  const { srt } = await timing.run('prepare dependencies', () => preparedDependencies({
-    cache, destination: dependencyBundle,
-    identity: { version: 1, target: opts.target, profile: opts.profile,
-      libc: process.report?.getReport().header.glibcVersionRuntime || null, inputs: dependencyInputs },
-    validate: directory => timing.step('native dependency check', () => {
-      const node = p.join(directory, 'runtime/node/bin/node');
-      run(node, [p.join(root, 'scripts/check-dsh-native.mjs'), p.join(directory, dep.dsh.layout.destination)], {
-        cwd: buildHome, env: { ...process.env, HOME: buildHome, PATH: `${p.dirname(node)}:/usr/bin:/bin` }
-      });
-    }),
-    build: async () => {
-      for (const name of ['bin', 'THIRD_PARTY_NOTICES']) fs.mkdirSync(p.join(dependencyBundle, name), { recursive: true });
-      const nodeEntry = dep.node.platforms[opts.target];
-      extract(
-        await download(nodeEntry),
-        p.join(dependencyBundle, nodeEntry.layout.destination),
-        nodeEntry.layout.strip_components
-      );
-      const node = p.join(dependencyBundle, 'runtime/node/bin/node'),
-        npm = p.join(dependencyBundle, 'runtime/node/lib/node_modules/npm/bin/npm-cli.js');
-      must(
-        run(node, ['--version']).trim() === dep.node.expected_version,
-        'Node version mismatch'
-      );
-      must(
-        run(node, [npm, '--version']).trim() === lock.build_tools.npm,
-        'npm version mismatch'
-      );
-      const dsh = p.join(dependencyBundle, dep.dsh.layout.destination);
-      fs.mkdirSync(dsh, { recursive: true });
-      for (const file of ['package.json', 'package-lock.json'])
-        fs.copyFileSync(p.join(root, 'packaging/dsh', file), p.join(dsh, file));
-      const npmEnv = {
-        ...process.env,
-        HOME: buildHome,
-        PATH: `${p.dirname(node)}:/usr/bin:/bin`,
-        NPM_CONFIG_USERCONFIG: p.join(buildHome, 'npmrc'),
-        NPM_CONFIG_GLOBALCONFIG: p.join(buildHome, 'global-npmrc'),
-        NPM_CONFIG_CACHE: p.join(
-          cache,
-          `npm-${opts.target}-${dep.dsh.deployment_lock.sha256}`
-        ),
-        NPM_CONFIG_UPDATE_NOTIFIER: 'false'
-      };
-      // Native binaries ship in integrity-locked optional packages/prebuilds. Do not
-      // allow lifecycle scripts to fetch mutable, unverified GitHub assets.
-      console.log(
-        'Deploying pinned DSH production closure (lifecycle scripts disabled)'
-      );
-      run(
-        node,
-        [
-          npm,
-          'ci',
-          '--omit=dev',
-          '--ignore-scripts',
-          '--no-audit',
-          '--no-fund',
-          ...(opts.offline ? ['--offline'] : [])
-        ],
-        { cwd: dsh, env: npmEnv, stdio: 'inherit' }
-      );
-      must(
-        hash(fs.readFileSync(p.join(dsh, 'package-lock.json'))) ===
-          dep.dsh.deployment_lock.sha256,
-        'npm changed deployment lock'
-      );
-      // node-pty normally installs these permissions in a lifecycle script.
-      for (const file of files(dsh).filter((f) =>
-        /node-pty\/prebuilds\/.*\/spawn-helper$/.test(f)
-      ))
-        fs.chmodSync(p.join(dsh, file), 0o755);
-      await assemblePlatformDependencies({
-        root, bundle: dependencyBundle, target: opts.target, profile: opts.profile, lock,
-        glabLock: json(p.join(root, dep.glab.contract)), download
-      });
-      const srt = assembleSRT({ root, bundle: dependencyBundle, target: opts.target, profile: opts.profile, cache, buildHome, offline: opts.offline });
-      const notices = [];
-      for (const file of files(p.join(dsh, 'node_modules')).filter((f) =>
-        /(?:^|\/)(?:licen[cs]e|copying|notice|copyright)(?:[^/]*?)$/i.test(f)
-      )) {
-        const src = p.join(dsh, 'node_modules', file);
-        if (fs.lstatSync(src).isFile())
-          notices.push({
-            path: `runtime/dsh/node_modules/${file}`,
-            sha256: hash(fs.readFileSync(src))
-          });
-      }
-      const installed = [];
-      for (const file of files(p.join(dsh, 'node_modules')).filter((f) =>
-        /(?:^|\/)package.json$/.test(f)
-      )) {
-        const pkg = json(p.join(dsh, 'node_modules', file));
-        if (pkg.name && pkg.version)
-          installed.push({
-            name: pkg.name,
-            version: pkg.version,
-            license: pkg.license || 'see package notices',
-            path: `runtime/dsh/node_modules/${file}`
-          });
-      }
-      writeJSON(p.join(dependencyBundle, 'THIRD_PARTY_NOTICES/dsh-dependencies.json'), {
-        packages: installed,
-        notices
-      });
-      return { srt };
-    }
+  const dep = lock.dependencies;
+  const { srt } = await timing.run('prepare dependencies', () => preparePackageDependencies({
+    root, bundle, cache, target: opts.target, profile: opts.profile, lock,
+    buildHome, offline: opts.offline, timing
   }));
   timing.step('copy public assets', () => {
     for (const asset of assets.files) {
@@ -387,6 +229,7 @@ try {
   const signing = opts.channel === 'release'
     ? signBundle(bundle, root, opts.target, opts['macos-signing'] || 'unsigned') : undefined;
   finishStage = timing.start('inventory and manifest');
+  const bundleInventory = timing.step('scan bundle contents', () => inventory(bundle));
   const dependencyRecords = {};
   for (const key of lock.profiles[opts.profile].required_dependencies) {
     const runtime = key === 'lark-cli' ? 'lark' : key;
@@ -394,7 +237,7 @@ try {
       ...dep[key],
       ...(key === 'glab' ? { artifact: json(p.join(root, dep.glab.contract)).platforms[opts.target.replace('-', '_')] } : {}),
       runtime_sha256: hash(
-        JSON.stringify(inventory(p.join(bundle, `runtime/${runtime}`)))
+        JSON.stringify(inventorySubset(bundle, bundleInventory, `runtime/${runtime}`))
       )
     };
   }
@@ -436,14 +279,16 @@ try {
   };
   writeJSON(p.join(bundle, 'manifest.json'), manifest);
   checkBinaries(bundle, opts.target, opts.profile);
-  const immutable = inventory(bundle);
+  // Preserve directory traversal order without reading dependency bytes again.
+  const immutable = [...bundleInventory, inventoryFile(bundle, 'manifest.json')].sort((a, b) => {
+    const x = a.path.replaceAll('/', '\0'), y = b.path.replaceAll('/', '\0');
+    return x < y ? -1 : x > y ? 1 : 0;
+  });
   writeJSON(p.join(bundle, 'checksums.txt'), immutable);
   finishStage();
   finishStage = undefined;
   const notarization = signing ? notarizeBundle(bundle, stage, signing) : undefined;
-  timing.step('compress archive', () => run('tar', ['-czf', pending, '-C', stage, name], {
-    env: { ...process.env, COPYFILE_DISABLE: '1' }
-  }));
+  await timing.run('compress archive', () => compressArchive(pending, stage, name, { level: opts.channel === 'release' ? 6 : 1 }));
   const report = p.join(stage, 'smoke-report.json');
   await timing.run(opts.smoke === 'full' ? 'full archive smoke' : 'application check', () => run(
     process.execPath,

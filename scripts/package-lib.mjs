@@ -31,38 +31,56 @@ export function files(root) {
 }
 export function inventory(root) {
   root = fs.realpathSync(root);
-  return files(root).map((name) => {
-    must(!/[\n\r\\]/.test(name), `Unsupported filename: ${name}`);
-    const path = p.join(root, name),
-      st = fs.lstatSync(path);
-    if (st.isSymbolicLink()) {
-      const target = fs.readlinkSync(path),
-        resolved = fs.realpathSync(path);
-      must(
-        !p.isAbsolute(target) && !p.relative(root, resolved).startsWith('..'),
-        `Escaping symlink: ${name}`
-      );
-      return {
-        path: name,
-        kind: 'symlink',
-        target,
-        // Link permission bits are not portable: a Linux builder on a macOS
-        // bind mount can observe 0755, while extraction onto ext4 yields 0777.
-        // Validate the link target/containment and the target file's own mode.
-        sha256: hash(target)
-      };
-    }
-    must(st.isFile(), `Unsupported asset: ${name}`);
+  return files(root).map(name => readInventoryFile(root, name));
+}
+export function inventoryFile(root, name) {
+  return readInventoryFile(fs.realpathSync(root), name);
+}
+function readInventoryFile(root, name) {
+  must(!p.isAbsolute(name) && !name.split('/').includes('..'), `Unsupported filename: ${name}`);
+  must(!/[\n\r\\]/.test(name), `Unsupported filename: ${name}`);
+  const path = p.join(root, name),
+    st = fs.lstatSync(path);
+  if (st.isSymbolicLink()) {
+    const target = fs.readlinkSync(path),
+      resolved = fs.realpathSync(path);
+    must(
+      !p.isAbsolute(target) && !p.relative(root, resolved).startsWith('..'),
+      `Escaping symlink: ${name}`
+    );
     return {
       path: name,
-      kind: 'file',
-      sha256: hash(fs.readFileSync(path)),
-      mode: st.mode & 0o777
+      kind: 'symlink',
+      target,
+      // Link permission bits are not portable: a Linux builder on a macOS
+      // bind mount can observe 0755, while extraction onto ext4 yields 0777.
+      // Validate the link target/containment and the target file's own mode.
+      sha256: hash(target)
     };
+  }
+  must(st.isFile(), `Unsupported asset: ${name}`);
+  return {
+    path: name,
+    kind: 'file',
+    sha256: hash(fs.readFileSync(path)),
+    mode: st.mode & 0o777
+  };
+}
+// Derive runtime digests from the checked bundle inventory. A link must still
+// remain within this runtime, not merely somewhere inside the whole bundle.
+export function inventorySubset(root, items, directory) {
+  const prefix = directory + '/', scoped = fs.realpathSync(p.join(root, directory));
+  return items.filter(item => item.path.startsWith(prefix)).map(item => {
+    if (item.kind === 'symlink') {
+      const relative = p.relative(scoped, fs.realpathSync(p.join(root, item.path)));
+      must(relative !== '..' && !relative.startsWith('../') && !p.isAbsolute(relative), `Escaping symlink: ${item.path}`);
+    }
+    return { ...item, path: item.path.slice(prefix.length) };
   });
 }
-export function extract(archive, dest, strip = 0) {
-  const names = run('tar', ['-tf', archive]).split('\n').filter(Boolean);
+
+export function extract(archive, dest, strip = 0, { step = (_label, fn) => fn() } = {}) {
+  const names = step('list archive', () => run('tar', ['-tf', archive])).split('\n').filter(Boolean);
   must(
     names.every((n) => !p.isAbsolute(n) && !n.split('/').includes('..')),
     'Unsafe archive path'
@@ -70,8 +88,8 @@ export function extract(archive, dest, strip = 0) {
   fs.mkdirSync(dest, { recursive: true });
   // An operator may use umask 077 for private acceptance evidence. Preserve
   // reviewed archive modes rather than silently stripping read/execute bits.
-  run('tar', ['-xpf', archive, '-C', dest, `--strip-components=${strip}`], {
+  step('extract archive', () => run('tar', ['-xpf', archive, '-C', dest, `--strip-components=${strip}`], {
     env: { ...process.env, COPYFILE_DISABLE: '1' }
-  });
-  return inventory(dest);
+  }));
+  return step('scan extracted files', () => inventory(dest));
 }

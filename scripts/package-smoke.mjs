@@ -12,6 +12,7 @@ import {
   run,
   must,
   inventory,
+  inventoryFile,
   extract
 } from './package-lib.mjs';
 import { checkBinaries } from './package-platform.mjs';
@@ -58,8 +59,13 @@ async function until(fn, description) {
 }
 try {
   const archiveHash = hash(fs.readFileSync(archive));
+  pass('archive digest');
   const extracted = p.join(temp, 'extracted');
-  const extractedInventory = extract(archive, extracted);
+  const extractedInventory = extract(archive, extracted, 0, { step: (label, fn) => {
+    const result = fn();
+    pass(label);
+    return result;
+  } });
   const entries = fs.readdirSync(extracted);
   must(entries.length === 1, 'Archive must have a single root');
   const bundle = fs.realpathSync(p.join(extracted, entries[0])),
@@ -80,7 +86,7 @@ try {
     'Immutable contents/permissions/checksums differ'
   );
   checkManifestProfile(manifest);
-  checkSRTArchive(bundle, manifest);
+  checkSRTArchive(bundle, manifest, actual);
   if (manifest.execution_runtimes?.srt) pass('SRT resource digests and locked module load');
   checkBinaries(bundle, manifest.target, manifest.profile);
   for (const item of actual) {
@@ -372,19 +378,23 @@ try {
   seedOfflineModels(external, fixtureBin, manifest.dependencies.dsh.version);
   // Explicit home must run with a read-only bundle, including first init.
   fs.rmSync(external, { recursive: true });
-  const modes = inventory(bundle)
-    .filter((f) => f.kind === 'file')
-    .map((f) => [p.join(bundle, f.path), f.mode]);
-  const directories = (dir) => {
-    const result = [dir];
-    for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
-      if (entry.isDirectory())
-        result.push(...directories(p.join(dir, entry.name)));
-    }
-    return result;
-  };
-  for (const dir of directories(bundle))
+  // This phase only needs current permission bits, not another SHA-256 pass
+  // over every runtime byte. Include any files created by earlier probes and
+  // retain link containment checks before making the whole bundle read-only.
+  const modes = [];
+  const collectModes = (dir) => {
     modes.push([dir, fs.statSync(dir).mode & 0o777]);
+    for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+      const file = p.join(dir, entry.name);
+      if (entry.isDirectory()) collectModes(file);
+      else if (entry.isSymbolicLink()) inventoryFile(bundle, p.relative(bundle, file));
+      else {
+        must(entry.isFile(), `Unsupported asset: ${file}`);
+        modes.push([file, fs.statSync(file).mode & 0o777]);
+      }
+    }
+  };
+  collectModes(bundle);
   for (const [file, mode] of modes) fs.chmodSync(file, mode & ~0o222);
   try {
     // Choose custom roots before first Space registration. Changing data_dir

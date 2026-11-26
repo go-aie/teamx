@@ -6,6 +6,7 @@ import p from 'node:path';
 import { preparedDependencies } from './package-cache.mjs';
 import { createHash } from 'node:crypto';
 import { extract, run } from './package-lib.mjs';
+import { dependencyInputs } from './package-dependencies.mjs';
 
 function fixture(t) {
   const root = fs.mkdtempSync(p.join(os.tmpdir(), 'teamx-dependency-cache-'));
@@ -23,6 +24,27 @@ function fixture(t) {
   return { root, cache, identity, build, validate, builds: () => builds, validations: () => validations,
     prepare: (name, extra = {}) => preparedDependencies({ cache, identity, destination: p.join(root, name), build, validate, ...extra }) };
 }
+
+test('application and compression changes reuse dependencies; locks and dependency assembly invalidate them', async t => {
+  const f = fixture(t), source = new URL('../', import.meta.url);
+  const lock = JSON.parse(fs.readFileSync(new URL('packaging/dependencies.lock.json', source), 'utf8'));
+  for (const { path } of dependencyInputs(source.pathname, lock)) {
+    fs.mkdirSync(p.dirname(p.join(f.root, path)), { recursive: true });
+    fs.copyFileSync(new URL(path, source), p.join(f.root, path));
+  }
+  const identity = () => ({ ...f.identity, inputs: dependencyInputs(f.root, lock) });
+  await f.prepare('cold', { identity: identity() });
+  fs.writeFileSync(p.join(f.root, 'scripts/package.mjs'), 'changed application assembly and compression');
+  fs.writeFileSync(p.join(f.root, 'scripts/package-archive.mjs'), 'changed compression');
+  fs.writeFileSync(p.join(f.root, 'app.go'), 'changed application');
+  await f.prepare('application', { identity: identity() });
+  assert.equal(f.builds(), 1);
+  for (const file of ['scripts/package-dependencies.mjs', 'packaging/dsh/package-lock.json']) {
+    fs.appendFileSync(p.join(f.root, file), '\nchanged');
+    await f.prepare('changed-' + f.builds(), { identity: identity() });
+  }
+  assert.equal(f.builds(), 3);
+});
 
 test('prepared dependencies reuse checked files, modes and relative links without sharing writable inodes', async t => {
   const f = fixture(t);

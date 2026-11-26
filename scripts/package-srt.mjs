@@ -1,6 +1,6 @@
 import * as fs from 'node:fs';
 import * as p from 'node:path';
-import { hash, inventory, json, must, run, writeJSON } from './package-lib.mjs';
+import { hash, inventory, inventorySubset, json, must, run, writeJSON } from './package-lib.mjs';
 
 export const includesSRT = (target, profile) => target === 'linux-amd64' && profile === 'standard';
 
@@ -74,7 +74,7 @@ export function assembleSRT({ root, bundle, target, profile, cache, buildHome, o
     default_execution: 'native', release_acceptance: 'pending' };
 }
 
-export function checkSRTArchive(bundle, manifest) {
+export function checkSRTArchive(bundle, manifest, bundleInventory) {
   if (!includesSRT(manifest.target, manifest.profile)) {
     must(!manifest.execution_runtimes?.srt, 'Unexpected SRT target/profile');
     return;
@@ -87,7 +87,7 @@ export function checkSRTArchive(bundle, manifest) {
   must(lock.target === manifest.target && lock.profile === manifest.profile && lock.version === record.version &&
     lock.npm_lock_sha256 === record.npm_lock_sha256, 'SRT contract identity mismatch');
   must(hash(fs.readFileSync(p.join(bundle, 'runtime/srt/package-lock.json'))) === record.npm_lock_sha256 &&
-    hash(JSON.stringify(inventory(p.join(bundle, 'runtime/srt')))) === record.runtime_sha256,
+    hash(JSON.stringify(bundleInventory ? inventorySubset(bundle, bundleInventory, 'runtime/srt') : inventory(p.join(bundle, 'runtime/srt')))) === record.runtime_sha256,
     'SRT resource digest mismatch');
   run(p.join(bundle, 'runtime/node/bin/node'), ['--input-type=module', '-e',
     'import {SandboxManager} from "@anthropic-ai/sandbox-runtime"; if (!SandboxManager) process.exit(1)'],

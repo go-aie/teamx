@@ -4,9 +4,47 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as p from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { hash, run, inventory, extract, writeJSON } from './package-lib.mjs';
+import { hash, run, inventory, inventorySubset, inventoryFile, extract, writeJSON } from './package-lib.mjs';
+import { compressArchive } from './package-archive.mjs';
 import { binaryTarget, checkBinaries } from './package-platform.mjs';
 const scripts = p.dirname(fileURLToPath(import.meta.url));
+
+test('one bundle inventory derives identical runtime digests while keeping runtime link boundaries', t => {
+  const root = fs.mkdtempSync(p.join(os.tmpdir(), 'teamx-inventory-reuse-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const runtime = p.join(root, 'runtime/node');
+  fs.mkdirSync(p.join(runtime, 'dir'), { recursive: true });
+  for (const name of ['dir/child', 'dir.js', 'node']) fs.writeFileSync(p.join(runtime, name), name, { mode: 0o755 });
+  fs.symlinkSync('node', p.join(runtime, 'link'));
+  fs.writeFileSync(p.join(root, 'start'), 'launcher');
+  const items = inventory(root);
+  assert.deepEqual(inventorySubset(root, items, 'runtime/node'), inventory(runtime));
+  fs.writeFileSync(p.join(root, 'manifest.json'), '{}');
+  const combined = [...items, inventoryFile(root, 'manifest.json')].sort((a, b) => {
+    const x = a.path.replaceAll('/', '\0'), y = b.path.replaceAll('/', '\0');
+    return x < y ? -1 : x > y ? 1 : 0;
+  });
+  assert.deepEqual(combined, inventory(root));
+  fs.unlinkSync(p.join(runtime, 'link'));
+  fs.symlinkSync('../../start', p.join(runtime, 'link'));
+  assert.throws(() => inventorySubset(root, inventory(root), 'runtime/node'), /Escaping symlink/);
+});
+
+test('streamed fast gzip preserves archive bytes, modes and links and propagates tar/output failures', async t => {
+  const root = fs.mkdtempSync(p.join(os.tmpdir(), 'teamx-fast-gzip-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const source = p.join(root, "bundle ' with spaces");
+  fs.mkdirSync(source);
+  fs.writeFileSync(p.join(source, 'data'), Buffer.alloc(1024 * 1024, 42), { mode: 0o644 });
+  fs.writeFileSync(p.join(source, 'cli'), '#!/bin/sh\n', { mode: 0o755 });
+  fs.symlinkSync('cli', p.join(source, 'link'));
+  const archive = p.join(root, 'fast.tar.gz');
+  await compressArchive(archive, root, p.basename(source));
+  extract(archive, p.join(root, 'unpacked'));
+  assert.deepEqual(inventory(p.join(root, 'unpacked', p.basename(source))), inventory(source));
+  await assert.rejects(compressArchive(p.join(root, 'missing.tar.gz'), root, 'absent'), /tar exited/);
+  await assert.rejects(compressArchive(p.join(root, 'absent/output.tar.gz'), root, p.basename(source)));
+});
 
 test('private evidence umask preserves archived executable and readable modes', (t) => {
   const dir = fs.mkdtempSync(p.join(os.tmpdir(), 'teamx-private-mode-'));
