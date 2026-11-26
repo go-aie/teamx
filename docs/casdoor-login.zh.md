@@ -6,7 +6,7 @@ TeamX 可直接作为 Casdoor OIDC 客户端，使用独立 Application 的授�
 
 在 Casdoor Application 中启用 Authorization Code，登记准确的回调 URL。TeamX 请求 `openid profile`，使用每次登录独立的 `state`、nonce 和 S256 PKCE。应用有 Client secret 时同时使用 `client_secret_post`；只有确实配置为公共客户端时才省略 secret 文件。
 
-以下为 staging TeamX Application 的配置模板，替换 Client ID 后写入私有配置，服务配置文件应为 `0600`：
+以下为生产 IAM 的配置模板，替换 Client ID 后写入私有配置，服务配置文件应为 `0600`：
 
 ```toml
 [server]
@@ -20,10 +20,11 @@ mode = "multi-user"
 
 [deployment.authentication]
 provider = "casdoor"
-issuer = "https://casdoor.opencsg-stg.com"
+issuer = "https://iam.opencsg.com"
 client_id = "REPLACE_WITH_TEAMX_CLIENT_ID"
 client_secret_file = "/data/teamx-alpha-hosted/home/auth/casdoor-client-secret"
 allow_all_authenticated = true
+hub_origin = "https://hub.opencsg.com"
 ```
 
 `client_secret_file` 是运行 TeamX 的机器上的绝对路径。文件只保存 secret 本身，必须是 `0600` 的普通文件，不能是符号链接；由运行服务的账号读取。当前 alpha 服务账号为 `teamx`。不要把 secret 写入仓库、授权 URL、命令参数、模型环境变量或 Space 设置。源码不会自动读取仓库根目录的 `.env`。
@@ -42,7 +43,11 @@ https://alpha.teamx.opencsg.com/v1/access/sso/callback
 
 OpenCSG broker 与 Casdoor 直连是不同认证源。现有数据目录固定原来的 provider／authority，不能通过改配置自动接管或合并旧用户。首次验证应使用全新的独立 Home；原 Home 和配置保留，切回 OpenCSG 时仍使用原目录。正式沿用旧数据需要另行设计明确的身份迁移。
 
-直连登录不获取 OpenCSG 的默认 AI Gateway Key。新空间沿用原模型设置页面，由用户提供自己的模型和 API Key；不会使用部署账号或其他用户的 Key。登录成功与模型配置完成是两个独立结果。
+配置 `hub_origin` 后，TeamX 在本次登录中核对 IAM access token 的 userinfo 与已验证 ID token 的 `sub` 一致，再通过 Hub 的 OAuth 认证读取该用户个人 namespace 的内置 AI Gateway Key。请求不接受回调中的 namespace 或用户名提示，不使用部署账号的 Key；返回值须属于该用户个人 namespace、应用为 `aigateway` 且处于启用状态。IAM token 随登录请求结束即丢弃，只有本人 Gateway Key 保存至私有用户凭据目录。
+
+新空间以及尚未配置模型的现有空间，会使用本人 Key 自动配置并验证默认模型 `deepseek-v4.1-flash-1017`（`https://ai.space.opencsg.com/v1`）。已有模型配置保持不变。模型验证失败时保留普通模型设置页供重试；本人 Key 获取失败时本次登录失败，不回退到环境变量或其他账号的额度。
+
+删除 `hub_origin` 可关闭自动模型初始化，改由用户手动填写模型和 API Key。已通过 IAM 登录的用户在启用此功能后，需要重新登录一次，以获取本人 Key；已有业务会话不保存 IAM token。
 
 发行版的 Linux／SRT、多用户组合及生产发布门槛保持原有约束，配置样例不代表已经部署或通过完整验收。
 

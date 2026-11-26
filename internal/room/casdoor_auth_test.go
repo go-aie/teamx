@@ -36,6 +36,8 @@ func TestCasdoorConfigurationKeepsCredentialsPrivateAndAdmissionExplicit(t *test
 		func(c *externalAuthConfig) { c.AllowAllAuthenticated = false },
 		func(c *externalAuthConfig) { c.Issuer = "http://casdoor.example" },
 		func(c *externalAuthConfig) { c.ClientID = "" },
+		func(c *externalAuthConfig) { c.HubOrigin = "http://hub.example" },
+		func(c *externalAuthConfig) { c.HubOrigin = "https://hub.example/untrusted-path" },
 		func(c *externalAuthConfig) { c.ClientSecretFile = "relative-secret" },
 		func(c *externalAuthConfig) { c.ClientSecretFile = filepath.Join(t.TempDir(), "missing") },
 	} {

@@ -84,46 +84,58 @@ func (s *SSO) LoginURL(callback string) (string, error) {
 }
 
 func (s *SSO) Complete(ctx context.Context, values url.Values) (authn.Identity, error) {
+	identity, _, err := s.complete(ctx, values, false)
+	return identity, err
+}
+
+// CompleteWithToken additionally checks userinfo subject equality. The caller
+// can use this token during the same login to obtain the owner's credentials.
+func (s *SSO) CompleteWithToken(ctx context.Context, values url.Values) (authn.Identity, string, error) {
+	return s.complete(ctx, values, true)
+}
+
+func (s *SSO) complete(ctx context.Context, values url.Values, exportToken bool) (authn.Identity, string, error) {
 	if len(values["state"]) != 1 {
-		return authn.Identity{}, ErrAuthentication
+		return authn.Identity{}, "", ErrAuthentication
 	}
 	s.mu.Lock()
 	a, ok := s.attempts[values.Get("state")]
 	delete(s.attempts, values.Get("state"))
 	s.mu.Unlock()
 	if !ok || !time.Now().Before(a.expires) || len(values["code"]) != 1 || values.Get("code") == "" || len(values.Get("code")) > 16<<10 || values.Has("error") || values.Has("jwt") || values.Has("jwt_token") {
-		return authn.Identity{}, ErrAuthentication
+		return authn.Identity{}, "", ErrAuthentication
 	}
 	ctx, cancel := context.WithTimeout(ctx, 15*time.Second)
 	defer cancel()
 	ctx = oidc.ClientContext(ctx, s.client)
 	provider, err := oidc.NewProvider(ctx, s.issuer)
 	if err != nil {
-		return authn.Identity{}, fmt.Errorf("%w: OIDC discovery rejected", ErrAuthentication)
+		return authn.Identity{}, "", fmt.Errorf("%w: OIDC discovery rejected", ErrAuthentication)
 	}
 	// Keep code and token traffic pinned to this configured Casdoor origin.
 	var metadata struct {
-		JWKS string `json:"jwks_uri"`
+		JWKS     string `json:"jwks_uri"`
+		UserInfo string `json:"userinfo_endpoint"`
 	}
 	if provider.Claims(&metadata) != nil || !strings.HasPrefix(metadata.JWKS, s.issuer+"/") || provider.Endpoint().AuthURL != s.issuer+"/login/oauth/authorize" || provider.Endpoint().TokenURL != s.issuer+"/api/login/oauth/access_token" {
-		return authn.Identity{}, fmt.Errorf("%w: OIDC endpoints rejected", ErrAuthentication)
+		return authn.Identity{}, "", fmt.Errorf("%w: OIDC endpoints rejected", ErrAuthentication)
 	}
 	c := s.config(a.redirect)
 	token, err := c.Exchange(ctx, values.Get("code"), oauth2.VerifierOption(a.verifier))
 	if err != nil {
 		// OAuth errors can include response bodies containing credentials.
-		return authn.Identity{}, fmt.Errorf("%w: code exchange rejected", ErrAuthentication)
+		return authn.Identity{}, "", fmt.Errorf("%w: code exchange rejected", ErrAuthentication)
 	}
 	raw, _ := token.Extra("id_token").(string)
 	if raw == "" || len(raw) > 64<<10 {
-		return authn.Identity{}, fmt.Errorf("%w: ID token missing", ErrAuthentication)
+		return authn.Identity{}, "", fmt.Errorf("%w: ID token missing", ErrAuthentication)
 	}
 	id, err := provider.VerifierContext(ctx, &oidc.Config{ClientID: s.clientID}).Verify(ctx, raw)
 	if err != nil || id.Nonce != a.nonce || id.Subject == "" || len(id.Subject) > 256 || strings.TrimSpace(id.Subject) != id.Subject || strings.ContainsAny(id.Subject, "\x00\r\n") {
-		return authn.Identity{}, fmt.Errorf("%w: ID token verification rejected", ErrAuthentication)
+		return authn.Identity{}, "", fmt.Errorf("%w: ID token verification rejected", ErrAuthentication)
 	}
 	if id.AccessTokenHash != "" && id.VerifyAccessToken(token.AccessToken) != nil {
-		return authn.Identity{}, ErrAuthentication
+		return authn.Identity{}, "", ErrAuthentication
 	}
 	var claims struct {
 		Name            string `json:"name"`
@@ -131,11 +143,24 @@ func (s *SSO) Complete(ctx context.Context, values url.Values) (authn.Identity, 
 		AuthorizedParty string `json:"azp"`
 	}
 	if id.Claims(&claims) != nil || claims.AuthorizedParty != "" && claims.AuthorizedParty != s.clientID || len(id.Audience) > 1 && claims.AuthorizedParty != s.clientID {
-		return authn.Identity{}, ErrAuthentication
+		return authn.Identity{}, "", ErrAuthentication
 	}
 	name := claims.Name
 	if name == "" {
 		name = claims.Username
 	}
-	return authn.Identity{Provider: "casdoor", Authority: s.issuer, Subject: id.Subject, DisplayName: name, ValidUntil: id.Expiry}, nil
+	identity := authn.Identity{Provider: "casdoor", Authority: s.issuer, Subject: id.Subject, DisplayName: name, ValidUntil: id.Expiry}
+	if !exportToken {
+		return identity, "", nil
+	}
+	// Bind the access token to the verified ID token before a model credential
+	// integration can use it. Neither token is persisted or put in a session.
+	if metadata.UserInfo != s.issuer+"/api/userinfo" {
+		return authn.Identity{}, "", fmt.Errorf("%w: userinfo endpoint rejected", ErrAuthentication)
+	}
+	user, err := provider.UserInfo(ctx, oauth2.StaticTokenSource(token))
+	if err != nil || user.Subject != id.Subject {
+		return authn.Identity{}, "", fmt.Errorf("%w: access token identity rejected", ErrAuthentication)
+	}
+	return identity, token.AccessToken, nil
 }

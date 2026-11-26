@@ -34,6 +34,11 @@ func (c externalAuthConfig) provider() (authn.Provider, error) {
 		return nil, errors.New("authentication requires allowed_subjects or explicit allow_all_authenticated")
 	}
 	if c.Provider == "casdoor" {
+		if c.HubOrigin != "" {
+			if _, err := opencsg.NewOAuthGateway(c.HubOrigin, nil); err != nil {
+				return nil, err
+			}
+		}
 		var secret string
 		if c.ClientSecretFile != "" {
 			if !filepath.IsAbs(c.ClientSecretFile) {

@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/go-aie/teamx/internal/authn"
+	"github.com/go-aie/teamx/internal/authn/opencsg"
 )
 
 const hostedDefaultModel = "deepseek-v4.1-flash-1017"
@@ -22,10 +23,18 @@ type gatewayCredentialSource interface {
 
 // Login supplies the owner's Gateway key; model initialization, validation and
 // subsequent edits all use the ordinary Space model service and catalog.
-func (s *spaceServer) configureModelDefaults(provider authn.Provider) {
+func (s *spaceServer) configureModelDefaults(provider authn.Provider) error {
+	if oauth, ok := provider.(oauthIdentityProvider); ok && s.access.config.Deployment.Authentication.HubOrigin != "" {
+		gateway, err := opencsg.NewOAuthGateway(s.access.config.Deployment.Authentication.HubOrigin, nil)
+		if err != nil {
+			return err
+		}
+		s.configureOAuthModelDefaults(oauth, gateway)
+		return nil
+	}
 	gateway, ok := provider.(gatewayCredentialSource)
 	if !ok {
-		return
+		return nil
 	}
 	s.access.login.provision = func(ctx context.Context, identity authn.Identity, values url.Values) error {
 		entry, err := s.access.users.reserve(identity, s.access.config.Deployment.Authentication)
@@ -38,6 +47,48 @@ func (s *spaceServer) configureModelDefaults(provider authn.Provider) {
 		}
 		return s.access.users.saveGatewayKey(entry.ID, key)
 	}
+	return nil
+}
+
+type oauthIdentityProvider interface {
+	authn.Provider
+	CompleteWithToken(context.Context, url.Values) (authn.Identity, string, error)
+}
+
+type oauthGatewaySource interface {
+	GatewayAPIKey(context.Context, authn.Identity, string) (string, error)
+}
+
+type modelBootstrapLogin struct {
+	authn.Provider
+	complete func(context.Context, url.Values) (authn.Identity, error)
+}
+
+func (p modelBootstrapLogin) Complete(ctx context.Context, values url.Values) (authn.Identity, error) {
+	return p.complete(ctx, values)
+}
+
+func (s *spaceServer) configureOAuthModelDefaults(provider oauthIdentityProvider, gateway oauthGatewaySource) {
+	// The OAuth token stays on this request's stack. Admission precedes the Key
+	// read; only the owner's Gateway key reaches the ordinary model module.
+	s.access.login.provider = modelBootstrapLogin{Provider: provider, complete: func(ctx context.Context, values url.Values) (authn.Identity, error) {
+		identity, token, err := provider.CompleteWithToken(ctx, values)
+		if err != nil {
+			return authn.Identity{}, err
+		}
+		entry, err := s.access.users.reserve(identity, s.access.config.Deployment.Authentication)
+		if err != nil {
+			return authn.Identity{}, err
+		}
+		key, err := gateway.GatewayAPIKey(ctx, identity, token)
+		if err != nil {
+			return authn.Identity{}, err
+		}
+		if err := s.access.users.saveGatewayKey(entry.ID, key); err != nil {
+			return authn.Identity{}, err
+		}
+		return identity, nil
+	}}
 }
 
 type hostedGatewayCredential struct {

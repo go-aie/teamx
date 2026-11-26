@@ -53,7 +53,22 @@ func newIssuerFixture(t *testing.T, secret string) *issuerFixture {
 			if f.mode == "discovery-issuer" {
 				issuer = "https://foreign.invalid"
 			}
-			_ = json.NewEncoder(w).Encode(map[string]any{"issuer": issuer, "authorization_endpoint": f.server.URL + "/login/oauth/authorize", "token_endpoint": f.server.URL + "/api/login/oauth/access_token", "jwks_uri": keyURL, "id_token_signing_alg_values_supported": []string{"RS256"}})
+			userinfo := f.server.URL + "/api/userinfo"
+			if f.mode == "foreign-userinfo" {
+				userinfo = "https://foreign.invalid/userinfo"
+			}
+			_ = json.NewEncoder(w).Encode(map[string]any{"issuer": issuer, "authorization_endpoint": f.server.URL + "/login/oauth/authorize", "token_endpoint": f.server.URL + "/api/login/oauth/access_token", "jwks_uri": keyURL, "userinfo_endpoint": userinfo, "id_token_signing_alg_values_supported": []string{"RS256"}})
+		case "/api/userinfo":
+			if r.Header.Get("Authorization") != "Bearer private-access-token" {
+				t.Error("userinfo did not use the exchanged token")
+				w.WriteHeader(401)
+				return
+			}
+			subject := "stable-user-id"
+			if f.mode == "foreign-user" {
+				subject = "another-user"
+			}
+			_ = json.NewEncoder(w).Encode(map[string]string{"sub": subject})
 		case "/.well-known/jwks":
 			_ = json.NewEncoder(w).Encode(jose.JSONWebKeySet{Keys: []jose.JSONWebKey{{Key: &key.PublicKey, KeyID: "fixture", Algorithm: "RS256", Use: "sig"}}})
 		case "/api/login/oauth/access_token":
@@ -161,6 +176,27 @@ func TestOIDCCodeExchangeVerifiesIdentityAndConsumesAttempt(t *testing.T) {
 			}
 			if _, err := p.Complete(t.Context(), values); !errors.Is(err, ErrAuthentication) || f.tokenHits.Load() != 1 {
 				t.Fatal("replay reached the token endpoint")
+			}
+		})
+	}
+}
+
+func TestOIDCExportsOnlyTheVerifiedUsersAccessToken(t *testing.T) {
+	f := newIssuerFixture(t, "private-client-secret")
+	for _, mode := range []string{"", "foreign-user", "foreign-userinfo", "signature", "nonce"} {
+		t.Run(mode, func(t *testing.T) {
+			f.mode = mode
+			p, values := f.begin(t)
+			id, token, err := p.CompleteWithToken(t.Context(), values)
+			if mode == "" {
+				if err != nil || id.Subject != "stable-user-id" || token != "private-access-token" {
+					t.Fatal("verified token was not available to the host integration", err)
+				}
+			} else if !errors.Is(err, ErrAuthentication) || token != "" || id != (authn.Identity{}) {
+				t.Fatal("a mismatched or unverified user's token escaped", err)
+			}
+			if _, token, err := p.CompleteWithToken(t.Context(), values); err == nil || token != "" {
+				t.Fatal("authorization code was exported twice")
 			}
 		})
 	}
