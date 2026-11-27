@@ -19,11 +19,13 @@ import (
 	"time"
 
 	"github.com/go-aie/teamx/internal/authn"
+	"github.com/go-aie/teamx/internal/web"
 )
 
 const maxHostedSessions = 256
 const maxUserSessions = 4
 const maxHostedSessionBytes = 16 << 20
+const authenticationGrace = 5 * time.Minute
 
 var errSessionStorage = errors.New("session_storage_unavailable")
 var errLoginRequired = errors.New("login_required")
@@ -66,9 +68,10 @@ type renewalFlight struct {
 	err  error
 }
 type renewalRetry struct {
-	failures int
-	after    time.Time
-	err      error
+	failures  int
+	after     time.Time
+	err       error
+	temporary bool // Only transient upstream failures permit the fixed grace window.
 }
 
 // One owner per host. commit serializes every collection mutation. a.mu guards
@@ -321,10 +324,26 @@ func (o *accessSessionRenewal) install(login authn.Login, subject userSubject, o
 
 func renewAfter(r *renewableSession) time.Time {
 	lead := r.VerifiedUntil.Sub(r.VerifiedAt) / 4
-	if lead > time.Minute {
-		lead = time.Minute
+	if lead > 10*time.Minute {
+		lead = 10 * time.Minute
 	}
 	return r.VerifiedUntil.Add(-lead)
+}
+
+// Caller holds a.mu. Grace is anchored to the persisted verification deadline,
+// never to a failed attempt or restart. It cannot outlive either credential.
+func (o *accessSessionRenewal) usableUntil(key [32]byte, s accessSession) time.Time {
+	until := s.renewal.VerifiedUntil
+	if o.retries[key].temporary {
+		until = until.Add(authenticationGrace)
+	}
+	if s.renewal.Grant.AccessExpires.Before(until) {
+		until = s.renewal.Grant.AccessExpires
+	}
+	if s.expires.Before(until) {
+		until = s.expires
+	}
+	return until
 }
 
 // authenticate never reads a business body. A canceled waiter cannot cancel a
@@ -362,8 +381,9 @@ func (o *accessSessionRenewal) authenticate(ctx context.Context, key [32]byte, w
 	flight := o.flights[key]
 	if flight == nil {
 		if retry := o.retries[key]; now.Before(retry.after) {
+			usable := now.Before(o.usableUntil(key, s)) && !errors.Is(retry.err, errSessionStorage)
 			a.mu.Unlock()
-			if now.Before(s.renewal.VerifiedUntil) && !errors.Is(retry.err, errSessionStorage) {
+			if usable {
 				return s, nil
 			}
 			return accessSession{}, retry.err
@@ -373,7 +393,7 @@ func (o *accessSessionRenewal) authenticate(ctx context.Context, key [32]byte, w
 		o.wg.Add(1)
 		go o.run(key, s, flight)
 	}
-	if now.Before(s.renewal.VerifiedUntil) && (len(waitEarly) == 0 || !waitEarly[0]) {
+	if now.Before(o.usableUntil(key, s)) && (len(waitEarly) == 0 || !waitEarly[0]) {
 		a.mu.Unlock()
 		return s, nil
 	}
@@ -389,7 +409,7 @@ func (o *accessSessionRenewal) authenticate(ctx context.Context, key [32]byte, w
 	if flight.err != nil {
 		a.mu.Lock()
 		current, exists := a.sessions[key]
-		usable := exists && !o.broken && !o.closed && !o.quarantined[key] && !o.denied[key] && o.valid(current, a.now()) && a.now().Before(current.renewal.VerifiedUntil)
+		usable := exists && !o.broken && !o.closed && !o.quarantined[key] && !o.denied[key] && o.valid(current, a.now()) && a.now().Before(o.usableUntil(key, current))
 		a.mu.Unlock()
 		if errors.Is(flight.err, errAuthenticationTemporary) && usable {
 			return current, nil
@@ -495,7 +515,9 @@ func (o *accessSessionRenewal) run(key [32]byte, session accessSession, flight *
 		return err
 	}()
 	var f *authn.Failure
-	if errors.As(err, &f) && f.Kind == authn.InvalidGrant {
+	providerFailure := errors.As(err, &f)
+	temporary := errors.Is(err, errAuthenticationTemporary) || providerFailure && f.Kind == authn.Temporary
+	if providerFailure && f.Kind == authn.InvalidGrant {
 		if revokeErr := o.revoke(key); revokeErr != nil {
 			err = revokeErr
 		} else {
@@ -533,10 +555,11 @@ func (o *accessSessionRenewal) run(key [32]byte, session accessSession, flight *
 		if delay > time.Minute {
 			delay = time.Minute
 		}
-		o.retries[key] = renewalRetry{retry.failures + 1, a.now().Add(delay), err}
+		o.retries[key] = renewalRetry{failures: retry.failures + 1, after: a.now().Add(delay), err: err, temporary: temporary}
 	} else {
 		delete(o.retries, key)
 	}
+	a.revokeUIUpdatesLocked(false)
 	flight.err = err
 	delete(o.flights, key)
 	close(flight.done)
@@ -619,6 +642,23 @@ func writeAuthenticationError(w http.ResponseWriter, err error) {
 	accessError(w, 503, "authentication_temporarily_unavailable")
 }
 
+// Navigation must retain a live recovery path even when business access is
+// temporarily blocked. This static page contains no authenticated user data.
+func writeBrowserAuthenticationError(w http.ResponseWriter, r *http.Request, err error) {
+	if r.Context().Err() != nil {
+		return
+	}
+	if !errors.Is(err, errLoginRequired) && (r.Method == http.MethodGet || r.Method == http.MethodHead) && (r.URL.Path == "/" || r.URL.Path == "/space-loading") {
+		copy := r.Clone(r.Context())
+		u := *r.URL
+		u.Path = "/authentication-recovery"
+		copy.URL = &u
+		web.Serve(w, copy)
+		return
+	}
+	writeAuthenticationError(w, err)
+}
+
 func (a *serverAccess) serveRenewableControl(w http.ResponseWriter, r *http.Request, origin string) bool {
 	o := a.authority().renewal
 	if o == nil {
@@ -673,16 +713,19 @@ func (a *serverAccess) serveRenewableControl(w http.ResponseWriter, r *http.Requ
 		return true
 	}
 	after := renewAfter(s.renewal)
+	usableUntil := s.renewal.VerifiedUntil
 	o.a.mu.Lock()
 	if cookie, err := r.Cookie(o.a.cookieName()); err == nil {
-		if retry := o.retries[tokenDigest(cookie.Value)]; retry.after.After(after) {
+		key := tokenDigest(cookie.Value)
+		usableUntil = o.usableUntil(key, s)
+		if retry := o.retries[key]; retry.after.After(after) {
 			after = retry.after
 		}
 	}
 	o.a.mu.Unlock()
 	space := o.a.defaultSpace(s.Subject)
 	_ = writeJSON(w, map[string]any{"operator": s.Subject.UserID, "user_id": s.Subject.UserID, "auth_version": s.Subject.AuthVersion, "space_id": space, "installation_id": a.installationID, "login_enabled": true, "deployment_managed": true,
-		"renewal_supported": true, "absolute_expires_at": s.expires, "verified_until": s.renewal.VerifiedUntil, "renew_after": after})
+		"renewal_supported": true, "absolute_expires_at": s.expires, "verified_until": s.renewal.VerifiedUntil, "usable_until": usableUntil, "renew_after": after})
 	return true
 }
 

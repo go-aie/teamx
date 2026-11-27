@@ -11,7 +11,10 @@ export function createSessionController({ read, renew, document = globalThis.doc
     clearTimer(timer); timer = undefined;
     if (stopped || !visible() || navigating || !metadata?.renewal_supported && !unavailable) return;
     const when = Date.parse(metadata?.renew_after);
-    timer = setTimer(() => { timer = undefined; void check().catch(() => {}); }, delay ?? Math.max(1000, when - now()));
+    const until = Date.parse(metadata?.usable_until || metadata?.verified_until);
+    // Recheck at the authorization boundary even if Retry-After runs past it.
+    const next = Math.min(when, Number.isFinite(until) ? until : Infinity);
+    timer = setTimer(() => { timer = undefined; void check().catch(() => {}); }, delay ?? Math.max(1000, next - now()));
   }
   function setUnavailable(value) { if (unavailable !== value) { unavailable = value; changed(value); } }
   function accept(value) {
@@ -36,19 +39,34 @@ export function createSessionController({ read, renew, document = globalThis.doc
       typeof saved?.path !== "string" || !/^\/s\/[a-f0-9]{32}\/$/.test(saved.path)) return false;
     location?.replace?.(saved.path + (saved.hash === "#platform-settings" ? saved.hash : "")); return true;
   }
+  const sessionPath = path => /\/v1\/access\/session(?:\/renew)?$/.test(path);
+  function failed(error, sessionCheck) {
+    // A failed background check does not invalidate an authorization the host
+    // already granted. Business rejections and storage failures still fence UI.
+    const deadline = Math.min(Date.parse(metadata?.usable_until || metadata?.verified_until),
+      metadata?.absolute_expires_at ? Date.parse(metadata.absolute_expires_at) : Infinity);
+    const transient = !error.status || error.status === 503 && error.code === "authentication_temporarily_unavailable";
+    const usable = sessionCheck && transient && now() < deadline;
+    if (!usable) setUnavailable(true);
+    let delay = [1000, 5000, 15000, 30000][Math.min(failures++, 3)];
+    if (usable) delay = Math.min(delay, deadline - now());
+    schedule(delay);
+  }
   function observe(status, result, path) {
     if (status === 401) { login(); return; }
     if (status === 503 && temporaryAuthentication(result?.code || result?.error)) {
-      setUnavailable(true); schedule([1000, 5000, 15000, 30000][Math.min(failures++, 3)]); return;
+      // check() owns its error handling; do not count the same failure twice.
+      if (!pending || !sessionPath(path)) failed({status, code:result?.code || result?.error}, sessionPath(path));
+      return;
     }
-    if (status >= 200 && status < 300 && /\/v1\/access\/session(?:\/renew)?$/.test(path)) accept(result);
+    if (status >= 200 && status < 300 && sessionPath(path)) accept(result);
   }
   function check() {
     if (pending) return pending;
     // Install pending before calling a reader, including synchronous fixtures.
     pending = Promise.resolve().then(() => metadata?.renewal_supported ? renew() : read()).then(value => { accept(value); return value; }, error => {
       if (error.status === 401) login();
-      else { setUnavailable(true); schedule([1000, 5000, 15000, 30000][Math.min(failures++, 3)]); }
+      else failed(error, true);
       throw error;
     }).finally(() => { pending = undefined; });
     return pending;

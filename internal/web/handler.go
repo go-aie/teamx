@@ -14,6 +14,8 @@ import (
 func Serve(w http.ResponseWriter, r *http.Request) bool {
 	file, contentType := "", ""
 	switch r.URL.Path {
+	case "/authentication-recovery":
+		file, contentType = "assets/authentication-recovery.html", "text/html; charset=utf-8"
 	case "/space-loading":
 		file, contentType = "assets/space-loading.html", "text/html; charset=utf-8"
 	case "/access":
@@ -53,6 +55,15 @@ func Serve(w http.ResponseWriter, r *http.Request) bool {
 	w.Header().Set("Cache-Control", "no-cache")
 	w.Header().Set("X-Content-Type-Options", "nosniff")
 	w.Header().Set("Content-Security-Policy", "default-src 'self'; script-src 'self'; style-src 'self'; connect-src 'self'; img-src 'self' blob:; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'")
+	if r.URL.Path == "/authentication-recovery" {
+		w.Header().Set("Cache-Control", "no-store")
+		w.Header().Set("Retry-After", "1")
+		w.WriteHeader(http.StatusServiceUnavailable)
+		if r.Method == http.MethodGet {
+			_, _ = w.Write(data)
+		}
+		return true
+	}
 	http.ServeContent(w, r, file, time.Time{}, bytes.NewReader(data))
 	return true
 }

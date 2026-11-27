@@ -18,6 +18,7 @@ func TestAssets(t *testing.T) {
 		}
 		asset := "/ui/" + strings.TrimPrefix(name, "assets/")
 		var contentType string
+		wantStatus := http.StatusOK
 		switch path.Ext(name) {
 		case ".html":
 			asset, contentType = "/", "text/html"
@@ -26,6 +27,9 @@ func TestAssets(t *testing.T) {
 			}
 			if name == "assets/access.html" {
 				asset = "/access"
+			}
+			if name == "assets/authentication-recovery.html" {
+				asset, wantStatus = "/authentication-recovery", http.StatusServiceUnavailable
 			}
 		case ".css":
 			contentType = "text/css"
@@ -38,7 +42,7 @@ func TestAssets(t *testing.T) {
 		}
 		response := httptest.NewRecorder()
 		if !Serve(response, httptest.NewRequest(http.MethodGet, asset, nil)) ||
-			response.Code != http.StatusOK || response.Body.Len() == 0 ||
+			response.Code != wantStatus || response.Body.Len() == 0 ||
 			!strings.Contains(response.Header().Get("Content-Type"), contentType) || !strings.Contains(response.Header().Get("Content-Security-Policy"), "img-src 'self' blob:;") ||
 			!strings.Contains(response.Header().Get("Content-Security-Policy"), "script-src 'self';") {
 			t.Fatalf("asset %s: %d, %v", asset, response.Code, response.Header())

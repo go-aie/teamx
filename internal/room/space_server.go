@@ -317,7 +317,7 @@ func (s *spaceServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 				if errors.Is(err, errLoginRequired) {
 					http.Redirect(w, r, "/access", http.StatusSeeOther)
 				} else {
-					writeAuthenticationError(w, err)
+					writeBrowserAuthenticationError(w, r, err)
 				}
 				return
 			}
@@ -349,7 +349,7 @@ func (s *spaceServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if _, err := s.access.authenticateBrowserHTTP(w, r); err != nil {
-			writeAuthenticationError(w, err)
+			writeBrowserAuthenticationError(w, r, err)
 			return
 		}
 		if r.Context().Err() != nil {

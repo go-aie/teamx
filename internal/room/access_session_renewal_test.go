@@ -211,12 +211,16 @@ func TestAccessSessionRenewalSavesGrantBeforeTemporaryUserinfoFailure(t *testing
 		return authn.Identity{}, &authn.Failure{Kind: authn.Temporary}
 	}
 	p.advance(16 * time.Minute)
-	if w := hostedRequest(s, "/v1/access/session", nil, cookie, ""); w.Code != 503 || !strings.Contains(w.Body.String(), "authentication_temporarily_unavailable") {
-		t.Fatal("outage incorrectly accepted or logged out", w.Code, w.Body.String())
+	if w := hostedRequest(s, "/v1/access/session", nil, cookie, ""); w.Code != 200 {
+		t.Fatal("temporary userinfo failure blocked the fixed grace window", w.Code, w.Body.String())
 	}
 	current := sessionFor(t, s, cookie)
 	if p.refreshes.Load() != 1 || current.renewal.Grant.RefreshToken != "refresh-alice-1" || !current.renewal.VerifiedUntil.Before(p.now()) {
 		t.Fatal("latest grant lost or permission extended")
+	}
+	p.advance(authenticationGrace)
+	if w := hostedRequest(s, "/v1/access/session", nil, cookie, ""); w.Code != 503 || !strings.Contains(w.Body.String(), "authentication_temporarily_unavailable") {
+		t.Fatal("outage extended grace or logged out", w.Code, w.Body.String())
 	}
 	if err := s.closeWithTimeout(); err != nil {
 		t.Fatal(err)
@@ -752,6 +756,189 @@ func TestAccessSessionRenewalEarlyFailureKeepsLeaseAndBoundsRetries(t *testing.T
 	}
 }
 
+// Keep the short verification window but give its access token a longer TTL,
+// so these cases exercise identity outages independently of token expiration.
+func extendRenewalAccessToken(t *testing.T, s *spaceServer, cookie *http.Cookie, until time.Time) {
+	t.Helper()
+	if err := s.access.renewal.change(func(next map[[32]byte]accessSession) error {
+		key := tokenDigest(cookie.Value)
+		entry := next[key]
+		r := *entry.renewal
+		r.Grant.AccessExpires = until
+		entry.renewal = &r
+		next[key] = entry
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestAccessSessionRenewalTemporaryGraceSurvivesRestartWithoutExtension(t *testing.T) {
+	home := t.TempDir()
+	p := newRenewableProviderFixture()
+	s := renewableHost(t, home, p, "")
+	cookie, subject, space := codeLogin(t, s, "alice")
+	extendRenewalAccessToken(t, s, cookie, p.now().Add(2*time.Hour))
+	original := sessionFor(t, s, cookie)
+	deadline := original.renewal.VerifiedUntil.Add(authenticationGrace)
+	p.verify = func(context.Context, authn.Grant) (authn.Identity, error) {
+		return authn.Identity{}, &authn.Failure{Kind: authn.Temporary}
+	}
+	p.advance(16 * time.Minute)
+	assertGrace := func() {
+		t.Helper()
+		w := hostedRequest(s, "/v1/access/session/renew", struct{}{}, cookie, "")
+		var metadata struct {
+			UsableUntil time.Time `json:"usable_until"`
+			RenewAfter  time.Time `json:"renew_after"`
+		}
+		if w.Code != 200 || json.Unmarshal(w.Body.Bytes(), &metadata) != nil || !metadata.UsableUntil.Equal(deadline) || !metadata.RenewAfter.After(p.now()) {
+			t.Fatal("grace blocked, extended, or lost its retry schedule", w.Code, w.Body.String())
+		}
+		if current := sessionFor(t, s, cookie); !current.renewal.VerifiedUntil.Equal(original.renewal.VerifiedUntil) || !current.expires.Equal(original.expires) {
+			t.Fatal("outage extended persisted authorization")
+		}
+		if w := hostedRequest(s, "/v1/spaces", nil, cookie, ""); w.Code != 200 {
+			t.Fatal("grace lost ordinary directory access", w.Code, w.Body.String())
+		}
+	}
+	assertGrace()
+	waitSpaceState(t, s, space, "setup_required")
+	if w := hostedRequest(s, "/s/"+space+"/v1/setup", nil, cookie, ""); w.Code != 200 {
+		t.Fatal("grace lost ordinary business access", w.Code, w.Body.String())
+	}
+	if err := s.closeWithTimeout(); err != nil {
+		t.Fatal(err)
+	}
+	p.advance(time.Minute)
+	s = renewableHost(t, home, p, "")
+	assertGrace()
+	if p.refreshes.Load() != 0 {
+		t.Fatal("identity retry rotated an unexpired access token")
+	}
+
+	// A new stream uses the same fixed grace deadline as ordinary HTTP.
+	a := s.access
+	user, _ := a.users.user(subject.UserID)
+	aSpace, err := a.forSpace(user.DefaultSpace)
+	if err != nil {
+		t.Fatal(err)
+	}
+	r := httptest.NewRequest(http.MethodGet, a.public+"/v1/updates", nil)
+	r.AddCookie(cookie)
+	r = r.WithContext(context.WithValue(r.Context(), accessContextKey{}, aSpace))
+	r, err = aSpace.bindSpaceRequest(r, subject)
+	if err != nil {
+		t.Fatal(err)
+	}
+	lease, err := aSpace.watchUIUpdates(r)
+	if err != nil || !lease.expires.Equal(deadline) {
+		t.Fatal("SSE did not use the bounded grace deadline", err)
+	}
+	defer a.unwatchUIUpdates(lease)
+	p.advance(3 * time.Minute) // Exactly the original verified_until + 5m.
+	if w := hostedRequest(s, "/v1/access/session/renew", struct{}{}, cookie, ""); w.Code != 503 {
+		t.Fatal("retries or restart extended grace", w.Code)
+	}
+	select {
+	case <-lease.done:
+	default:
+		t.Fatal("expired grace retained its SSE lease")
+	}
+	if _, err := aSpace.watchUIUpdates(r); err == nil {
+		t.Fatal("SSE admitted after grace expired")
+	}
+	for _, path := range []string{"/", "/s/" + space + "/"} {
+		w := hostedRequest(s, path, nil, cookie, "")
+		if w.Code != 503 || !strings.Contains(w.Header().Get("Content-Type"), "text/html") || !strings.Contains(w.Body.String(), "authentication-recovery.mjs") || w.Header().Get("Cache-Control") != "no-store" {
+			t.Fatal("navigation lost automatic recovery", path, w.Code, w.Body.String())
+		}
+	}
+	for _, asset := range []string{"/ui/authentication-recovery.mjs", "/ui/session.mjs", "/ui/access.css"} {
+		if w := hostedRequest(s, asset, nil, cookie, ""); w.Code != 200 {
+			t.Fatal("recovery dependency requires unavailable authentication", asset, w.Code)
+		}
+	}
+	if w := hostedRequest(s, "/s/"+space+"/v1/setup", nil, cookie, ""); w.Code != 503 || !strings.Contains(w.Header().Get("Content-Type"), "application/json") {
+		t.Fatal("business API bypassed authentication or returned HTML", w.Code)
+	}
+	p.verify = nil
+	p.advance(time.Minute)
+	if w := hostedRequest(s, "/v1/access/session/renew", struct{}{}, cookie, ""); w.Code != 200 || !sessionFor(t, s, cookie).renewal.VerifiedAt.Equal(p.now()) {
+		t.Fatal("session did not recover without login", w.Code, w.Body.String())
+	}
+}
+
+func TestAccessSessionRenewalGraceHonorsCredentialAndRevocationBoundaries(t *testing.T) {
+	for _, mode := range []string{"client_config", "unknown_failure", "access_expired", "absolute_expired", "invalid_grant", "disabled", "logout", "storage"} {
+		t.Run(mode, func(t *testing.T) {
+			p := newRenewableProviderFixture()
+			s := renewableHost(t, t.TempDir(), p, "")
+			cookie, subject, _ := codeLogin(t, s, "alice")
+			if mode != "access_expired" {
+				extendRenewalAccessToken(t, s, cookie, p.now().Add(time.Hour))
+			}
+			p.verify = func(context.Context, authn.Grant) (authn.Identity, error) {
+				return authn.Identity{}, &authn.Failure{Kind: authn.Temporary}
+			}
+			p.refresh = func(context.Context, authn.Grant) (authn.Grant, error) {
+				return authn.Grant{}, &authn.Failure{Kind: authn.Temporary}
+			}
+			p.advance(16 * time.Minute)
+			if mode != "access_expired" {
+				if w := hostedRequest(s, "/v1/access/session/renew", struct{}{}, cookie, ""); w.Code != 200 {
+					t.Fatal("grace setup failed", w.Code)
+				}
+			}
+			want := 503
+			switch mode {
+			case "client_config":
+				p.verify = func(context.Context, authn.Grant) (authn.Identity, error) {
+					return authn.Identity{}, &authn.Failure{Kind: authn.ClientConfig}
+				}
+			case "unknown_failure":
+				p.verify = func(context.Context, authn.Grant) (authn.Identity, error) {
+					return authn.Identity{}, errors.New("unclassified failure")
+				}
+			case "invalid_grant":
+				p.verify = func(context.Context, authn.Grant) (authn.Identity, error) {
+					return authn.Identity{}, &authn.Failure{Kind: authn.InvalidGrant}
+				}
+				want = 401
+			case "absolute_expired":
+				if err := s.access.renewal.change(func(next map[[32]byte]accessSession) error {
+					key := tokenDigest(cookie.Value)
+					x := next[key]
+					x.expires = p.now().Add(time.Second)
+					next[key] = x
+					return nil
+				}); err != nil {
+					t.Fatal(err)
+				}
+				want = 401
+			case "disabled":
+				if _, err := s.access.users.setStatus(subject.UserID, "disabled"); err != nil {
+					t.Fatal(err)
+				}
+				s.fenceUser(subject.UserID)
+				want = 401
+			case "logout":
+				if w := hostedRequest(s, "/v1/access/logout", struct{}{}, cookie, ""); w.Code != 200 {
+					t.Fatal(w.Code)
+				}
+				want = 401
+			case "storage":
+				p.verify = nil
+				s.access.sessionStore.ops.createTemp = func(string, string) (snapshotFile, error) { return nil, errors.New("storage unavailable") }
+			}
+			p.advance(time.Minute)
+			if w := hostedRequest(s, "/v1/access/session/renew", struct{}{}, cookie, ""); w.Code != want {
+				t.Fatal("grace bypassed an authentication boundary", w.Code, w.Body.String())
+			}
+		})
+	}
+}
+
 func TestExternalLoginRenewableFailureClearsCallbackAndExplainsCapacity(t *testing.T) {
 	for _, failure := range []struct {
 		err    error
@@ -801,8 +988,8 @@ func TestAccessSessionRenewalHourlyChecksPreserveAbsoluteDeadlineOnRestart(t *te
 	}
 	cookie := &http.Cookie{Name: s.access.cookieName(), Value: token}
 	original := sessionFor(t, s, cookie)
-	if want := login.VerifiedAt.Add(59 * time.Minute); !renewAfter(original.renewal).Equal(want) {
-		t.Fatal("hourly check not scheduled one minute early")
+	if want := login.VerifiedAt.Add(50 * time.Minute); !renewAfter(original.renewal).Equal(want) {
+		t.Fatal("hourly check not scheduled ten minutes early")
 	}
 	p.advance(30 * time.Minute)
 	if _, err := authenticateRenewal(t, s, cookie); err != nil {

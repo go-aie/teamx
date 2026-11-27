@@ -76,9 +76,11 @@ go test -tags=e2e ./internal/room -run '^TestOpenCSGSSOLoopback$' -v -count=1 -t
 
 多用户 OpenCSG 的 `session_max_age` 默认 `168h`，必须为正 duration，最长 `720h`。这是从登录开始计算的绝对期限，刷新、请求和重启均不延长；缩短配置会在重启时缩短现有会话，调大配置只对重新登录生效。不设置闲置超时，不收集点击、输入或滚动活动。
 
-宿主每次远端复核最多授予 1 小时检查窗口，且不晚于当前 access token 到期；接近检查期限时由可见页面提前复核，需要时刷新。关闭／隐藏页面不持续轮换，下次访问按需恢复。同会话的多标签页请求合并为一次续期。页面不直接持有 IAM access／refresh token。
+宿主每次远端复核最多授予 1 小时检查窗口，且不晚于当前 access token 到期；由可见页面最长提前 10 分钟复核，短 TTL 使用窗口的四分之一作为提前量，需要时才刷新令牌。关闭／隐藏页面不持续轮换，下次访问按需恢复。同会话的多标签页请求合并为一次续期。页面不直接持有 IAM access／refresh token。
 
-`GET /v1/access/session` 和同源 `POST /v1/access/session/renew` 返回 `absolute_expires_at`、`verified_until`、`renew_after`、`renewal_supported` 等无凭据元数据。SSE 使用固定 `min(absolute_expires_at, verified_until)` lease，到期重连并重新读取业务状态。IAM 临时故障在检查期限外返回 503，页面保留草稿并暂停新写操作；401 才要求重新登录。业务 POST 不自动重放。
+`GET /v1/access/session` 和同源 `POST /v1/access/session/renew` 返回 `absolute_expires_at`、`verified_until`、`usable_until`、`renew_after`、`renewal_supported` 等无凭据元数据。网络超时、429、IAM 5xx 等临时故障在原复核期限后允许固定 5 分钟宽限，且不超过当前 access token 和登录绝对期限；按带抖动的 1s、5s、15s、30s 退避自动重试。宽限截止时间由已保存的 `verified_until` 计算，重试和重启均不延长；重启后须再次检查，只有确认临时失败才重新允许原固定宽限内的访问。客户端配置错误、存储失败、明确撤销、身份不一致和本地停用不适用宽限。
+
+前端在服务端已授予的 `usable_until` 内静默重试后台复核，保持正常操作。超过宽限仍失败才返回 503、提示并暂停新业务操作，保留页面和草稿；后台继续重试，恢复后自动解除限制。首页和 Space 导航失败返回无用户数据的恢复页面，自动检查会话，恢复后重新加载原位置，不直接显示 JSON。SSE 使用同一 `usable_until` 截止时间建立固定 lease，到期重连并重新读取业务状态；既有 lease 不延期。401 才要求重新登录。业务 POST 不自动重放。
 
 `auth/browser-sessions.json` 的多用户格式升级为 v3，文件包含可用 IAM 凭据，必须为运行服务账号持有的 `0600` 普通文件，目录私有；查看、复制及备份应按凭据处理。升级会原子清除合法 v2 多用户登录，用户需要重新登录一次；保留 User、Space、模型 Key 和平台连接。个人版保持原格式和登录语义。每用户最多 4 个浏览器会话，超出时淘汰该用户最早创建的会话；全部署最多 256 个且文件不超过 16 MiB，超限明确拒绝新登录。
 
