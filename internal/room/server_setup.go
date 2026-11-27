@@ -245,7 +245,7 @@ func (f *firstModelSetup) validate(op *savedSetupOperation) {
 	key, err := f.service.credentials.get(op.Credential)
 	var catalog modelCatalog
 	if err == nil {
-		catalog, err = f.service.save(ctx, modelSave{Entry: op.Entry, APIKey: key.Value, ExpectedVersion: op.ExpectedVersion, MakeDefault: true})
+		catalog, err = f.service.save(ctx, modelSave{Entry: op.Entry, APIKey: key.Value, OperationID: op.Operation.ID, ExpectedVersion: op.ExpectedVersion, MakeDefault: true})
 	}
 	f.mu.Lock()
 	defer f.mu.Unlock()

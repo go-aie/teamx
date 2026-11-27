@@ -62,18 +62,27 @@ func setupProbeDiagnostic(probe *dsh.ProbeError) (field, message string) {
 		return "model_id", "模型服务无法访问所选模型，请核对模型 ID、接口地址及账号权限。"
 	case "rate_quota":
 		return "", "模型服务限流或额度不足，请检查账号额度，稍后重试。"
+	case "rate_limited":
+		return "", "模型服务暂时限流，请稍后重试。"
+	case "quota_exceeded":
+		return "", "模型服务提示账号额度不足，请检查账号额度后重试。"
+	case "upstream_5xx":
+		return "", "模型服务暂时异常，请稍后重试。"
 	case "timeout":
+		if probe.Stage == "handshake" || probe.Stage == "local_identity" || probe.Stage == "local" {
+			return "", "模型运行环境启动超时，请稍后重试；持续失败请联系部署管理员。"
+		}
 		return "", "模型验证超时，请检查模型服务和网络连接后重试。"
 	case "parameters_roles":
 		return "", "模型服务拒绝了请求参数或指令角色，请核对接口协议和高级设置；若接口不支持 developer，请调整对应兼容性选项。"
 	case "busy":
 		return "", "已有模型验证正在进行，请稍后重试。"
 	}
-	if probe.Stage == "local_identity" || probe.Stage == "local" {
+	if probe.Stage == "local_identity" || probe.Stage == "local" || probe.Stage == "handshake" {
 		return "", "模型运行环境检查失败，请联系部署管理员检查运行环境后重试。"
 	}
 	if probe.Stage == "tool" {
-		return "", "模型未通过工具调用验证，请确认所选模型和接口支持工具调用。"
+		return "", "工具调用验证未完成，请重试；持续失败请联系部署管理员查看验证日志。"
 	}
-	return "", "模型验证失败，请检查模型服务是否支持所选接口协议和工具调用。"
+	return "", "模型验证未完成，请重试；持续失败请联系部署管理员查看验证日志。"
 }

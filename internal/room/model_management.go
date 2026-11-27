@@ -275,7 +275,7 @@ func (c *modelController) run(op *modelChangeOperation) {
 		locked := false
 		var publish func()
 		if err == nil {
-			_, err = c.service.save(ctx, modelSave{Entry: entry, APIKey: key, ExpectedVersion: input.ExpectedVersion, MakeDefault: input.Kind == "default", beforeCommit: func(before, next modelCatalog) error {
+			_, err = c.service.save(ctx, modelSave{Entry: entry, APIKey: key, OperationID: op.ID, ExpectedVersion: input.ExpectedVersion, MakeDefault: input.Kind == "default", beforeCommit: func(before, next modelCatalog) error {
 				c.manager.mu.Lock()
 				locked = true
 				if op.Status == "cancelled" {
@@ -347,7 +347,8 @@ func modelChangeError(err error) string {
 	}
 	var probe *dsh.ProbeError
 	if errors.As(err, &probe) {
-		return err.Error()
+		_, message := setupProbeDiagnostic(probe)
+		return message
 	}
 	return "操作未完成，请检查模型、凭据、DSH 和成员结清状态后重试。"
 }

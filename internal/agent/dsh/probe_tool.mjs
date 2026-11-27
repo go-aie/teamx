@@ -24,7 +24,7 @@ export function apply(ctx, config) {
     if (names.length !== 1 || names[0] !== 'teamx_probe') throw new Error('probe tool isolation failed');
   });
   ctx.on('agent/request', (_event, next) => {
-    if (++steps > 4) throw new Error('probe request budget exceeded');
+    if (++steps > config.maxRequests) throw new Error('probe request budget exceeded');
     return next();
   });
   ctx.provide('teamxProbeReady', true);

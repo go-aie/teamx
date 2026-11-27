@@ -3,6 +3,7 @@ package room
 import (
 	"context"
 	"errors"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -78,6 +79,7 @@ type modelSave struct {
 	afterCommit     func(modelCatalog)
 	Entry           modelEntry
 	APIKey          string `json:"-"`
+	OperationID     string
 	ExpectedVersion uint64
 	MakeDefault     bool
 }
@@ -208,12 +210,29 @@ func (s *modelService) save(ctx context.Context, input modelSave) (modelCatalog,
 		opts := s.launcher
 		opts.Model = entry.materialize()
 		opts.Credential = key
+		started := time.Now()
 		receipt, err := s.probeWhenAvailable(ctx, opts)
+		if err == nil && (!receipt.Text || !receipt.ToolRoundTrip || !receipt.Cleanup || receipt.Identity.Version == "" || receipt.Identity.Agent == (dsh.Artifact{})) {
+			err = errors.New("model validation did not complete text, tool and cleanup checks")
+		}
+		stage, code, level := "complete", "ok", slog.LevelInfo
+		if err != nil {
+			stage, code, level = "validation", "failed", slog.LevelWarn
+			var probe *dsh.ProbeError
+			if errors.As(err, &probe) {
+				stage, code = probe.Stage, probe.Code
+			} else if errors.Is(err, context.DeadlineExceeded) {
+				code = "timeout"
+			} else if errors.Is(err, context.Canceled) {
+				code = "cancelled"
+			}
+		}
+		// Only authored categories and correlation IDs enter the service log.
+		// Upstream errors may contain credentials, prompts or private paths.
+		slog.Log(ctx, level, "model validation finished", "space_id", opts.ExecutionBinding.SpaceID, "operation_id", input.OperationID,
+			"stage", stage, "code", code, "duration_ms", time.Since(started).Milliseconds())
 		if err != nil {
 			return current, err
-		}
-		if !receipt.Text || !receipt.ToolRoundTrip || !receipt.Cleanup || receipt.Identity.Version == "" || receipt.Identity.Agent == (dsh.Artifact{}) {
-			return current, errors.New("model validation did not complete text, tool and cleanup checks")
 		}
 		// A private receipt is for diagnosis; it is never authority to skip a probe
 		// in a later operation. Its identity includes the exact credential version.

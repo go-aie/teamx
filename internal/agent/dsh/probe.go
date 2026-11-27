@@ -56,8 +56,10 @@ func probeFailure(stage string, err error) error {
 		code = "timeout"
 	case errors.Is(err, ErrAuthentication):
 		code = "authentication"
-	case errors.Is(err, ErrRateLimited), errors.Is(err, ErrQuotaExceeded):
-		code = "rate_quota"
+	case errors.Is(err, ErrRateLimited):
+		code = "rate_limited"
+	case errors.Is(err, ErrQuotaExceeded):
+		code = "quota_exceeded"
 	case errors.Is(err, ErrModelNotFound), errors.Is(err, ErrModelUnavailable):
 		code = "route_model_access"
 	case errors.As(err, &status):
@@ -65,7 +67,7 @@ func probeFailure(stage string, err error) error {
 		case status.StatusCode == 401 || status.StatusCode == 403:
 			code = "authentication"
 		case status.StatusCode == 429:
-			code = "rate_quota"
+			code = "rate_limited"
 		case status.StatusCode == 408 || status.StatusCode == 504:
 			code = "timeout"
 		case status.StatusCode >= 500:

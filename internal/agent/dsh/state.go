@@ -299,6 +299,8 @@ func prepare(opts *Options, resume bool) (*os.File, reference, error) {
 	return lock, ref, nil
 }
 
+const modelRequestMaxRetries = 5
+
 func profile(opts Options) []map[string]any {
 	patches := []map[string]any{
 		{"id": "acp", "config": map[string]any{"provider": provider(opts.Model), "model": opts.Model.ModelID}},
@@ -314,7 +316,9 @@ func profile(opts Options) []map[string]any {
 	if opts.probe != nil {
 		patches = append(patches,
 			map[string]any{"id": "acp", "inject": []string{"acpAppStartup", "teamxProbeReady"}, "config": map[string]any{"provider": provider(opts.Model), "model": opts.Model.ModelID}},
-			map[string]any{"insert": []map[string]any{{"id": "teamx-probe", "name": filepath.Join(opts.StateDir, "probe.mjs"), "config": map[string]any{"receipt": opts.probe.receipt}}}},
+			// Four logical requests, each with the provider's initial attempt and
+			// bounded retries. The probe's time and tool-call limits still apply.
+			map[string]any{"insert": []map[string]any{{"id": "teamx-probe", "name": filepath.Join(opts.StateDir, "probe.mjs"), "config": map[string]any{"receipt": opts.probe.receipt, "maxRequests": 4 * (modelRequestMaxRetries + 1)}}}},
 		)
 	}
 	if opts.Model.Protocol == "deepseek-messages" {
@@ -341,7 +345,7 @@ func profile(opts Options) []map[string]any {
 		// Retry transient model requests within the same DSH turn. Leave enough
 		// time for rate-limit windows to clear without synchronizing callers.
 		"retryPolicy": map[string]any{
-			"mode": "normal", "maxRetries": 5,
+			"mode": "normal", "maxRetries": modelRequestMaxRetries,
 			"backoff": map[string]any{
 				"initialDelayMs": 5000, "maxDelayMs": 60000, "jitterRatio": 0.2,
 			},

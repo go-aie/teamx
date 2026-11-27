@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -43,6 +44,48 @@ func modelTestService(t *testing.T) (*modelService, *systemSettings, startupConf
 	service.launcher = dsh.Options{BinaryPath: "/fixture-dsh"}
 	service.probe = successfulModelProbe
 	return service, settings, config
+}
+
+func TestModelValidationLogsOnlyFinalCorrelatedSummary(t *testing.T) {
+	var output bytes.Buffer
+	previous := slog.Default()
+	slog.SetDefault(slog.New(slog.NewJSONHandler(&output, nil)))
+	t.Cleanup(func() { slog.SetDefault(previous) })
+	for _, test := range []struct {
+		name, stage, code string
+		err               error
+	}{
+		{"success", "complete", "ok", nil},
+		{"rate-limited", "tool", "rate_limited", &dsh.ProbeError{Stage: "tool", Code: "rate_limited"}},
+		{"unknown", "validation", "failed", errors.New("private-upstream-body private-api-key https://private.invalid/v1")},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			output.Reset()
+			service, _, _ := modelTestService(t)
+			service.launcher.ExecutionBinding.SpaceID = "test-space"
+			service.probe = func(ctx context.Context, opts dsh.Options) (dsh.ProbeResult, error) {
+				result, _ := successfulModelProbe(ctx, opts)
+				return result, test.err
+			}
+			_, err := service.save(t.Context(), modelSave{Entry: modelTestEntry("A"), APIKey: "private-api-key", OperationID: "test-operation"})
+			if !errors.Is(err, test.err) {
+				t.Fatal(err)
+			}
+			var record map[string]any
+			body := output.String()
+			if json.Unmarshal([]byte(body), &record) != nil {
+				t.Fatal("expected one final JSON log", body)
+			}
+			if record["msg"] != "model validation finished" || record["space_id"] != "test-space" || record["operation_id"] != "test-operation" || record["stage"] != test.stage || record["code"] != test.code || record["duration_ms"] == nil {
+				t.Fatal(record)
+			}
+			for _, secret := range []string{"private-upstream-body", "private-api-key", "https://private.invalid/v1"} {
+				if strings.Contains(body, secret) {
+					t.Fatal("private probe input or error entered the service log")
+				}
+			}
+		})
+	}
 }
 
 func TestModelServiceWaitsForSharedProbeAdmission(t *testing.T) {
