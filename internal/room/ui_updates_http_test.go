@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/sha256"
+	"crypto/tls"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -416,6 +417,64 @@ func TestUIUpdatesHTTPHeartbeat(t *testing.T) {
 	})
 }
 
+func TestUIUpdatesRenewableAuthenticationHeartbeat(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		provider := newRenewableProviderFixture()
+		host := renewableHost(t, t.TempDir(), provider, "")
+		cookie, subject, _ := codeLogin(t, host, "alice")
+		user, _ := host.access.users.user(subject.UserID)
+		access, err := host.access.forSpace(user.DefaultSpace)
+		if err != nil {
+			t.Fatal(err)
+		}
+		svc, err := newService(t.TempDir(), "renewable-updates", serviceConfig{access: access})
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { closeService(t, svc) })
+		handler := access.wrap(svc)
+		client, endpoint := toolPipeServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			r.RemoteAddr = "127.0.0.1:45000"
+			// Retain the hosted fixture's HTTPS origin without changing live host state.
+			r.TLS = &tls.ConnectionState{}
+			handler.ServeHTTP(w, r)
+		}), func(server *http.Server) {
+			server.ReadTimeout, server.WriteTimeout = 5*time.Second, 15*time.Second
+		})
+		req, err := http.NewRequest("GET", endpoint+updatesURL(svc.info.ServiceEpoch, svc.info), nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		req.Host = "teamx.example"
+		req.AddCookie(cookie)
+		resp, err := client.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer resp.Body.Close()
+		if resp.StatusCode != http.StatusOK {
+			body, _ := io.ReadAll(resp.Body)
+			t.Fatal(resp.Status, string(body))
+		}
+		frames := updateFrames(resp.Body)
+		hello := nextUpdateFrame(t, frames)
+		for range 3 {
+			time.Sleep(uiUpdateHeartbeat)
+			synctest.Wait()
+			frame := nextUpdateFrame(t, frames)
+			if frame.event != "heartbeat" || frame.data["connection_id"] != hello.data["connection_id"] {
+				t.Fatal("renewable session lost its SSE subscription", frame)
+			}
+		}
+		// Clearing transport deadlines must preserve immediate authorization revocation.
+		if err := host.access.renewal.revoke(tokenDigest(cookie.Value)); err != nil {
+			t.Fatal(err)
+		}
+		synctest.Wait()
+		awaitUpdateClose(t, frames)
+	})
+}
+
 // A transport whose Flush can block, while still honoring concurrent write
 // deadlines like net/http. It records frames without sharing a business lock.
 type blockingUpdateWriter struct {
@@ -433,8 +492,9 @@ type blockingUpdateWriter struct {
 func newBlockingUpdateWriter() *blockingUpdateWriter {
 	return &blockingUpdateWriter{header: make(http.Header), flushed: make(chan struct{}), release: make(chan struct{}), abort: make(chan struct{})}
 }
-func (w *blockingUpdateWriter) Header() http.Header { return w.header }
-func (w *blockingUpdateWriter) WriteHeader(int)     {}
+func (w *blockingUpdateWriter) Header() http.Header             { return w.header }
+func (w *blockingUpdateWriter) WriteHeader(int)                 {}
+func (w *blockingUpdateWriter) SetReadDeadline(time.Time) error { return nil }
 func (w *blockingUpdateWriter) Write(p []byte) (int, error) {
 	w.mu.Lock()
 	defer w.mu.Unlock()

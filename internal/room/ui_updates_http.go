@@ -199,6 +199,14 @@ func serveUIUpdateStream(w http.ResponseWriter, r *http.Request, sub *uiUpdateSu
 		writeAPIError(w, err)
 		return
 	}
+	// Renewable browser authentication restores the ordinary five-second read
+	// deadline. On HTTP/1 net/http's background read would hit it and cancel this
+	// GET's context, even though SSE only writes. The stream owns its lifetime
+	// through cancellation, authorization leases and bounded per-frame writes.
+	if err := rc.SetReadDeadline(time.Time{}); err != nil {
+		writeAPIError(w, err)
+		return
+	}
 	ctx, cancel := context.WithCancel(r.Context())
 	defer cancel()
 	var expiry <-chan time.Time

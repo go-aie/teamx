@@ -5,8 +5,10 @@ package room
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"net/http"
+	"net/http/httptest"
 	"os"
 	"os/exec"
 	"sync/atomic"
@@ -70,6 +72,55 @@ func TestWebUpdatesApplicationBrowser(t *testing.T) {
 		t.Skip("optional Chromium application update acceptance")
 	}
 	runWebUpdatesApplicationBrowser(t, "functional")
+}
+
+// Native EventSource over HTTP/1 with the same renewable authentication that
+// previously restored a five-second read deadline before the SSE handler.
+func TestWebUpdatesRenewableAuthenticationBrowser(t *testing.T) {
+	if os.Getenv("TEAMX_WEB_UPDATES_BROWSER") != "1" {
+		t.Skip("optional Chromium renewable-session SSE acceptance")
+	}
+	provider := newRenewableProviderFixture()
+	host := renewableHost(t, t.TempDir(), provider, "")
+	cookie, subject, _ := codeLogin(t, host, "alice")
+	user, _ := host.access.users.user(subject.UserID)
+	access, err := host.access.forSpace(user.DefaultSpace)
+	if err != nil {
+		t.Fatal(err)
+	}
+	svc, err := newService(t.TempDir(), "renewable-browser", serviceConfig{access: access})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { closeService(t, svc) })
+	authorized := access.wrap(svc)
+	var streamHTTP1 atomic.Bool
+	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/v1/updates" {
+			streamHTTP1.Store(r.ProtoMajor == 1)
+		}
+		// Preserve the fixture's registered public origin without mutating the host.
+		r.Host = "teamx.example"
+		authorized.ServeHTTP(w, r)
+	}))
+	defer server.Close()
+	input, err := json.Marshal(map[string]any{"endpoint": server.URL, "path": updatesURL(svc.info.ServiceEpoch, svc.info),
+		"cookie": map[string]any{"name": cookie.Name, "value": cookie.Value, "domain": "127.0.0.1", "path": "/", "secure": true, "httpOnly": true, "sameSite": "Lax"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithTimeout(t.Context(), time.Minute)
+	defer cancel()
+	command := exec.CommandContext(ctx, "node", "testdata/web_updates_renewable_authentication.cjs")
+	command.Stdin = bytes.NewReader(input)
+	output, err := command.CombinedOutput()
+	if err != nil {
+		t.Fatalf("renewable browser SSE: %v\n%s", err, output)
+	}
+	if !streamHTTP1.Load() {
+		t.Fatal("renewable SSE acceptance did not exercise HTTP/1")
+	}
+	t.Log(string(output))
 }
 
 // Real time and production heartbeats: selected independently of functional checks.

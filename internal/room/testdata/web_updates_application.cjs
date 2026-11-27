@@ -15,7 +15,7 @@ const assert=require('node:assert/strict');
     close(){this.closed=true;super.close();}
    };
   });
-  page.on('request',r=>{const path=new URL(r.url()).pathname;if(path.startsWith('/v1/')&&path!=='/v1/updates')reads.push(path);});
+  page.on('request',r=>{const path=new URL(r.url()).pathname.replace(/^\/s\/[a-f0-9]{32}(?=\/)/,'');if(path.startsWith('/v1/')&&path!=='/v1/updates')reads.push(path);});
   await page.goto(endpoint);
   try { await page.waitForFunction(()=>window.updateSources.some(s=>s.frames.some(f=>f.event==='hello'))&&!document.querySelector('#message-input').disabled); }
   catch(error){console.error(JSON.stringify({errors,reads,state:await page.evaluate(()=>({connection:document.querySelector('#connection').textContent,sync:document.querySelector('#sync-error').textContent,sources:window.updateSources?.map(s=>({url:s.url,state:s.readyState,frames:s.frames}))}))}));throw error;}
