@@ -342,6 +342,9 @@ func runServerOnce(ctx context.Context, args []string, stdout, stderr io.Writer,
 		dshProfiles: profiles, dshTurnTimeout: *dshTurnTimeout, inboxExpiry: inboxExpiry,
 		inboxMode: startup.Server.InboxMode, imageMaterials: startup.Server.ImageMaterials,
 	}
+	if layout.Release != "" {
+		config.platformBinDir = filepath.Join(layout.Release, "bin")
+	}
 	if *resetTeamsSource != "" {
 		config.resetTeamsSource, err = resolveFutureDirectory(*resetTeamsSource)
 		if err != nil {

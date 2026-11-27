@@ -398,6 +398,19 @@ func onboardingFailure(err error) string {
 	if errors.Is(err, ErrBusy) {
 		return "busy"
 	}
+	var adapter *lark.Error
+	if errors.As(err, &adapter) {
+		switch adapter.Code {
+		case "cli_unavailable", "cli_version_mismatch", "invalid_cli_storage", "identity_mismatch", "permission_denied", "credential_unavailable", "credential_rejected", "application_scopes_unchecked", "user_authorization_required", "network_error", "timeout", "cancelled":
+			return adapter.Code
+		}
+	}
+	if errors.Is(err, context.Canceled) {
+		return "cancelled"
+	}
+	if errors.Is(err, context.DeadlineExceeded) {
+		return "timeout"
+	}
 	return "apply_interrupted"
 }
 

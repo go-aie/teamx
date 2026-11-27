@@ -181,6 +181,15 @@ curl -fsS https://assistant.example.com/v1/access/method
 
 ## 6. 升级、备份与恢复
 
+飞书平台程序随接收调用的控制面绑定到物理 release，升级不再要求连接中记录的历史 executable 与新 release 相同。原连接和 Space 私有凭据保持原样；管理员覆盖使用服务启动环境的 `TEAMX_LARK_BIN` 绝对路径，修改后需重启。完整安装中的程序缺失不会选择 PATH 中的其他版本。旧 Space／Session 的 DSH、Agent CLI、执行描述及 release 留存规则继续独立生效。
+
+GitLab CLI 同样使用控制面绑定的 `teamx-gitlab` 与其同目录 `glab`；管理员覆盖分别为 `TEAMX_GITLAB_BIN`、`TEAMX_GLAB_BIN`，必须使用规范化绝对路径并重启服务。可用性检查与执行共享固定的原生路径，安装缺失或覆盖错误不回退到 PATH。CLI 故障只影响外部工具，HTTP 通知、账号核验与内置评论／回复继续使用原账号及权限。
+
+Scion 的程序分离已接通个人服务的核验、工具和 Workspace，但 Linux 多用户准入继续拒绝。此次不因程序修复开放 Scion／仓库执行，也不改变旧 Session 的程序引用。
+
+恢复时先只读检查程序、原账号与权限，再观察原通知查询；采集仍可能等待原退避到期。若接入记录只有工具未完成，读取原 operation 并继续该步骤，不重建连接、订阅或重走 OAuth。`unknown/submission_unconfirmed` 保持原结果核对规则。[程序绑定的 3A 产物验收](implementation/platform-program-dependencies.zh.md#linux-安装产物验收3a)已固定候选归档与 SHA-256；[本轮 3B](implementation/platform-program-dependencies.zh.md#目标-linux-服务恢复3b)使用同一份包完成原生 Ubuntu 22.04／glibc 2.35 的 systemd 升级，原通知和成员工具恢复已确认。用户选择成员“开启工具”恢复，原 onboarding 未续跑；实际刷新、第三方写入及未检查的旧 Session 不计作通过。
+
+
 先确认运行版本、目标包摘要、原登记路径和足够磁盘空间。新备份使用版本 3：`snapshot.tar` 保存整个 home、安装登记等可变信息及可用的服务单元，`backup.json` 记录当前版本和配置／Space／Room／Session 所需程序归档的 SHA-256、大小与原 release 名称。程序文件不再写入数据快照，也不生成逐文件摘要清单。数据归档流式写入、同步落盘并顺序回读校验。
 
 程序原归档在安装时校验并登记到 `<server_root>/programs/`；旧 release 首次使用时，在停服前校验并补登记一次。备份父目录的 `.teamx-programs/<实例摘要>/` 保存只读程序对象，各备份通过自身 `programs/<SHA-256>.tar.gz` 的硬链接持有对象。相同文件系统内不重复存储程序字节；安装目录与备份跨文件系统时，首次向备份侧入库会复制并校验归档，后续仍复用。备份侧文件系统须支持硬链接，能力不满足会在停服前拒绝。

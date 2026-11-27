@@ -66,27 +66,38 @@ type toolBindingChange struct {
 }
 
 func (m *roomManager) toolDefinitions() []tool.Definition {
-	if m.config.hostTools.restricted {
-		definitions := m.config.hostTools.catalog(m.platformCatalog).Tools(func(name, override string) string {
-			return tool.ResolveExecutable(name, environmentValue(m.config.environment, override))
-		})
-		for i := range definitions {
-			definitions[i].ProcessEnvironment = m.config.environment
-			if definitions[i].Provider == "gitlab" {
-				definitions[i].Description = "GitLab API via the existing CLI; repositories and local-file input unavailable"
-			}
-		}
-		return definitions
-	}
-	if m.toolCatalog != nil {
+	if !m.config.hostTools.restricted && m.toolCatalog != nil {
 		return m.toolCatalog
 	}
-	if m.platformCatalog != nil {
-		definitions := m.platformCatalog.Tools(func(name, override string) string {
+	catalog := m.platformCatalog
+	if m.config.hostTools.restricted {
+		catalog = m.config.hostTools.catalog(catalog)
+	}
+	if catalog != nil {
+		var scionExecution tool.Definition
+		definitions := catalog.Tools(func(name, override string) string {
+			if name == "teamx-scion" {
+				scionExecution, _ = m.scionProgram(nil)
+				return scionExecution.Executable
+			}
+			if name == "teamx-gitlab" {
+				selected, _ := m.platformProgram("gitlab", nil)
+				return selected
+			}
 			return tool.ResolveExecutable(name, environmentValue(m.config.environment, override))
 		})
 		for i := range definitions {
 			definitions[i].ProcessEnvironment = m.config.environment
+			if definitions[i].Provider == "scion" {
+				definitions[i].Dependencies = scionExecution.Dependencies
+				definitions[i].ProcessEnvironment = scionExecution.ProcessEnvironment
+			}
+			if definitions[i].Provider == "gitlab" {
+				definitions[i] = m.bindProgramDependencies(definitions[i])
+				if m.config.hostTools.restricted {
+					definitions[i].Description = "GitLab API via the existing CLI; repositories and local-file input unavailable"
+				}
+			}
 		}
 		return definitions
 	}
@@ -508,7 +519,13 @@ func (m *roomManager) prepareToolLocked(ctx context.Context, req toolsRequest) (
 		if file, err := m.platforms.Load(); err == nil {
 			for _, c := range file.Platforms {
 				if c.ID == call.platformID && c.Provider == "scion" && c.CLIProfile != nil && scion.ValidProfile(*c.CLIProfile) {
-					p.Definition.Executable = c.CLIProfile.Executable
+					execution, err := m.scionProgram(c.CLIProfile)
+					if err != nil {
+						return p, nil, nil, err
+					}
+					p.Definition.Executable = execution.Executable
+					p.Definition.Dependencies = execution.Dependencies
+					p.Definition.ProcessEnvironment = execution.ProcessEnvironment
 				}
 			}
 		}
@@ -521,9 +538,15 @@ func (m *roomManager) prepareToolLocked(ctx context.Context, req toolsRequest) (
 			return p, nil, nil, invalidField("args", "Scion destination must match the selected connection; login and CLI configuration are operator actions")
 		}
 		profile := *admission.account.CLIProfile
-		p.Definition.Executable = profile.Executable
+		execution, err := m.scionProgram(&profile)
+		if err != nil {
+			return p, nil, nil, err
+		}
+		p.Definition.Executable = execution.Executable
+		p.Definition.Dependencies = execution.Dependencies
+		p.Definition.ProcessEnvironment = execution.ProcessEnvironment
 		p.Prepare = func(ctx context.Context, private string) (map[string]string, error) {
-			return scion.Prepare(ctx, m.store.dir, admission.account.URL, profile, admission.account.Identity, private)
+			return scion.Prepare(ctx, m.store.dir, admission.account.URL, profile, admission.account.Identity, private, execution)
 		}
 	}
 	entry, err := m.workspaceRoom(req.RoomIdentity)

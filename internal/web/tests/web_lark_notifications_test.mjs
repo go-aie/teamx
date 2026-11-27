@@ -1144,3 +1144,51 @@ test("Lark stale range form keeps its observation and draft after another entry 
  assert.equal(ui.el("lark-save").disabled,true);
  assert.equal(writes,2);
 });
+
+for (const privateStorage of [false,true]) test(`managed Lark ${privateStorage ? "private" : "personal"} discovery omits history and preserves the saved profile`,async()=>{
+ const api=fixture(),original=api.request;
+ const saved={version:1,executable:"/removed-release/lark-cli",profile:"explicit",brand:"feishu",cli_version:"1.0.99"};
+ api.platforms[0].cli_profile=saved;
+ api.request=(path,body,...rest)=>{
+  if(path.startsWith("/v1/platforms?"))return {platforms:api.platforms,lark_managed_program:true};
+  if(path==="/v1/platforms/lark/discover"){
+   api.calls.push({path,body:structuredClone(body)});
+   assert.equal(Object.hasOwn(body,"executable"),false);
+   return {managed_program:true,managed_storage:privateStorage,executable:"/current-release/lark-cli",profiles:[{name:"explicit",brand:"feishu",user:"测试用户",cli_profile:privateStorage ? saved : undefined}]};
+  }
+  return original(path,body,...rest);
+ };
+ const ui=await launch(api);await ui.el("open-settings").emit("click");
+ await ui.el("platforms-list").children[0].emit("click");
+ assert.equal(ui.el("connection-executable").hidden,true);
+ await ui.el("connection-capability-check").emit("click");await settle();
+ const check=api.calls.filter(c=>c.path==="/v1/platforms/lark/permissions").at(-1);
+ assert.deepEqual(check.body.cli_profile,saved);
+ await ui.el("connection-detect").emit("click");
+ assert.equal(Object.hasOwn(api.calls.filter(c=>c.path.endsWith("/lark/discover")).at(-1).body,"executable"),false);
+ ui.el("connection-name").value="Renamed";await ui.el("connection-name").emit("input");await ui.el("connection-form").emit("submit");
+ const update=api.calls.find(c=>c.path==="/v1/platforms/save");
+ assert.equal(Object.hasOwn(update.body,"cli_profile"),false);
+});
+
+test("managed Lark application setup omits the hidden program selection",async()=>{
+ const api=fixture(),original=api.request;
+ api.request=(path,body,...rest)=>{
+  if(path.startsWith("/v1/platforms?"))return {platforms:api.platforms,lark_managed_program:true};
+  if(path==="/v1/platforms/lark/discover"){
+   api.calls.push({path,body:structuredClone(body)});
+   assert.equal(Object.hasOwn(body,"executable"),false);
+   return {managed_program:true,managed_storage:true,executable:"/service/lark-cli",profiles:[]};
+  }
+  if(path==="/v1/platforms/lark/setup"){
+   api.calls.push({path,body:structuredClone(body)});
+   assert.equal(Object.hasOwn(body,"executable"),false);
+   return {session_id:"setup-session",status:"waiting",action:"setup"};
+  }
+  return original(path,body,...rest);
+ };
+ const ui=await connectionDraft(api);
+ assert.equal(ui.el("connection-executable").hidden,true);
+ await ui.el("connection-setup-start").emit("click");
+ assert.equal(api.calls.filter(c=>c.path.endsWith("/lark/setup")).length,1);
+});

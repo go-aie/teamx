@@ -42,7 +42,7 @@ func scionRoomFixture(t *testing.T) (*roomManager, roomSummary, *service, manage
 	t.Helper()
 	m, room, svc, _, members := cliToolFixture(t, "exit 0")
 	dir := t.TempDir()
-	bin := filepath.Join(dir, "teamx-scion")
+	bin := filepath.Join(dir, "scn")
 	if err := os.WriteFile(bin, []byte(scionToolFixture), 0700); err != nil {
 		t.Fatal(err)
 	}

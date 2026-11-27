@@ -6,6 +6,7 @@
 
 | 记录 | 范围 |
 | --- | --- |
+| [平台程序绑定与 GitLab／Scion CLI 一致性](platform-program-dependencies.zh.md) | 程序依赖阶段 1–3：三个平台程序与连接身份分离、Linux 完整产物验收及同包实机升级；原通知／成员工具恢复，原 onboarding 续跑及真实刷新未验 |
 | [个人空间重置](space-reset-personal.zh.md) | 重置阶段 1：持久操作、结清与保护清理、配置／模板初始化、页面与缓存隔离；真实 DSH／模型、浏览器及进程中断验证 |
 | [Linux 多用户空间重置](space-reset-hosted.zh.md) | 重置阶段 2：私有 CLI／临时材料清理、用户停用与资源准入、默认模型和隔离；真实 Linux 凭证材料与网关验证，正式安装组合门槛保留 |
 | [Space 重置安装交付验证](space-reset-delivery.zh.md) | Linux amd64 standard／SRT 开发包的新装、旧包升级、正式服务与重置冒烟通过；修复 root 维护的登记 UID 检查，日常服务未变 |

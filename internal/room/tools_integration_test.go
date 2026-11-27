@@ -228,8 +228,8 @@ func TestIndependentGitLabHelp(t *testing.T) {
 		t.Skip("set TEAMX_TEST_GITLAB_BIN to the independently built GitLab tool")
 	}
 	m, room, svc, c, members := cliToolFixture(t, "exit 99\n")
-	m.toolCatalog[0] = defaultPlatformTools()[0]
-	m.toolCatalog[0].Executable = bin
+	m.toolCatalog = nil
+	m.config.environment = []string{"PATH=" + os.Getenv("PATH"), "TEAMX_GITLAB_BIN=" + bin, "TEAMX_GLAB_BIN=" + os.Getenv("TEAMX_GLAB_BIN")}
 	bindCLITool(t, m, room.RoomIdentity, members[0], c, "gitlab", 0)
 	// Help resolves entry metadata without requiring an active authorization.
 	m.mu.Lock()

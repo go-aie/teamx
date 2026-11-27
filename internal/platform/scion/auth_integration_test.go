@@ -23,15 +23,15 @@ func TestScionPATLoginDiscoveryAndIsolation(t *testing.T) {
 			exe := authCLI(t, name)
 			root := t.TempDir()
 			id := strings.Repeat("a", 32)
-			empty, err := Discover(context.Background(), root, origin, exe)
+			empty, err := Discover(context.Background(), root, origin, Definition(exe))
 			if err != nil || len(empty.Profiles) != 0 || empty.Executable != exe {
 				t.Fatal(empty, err)
 			}
-			p, v, err := Login(context.Background(), root, origin, exe, id, platform.NewSecret("private-pat-alice"))
+			p, v, err := Login(context.Background(), root, origin, id, platform.NewSecret("private-pat-alice"), Definition(exe))
 			if err != nil || v.Username != "alice" || v.Account.ID.Value != "alice" || p.Profile != id {
 				t.Fatal(v, err)
 			}
-			found, err := Discover(context.Background(), root, origin, exe)
+			found, err := Discover(context.Background(), root, origin, Definition(exe))
 			b, _ := json.Marshal(found)
 			if err != nil || len(found.Profiles) != 1 || found.Profiles[0].Username != "alice" || strings.Contains(string(b), "private-pat") || strings.Contains(string(b), "credentials.json") {
 				t.Fatal(found, err)
@@ -42,7 +42,7 @@ func TestScionPATLoginDiscoveryAndIsolation(t *testing.T) {
 				t.Fatal("private credential permissions")
 			}
 			before, _ := os.ReadFile(path)
-			if _, _, err := Login(context.Background(), root, origin, exe, id, platform.NewSecret("different-pat")); err == nil {
+			if _, _, err := Login(context.Background(), root, origin, id, platform.NewSecret("different-pat"), Definition(exe)); err == nil {
 				t.Fatal("overwrote existing profile")
 			}
 			after, _ := os.ReadFile(path)
@@ -68,7 +68,7 @@ func TestScionPATFailuresAndCancelledUnpublishedProfile(t *testing.T) {
 			defer cancel()
 			done := make(chan error, 1)
 			go func() {
-				_, _, err := Login(ctx, root, origin, exe, id, platform.NewSecret("private-pat-alice"))
+				_, _, err := Login(ctx, root, origin, id, platform.NewSecret("private-pat-alice"), Definition(exe))
 				done <- err
 			}()
 			if mode == "block" {
@@ -83,7 +83,7 @@ func TestScionPATFailuresAndCancelledUnpublishedProfile(t *testing.T) {
 					}
 					time.Sleep(5 * time.Millisecond)
 				}
-				found, err := Discover(context.Background(), root, origin, exe)
+				found, err := Discover(context.Background(), root, origin, Definition(exe))
 				if err != nil || len(found.Profiles) != 0 {
 					t.Fatal("unfinished profile was discoverable", found, err)
 				}
@@ -115,36 +115,32 @@ func TestScionDiscoveryRejectsUnsafeRootAndExplicitExecutable(t *testing.T) {
 			} else {
 				os.Mkdir(path, 0755)
 			}
-			if _, err := Discover(context.Background(), root, origin, exe); err == nil {
+			if _, err := Discover(context.Background(), root, origin, Definition(exe)); err == nil {
 				t.Fatal("unsafe root accepted")
 			}
-			if _, _, err := Login(context.Background(), root, origin, exe, strings.Repeat("a", 32), platform.NewSecret("private-pat-alice")); err == nil {
+			if _, _, err := Login(context.Background(), root, origin, strings.Repeat("a", 32), platform.NewSecret("private-pat-alice"), Definition(exe)); err == nil {
 				t.Fatal("login accepted unsafe root")
 			}
 		})
 	}
-	if _, err := ResolveCLI(context.Background(), "scn"); err == nil {
+	if _, err := ResolveCLI(context.Background(), Definition("scn")); err == nil {
 		t.Fatal("relative explicit path accepted")
 	}
 	t.Setenv("TEAMX_SCION_BIN", "/missing/explicit-wrapper")
 	t.Setenv("TEAMX_SCN_BIN", exe)
-	if _, err := ResolveCLI(context.Background(), ""); err == nil {
+	if _, err := ResolveCLI(context.Background(), Definition("")); err == nil {
 		t.Fatal("explicit wrapper override fell back")
 	}
 }
 
-func TestScionAutomaticCLIResolution(t *testing.T) {
+func TestScionCLIUsesOnlyInjectedProgram(t *testing.T) {
 	exe := authCLI(t, "scn")
-	t.Setenv("TEAMX_SCION_BIN", exe)
-	resolved, err := ResolveCLI(context.Background(), "")
+	t.Setenv("TEAMX_SCION_BIN", "/must-not-read-service-environment")
+	resolved, err := ResolveCLI(context.Background(), Definition(exe))
 	if err != nil || resolved != exe {
-		t.Fatal("configured CLI not discovered", resolved, err)
+		t.Fatal(resolved, err)
 	}
-	t.Setenv("TEAMX_SCION_BIN", "")
-	t.Setenv("TEAMX_SCN_BIN", exe)
-	t.Setenv("PATH", "/usr/bin:/bin")
-	resolved, err = ResolveCLI(context.Background(), "")
-	if err != nil || resolved != exe {
-		t.Fatal("native fallback not discovered", resolved, err)
+	if _, err := ResolveCLI(context.Background(), Definition("")); err == nil {
+		t.Fatal("adapter selected an unbound program")
 	}
 }

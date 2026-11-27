@@ -545,3 +545,47 @@ func TestInvalidArgumentsDoNotResolveCredentials(t *testing.T) {
 		}
 	}
 }
+
+func TestNativeProgramIsFixedBeforeVersionProbe(t *testing.T) {
+	// The version probe changes a mutable installation alias. The actual command
+	// must still use the same physical program that passed the version check.
+	dir := t.TempDir()
+	alias := filepath.Join(dir, "current-glab")
+	next := filepath.Join(dir, "next-glab")
+	first := filepath.Join(dir, "first-glab")
+	if err := os.WriteFile(next, []byte("#!/bin/sh\nprintf wrong-program\n"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	body := fmt.Sprintf("#!/bin/sh\nif [ \"$1\" = version ]; then /bin/ln -sf '%s' '%s'; echo 'glab %s'; exit 0; fi\nprintf original-program\n", next, alias, glabVersion)
+	if err := os.WriteFile(first, []byte(body), 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(first, alias); err != nil {
+		t.Fatal(err)
+	}
+	a, out, stderr := testApp(t, nil)
+	original := a.getenv
+	a.getenv = func(key string) string {
+		if key == "TEAMX_GLAB_BIN" {
+			return alias
+		}
+		return original(key)
+	}
+	if code := a.run(t.Context(), []string{"api", "user"}); code != 0 || out.String() != "original-program" {
+		t.Fatal(code, out.String(), stderr.String())
+	}
+}
+
+func TestNativeProgramRejectsRelativeOverrideAndPATH(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "glab"), []byte("#!/bin/sh\necho 'glab "+glabVersion+"'\n"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	t.Chdir(dir)
+	t.Setenv("PATH", ".:relative:")
+	for _, override := range []string{"glab", "./glab", ""} {
+		if _, err := resolveGlab(override); err == nil {
+			t.Fatal("cwd/relative executable accepted", override)
+		}
+	}
+}

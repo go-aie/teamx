@@ -85,8 +85,10 @@ func (m *roomManager) servePlatforms(w http.ResponseWriter, r *http.Request) {
 			platforms = append(platforms, item)
 		}
 		_ = json.NewEncoder(w).Encode(struct {
-			Platforms []managedPlatform `json:"platforms"`
-		}{platforms})
+			Platforms           []managedPlatform `json:"platforms"`
+			ScionManagedProgram bool              `json:"scion_managed_program,omitempty"`
+			LarkManagedProgram  bool              `json:"lark_managed_program,omitempty"`
+		}{platforms, m.config.platformBinDir != "", m.larkClients.ManagedProgram()})
 		return
 	}
 	if r.Method != http.MethodPost {

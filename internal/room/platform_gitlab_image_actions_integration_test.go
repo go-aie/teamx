@@ -249,8 +249,9 @@ func TestGitlabImagesManagedCLI(t *testing.T) {
 						t.Fatal(cap)
 					}
 				}
-				t.Setenv("TEAMX_GITLAB_BIN", filepath.Join(t.TempDir(), "missing"))
-				t.Setenv("TEAMX_GLAB_BIN", "/missing/glab")
+				f.m.toolCatalog = nil
+				f.m.config.platformBinDir = t.TempDir() // Incomplete service install.
+				f.m.config.environment = []string{"PATH=/must-not-search", "TEAMX_GLAB_BIN=/missing/glab"}
 				beforeState := historyTree(t, f.svc.store.dir)
 				var got agentGitlabReceipt
 				if err := f.executeCLI(t, &got); err != nil {

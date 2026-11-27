@@ -11,11 +11,13 @@ bin/teamx-gitlab work-items --help
 bin/teamx-gitlab issue discussions --help
 ```
 
-从[固定版本发布页](https://gitlab.com/gitlab-org/cli/-/releases/v1.127.0)下载对应系统的 glab，并按发布校验和核对。依赖记录在 [glab.lock.json](glab.lock.json)。程序解析顺序为：显式 `TEAMX_GLAB_BIN` → `teamx-gitlab` 可执行文件同目录的 `glab` → PATH。显式路径失效不会回退到其他版本；执行原生命令前检查精确版本，不匹配或缺失返回 127。Go 扩展及其帮助无需 glab；缺少 glab 时父级帮助仍显示已知扩展，并返回 127，表示原生帮助不完整。
+从[固定版本发布页](https://gitlab.com/gitlab-org/cli/-/releases/v1.127.0)下载对应系统的 glab，并按发布校验和核对。依赖记录在 [glab.lock.json](glab.lock.json)。程序解析顺序为：显式 `TEAMX_GLAB_BIN` → `teamx-gitlab` 可执行文件同目录的 `glab` → 绝对 PATH 项。覆盖必须是规范化绝对路径；空／相对 PATH 项不会参与发现。显式路径失效不会回退到其他版本；执行原生命令前检查精确版本，不匹配或缺失返回 127。Go 扩展及其帮助无需 glab；缺少 glab 时父级帮助仍显示已知扩展，并返回 127，表示原生帮助不完整。
 
 `version check failed` 表示版本探测未能正常执行，应检查可执行文件、启动脚本、权限和系统／CPU 架构；它不表示已确认版本不匹配。只有探测成功但版本不符时才报告 `unsupported glab`。分发包中的 glab 启动脚本使用 shell 内建命令定位包内程序，兼容多用户工具收紧后的 PATH，无须放开宿主命令搜索路径。
 
-TeamX 服务按相同顺序解析工具：显式 `TEAMX_GITLAB_BIN` → TeamX 可执行文件同目录的 `teamx-gitlab` → 服务 PATH。推荐将 `teamx`、`teamx-gitlab`、`glab` 放在同一个安装目录。`tools run` 在服务端启动进程，Agent shell 的 PATH 或环境变量不会转发给服务。路径变量可写入 `config.toml` 的 `[env]`，或在启动 TeamX 服务前导出，已有服务环境优先；工具启用只选择账号，不安装程序。遇到 127 应报告安装错误，修正服务环境后重启，不让 Agent 搜索二进制或绕过入口读取凭据。
+已安装 TeamX 服务默认绑定控制面物理 release 中的 `teamx-gitlab`，以该 wrapper 所在目录选择 `glab`，完整安装缺失时不会回退到 PATH。独立个人／源码服务按“显式 `TEAMX_GITLAB_BIN` → TeamX 物理可执行文件同目录 → 服务绝对 PATH 项”发现 wrapper，原生依赖从已选 wrapper 同目录或服务绝对 PATH 项发现。管理员可用 `TEAMX_GITLAB_BIN`、`TEAMX_GLAB_BIN` 分别覆盖两层程序，均须为规范化绝对路径；覆盖失效不回退。推荐将 `teamx`、`teamx-gitlab`、`glab` 放在同一个安装目录。
+
+服务将选定的原生路径通过 `TEAMX_GLAB_BIN` 传给 wrapper，可用性检查与执行一致；本次版本探测和原生命令使用同一物理程序。列表只检查本地可用性，不启动 CLI 或查询网络。缺失／无法运行与版本不兼容均返回 127，使用不同诊断；修复原文件后重新检查即可恢复，不修改成员启用意图或账号。GitLab HTTP 通知和内置动作独立于这两层 CLI。`tools run` 在服务端启动进程，Agent shell 的 PATH 或环境变量不会转发给服务。路径变量可写入 `config.toml` 的 `[env]`，或在启动 TeamX 服务前导出，已有服务环境优先；工具启用只选择账号，不安装程序。遇到 127 应报告安装错误，修正服务环境后重启，不让 Agent 搜索二进制或绕过入口读取凭据。
 
 工具使用标准环境变量：
 

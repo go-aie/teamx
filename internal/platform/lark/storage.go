@@ -29,10 +29,9 @@ func (f *ClientFactory) WithTemporaryRoot(root string) (*ClientFactory, error) {
 	if err := os.Remove(probe); err != nil {
 		return nil, failure("invalid_cli_storage")
 	}
-	if f == nil {
-		f = NewClientFactory(AccountRequestInterval, 0, 0)
-	}
-	return &ClientFactory{requests: f.requests, selfSend: f.selfSend, storage: f.storage, tempRoot: root}, nil
+	copy := f.configuredCopy()
+	copy.tempRoot = root
+	return copy, nil
 }
 
 // WithStorage binds a trusted Space root and deployment executable. Profiles
@@ -40,7 +39,7 @@ func (f *ClientFactory) WithTemporaryRoot(root string) (*ClientFactory, error) {
 // Each newly configured profile owns one stable config/data pair. Explicit
 // references to the same profile share its lifecycle within this Space only.
 func (f *ClientFactory) WithStorage(root, executable string) (*ClientFactory, error) {
-	if !filepath.IsAbs(root) || !filepath.IsAbs(executable) {
+	if !filepath.IsAbs(root) || !validExecutable(executable) {
 		return nil, failure("invalid_cli_storage")
 	}
 	if info, err := os.Lstat(root); err == nil && info.Mode()&os.ModeSymlink != 0 {
@@ -53,10 +52,10 @@ func (f *ClientFactory) WithStorage(root, executable string) (*ClientFactory, er
 	if err != nil || privateCLIDirectory(root) != nil {
 		return nil, failure("invalid_cli_storage")
 	}
-	if f == nil {
-		f = NewClientFactory(AccountRequestInterval, 0, 0)
-	}
-	return &ClientFactory{requests: f.requests, selfSend: f.selfSend, storage: &cliStorage{root, executable}, tempRoot: f.tempRoot}, nil
+	copy := f.configuredCopy()
+	copy.executable = executable
+	copy.storage = &cliStorage{root, executable}
+	return copy, nil
 }
 
 func privateCLIDirectory(path string) error {
@@ -105,7 +104,7 @@ func (s *cliStorage) bind(c *Client) error {
 	}
 	var saved platform.CLIProfile
 	data, err := os.ReadFile(filepath.Join(dir, "profile.json"))
-	if err != nil || len(data) > 4096 || json.Unmarshal(data, &saved) != nil || saved != c.profile || saved.Executable != s.executable {
+	if err != nil || len(data) > 4096 || json.Unmarshal(data, &saved) != nil || saved != c.profile {
 		return failure("invalid_cli_storage")
 	}
 	c.configDir, c.dataDir = filepath.Join(dir, "config"), filepath.Join(dir, "data")
@@ -118,7 +117,7 @@ func (f *ClientFactory) SupportsPin() bool {
 }
 
 func (f *ClientFactory) discoverScoped(ctx context.Context, executable, brand string) (Discovery, error) {
-	result := Discovery{ManagedStorage: true, Executable: f.storage.executable, Profiles: []ProfileOption{}, SetupProfile: "teamx-" + brand}
+	result := Discovery{ManagedProgram: true, ManagedStorage: true, Executable: f.storage.executable, Profiles: []ProfileOption{}, SetupProfile: "teamx-" + brand}
 	if Origin(brand) == "" || executable != "" && executable != f.storage.executable || privateCLIDirectory(f.storage.root) != nil {
 		return result, failure("invalid_cli_storage")
 	}
@@ -129,7 +128,10 @@ func (f *ClientFactory) discoverScoped(ctx context.Context, executable, brand st
 		return result, failure("invalid_cli_storage")
 	}
 	defer os.RemoveAll(private)
-	c := &Client{profile: platform.CLIProfile{Executable: f.storage.executable}, configDir: private, dataDir: private, tempRoot: f.tempRoot, requests: f.requests, selfSend: f.selfSend, gates: &f.gates}
+	c := &Client{executable: f.executable, requests: accountRequests, configDir: private, dataDir: private, tempRoot: f.tempRoot}
+	if f.requests != nil {
+		c.requests = f.requests
+	}
 	version, err := c.run(ctx, "--version")
 	if err != nil {
 		return result, err
@@ -178,7 +180,7 @@ func (f *ClientFactory) discoverScoped(ctx context.Context, executable, brand st
 			if profile.Name != p.Profile || profile.Brand != p.Brand {
 				return result, failure("identity_mismatch")
 			}
-			result.Profiles = append(result.Profiles, ProfileOption{Name: profile.Name, Brand: profile.Brand, AppID: profile.AppID, User: profile.User})
+			result.Profiles = append(result.Profiles, ProfileOption{CLIProfile: &p, Name: profile.Name, Brand: profile.Brand, AppID: profile.AppID, User: profile.User})
 		}
 	}
 	return result, nil

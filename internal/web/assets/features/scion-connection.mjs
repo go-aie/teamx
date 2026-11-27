@@ -18,9 +18,15 @@ export function createScionConnection({ env, runtime, connectionsUI, settingsUI,
     link.hidden = !href;
   }
 
-  function scionProfileDraft() { return {version:1, executable:$("connection-scion-executable").value.trim(), profile:$("connection-scion-profile").value.trim(), brand:"scion", cli_version:"0.1.13"}; }
+  function managedProgram() { return connectionsUI.platforms.managedScionProgram || connectionsUI.platforms.scionDiscovery?.managed_program; }
+  function discoveryExecutable() { return managedProgram() ? {} : {executable:$("connection-scion-executable").value.trim()}; }
+  function scionProfileDraft() {
+    const saved = connectionsUI.platforms.selected?.cli_profile;
+    if (managedProgram() && saved?.brand === "scion" && saved.profile === $("connection-scion-profile").value.trim()) return {...saved};
+    return {version:1, executable:$("connection-scion-executable").value.trim(), profile:$("connection-scion-profile").value.trim(), brand:"scion", cli_version:"0.1.13"}; }
 
   function renderScionAccount() {
+    $("connection-scion-advanced").hidden = !!managedProgram();
     settingsUI.renderSettingsNavigation();
     $("connection-save").textContent=onboardingUI.onboarding.active ? $("onboarding-only").checked ? "连接并核验" : "连接并启用" : "保存连接";
     const active = !!connectionsUI.platforms.scionAuth || !!connectionsUI.platforms.scionLogout, pending = !!connectionsUI.platforms.scionPending;
@@ -79,7 +85,7 @@ export function createScionConnection({ env, runtime, connectionsUI, settingsUI,
     if (!url) { renderScionAccount(); return; }
     connectionsUI.platforms.detecting = true; renderScionAccount();
     try {
-      const data = await request("/v1/platforms/scion/discover", connectionsUI.connectionPayload({url, executable:$("connection-scion-executable").value.trim()}), undefined, 70000);
+      const data = await request("/v1/platforms/scion/discover", connectionsUI.connectionPayload({url, ...discoveryExecutable()}), undefined, 70000);
       if (version !== connectionsUI.platforms.formVersion) return;
       connectionsUI.platforms.scionDiscovery = {...data, origin:url};
       $("connection-scion-executable").value = data.executable;
@@ -105,10 +111,10 @@ export function createScionConnection({ env, runtime, connectionsUI, settingsUI,
     connectionsUI.platforms.scionAuth = auth; renderScionAccount();
     connectionsUI.connectionFeedback("正在通过 Scion CLI 登录…");
     try {
-      await request("/v1/platforms/scion/login", connectionsUI.connectionPayload({session_id:auth.session_id,url:$("connection-url").value.trim(),executable:$("connection-scion-executable").value.trim(),pat}), undefined, 15000);
+      await request("/v1/platforms/scion/login", connectionsUI.connectionPayload({session_id:auth.session_id,url:$("connection-url").value.trim(),...discoveryExecutable(),pat}), undefined, 15000);
     } catch (error) {
       if (connectionsUI.platforms.scionAuth !== auth) return;
-      const rejected = {request:"请填写有效的 HTTPS 实例地址和 PAT。", identity:"服务身份已变化，请刷新页面。", capacity:"登录操作已达上限，请稍后刷新账号。", busy:"服务正忙，请稍后重试登录。"};
+      const rejected = {cli_unavailable:connectionsUI.connectionValidationErrors.cli_unavailable,request:"请填写有效的 HTTPS 实例地址和 PAT。", identity:"服务身份已变化，请刷新页面。", capacity:"登录操作已达上限，请稍后刷新账号。", busy:"服务正忙，请稍后重试登录。"};
       if (rejected[error.code]) { connectionsUI.platforms.scionAuth=null; renderScionAccount(); connectionsUI.connectionFeedback(rejected[error.code],"error"); return; }
       // A lost start response is recovered by ID through status, never by sending
       // the PAT or login again. The operator still owns cancellation on close.
@@ -164,7 +170,7 @@ export function createScionConnection({ env, runtime, connectionsUI, settingsUI,
     if (!connectionsUI.connectionIsScion() || connectionsUI.platforms.scionAuth || connectionsUI.platforms.scionPending || connectionsUI.platforms.sending || connectionsUI.platforms.detecting) return;
     const profile = scionProfileDraft(), discovery = connectionsUI.platforms.scionDiscovery;
     const selected = discovery?.profiles.find(p => p.profile === profile.profile);
-    if (!selected || discovery.executable !== profile.executable || discovery.origin !== $("connection-url").value.trim()) return;
+    if (!selected || !managedProgram() && discovery.executable !== profile.executable || discovery.origin !== $("connection-url").value.trim()) return;
     const affected = connectionsUI.platforms.items.filter(c => c.provider === "scion" && c.cli_profile?.profile === profile.profile);
     connectionsUI.platforms.scionPending = {version:connectionsUI.platforms.formVersion, profile, discovery, action:"logout",
       title:`退出「${selected.username}」的登录？将停止以上房间中使用此账号的操作。`,

@@ -3,6 +3,7 @@ package room
 import (
 	"context"
 	"sync"
+	"time"
 
 	"github.com/go-aie/teamx/internal/app/platforms"
 	"github.com/go-aie/teamx/internal/platform"
@@ -21,5 +22,9 @@ var emptyPlatformCatalog = sync.OnceValue(func() *platforms.Catalog {
 
 // Profile verification needs the service directory; static assembly does not.
 func (m *roomManager) verifyScionProfile(ctx context.Context, origin string, p platform.CLIProfile) platform.Validation {
-	return scion.VerifyProfile(ctx, m.store.dir, origin, p)
+	execution, err := m.scionProgram(&p)
+	if err != nil {
+		return platform.Validation{Status: "failed", CheckedAt: time.Now().UTC(), ErrorCode: "cli_unavailable"}
+	}
+	return scion.VerifyProfile(ctx, m.store.dir, origin, p, execution)
 }

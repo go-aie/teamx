@@ -21,8 +21,9 @@ const CLIVersion = "0.1.13"
 
 func failure(code string) error { return errors.New(code) }
 
-// Executable names teamx-scion or the pinned native scn. Profile is an opaque
-// service-owned directory, never a caller-selected credential file path.
+// Executable is retained connection evidence; runtime selection is supplied
+// separately. Profile is an opaque service-owned directory, never a
+// caller-selected credential file path.
 func ValidProfile(p platform.CLIProfile) bool {
 	return p.Version == 1 && p.Brand == "scion" && p.CLIVersion == CLIVersion && tool.OpaqueID(p.Profile) &&
 		filepath.IsAbs(p.Executable) && filepath.Clean(p.Executable) == p.Executable && !strings.ContainsAny(p.Executable, "\x00\r\n")
@@ -100,16 +101,18 @@ func (b *boundedOutput) Write(p []byte) (int, error) {
 	return len(p), nil
 }
 
-func VerifyFile(ctx context.Context, origin string, p platform.CLIProfile, path string) platform.Validation {
-	return verifyWithRun(ctx, origin, p, path, nil)
+func VerifyFile(ctx context.Context, origin string, p platform.CLIProfile, path string, execution tool.Definition) platform.Validation {
+	return verifyWithRun(ctx, origin, p, path, execution, nil)
 }
 
 // VerifyWithRun permits preparation callers to keep their durable process
-// tracker. The supplied runner must isolate credentials and bound output.
-func VerifyWithRun(ctx context.Context, origin string, p platform.CLIProfile, path string, run func(context.Context, ...string) ([]byte, error)) platform.Validation {
-	return verifyWithRun(ctx, origin, p, path, run)
+// tracker. Execution carries the selected program and native dependency
+// environment; the runner must retain these inputs, isolate credentials and
+// bound output. The persisted profile remains credential evidence only.
+func VerifyWithRun(ctx context.Context, origin string, p platform.CLIProfile, path string, execution tool.Definition, run func(context.Context, ...string) ([]byte, error)) platform.Validation {
+	return verifyWithRun(ctx, origin, p, path, execution, run)
 }
-func verifyWithRun(ctx context.Context, origin string, p platform.CLIProfile, path string, run func(context.Context, ...string) ([]byte, error)) platform.Validation {
+func verifyWithRun(ctx context.Context, origin string, p platform.CLIProfile, path string, execution tool.Definition, run func(context.Context, ...string) ([]byte, error)) platform.Validation {
 	result := platform.Validation{Status: "failed", CheckedAt: time.Now().UTC(), ErrorCode: "invalid_profile"}
 	if !ValidProfile(p) {
 		return result
@@ -117,7 +120,7 @@ func verifyWithRun(ctx context.Context, origin string, p platform.CLIProfile, pa
 	ctx, cancel := context.WithTimeout(ctx, 8*time.Second)
 	defer cancel()
 	out, stderr := &boundedOutput{cancel: cancel}, &boundedOutput{cancel: cancel}
-	process := tool.Process{Definition: Definition(p.Executable), Output: out, Error: stderr}
+	process := tool.Process{Definition: execution, Output: out, Error: stderr}
 	invoke := func(args ...string) int {
 		if run == nil {
 			return process.Run(ctx, args)
@@ -184,7 +187,7 @@ func verifyWithRun(ctx context.Context, origin string, p platform.CLIProfile, pa
 	return result
 }
 
-func VerifyProfile(ctx context.Context, root, origin string, p platform.CLIProfile) platform.Validation {
+func VerifyProfile(ctx context.Context, root, origin string, p platform.CLIProfile, execution tool.Definition) platform.Validation {
 	result := platform.Validation{Status: "failed", CheckedAt: time.Now().UTC(), ErrorCode: "credential_unavailable"}
 	private, err := os.MkdirTemp("", "teamx-scion-verify-")
 	if err != nil {
@@ -196,15 +199,15 @@ func VerifyProfile(ctx context.Context, root, origin string, p platform.CLIProfi
 		result.ErrorCode = err.Error()
 		return result
 	}
-	return VerifyFile(ctx, origin, p, path)
+	return VerifyFile(ctx, origin, p, path, execution)
 }
 
-func Prepare(ctx context.Context, root, origin string, profile platform.CLIProfile, expected platform.AccountIdentity, private string) (map[string]string, error) {
+func Prepare(ctx context.Context, root, origin string, profile platform.CLIProfile, expected platform.AccountIdentity, private string, execution tool.Definition) (map[string]string, error) {
 	path, err := Snapshot(root, origin, profile, private)
 	if err != nil {
 		return nil, err
 	}
-	actual := VerifyFile(ctx, origin, profile, path)
+	actual := VerifyFile(ctx, origin, profile, path, execution)
 	if actual.Status != "valid" {
 		return nil, failure(actual.ErrorCode)
 	}

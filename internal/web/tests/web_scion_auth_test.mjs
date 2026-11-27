@@ -20,7 +20,7 @@ function fixture(){
    return {status:"succeeded",platforms:structuredClone(platforms)};
   }
   if(path==="/v1/platforms/save"){
-   const c={...structuredClone(data),version:1,validation:{status:"unverified"},references:[]};api.platforms=[c];return c;
+   const c={...api.platforms.find(c=>c.id===data.id),...structuredClone(data),version:1,validation:{status:"unverified"},references:[]};api.platforms=[c];return c;
   }
   if(path==="/v1/platforms/verify"){
    const c=api.platforms[0];c.version++;c.validation={status:"valid",username:"alice"};return structuredClone(c);
@@ -264,4 +264,50 @@ test("Scion opens the PAT form only from login and clears a cancelled draft",asy
  assert.equal(ui.el("connection-scion-login-panel").hidden,true);
  await ui.el("connection-scion-login-open").emit("click");
  assert.equal(ui.el("connection-scion-login-panel").hidden,false);
+});
+
+test("managed Scion discovery preserves saved profile evidence and omits historical execution choices",async()=>{
+ const api=fixture(),old=profile("a","/removed-release/scn");
+ api.platforms=[{id:"c".repeat(32),name:"Scion",provider:"scion",url:"https://scion.example",version:2,cli_profile:old,validation:{status:"valid",username:"alice"},references:[]}];
+ api.hook=(path)=>{
+  if(path.startsWith("/v1/platforms?"))return {platforms:structuredClone(api.platforms),scion_managed_program:true};
+  if(path.endsWith("/scion/discover"))return {executable:"/release-B/teamx-scion",managed_program:true,profiles:api.profiles,unavailable:0};
+ };
+ const ui=await launch(api);await ui.el("open-settings").emit("click");
+ await ui.el("platforms-list").children[0].emit("click");
+ const discover=api.calls.find(c=>c.path.endsWith("/scion/discover"));
+ assert.equal(discover.data.executable,undefined);
+ assert.equal(ui.el("connection-scion-advanced").hidden,true);
+ assert.equal(ui.el("connection-scion-executable").value,"/release-B/teamx-scion");
+ await ui.el("connection-form").emit("submit");
+ const saved=api.calls.find(c=>c.path.endsWith("/save"));
+ assert.equal(saved.data.cli_profile,undefined);
+ await ui.el("platforms-list").children[0].emit("click");
+ await ui.el("connection-scion-logout").emit("click");
+ await ui.el("connection-auth-confirm").emit("click");
+ assert.deepEqual(api.calls.find(c=>c.path.endsWith("/scion/logout")).data.cli_profile,old);
+});
+
+test("managed Scion login omits the selected program while keeping the returned new profile",async()=>{
+ const api=fixture();
+ api.hook=path=>path.startsWith("/v1/platforms?")?{platforms:[],scion_managed_program:true}:undefined;
+ const ui=await draft(api);
+ api.view={status:"succeeded",cli_profile:profile("b","/release-B/teamx-scion"),username:"bob"};
+ ui.el("connection-scion-pat").value="private-pat";
+ await ui.el("connection-scion-login").emit("click");
+ const login=api.calls.find(c=>c.path.endsWith("/scion/login"));
+ assert.equal(login.data.executable,undefined);
+ await ui.el("connection-form").emit("submit");
+ assert.deepEqual(api.calls.find(c=>c.path.endsWith("/save")).data.cli_profile,api.view.cli_profile);
+});
+
+test("a program selection failure before Scion login reports the dependency without polling an absent session",async()=>{
+ const api=fixture(),ui=await draft(api);
+ api.hook=path=>{if(path.endsWith("/scion/login"))throw Object.assign(new Error("unavailable"),{code:"cli_unavailable"});};
+ ui.el("connection-scion-pat").value="private-pat";
+ await ui.el("connection-scion-login").emit("click");
+ assert.match(ui.el("platforms-feedback").textContent,/CLI/);
+ assert.equal(ui.el("connection-scion-pat").value,"");
+ assert.equal(api.calls.some(c=>c.path.endsWith("/scion/status")),false);
+ assert.equal(ui.el("connection-scion-login").disabled,false);
 });

@@ -163,6 +163,21 @@ func (m *roomManager) serveScionAuth(w http.ResponseWriter, r *http.Request) {
 		writeAPIError(w, ErrCapacity)
 		return
 	}
+	var original *platform.CLIProfile
+	if m.config.platformBinDir == "" && req.Executable != "" {
+		original = &platform.CLIProfile{Executable: req.Executable}
+	}
+	execution, selectErr := m.scionProgram(original)
+	if selectErr != nil {
+		m.mu.Unlock()
+		writeScionAuthError(w, "cli_unavailable")
+		return
+	}
+	if m.config.platformBinDir != "" && req.Executable != "" && req.Executable != execution.Executable {
+		m.mu.Unlock()
+		writeAPIError(w, ErrRequest)
+		return
+	}
 	id := req.SessionID
 	if id == "" {
 		id, err = newOpaqueID()
@@ -190,7 +205,7 @@ func (m *roomManager) serveScionAuth(w http.ResponseWriter, r *http.Request) {
 	root := m.store.dir
 	if action == "discover" {
 		m.mu.Unlock()
-		result, err := scion.Discover(ctx, root, origin, req.Executable)
+		result, err := scion.Discover(ctx, root, origin, execution)
 		cancel()
 		m.mu.Lock()
 		m.authorizationChanged(session.owner)
@@ -201,7 +216,10 @@ func (m *roomManager) serveScionAuth(w http.ResponseWriter, r *http.Request) {
 			writeScionAuthError(w, err.Error())
 			return
 		}
-		_ = json.NewEncoder(w).Encode(result)
+		_ = json.NewEncoder(w).Encode(struct {
+			scion.Discovery
+			ManagedProgram bool `json:"managed_program,omitempty"`
+		}{result, m.config.platformBinDir != ""})
 		return
 	}
 	profileID, err := newOpaqueID()
@@ -218,7 +236,7 @@ func (m *roomManager) serveScionAuth(w http.ResponseWriter, r *http.Request) {
 	req.PAT = ""
 	go func() {
 		defer cancel()
-		profile, validation, err := scion.Login(ctx, root, origin, req.Executable, profileID, pat)
+		profile, validation, err := scion.Login(ctx, root, origin, profileID, pat, execution)
 		pat = platform.Secret{}
 		m.mu.Lock()
 		defer m.mu.Unlock()

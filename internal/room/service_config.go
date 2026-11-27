@@ -15,6 +15,7 @@ import (
 // Configuration belongs to service assembly. DSH launch/model parameters stay
 // concrete until an actual second backend defines its own configuration.
 type serviceConfig struct {
+	platformBinDir     string // Physical control-plane release; independent of saved Session execution.
 	platformTempRoot   string // Space-owned tool/CLI temporary material in restricted deployments.
 	resetTeamsSource   string // Trusted release templates; source deployments pass --reset-teams-source.
 	gitlabApplications gitlaboauth.Source

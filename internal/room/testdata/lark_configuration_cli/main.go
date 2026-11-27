@@ -32,7 +32,7 @@ func main() {
 			time.Sleep(time.Second)
 		}
 	}
-	if len(os.Args) < 4 {
+	if len(os.Args) < 3 {
 		os.Exit(2)
 	}
 	base = os.Args[1]
@@ -97,6 +97,16 @@ func gate(s state, name string) state {
 }
 
 func run(argv []string) int {
+	// Archive acceptance also exercises discovery before selecting a profile.
+	if slices.Equal(argv, []string{"--version"}) {
+		fmt.Println("lark-cli version " + readState().Version)
+		return 0
+	}
+	if slices.Equal(argv, []string{"profile", "list"}) {
+		s := readState()
+		emit([]any{map[string]string{"name": s.Profile, "brand": s.Brand, "appId": s.AppID, "tokenStatus": "valid"}})
+		return 0
+	}
 	if len(argv) < 3 || argv[0] != "--profile" || argv[1] == "" {
 		return 2
 	}
@@ -144,7 +154,7 @@ func run(argv []string) int {
 
 func api(s state, a []string) int {
 	method, path := a[1], a[2]
-	if method != "GET" && !(method == "POST" && (path == "/open-apis/contact/v3/users/basic_batch" || path == "/open-apis/im/v1/chat_p2p/batch_query")) {
+	if method != "GET" && !(method == "POST" && (path == "/open-apis/contact/v3/users/basic_batch" || path == "/open-apis/im/v1/chat_p2p/batch_query" || path == "/open-apis/im/v1/messages/search")) {
 		return 2
 	}
 	if a[3] != "--params" {
@@ -153,6 +163,10 @@ func api(s state, a []string) int {
 	params := map[string]any{}
 	must(json.Unmarshal([]byte(a[4]), &params))
 	switch {
+	case path == "/open-apis/im/v1/messages/search" && method == "POST":
+		// An empty read-only page proves collection without delivering messages
+		// or scheduling model work in the isolated installed-service acceptance.
+		envelope(map[string]any{"items": []any{}, "has_more": false})
 	case path == "/open-apis/authen/v1/user_info":
 		s = gate(s, "identity")
 		switch s.Fault {

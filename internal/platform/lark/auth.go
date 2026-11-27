@@ -17,14 +17,16 @@ import (
 
 // ProfileOption contains display metadata only, never CLI credentials.
 type ProfileOption struct {
-	Name        string `json:"name"`
-	Brand       string `json:"brand"`
-	AppID       string `json:"appId,omitempty"`
-	User        string `json:"user,omitempty"`
-	TokenStatus string `json:"tokenStatus,omitempty"`
+	CLIProfile  *platform.CLIProfile `json:"cli_profile,omitempty"`
+	Name        string               `json:"name"`
+	Brand       string               `json:"brand"`
+	AppID       string               `json:"appId,omitempty"`
+	User        string               `json:"user,omitempty"`
+	TokenStatus string               `json:"tokenStatus,omitempty"`
 }
 
 type Discovery struct {
+	ManagedProgram bool            `json:"managed_program,omitempty"`
 	ManagedStorage bool            `json:"managed_storage,omitempty"`
 	Executable     string          `json:"executable"`
 	Profiles       []ProfileOption `json:"profiles"`
@@ -39,9 +41,15 @@ func (f *ClientFactory) Discover(ctx context.Context, executable, brand string) 
 	if f != nil && f.storage != nil {
 		return f.discoverScoped(ctx, executable, brand)
 	}
-	result := Discovery{Profiles: []ProfileOption{}}
+	result := Discovery{ManagedProgram: f != nil && f.executable != "", Profiles: []ProfileOption{}}
 	if Origin(brand) == "" {
 		return result, failure("invalid_profile")
+	}
+	if f != nil && f.executable != "" {
+		if executable != "" && executable != f.executable {
+			return result, failure("cli_unavailable")
+		}
+		executable = f.executable
 	}
 	if executable == "" {
 		var err error
@@ -52,7 +60,7 @@ func (f *ClientFactory) Discover(ctx context.Context, executable, brand string) 
 	}
 	// Use the same path validation as saved profiles. Discovery never changes
 	// the CLI's default profile or inherits workspace/profile environment flags.
-	c, err := New(platform.CLIProfile{Version: 1, Executable: executable, Profile: "discovery", Brand: brand, CLIVersion: CLIVersion})
+	c, err := f.New(platform.CLIProfile{Version: 1, Executable: executable, Profile: "discovery", Brand: brand, CLIVersion: CLIVersion})
 	if err != nil {
 		return result, err
 	}

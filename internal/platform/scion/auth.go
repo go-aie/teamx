@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"io"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -29,30 +28,8 @@ type Discovery struct {
 
 // ResolveCLI accepts either the thin wrapper or native scn. Both report the
 // same pinned version and run through TeamX's isolated process environment.
-func ResolveCLI(ctx context.Context, executable string) (string, error) {
-	if executable == "" {
-		override := os.Getenv("TEAMX_SCION_BIN")
-		if override != "" && !filepath.IsAbs(override) {
-			return "", failure("cli_unavailable")
-		}
-		executable = tool.ResolveExecutable("teamx-scion", override)
-		if executable == "teamx-scion" {
-			if p, e := exec.LookPath(executable); e == nil {
-				executable = p
-			} else {
-				override = os.Getenv("TEAMX_SCN_BIN")
-				if override != "" && !filepath.IsAbs(override) {
-					return "", failure("cli_unavailable")
-				}
-				executable = tool.ResolveExecutable("scn", override)
-				if executable == "scn" {
-					if p, e := exec.LookPath(executable); e == nil {
-						executable = p
-					}
-				}
-			}
-		}
-	}
+func ResolveCLI(ctx context.Context, execution tool.Definition) (string, error) {
+	executable := execution.Executable
 	p := platform.CLIProfile{Version: 1, Brand: "scion", Profile: strings.Repeat("0", 32), CLIVersion: CLIVersion, Executable: executable}
 	if !ValidProfile(p) {
 		return "", failure("cli_unavailable")
@@ -60,7 +37,7 @@ func ResolveCLI(ctx context.Context, executable string) (string, error) {
 	ctx, cancel := context.WithTimeout(ctx, 8*time.Second)
 	defer cancel()
 	out := &boundedOutput{cancel: cancel}
-	process := tool.Process{Definition: Definition(executable), Input: strings.NewReader(""), Output: out, Error: io.Discard}
+	process := tool.Process{Definition: execution, Input: strings.NewReader(""), Output: out, Error: io.Discard}
 	code := process.Run(ctx, []string{"--version"})
 	if ctx.Err() != nil {
 		return "", failure("timeout")
@@ -74,10 +51,10 @@ func ResolveCLI(ctx context.Context, executable string) (string, error) {
 	return executable, nil
 }
 
-func Discover(ctx context.Context, root, origin, executable string) (Discovery, error) {
+func Discover(ctx context.Context, root, origin string, execution tool.Definition) (Discovery, error) {
 	result := Discovery{Profiles: []ProfileOption{}}
 	var err error
-	result.Executable, err = ResolveCLI(ctx, executable)
+	result.Executable, err = ResolveCLI(ctx, execution)
 	if err != nil {
 		return result, err
 	}
@@ -109,7 +86,7 @@ func Discover(ctx context.Context, root, origin, executable string) (Discovery, 
 			continue
 		}
 		p := platform.CLIProfile{Version: 1, Brand: "scion", Profile: entry.Name(), CLIVersion: CLIVersion, Executable: result.Executable}
-		validation := VerifyProfile(ctx, root, origin, p)
+		validation := VerifyProfile(ctx, root, origin, p, execution)
 		if ctx.Err() != nil {
 			return result, failure("timeout")
 		}
@@ -131,11 +108,11 @@ func Discover(ctx context.Context, root, origin, executable string) (Discovery, 
 // Login creates a fresh managed profile and delegates token validation/storage
 // to the pinned CLI. A failed or cancelled login removes only its own new dir.
 // The PAT exists only in memory/stdin and the CLI-owned private credential file.
-func Login(ctx context.Context, root, origin, executable, id string, pat platform.Secret) (profile platform.CLIProfile, validation platform.Validation, err error) {
+func Login(ctx context.Context, root, origin, id string, pat platform.Secret, execution tool.Definition) (profile platform.CLIProfile, validation platform.Validation, err error) {
 	if !tool.OpaqueID(id) || !platform.ValidCredential(pat.Reveal()) {
 		return profile, validation, failure("invalid_profile")
 	}
-	executable, err = ResolveCLI(ctx, executable)
+	executable, err := ResolveCLI(ctx, execution)
 	if err != nil {
 		return
 	}
@@ -166,7 +143,7 @@ func Login(ctx context.Context, root, origin, executable, id string, pat platfor
 	ctx, cancel := context.WithTimeout(ctx, 60*time.Second)
 	defer cancel()
 	out := &boundedOutput{cancel: cancel}
-	process := tool.Process{Definition: Definition(executable), Values: Values(origin, path), Input: strings.NewReader(pat.Reveal()), Output: out, Error: io.Discard}
+	process := tool.Process{Definition: execution, Values: Values(origin, path), Input: strings.NewReader(pat.Reveal()), Output: out, Error: io.Discard}
 	code := process.Run(ctx, []string{"--json", "login", origin, "--with-token"})
 	if ctx.Err() != nil {
 		if ctx.Err() == context.DeadlineExceeded {
@@ -181,7 +158,7 @@ func Login(ctx context.Context, root, origin, executable, id string, pat platfor
 	if json.Unmarshal(out.data, &login) != nil || login.Schema != "scion.cli.login/v1" || login.Endpoint != origin {
 		return profile, validation, failure("invalid_response")
 	}
-	validation = VerifyProfile(ctx, root, origin, profile)
+	validation = VerifyProfile(ctx, root, origin, profile, execution)
 	if validation.Status != "valid" {
 		return profile, validation, failure(validation.ErrorCode)
 	}

@@ -48,12 +48,12 @@ func TestProfileEvidenceAndSnapshotIdentity(t *testing.T) {
 	t.Setenv("SCION_TOKEN", "must-not-inherit")
 	t.Setenv("SCION_CONFIG_FILE", "must-not-inherit")
 	root, p, file := profileFixture(t)
-	v := VerifyProfile(context.Background(), root, origin, p)
+	v := VerifyProfile(context.Background(), root, origin, p, Definition(p.Executable))
 	if v.Status != "valid" || v.UserID != 0 || v.Account.ID.Namespace != "scion:subject" || v.Account.ID.Value != "alice" {
 		t.Fatal(v)
 	}
 	private := t.TempDir()
-	values, err := Prepare(context.Background(), root, origin, p, v.Account, private)
+	values, err := Prepare(context.Background(), root, origin, p, v.Account, private, Definition(p.Executable))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -61,16 +61,16 @@ func TestProfileEvidenceAndSnapshotIdentity(t *testing.T) {
 		t.Fatal(err)
 	}
 	// The admitted invocation still uses the same bytes whose subject was checked.
-	if got := VerifyFile(context.Background(), origin, p, values["credentials_file"]); got.Account != v.Account {
+	if got := VerifyFile(context.Background(), origin, p, values["credentials_file"], Definition(p.Executable)); got.Account != v.Account {
 		t.Fatal(got)
 	}
-	if _, err = Prepare(context.Background(), root, origin, p, v.Account, t.TempDir()); err == nil || err.Error() != "identity_mismatch" {
+	if _, err = Prepare(context.Background(), root, origin, p, v.Account, t.TempDir(), Definition(p.Executable)); err == nil || err.Error() != "identity_mismatch" {
 		t.Fatal(err)
 	}
 	if err = os.Remove(file); err != nil {
 		t.Fatal(err)
 	}
-	if got := VerifyProfile(context.Background(), root, origin, p); got.ErrorCode != "credential_unavailable" {
+	if got := VerifyProfile(context.Background(), root, origin, p, Definition(p.Executable)); got.ErrorCode != "credential_unavailable" {
 		t.Fatal(got)
 	}
 }
@@ -122,7 +122,7 @@ func TestProfileRejectsPathsPermissionsAndAnonymous(t *testing.T) {
 					t.Fatal(err)
 				}
 			}
-			v := VerifyProfile(context.Background(), root, origin, p)
+			v := VerifyProfile(context.Background(), root, origin, p, Definition(p.Executable))
 			if v.Status != "failed" || v.Account.Valid() || strings.Contains(v.ErrorCode, "secret") {
 				t.Fatal(v)
 			}

@@ -135,6 +135,79 @@ func TestScopedLarkLifecycleKeepsCredentialsAndPinInOriginalContext(t *testing.T
 			t.Fatal(err)
 		}
 	}
+	// Upgrade only the runtime program. The old executable is removed; the
+	// original profile, credentials and request ownership remain intact.
+	nextBin := filepath.Join(dir, "lark-cli-new")
+	body, err := os.ReadFile(bin)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(nextBin, body, 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Remove(bin); err != nil {
+		t.Fatal(err)
+	}
+	for i, old := range factories {
+		metadataPath := filepath.Join(old.storage.directory(profiles[i].Profile.Profile), "profile.json")
+		before, err := os.ReadFile(metadataPath)
+		if err != nil {
+			t.Fatal(err)
+		}
+		f, err := old.WithStorage(old.storage.root, nextBin)
+		if err != nil {
+			t.Fatal(err)
+		}
+		factories[i] = f
+		c, err := f.New(profiles[i].Profile)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if c.executable != nextBin || c.profile != profiles[i].Profile || c.requests != old.requests || c.gates != old.gates {
+			t.Fatal("upgrade changed connection or queue ownership")
+		}
+		v, err := c.Verify(t.Context())
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := f.CheckPermissions(t.Context(), profiles[i].Profile, v.Account); err != nil {
+			t.Fatal(err)
+		}
+		discovery, err := f.Discover(t.Context(), "", "feishu")
+		if err != nil || len(discovery.Profiles) != 1 || discovery.Profiles[0].CLIProfile == nil || *discovery.Profiles[0].CLIProfile != profiles[i].Profile {
+			t.Fatal("upgrade discovery changed saved reference", err)
+		}
+		if f.SupportsPin() {
+			pin, err := f.Pin(t.Context(), profiles[i].Profile, v.Account)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if pin.client.executable != nextBin || pin.client.dataDir != c.dataDir {
+				t.Fatal("pin lost runtime binding or credentials")
+			}
+			if _, err := pin.Verify(t.Context()); err != nil {
+				t.Fatal(err)
+			}
+			pin.Close()
+		}
+		after, err := os.ReadFile(metadataPath)
+		if err != nil || string(before) != string(after) {
+			t.Fatal("upgrade rewrote metadata", err)
+		}
+		tampered := profiles[i].Profile
+		tampered.Executable = nextBin
+		if _, err := f.New(tampered); ErrorCode(err) != "invalid_cli_storage" {
+			t.Fatal("one-sided profile rewrite admitted", err)
+		}
+		if err := f.storage.provision(tampered); ErrorCode(err) != "profile_conflict" {
+			t.Fatal(err)
+		}
+		tampered.Profile = "unapproved"
+		tampered.Executable = bin
+		if err := f.storage.provision(tampered); ErrorCode(err) != "invalid_cli_storage" {
+			t.Fatal("old executable admitted for new profile", err)
+		}
+	}
 	if _, err := factories[1].New(profiles[0].Profile); err == nil {
 		t.Fatal("profile from another Space admitted")
 	}

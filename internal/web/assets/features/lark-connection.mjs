@@ -129,9 +129,9 @@ export function createLarkConnection({ env, runtime, connectionsUI, settingsUI, 
     $("connection-login").hidden = !option || !needsAuth || active || blocked || connectionsUI.platforms.detecting;
     $("connection-login").textContent = setup?.stage === "authorization" && incomplete ? "继续账号授权" : expired ? "重新授权" : `登录${connectionBrand() === "lark" ? "Lark" : "飞书"}`;
     for (const id of ["connection-profile", "connection-executable", "connection-detect", "connection-login", "connection-logout", "connection-reauthorize"]) $(id).disabled = active || pending || connectionsUI.platforms.detecting;
-    const managedStorage = connectionsUI.platforms.discovery?.managed_storage === true;
-    $("connection-executable").disabled ||= managedStorage;
-    for (const id of ["connection-executable-label", "connection-executable", "connection-cli-hint"]) $(id).hidden = managedStorage;
+    const managed = managedProgram();
+    $("connection-executable").disabled ||= managed;
+    for (const id of ["connection-executable-label", "connection-executable", "connection-cli-hint"]) $(id).hidden = managed;
     $("connection-name").disabled = active || pending;
     $("connection-provider").disabled = active || pending || !!connectionsUI.platforms.selected || onboardingUI.onboarding.active && !!onboardingUI.onboarding.pending;
     $("connection-save").disabled = active || pending || incomplete || connectionsUI.platforms.detecting || !!connectionsUI.platforms.selected && !connectionsUI.connectionDirty() && !onboardingUI.onboarding.active;
@@ -153,7 +153,7 @@ export function createLarkConnection({ env, runtime, connectionsUI, settingsUI, 
     $("connection-recheck").disabled = connectionsUI.platforms.detecting;
     $("connection-advanced").hidden = active || pending || connectionsUI.platforms.detecting || !needsRepair;
     if (!needsRepair) $("connection-advanced").open = false;
-    $("connection-setup").hidden = managedStorage || hasProfiles && !blocked;
+    $("connection-setup").hidden = managed || hasProfiles && !blocked;
     $("connection-detect").textContent = connectionsUI.platforms.detecting ? "正在检测…" : "重新检测";
     renderLarkSetupCommand();
 
@@ -233,11 +233,12 @@ export function createLarkConnection({ env, runtime, connectionsUI, settingsUI, 
     if (!connectionsUI.connectionIsLark() || connectionsUI.platforms.auth || connectionsUI.platforms.larkStarting) return;
     clearLarkConfirmation();
     const version = ++connectionsUI.platforms.formVersion, brand = connectionBrand();
+    const executableChoice = discoveryExecutable();
     const selected = profile ?? connectionsUI.platforms.larkSetupResult?.cli_profile?.profile ?? $("connection-profile").value;
     exact ||= !!connectionsUI.platforms.larkSetupUncertain;
     connectionsUI.platforms.detecting = true; connectionsUI.platforms.larkDiscoveryError = null; connectionsUI.platforms.discovery = null; renderLarkAccount();
     try {
-      const data = await request("/v1/platforms/lark/discover", connectionsUI.connectionPayload({ executable: $("connection-executable").value.trim(), brand }), undefined, 40000);
+      const data = await request("/v1/platforms/lark/discover", connectionsUI.connectionPayload({ ...executableChoice, brand }), undefined, 40000);
       if (version !== connectionsUI.platforms.formVersion) return;
       connectionsUI.platforms.discovery = data;
       $("connection-executable").value = data.executable;
@@ -325,7 +326,7 @@ export function createLarkConnection({ env, runtime, connectionsUI, settingsUI, 
     const owner = connectionsUI.connectionPayload({});
     try {
       if(onboardingUI.onboarding.active && ["login","setup"].includes(action))await onboardingUI.prepareOnboarding();
-      const payload = action === "setup" ? {executable:$("connection-executable").value.trim(),brand:connectionBrand()} : {cli_profile:profile,affected};
+      const payload = action === "setup" ? {...discoveryExecutable(),brand:connectionBrand()} : {cli_profile:profile,affected};
       const result = await request(`/v1/platforms/lark/${action}`, {...owner,...payload}, undefined, 40000);
       if (version !== connectionsUI.platforms.formVersion) {
         void request("/v1/platforms/lark/cancel", {...owner,session_id:result.session_id}).catch(() => {});
@@ -427,7 +428,16 @@ export function createLarkConnection({ env, runtime, connectionsUI, settingsUI, 
     }
   }
 
-  function larkProfileDraft() {return {version:1, executable:$("connection-executable").value.trim(), profile:$("connection-profile").value.trim(), brand:connectionBrand(), cli_version:"1.0.99"};}
+  function managedProgram() { return connectionsUI.platforms.managedLarkProgram || connectionsUI.platforms.discovery?.managed_program || connectionsUI.platforms.discovery?.managed_storage; }
+  function discoveryExecutable() { return managedProgram() ? {} : {executable:$("connection-executable").value.trim()}; }
+  function larkProfileDraft() {
+    const profile=$("connection-profile").value.trim(), brand=connectionBrand();
+    if (managedProgram()) {
+      const original=connectionsUI.platforms.discovery?.profiles.find(p=>p.name===profile)?.cli_profile || connectionsUI.platforms.selected?.cli_profile;
+      if (original?.profile===profile && original.brand===brand) return {...original};
+    }
+    return {version:1, executable:$("connection-executable").value.trim(), profile, brand, cli_version:"1.0.99"};
+  }
 
   function mount() {
     $("connection-profile").addEventListener("change", () => {clearLarkConfirmation();resetLarkSetup();closeLarkControls();connectionsUI.connectionFeedback();renderLarkAccount();$("connection-application-change").focus();});

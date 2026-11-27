@@ -140,7 +140,7 @@ func nativeEnvironment(source []string, private string, runtime bool) []string {
 		}
 	}
 	if runtime {
-		// These are explicit standalone inputs; S2 will resolve and inject them
+		// These are explicit standalone inputs, injected by the service
 		// from a member's selected connection. Never forward SCION_TOKEN or a
 		// global config, keychain, daemon, Git credential or model environment.
 		for _, key := range []string{"SCION_ENDPOINT", "SCION_HUB", "SCION_REPO", "SCION_AUTHOR", "SCION_CREDENTIALS_FILE"} {
@@ -154,18 +154,28 @@ func nativeEnvironment(source []string, private string, runtime bool) []string {
 
 // resolveScn never searches a workspace. An explicit override is authoritative.
 func resolveScn(override string, executable func() (string, error), pathEnv string) (string, error) {
-	if override != "" {
-		if !filepath.IsAbs(override) {
-			return "", errors.New("TEAMX_SCN_BIN must be absolute")
+	physical := func(path string) (string, error) {
+		if !filepath.IsAbs(path) || filepath.Clean(path) != path || strings.ContainsAny(path, "\x00\r\n") {
+			return "", errors.New("invalid scn path")
 		}
-		return override, nil
+		resolved, err := filepath.EvalSymlinks(path)
+		if err != nil {
+			return "", err
+		}
+		return exec.LookPath(resolved)
+	}
+	if override != "" {
+		return physical(override)
 	}
 	if self, err := executable(); err == nil {
-		candidate := filepath.Join(filepath.Dir(self), "scn")
-		if _, err := os.Stat(candidate); err == nil {
-			// A broken sibling must produce an installation error, not select an
-			// unrelated native CLI from PATH.
-			return candidate, nil
+		real, err := filepath.EvalSymlinks(self)
+		if err == nil {
+			candidate := filepath.Join(filepath.Dir(real), "scn")
+			if _, err := os.Lstat(candidate); err == nil {
+				// A broken sibling must produce an installation error, not select an
+				// unrelated native CLI from PATH.
+				return physical(candidate)
+			}
 		}
 	}
 	for _, dir := range filepath.SplitList(pathEnv) {
@@ -174,7 +184,7 @@ func resolveScn(override string, executable func() (string, error), pathEnv stri
 		}
 		candidate := filepath.Join(dir, "scn")
 		if file, err := os.Stat(candidate); err == nil && !file.IsDir() && file.Mode()&0111 != 0 {
-			return candidate, nil
+			return physical(candidate)
 		}
 	}
 	return "", exec.ErrNotFound

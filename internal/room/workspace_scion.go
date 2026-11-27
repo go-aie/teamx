@@ -2,6 +2,8 @@ package room
 
 import (
 	"context"
+	"errors"
+	"github.com/go-aie/teamx/internal/platform/tool"
 	"os"
 	"path/filepath"
 	"time"
@@ -38,16 +40,32 @@ func (m *roomManager) scionWorkspaceExecute(owner RoomIdentity, w workspaceConfi
 		if profile == nil {
 			return nil, ErrIdentity
 		}
+		execution, err := m.scionProgram(profile)
+		if err != nil {
+			return nil, err
+		}
 		path, err := scion.Snapshot(root, resolved.record.URL, *profile, private)
 		if err != nil {
 			return nil, err
 		}
 		env := map[string]string{"HOME": private, "XDG_CONFIG_HOME": private, "XDG_CACHE_HOME": private, "TMPDIR": private, "SCION_ENDPOINT": resolved.record.URL, "SCION_HUB": resolved.record.URL, "SCION_CREDENTIALS_FILE": path, "SCION_CREDENTIALS": "file", "SCION_NO_DAEMON": "1", "SCION_CONFIG_FILE": filepath.Join(private, "config.json")}
+		// Override every inherited allowlisted key, including absent keys, with
+		// the service-captured inputs. Agent/process environment changes cannot
+		// select another native binary or proxy midway through preparation.
+		for _, key := range []string{"PATH", "LANG", "LC_ALL", "TZ", "SSL_CERT_FILE", "SSL_CERT_DIR", "HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY", "NO_PROXY", "http_proxy", "https_proxy", "all_proxy", "no_proxy", "TEAMX_SCN_BIN"} {
+			env[key] = environmentValue(execution.ProcessEnvironment, key)
+		}
+		for _, dep := range execution.Dependencies {
+			env[dep.OverrideEnvironment] = environmentValue(execution.ProcessEnvironment, dep.OverrideEnvironment)
+		}
+		if !tool.ExecutableAvailable(execution.Executable) || !tool.DependenciesAvailable(execution) {
+			return nil, errors.New("cli_unavailable")
+		}
 		// Track version/identity processes as well as clone. All commands see the
 		// same pinned credentials; a profile replaced mid-call cannot switch users.
 		var verificationErr error
-		validation := scion.VerifyWithRun(useCtx, resolved.record.URL, *profile, path, func(ctx context.Context, args ...string) ([]byte, error) {
-			out, err := run(ctx, dir, env, profile.Executable, args...)
+		validation := scion.VerifyWithRun(useCtx, resolved.record.URL, *profile, path, execution, func(ctx context.Context, args ...string) ([]byte, error) {
+			out, err := run(ctx, dir, env, execution.Executable, args...)
 			if err != nil {
 				verificationErr = err
 			}
@@ -62,7 +80,7 @@ func (m *roomManager) scionWorkspaceExecute(owner RoomIdentity, w workspaceConfi
 		if err := scion.ValidateArguments(resolved.record.URL, args); err != nil {
 			return nil, err
 		}
-		out, err = run(useCtx, dir, env, profile.Executable, args...)
+		out, err = run(useCtx, dir, env, execution.Executable, args...)
 		m.mu.Lock()
 		checkErr := m.checkProjectPlatformLocked(resolved)
 		m.mu.Unlock()

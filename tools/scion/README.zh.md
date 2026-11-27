@@ -26,11 +26,13 @@
 
 二进制解析顺序：显式 `TEAMX_SCN_BIN` 绝对路径 → `teamx-scion` 同目录的 `scn` → 服务 PATH 中的绝对目录。不搜索成员 Workspace，不接受相对覆盖路径或相对 PATH 项。显式覆盖失效不会回退；存在但不可运行的同目录依赖也会清楚报错。依赖缺失、版本探测失败（上限 5 秒）或版本不符返回 127，并提供安装诊断，不运行实际业务命令。
 
-TeamX 对封装的解析：`TEAMX_SCION_BIN` → TeamX 同目录的 `teamx-scion` → 服务 PATH。连接 profile 的 `executable` 显式指定所选 Scion CLI（`teamx-scion` 或原生 `scn`）的绝对路径，身份核验、业务调用和无凭据帮助均使用该路径。直接选择 scn 时，同样经过 TeamX 私有进程环境、目的地址和业务调用前的固定版本/账号校验。原生 `TEAMX_SCN_BIN` 从服务环境传给封装；服务端调用所需路径应在启动服务前配置，Agent shell 内临时修改 PATH、环境或 `cd` 不会传给服务端。
+已安装个人服务绑定控制面物理 release 的 `teamx-scion`，管理员 `TEAMX_SCION_BIN` 覆盖优先；原生 `scn` 从已选封装同目录解析，`TEAMX_SCN_BIN` 覆盖优先。两层覆盖须为规范化绝对路径；安装缺失、不可执行或覆盖失效均不回退到其他程序。列表预检、版本／subject 核验、帮助、业务及 Workspace 使用同一选择结果，并以唯一的 `TEAMX_SCN_BIN` 注入封装；版本探测后也不重新解析符号链接。变更服务环境后需重启。
+
+独立个人／源码运行保留每个 profile 的外部程序；无 profile 时按服务同目录、绝对 PATH 发现封装，没有封装且无显式覆盖时可发现原生 `scn`。直接选择原生 `scn` 无需另装封装或重复依赖。连接 profile 的历史 `executable` 继续参与原凭据证据，但在服务管理模式不选择实际程序；升级不改写旧连接、账号或成员授权。凭据快照、目的地址与固定版本／账号检查保持。Agent shell 临时修改 PATH、环境或 `cd` 不影响服务端选择；旧 Session 的 DSH／Agent CLI 独立保留。Linux 多用户仍禁用 Scion。
 
 ## TeamX 页面登录
 
-正常使用见 [Scion 使用说明](../../docs/scion.zh.md#首次配置)。页面填写实例和 `teamx-scion` / `scn` 路径后，自动检测当前服务受管目录中的账号；单个账号自动选中，多个账号显式选择。没有可用账号时，可在页面输入 PAT 登录；后台生成新的 profile ID，调用固定 CLI 的 `login --with-token`（仅经 stdin 传入 PAT），再用 `whoami` 核实账号。成功后保存连接，无需手工准备 profile。
+正常使用见 [Scion 使用说明](../../docs/scion.zh.md#首次配置)。页面填写实例后，自动检测当前服务受管目录中的账号；单个账号自动选中，多个账号显式选择。没有可用账号时，可在页面输入 PAT 登录；后台生成新的 profile ID，调用固定 CLI 的 `login --with-token`（仅经 stdin 传入 PAT），再用 `whoami` 核实账号。成功后保存连接，无需手工准备 profile。
 
 PAT 不进入命令参数、公开响应、Room、成员环境或连接 JSON；凭据文件仍由 scn 在服务私有目录中保存。重新登录始终创建新 profile，原连接和在途调用继续使用原凭据，直到操作者保存替换引用；保存时沿用现有引用确认和调用结清。登录可取消，服务退出会等待登录进程结清；失败或取消清理本次未完成的新 profile。
 
@@ -95,15 +97,15 @@ stdin 支持文件和管道；stdout/stderr 按字节流转发，不增加标题
 ## 验证
 
 ```sh
-go test -race ./tools/scion
-go vet ./tools/scion
+make test-race TEST_PACKAGES='./tools/scion'
+go vet -tags=integration ./tools/scion
 TEAMX_SCN_BIN=/absolute/path/to/verified/scn \
-  go test -race -count=1 ./tools/scion
+  go test -tags=e2e -race ./tools/scion -run '^TestPinnedScnOffline$'
 ```
 
 前两项为组件验证；最后一项额外使用固定官方二进制验证离线帮助、版本、原生用法错误、相对 `-C`、JSON 和配置隔离。组件测试覆盖 argv/stdin/输出/退出码保留、二进制解析、错误版本、取消探测与业务进程、后代结清及无控制终端。未提供 `TEAMX_SCN_BIN` 时，官方二进制测试明确跳过。当前验证范围见 [Scion 验证与待验项](../../docs/scion.zh.md#验证与待验项)。
 
-连接与页面回归由 `go test -race ./internal/platform/scion ./internal/room -run '^TestScion|^TestProfile'` 和 `node --test internal/web/tests/web*_test.mjs` 验证。`TestScionRealLoginDiscovery` 通过 `TEAMX_SCION_AUTH_REAL=1` 显式启用，需提供 `TEAMX_SCION_TEST_CREDENTIALS` 私有原生 PAT 凭据源、`TEAMX_SCN_BIN` 与 `TEAMX_SCION_BIN` 绝对路径。
+连接与页面回归由 `make test-race TEST_PACKAGES='./internal/platform/scion ./internal/room' TEST_RUN='Test(Scion|Profile)'` 和 `node --test internal/web/tests/web*_test.mjs` 验证。`TestScionRealLoginDiscovery` 通过 `TEAMX_SCION_AUTH_REAL=1` 显式启用，需提供 `TEAMX_SCION_TEST_CREDENTIALS` 私有原生 PAT 凭据源、`TEAMX_SCN_BIN` 与 `TEAMX_SCION_BIN` 绝对路径。
 
 2026-11-07 已在隔离服务根实测两种 CLI 路径的 PAT 登录、自动发现、连接保存/验证及成员仓库读取，实际 subject 为 csgship；原生 scn 路径的三份 Workspace clone 与重开回归也通过，没有仓库远端写入。实际浏览器控制仍超时，页面事件测试不能代替浏览器操作验收。
 
@@ -122,7 +124,7 @@ env -u SCION_TOKEN SCION_CREDENTIALS=file \
 chmod 0600 "$scion_profile_root/credentials.json"
 ```
 
-页面「设置 → 平台连接 → 新增连接」选择 Scion，填写实例 HTTPS origin 和 CLI 路径。检测后选择上述 profile 对应的账号，无需输入 ID；保存后自动运行固定 CLI 的 `--json whoami`。有效的 `scion:subject` 账号才能被成员选择。内部引用结构保持不变，例如（不含秘密）：
+页面「设置 → 平台连接 → 新增连接」选择 Scion，填写实例 HTTPS origin；仅独立个人／源码运行可指定外部 CLI 路径。检测后选择上述 profile 对应的账号，无需输入 ID；保存后自动运行固定 CLI 的 `--json whoami`。有效的 `scion:subject` 账号才能被成员选择。内部引用结构保持不变，例如（不含秘密）：
 
 ```json
 {

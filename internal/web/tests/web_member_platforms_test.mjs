@@ -503,3 +503,13 @@ for(const [state,reason,next] of [
  if(!app.hidden)assert.equal(app.href,"https://open.feishu.cn/app/cli_fixture/auth");
  assert.equal(calls(api,"/v1/platforms/lark/login").length,0);assert.equal(calls(api,"/v1/tools/bind").length,0);
 });
+
+for(const [code,message] of [["cli_unavailable",/管理员检查服务程序/],["invalid_cli_storage",/私有凭据目录异常/]])test(`member onboarding reports ${code} with saved notifications`,async()=>{
+ const api=fixture({empty:true}),ui=await launch(api);await openMemberInbox(ui,"member-a");await choose(ui,"lark");
+ api.hook=(path,body)=>{if(path==="/v1/platforms/onboarding/apply"){
+  const op=api.operations.get(body.operation_id);op.connection.status="connected";op.notifications={status:"applied",version:1};op.tool={status:"failed",error_code:code};return structuredClone(op);
+ }};
+ await ui.el("member-platform-add-submit").emit("click");
+ assert.match(ui.el("member-platform-add-result").textContent,/通知：已保存.*工具：未完成/);
+ assert.match(ui.el("member-platform-add-result").textContent,message);
+});

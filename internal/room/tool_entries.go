@@ -60,8 +60,15 @@ func (m *roomManager) toolAvailability(file registry.Snapshot, p registry.Record
 		return
 	}
 	executable := d.Executable
-	if (d.Provider == "lark" || d.Provider == "scion") && account.CLIProfile != nil {
-		executable = account.CLIProfile.Executable
+	if d.Provider == "scion" && account.CLIProfile != nil {
+		execution, _ := m.scionProgram(account.CLIProfile)
+		d.Executable = execution.Executable
+		d.Dependencies = execution.Dependencies
+		d.ProcessEnvironment = execution.ProcessEnvironment
+		executable = d.Executable
+	}
+	if d.Provider == "lark" && account.CLIProfile != nil {
+		executable = m.larkClients.Executable(*account.CLIProfile)
 	}
 	available := tool.ExecutableAvailable(executable) && tool.DependenciesAvailable(d)
 	if !d.InternalOnly && available {

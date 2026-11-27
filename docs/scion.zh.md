@@ -8,18 +8,20 @@
 
 先完成 [TeamX 安装与模型配置](installation.zh.md)。Scion CLI 暂不随 standard 包提供，须在服务机器另装固定 **scn 0.1.13**，下载与校验见[工具手册](../tools/scion/README.zh.md#安装)；当前已核实的平台为 macOS arm64。
 
-TeamX 支持原生 `scn` 或配套 `teamx-scion`，页面自动检测程序路径，无需重新编译 TeamX。薄封装构建及服务环境配置见[工具手册](../tools/scion/README.zh.md)；从源码启动见[开发运行参考](../internal/room/README.zh.md#从源码运行)。
+TeamX 支持原生 `scn` 或配套 `teamx-scion`，无需重新编译 TeamX。已安装个人服务由服务选择程序：默认使用本 release 的封装及同目录 `scn`，管理员可在服务启动环境中设置 `TEAMX_SCION_BIN`、`TEAMX_SCN_BIN` 的规范化绝对路径，修改后重启。完整安装缺失依赖不会回退到 PATH。独立个人／源码运行继续保留每个 profile 的外部程序选择。Linux 多用户仍不开放 Scion。薄封装构建及服务环境配置见[工具手册](../tools/scion/README.zh.md)；从源码启动见[开发运行参考](../internal/room/README.zh.md#从源码运行)。
 
 ### 2. 在页面配置 Scion 连接
 
 从「成员详情 → 平台 → 添加平台 → 连接新平台」选择 **Scion**，也可先在全局「设置 → 平台」连接账号：
 
 1. 填写连接名称和实例地址，例如 `https://scion.opencsg.com`。
-2. 程序路径会自动检测；如需手工指定，在「高级设置」中填写服务机器上 `scn` 或 `teamx-scion` 的绝对路径。
+2. 程序由服务自动检测。已安装服务不在页面选择程序；独立个人／源码运行可在「高级设置」填写服务机器上 `scn` 或 `teamx-scion` 的绝对路径。
 3. 页面自动检测当前服务已有的登录：单个账号自动选中；多个账号由你选择。
 4. 没有可用登录时点击「登录」，已有账号时点击「重新登录」，再输入该实例的 PAT 并点击输入区内的「登录」。登录成功后显示实际账号，再点击「保存连接」。
 
 **不需要手工创建目录或填写 profile ID。** 后台调用 Scion CLI 登录并管理独立 profile，PAT 输入框提交后立即清空。登录响应丢失时只查询状态，不会自动重发 PAT。可以取消正在进行的登录。
+
+同协议版本的服务升级后，旧连接使用当前控制面程序，核验、成员工具、无凭据帮助与 Workspace 共用选择规则；无需改写旧 profile、凭据指纹或成员授权。已受理调用保持原程序和本次凭据副本直到结清。旧 Session 的 DSH、Agent CLI 与执行描述保持原有生命周期。
 
 连接保存后会再次验证账号。PAT 及账号须具备目标仓库所需的读取、任务分支发布和 Review 写入权限。
 

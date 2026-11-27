@@ -327,6 +327,8 @@ func TestOAuthBusinessDifferentPlatformsAndLogoutFence(t *testing.T) {
 func TestOAuthBusinessEventsTodosRefreshKeepsProgress(t *testing.T) {
 	parallelFixtureTest(t)
 	h, c := newIndependentEventHarness(t)
+	h.m.config.platformBinDir = t.TempDir() // HTTP sources need neither CLI layer.
+	h.m.config.environment = []string{"PATH=/must-not-search", "TEAMX_GLAB_BIN=/missing/glab"}
 	h.prepare()
 	seedEventInbox(t, h, 1)
 	before := h.state()

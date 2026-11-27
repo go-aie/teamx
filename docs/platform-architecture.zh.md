@@ -30,6 +30,16 @@ flowchart LR
 
 公共连接、通知和工具模块不依赖具体平台或 Agent 工具；内置 GitLab 不依赖工具运行模块；独立 GitLab 工具不 import TeamX 内部包，也不回调平台业务 RPC。[依赖检查](../internal/platform/boundaries_test.go)覆盖传递依赖。
 
+## 平台程序与连接身份
+
+飞书运行程序由外层服务装配绑定，连接中的 `CLIProfile` 继续提供原 profile、品牌、账号及凭据证据。已安装服务（包括个人服务）使用控制面物理 release 的 `bin/lark-cli`；管理员可用 `TEAMX_LARK_BIN` 指定规范化绝对路径。安装内依赖缺失或覆盖损坏不会回退到其他程序。独立个人／源码运行继续使用各连接选择的外部程序；Linux 多用户私有 storage 使用服务程序。
+
+程序路径只保留在运行时。factory 将同一绑定用于发现、应用配置、账号核验、权限检查、通知及 Pin，工具列表也检查该有效程序。更新运行绑定不改写连接、私有 `profile.json` 或凭据 fingerprint；私有 profile 完整一致性、目录安全、账号与权限 gate 继续校验。已创建 client 保留自己的路径，factory 配置组合共享原请求队列和 profile gate。
+
+GitLab 的 `teamx-gitlab` 与 `glab` 也由外层一起选择：已安装服务使用物理 release，管理员可分别用 `TEAMX_GITLAB_BIN`、`TEAMX_GLAB_BIN` 覆盖。原生依赖以已选 wrapper 所在目录为准，预检和执行使用同一个 `TEAMX_GLAB_BIN`；依赖环境按键替换，子进程仍只接收既有白名单。独立运行允许服务绝对 PATH 发现，完整安装缺失或显式覆盖失效不回退。列表不执行 CLI；精确版本检查仍由 wrapper 在调用时完成。
+
+这与旧 Space／Session 的执行配置独立：服务升级不替换其 DSH、Agent CLI 或恢复描述。已受理工具调用持有自己的两层程序路径直到结清；Scion 的核验、成员工具与 Workspace 同样使用本次绑定，Linux 多用户准入仍关闭。GitLab HTTP 通知与内置动作独立于 CLI。实现与验证见[平台程序绑定记录](implementation/platform-program-dependencies.zh.md)。
+
 ## 通知来源所有权与可靠投递
 
 每个完整 RoomIdentity 有一个 `NotificationActor`，独立保存该 Room 的来源订阅 State。状态变更由有界队列及一个持久任务串行处理；读取从已安装的不可变投影取得。共用 writer 允许不同 Room 的文件 I/O 并行，通知模块不再注入 `Host.Gate`。manager 仅在准入时短时核验目录、连接、配置及 runtime，网络、来源保存、Actor 收件和维护等待都在锁外。
@@ -146,7 +156,7 @@ R5 已统一生产入口，GitLab 原生正文分页未登记。R6 的非 GitLab
 
 ## Scion 连接与工具（S2）
 
-Scion 是独立 provider，不注册 GitLab MR、通知或内部动作适配器。profile 引用沿用连接快照 v4；`profile` 为服务私有 `scion-profiles` 下的 opaque ID，`executable` 为固定版本 `teamx-scion` 或原生 `scn` 的绝对路径。账号保留 `scion:subject` 字符串，不填入数字 `UserID`。
+Scion 是独立 provider，不注册 GitLab MR、通知或内部动作适配器。profile 引用沿用连接快照 v4；`profile` 为服务私有 `scion-profiles` 下的 opaque ID，`executable` 保留为历史程序元数据／独立运行的外部程序选择。已安装个人服务由 `room.platformProgram` 选择当前控制面程序，再投影为既有 `tool.Definition`，同时固定 wrapper 和原生 `TEAMX_SCN_BIN`；不修改 profile 或凭据指纹。核验、发现／登录、help、成员工具与 Workspace 使用同一规则，直接原生 `scn` 无需封装依赖。缺失依赖不回退，已受理调用保持绑定直到结清。旧 Session 的 DSH／Agent CLI 不随平台程序变更，Linux 多用户仍禁用 Scion。账号保留 `scion:subject` 字符串，不填入数字 `UserID`。
 
 当前连接页面通过服务端自动检测已有受管 profile，以实际 `whoami` 结果展示账号；PAT 登录调用固定 CLI，经 stdin 传入秘密，成功后返回非秘密 profile 引用和账号。登录始终创建新 profile，不原地覆盖已有凭据；操作会话仅保存在服务内存，取消和服务退出等待进程结清。登录/检测只允许操作者，不向 Agent 工具开放；失败的新 profile 清理，PAT 不进入公共响应或连接快照。
 

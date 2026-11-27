@@ -25,8 +25,12 @@ const maxOutput = 2 << 20
 
 var namePattern = regexp.MustCompile(`^[A-Za-z0-9_.-]{1,128}$`)
 
+func validExecutable(path string) bool {
+	return filepath.IsAbs(path) && filepath.Clean(path) == path && !strings.ContainsAny(path, "\x00\r\n")
+}
+
 func ValidProfile(p platform.CLIProfile) bool {
-	return p.Version == 1 && filepath.IsAbs(p.Executable) && filepath.Clean(p.Executable) == p.Executable && !strings.ContainsAny(p.Executable, "\x00\r\n") && namePattern.MatchString(p.Profile) && p.Profile != "." && p.Profile != ".." && (p.Brand == "feishu" || p.Brand == "lark") && p.CLIVersion == CLIVersion
+	return p.Version == 1 && validExecutable(p.Executable) && namePattern.MatchString(p.Profile) && p.Profile != "." && p.Profile != ".." && (p.Brand == "feishu" || p.Brand == "lark") && p.CLIVersion == CLIVersion
 }
 func Origin(brand string) string {
 	if brand == "feishu" {
@@ -72,14 +76,15 @@ type Reader interface {
 	Message(context.Context, platform.AccountIdentity, string) (Message, error)
 }
 type Client struct {
-	tempRoot  string
-	configDir string // internal pinned context; never accepted from an Agent
-	dataDir   string
-	storage   *cliStorage
-	profile   platform.CLIProfile
-	requests  *requestBudget
-	selfSend  *requestBudget
-	gates     *sync.Map
+	executable string
+	tempRoot   string
+	configDir  string // internal pinned context; never accepted from an Agent
+	dataDir    string
+	storage    *cliStorage
+	profile    platform.CLIProfile
+	requests   *requestBudget
+	selfSend   *requestBudget
+	gates      *sync.Map
 }
 
 func New(p platform.CLIProfile) (*Client, error) {
@@ -92,9 +97,9 @@ func (f *ClientFactory) New(p platform.CLIProfile) (*Client, error) {
 	}
 	requests, selfSend, profileGates := accountRequests, selfSendRequests, &gates
 	if f != nil && f.requests != nil && f.selfSend != nil {
-		requests, selfSend, profileGates = f.requests, f.selfSend, &f.gates
+		requests, selfSend, profileGates = f.requests, f.selfSend, f.gates
 	}
-	c := &Client{profile: p, requests: requests, selfSend: selfSend, gates: profileGates}
+	c := &Client{executable: f.Executable(p), profile: p, requests: requests, selfSend: selfSend, gates: profileGates}
 	if f != nil && f.storage != nil {
 		if err := f.storage.bind(c); err != nil {
 			return nil, err
@@ -220,7 +225,7 @@ func (c *Client) command(ctx context.Context, dir string, args ...string) *exec.
 	if c.profile.Profile != "" {
 		argv = append([]string{"--profile", c.profile.Profile}, args...)
 	}
-	cmd := exec.CommandContext(ctx, c.profile.Executable, argv...)
+	cmd := exec.CommandContext(ctx, c.executable, argv...)
 	cmd.Dir = dir
 	for _, k := range []string{"HOME", "USER", "LOGNAME", "PATH", "TMPDIR", "LANG", "LC_ALL", "TZ", "SSL_CERT_FILE", "SSL_CERT_DIR", "HTTPS_PROXY", "HTTP_PROXY", "ALL_PROXY", "NO_PROXY", "https_proxy", "http_proxy", "all_proxy", "no_proxy"} {
 		if k == "TMPDIR" && c.tempRoot != "" {

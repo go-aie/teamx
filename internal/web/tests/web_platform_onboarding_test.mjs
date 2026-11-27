@@ -384,3 +384,13 @@ test("an unknown onboarding outcome keeps its receipt and offers a status check 
  assert.equal(ui.el("onboarding-resume").hidden,false);assert.equal(ui.el("onboarding-apply").hidden,true);assert.ok(ui.saved.get("teamx.platform-onboarding:tester"));
  assert.equal(calls(api,"/v1/platforms/onboarding/apply").length,0);assert.equal(calls(api,"/v1/platforms/onboarding/cancel").length,0);
 });
+
+for (const [code,message] of [["cli_unavailable",/管理员检查服务程序/],["cli_version_mismatch",/版本不兼容/],["invalid_cli_storage",/私有凭据目录异常/],["identity_mismatch",/账号或应用已变化/]]) test(`onboarding shows ${code} while preserving saved notification status`,async()=>{
+ const api=fixture(),ui=await add(api);await ui.el("gitlab-login").emit("click");
+ const op=api.ops.get(api.login.onboarding_id);op.connection={status:"connected",version:2};op.notifications={status:"applied",version:1};op.tool={status:"failed",error_code:code};
+ api.platforms=[{id:op.platform_id,name:"Company GitLab",provider:"gitlab",supports_notifications:true,url:"https://gitlab.invalid",version:2,credential_kind:"oauth",authorization_status:"active",validation:{status:"valid",username:"Bob"},references:[]}];api.auth={status:"succeeded",platforms:api.platforms};
+ ui.invalidate("authorization");await ui.clock.advance(1500);
+ assert.match(ui.el("onboarding-steps").children[1].children[1].textContent,/已保存/);
+ assert.match(ui.el("onboarding-steps").children[2].children[1].textContent,message);
+ assert.equal(ui.el("onboarding-apply").hidden,false);
+});

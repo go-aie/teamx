@@ -43,11 +43,12 @@ open(args[2]+'/README.md','w').write('baseline')
 func scionWorkspaceManager(t *testing.T) (*roomManager, roomSummary, managedPlatform, string) {
 	t.Helper()
 	m := activationTestManager(t)
+	m.config.environment = os.Environ()
 	m.factory = controlledActivationFactory(nil, nil)
 	room := managerCreate(t, m, "scion-workspace")
 	openRoomOK(t, m, room, "open")
 	dir := t.TempDir()
-	bin := filepath.Join(dir, "teamx-scion")
+	bin := filepath.Join(dir, "scn")
 	if os.WriteFile(bin, []byte(scionWorkspaceFixture), 0700) != nil || os.WriteFile(filepath.Join(dir, "mode"), []byte("ok"), 0600) != nil {
 		t.Fatal("fixture")
 	}

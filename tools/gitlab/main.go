@@ -123,15 +123,11 @@ func (a *app) native(ctx context.Context, args []string, help bool) int {
 			help = true
 		}
 	}
-	bin := resolveGlab(a.getenv("TEAMX_GLAB_BIN"))
-	if a.shared {
-		resolved, err := exec.LookPath(bin)
-		if err != nil {
-			fmt.Fprintln(a.errOut, "glab dependency unavailable: cannot resolve executable")
-			a.dependencyGuidance()
-			return 127
-		}
-		bin = resolved
+	bin, err := resolveGlab(a.getenv("TEAMX_GLAB_BIN"))
+	if err != nil {
+		fmt.Fprintln(a.errOut, "glab dependency unavailable: cannot resolve executable")
+		a.dependencyGuidance()
+		return 127
 	}
 	config, err := os.MkdirTemp("", "teamx-glab-")
 	if err != nil {
@@ -241,15 +237,36 @@ func (a *app) dependencyGuidance() {
 // TEAMX_GLAB_BIN override, a sibling named glab beside this program, then PATH.
 // It never searches agent workspaces or temp trees, and an explicit override is
 // authoritative even when broken (never substituted for another version).
-func resolveGlab(override string) string {
+func resolveGlab(override string) (string, error) {
+	physical := func(path string) (string, error) {
+		if !filepath.IsAbs(path) || filepath.Clean(path) != path || strings.ContainsAny(path, "\x00\r\n") {
+			return "", errors.New("invalid glab path")
+		}
+		resolved, err := filepath.EvalSymlinks(path)
+		if err != nil {
+			return "", err
+		}
+		return exec.LookPath(resolved)
+	}
 	if override != "" {
-		return override
+		return physical(override)
 	}
 	if self, err := os.Executable(); err == nil {
-		candidate := filepath.Join(filepath.Dir(self), "glab")
-		if path, err := exec.LookPath(candidate); err == nil {
-			return path
+		if real, err := filepath.EvalSymlinks(self); err == nil {
+			candidate := filepath.Join(filepath.Dir(real), "glab")
+			if _, err := exec.LookPath(candidate); err == nil {
+				return physical(candidate)
+			}
 		}
 	}
-	return "glab"
+	for _, dir := range filepath.SplitList(os.Getenv("PATH")) {
+		if !filepath.IsAbs(dir) {
+			continue
+		}
+		candidate := filepath.Join(dir, "glab")
+		if _, err := exec.LookPath(candidate); err == nil {
+			return physical(candidate)
+		}
+	}
+	return "", exec.ErrNotFound
 }

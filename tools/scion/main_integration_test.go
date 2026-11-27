@@ -56,18 +56,22 @@ func TestVersionGate(t *testing.T) {
 func TestResolutionOrder(t *testing.T) {
 	sibling := fakeScn(t, pinnedVersionScript, "exit 0")
 	onPath := fakeScn(t, pinnedVersionScript, "exit 0")
-	self := func() (string, error) { return filepath.Join(filepath.Dir(sibling), "teamx-scion"), nil }
+	wrapper := filepath.Join(filepath.Dir(sibling), "teamx-scion")
+	if err := os.WriteFile(wrapper, nil, 0700); err != nil {
+		t.Fatal(err)
+	}
+	self := func() (string, error) { return wrapper, nil }
 	for _, tc := range []struct{ override, path, want string }{
 		{onPath, filepath.Dir(onPath), onPath},
 		{"", filepath.Dir(onPath), sibling},
 	} {
 		got, err := resolveScn(tc.override, self, tc.path)
-		if err != nil || got != tc.want {
+		if err != nil || got != physicalTestPath(t, tc.want) {
 			t.Fatalf("resolution: got=%q err=%v want=%q", got, err, tc.want)
 		}
 	}
 	missingSelf := func() (string, error) { return filepath.Join(t.TempDir(), "teamx-scion"), nil }
-	if got, err := resolveScn("", missingSelf, filepath.Dir(onPath)); err != nil || got != onPath {
+	if got, err := resolveScn("", missingSelf, filepath.Dir(onPath)); err != nil || got != physicalTestPath(t, onPath) {
 		t.Fatalf("PATH: got=%q err=%v", got, err)
 	}
 	if _, err := resolveScn("", missingSelf, ".:relative/path"); err == nil {
@@ -171,5 +175,51 @@ func TestNoControllingTerminal(t *testing.T) {
 	a, out, stderr := testApp(fakeScn(t, pinnedVersionScript, "if (exec 3</dev/tty) 2>/dev/null; then exit 99; fi\nprintf 'no controlling terminal\\n'"))
 	if code := a.run(context.Background(), []string{"--help"}); code != 0 || out.String() != "no controlling terminal\n" {
 		t.Fatalf("code=%d out=%q stderr=%q", code, out, stderr)
+	}
+}
+
+func physicalTestPath(t *testing.T, path string) string {
+	t.Helper()
+	real, err := filepath.EvalSymlinks(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return real
+}
+
+func TestNativeProgramFrozenAcrossVersionProbe(t *testing.T) {
+	next := fakeScn(t, pinnedVersionScript, "printf WRONG")
+	alias := filepath.Join(t.TempDir(), "current-scn")
+	selected := fakeScn(t, "rm "+shellQuote(alias)+"\nln -s "+shellQuote(next)+" "+shellQuote(alias)+"\n"+pinnedVersionScript, "printf SELECTED")
+	if err := os.Symlink(selected, alias); err != nil {
+		t.Fatal(err)
+	}
+	a, out, stderr := testApp(alias)
+	if code := a.run(t.Context(), []string{"--help"}); code != 0 || out.String() != "SELECTED" {
+		t.Fatal(code, out.String(), stderr.String())
+	}
+}
+
+func TestBrokenSiblingNeverUsesPath(t *testing.T) {
+	sibling := fakeScn(t, pinnedVersionScript, "printf WRONG")
+	wrapper := filepath.Join(filepath.Dir(sibling), "teamx-scion")
+	if err := os.WriteFile(wrapper, nil, 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(sibling, 0600); err != nil {
+		t.Fatal(err)
+	}
+	onPath := fakeScn(t, pinnedVersionScript, "printf WRONG")
+	if _, err := resolveScn("", func() (string, error) { return wrapper, nil }, filepath.Dir(onPath)); err == nil {
+		t.Fatal("broken sibling fell back")
+	}
+	if err := os.Remove(sibling); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink("/missing/scn", sibling); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := resolveScn("", func() (string, error) { return wrapper, nil }, filepath.Dir(onPath)); err == nil {
+		t.Fatal("broken sibling link fell back")
 	}
 }
