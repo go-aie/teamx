@@ -96,9 +96,11 @@ func (s *spaceServer) serveDirectory(w http.ResponseWriter, r *http.Request) {
 			}
 			spaces = append(spaces, view{record, lifecycleBusy, lifecycleError, state, map[string]bool{"gitlab_application_management": s.access.users == nil, "gitlab": gitlab, "lark": (legacy || s.assembly.config.hostTools.restricted) && lark, "scion": s.assembly.config.hostTools.scionAvailable(s.assembly.config.platformCatalog), "computer": !s.assembly.config.hostTools.restricted, "managed_repositories": !s.assembly.config.hostTools.restricted}})
 			spaces[len(spaces)-1].Capabilities["space_reset"] = s.spaceResetAvailable()
-			// Personal deployments expose the existing Space management UI.
-			// Hosted deployments retain their APIs while keeping the UI hidden.
-			spaces[len(spaces)-1].Capabilities["space_management"] = s.access.users == nil
+			// Both deployments share Space management. Only model sources and
+			// platform availability differ at this control-plane boundary.
+			spaces[len(spaces)-1].Capabilities["space_management"] = true
+			spaces[len(spaces)-1].Capabilities["space_model_source"] = s.access.users == nil
+			spaces[len(spaces)-1].Capabilities["lark_default_space_only"] = s.access.users == nil && !s.assembly.config.hostTools.restricted && lark
 			spaces[len(spaces)-1].Capabilities["native_lark_login_preserved"] = runtime.GOOS == "darwin" && s.access.users == nil && !s.assembly.config.hostTools.restricted
 			spaces[len(spaces)-1].Capabilities["reset_default_model"] = s.access.users != nil
 			if record.resetting() || s.resetBusy[record.ID] && record.Reset != nil {

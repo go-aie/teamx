@@ -2,6 +2,7 @@ package room
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"net/url"
 	"os"
@@ -170,10 +171,13 @@ func TestHostedGatewayArrivalUsesExistingSetupAndPreservesCustomModels(t *testin
 
 func TestHostedDefaultValidationFailureStaysInSetupAndCanRetry(t *testing.T) {
 	t.Setenv("OPENAI_API_KEY", "deployment-key-must-not-be-used")
-	s := hostedFixture(t, t.TempDir())
+	home := t.TempDir()
+	s := hostedFixture(t, home)
 	var fail atomic.Bool
+	var probes atomic.Int32
 	fail.Store(true)
-	s.assembly.config.modelProbe = func(ctx context.Context, opts dsh.Options) (dsh.ProbeResult, error) {
+	probe := func(ctx context.Context, opts dsh.Options) (dsh.ProbeResult, error) {
+		probes.Add(1)
 		if fail.Load() {
 			return dsh.ProbeResult{}, errors.New("user quota exhausted")
 		}
@@ -182,6 +186,7 @@ func TestHostedDefaultValidationFailureStaysInSetupAndCanRetry(t *testing.T) {
 		}
 		return successfulModelProbe(ctx, opts)
 	}
+	s.assembly.config.modelProbe = probe
 	cookie, subject, space := hostedLogin(t, s, "alice")
 	waitSpaceState(t, s, space, "setup_required")
 	if err := s.access.users.saveGatewayKey(subject.UserID, "gk_alice"); err != nil {
@@ -207,12 +212,35 @@ func TestHostedDefaultValidationFailureStaysInSetupAndCanRetry(t *testing.T) {
 	if err != nil || len(config.Models.Entries) != 0 {
 		t.Fatal("failed validation published a model", err)
 	}
-	input := setupModelInput{RequestID: "retry-own-model", ExpectedVersion: 1, ModelParameters: ModelParameters{Protocol: "openai-completions", BaseURL: hostedGatewayBaseURL, ModelID: hostedDefaultModel}}
+	if err := s.closeWithTimeout(); err != nil {
+		t.Fatal(err)
+	}
+	s = hostedFixture(t, home)
+	s.assembly.config.modelProbe = probe
+	cookie, _, same := hostedLogin(t, s, "alice")
+	if same != space {
+		t.Fatal("restart changed the Space")
+	}
+	s.start(spaceRecordForTest(t, s, space), nil, spaceAddress("127.0.0.1:8088"))
+	waitSpaceState(t, s, space, "setup_required")
+	var state struct {
+		Version              uint64          `json:"version"`
+		CredentialConfigured bool            `json:"credential_configured"`
+		Operation            *setupOperation `json:"operation"`
+	}
+	w := hostedRequest(s, spaceRoute(space)+"/v1/setup", nil, cookie, "")
+	if w.Code != 200 || json.Unmarshal(w.Body.Bytes(), &state) != nil || state.Operation == nil || state.Operation.Status != "failed" || !state.CredentialConfigured || probes.Load() != 1 {
+		t.Fatal("restart replayed failed automatic setup or lost retry state", w.Code, state, probes.Load())
+	}
+	input := setupModelInput{RequestID: "retry-own-model", ExpectedVersion: state.Version, ModelParameters: ModelParameters{Protocol: "openai-completions", BaseURL: hostedGatewayBaseURL, ModelID: hostedDefaultModel}}
 	fail.Store(false)
 	if w := hostedRequest(s, spaceRoute(space)+"/v1/setup/model", input, cookie, ""); w.Code != 202 {
 		t.Fatal("ordinary setup retry unavailable", w.Code)
 	}
 	waitSpaceState(t, s, space, "ready")
+	if probes.Load() != 2 {
+		t.Fatal("explicit retry did not validate exactly once", probes.Load())
+	}
 }
 
 func TestHostedMissingGatewayKeyCannotUseDeploymentQuota(t *testing.T) {

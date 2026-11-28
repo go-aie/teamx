@@ -210,9 +210,12 @@ export async function mountSpacePicker() {
   }
   const creation = makeDialog("新建空间", "space-create-name", "创建并进入");
   creation.name.placeholder = "例如：工作、个人项目";
-  creation.hint.textContent = "优先沿用当前空间的默认模型，平台连接需单独配置。";
+  creation.hint.textContent = capabilities.space_model_source === true
+    ? "优先沿用当前空间的默认模型，平台连接需单独配置。"
+    : "将自动配置默认模型，平台连接需单独配置。";
   const creationNote = document.createElement("p"); creationNote.className = "space-hint space-note";
-  creationNote.textContent = "飞书和 Scion 仅默认空间可用。";
+  creationNote.textContent = "飞书仅默认空间可用。";
+  creationNote.hidden = capabilities.lark_default_space_only !== true;
   creation.form.insertBefore(creationNote, creation.message);
   const recovery = makeDialog("继续上次创建", "space-create-recovery", "核对并继续", false);
   let sending = false;
@@ -267,7 +270,8 @@ export async function mountSpacePicker() {
     if (sending) return;
     const value = pending ? pending.name : ui.name.value.trim();
     if (!value) { ui.message.textContent = "请输入空间名称。"; ui.name.focus(); return; }
-    const input = pending ||= {request_id:crypto.randomUUID().replaceAll("-", ""), name:value, model_source_space_id:id};
+    const input = pending ||= {request_id:crypto.randomUUID().replaceAll("-", ""), name:value,
+      ...(capabilities.space_model_source === true ? {model_source_space_id:id} : {})};
     ui.name.value = input.name; try { sessionStorage.setItem(pendingKey, JSON.stringify(input)); } catch {}
     busy(true); ui.message.textContent = "";
     let failureMessage;

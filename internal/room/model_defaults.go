@@ -163,19 +163,19 @@ func (u *hostedUsers) saveGatewayKey(user, key string) error {
 	return nil
 }
 
-// Reuse first-use validation and publication. Only an empty catalog is eligible;
-// existing model choices and active Sessions keep their immutable credentials.
-func (f *firstModelSetup) submitGatewayModel(key string) {
-	f.submitDefaultModel(hostedDefaultModelParameters(), key)
-}
-
+// Both deployments use ordinary first-use validation and publication. An
+// existing operation requires explicit retry, including after a restart.
 func (f *firstModelSetup) submitDefaultModel(parameters ModelParameters, key string) {
 	f.mu.Lock()
-	if f.blocked != nil || f.service == nil || len(f.service.snapshot().Entries) != 0 || f.operation != nil && (f.operation.Operation.Status == "validating" || f.operation.Operation.Status == "saved") {
+	if parameters.ModelID == "" || f.blocked != nil || f.service == nil || len(f.service.snapshot().Entries) != 0 || f.operation != nil && (f.operation.Operation.Status == "validating" || f.operation.Operation.Status == "saved") {
 		f.mu.Unlock()
 		return
 	}
 	f.prefill, f.prefillKey = parameters.clone(), key
+	if key == "" || f.operation != nil {
+		f.mu.Unlock()
+		return
+	}
 	id, err := newOpaqueID()
 	input := setupModelInput{RequestID: id, ExpectedVersion: f.service.snapshot().Version, ModelParameters: parameters, APIKey: key}
 	f.mu.Unlock()
@@ -184,10 +184,10 @@ func (f *firstModelSetup) submitDefaultModel(parameters ModelParameters, key str
 	}
 }
 
-// Only creation may nominate an owned source. Reset does not inherit settings,
-// and a configured target never depends on its source's later model changes.
+// Creation selects an owned source for first use, including after reset. Each
+// successful setup owns a separate copy of its model and credential.
 func (s *spaceServer) initialSpaceModel(record SpaceRecord) (ModelParameters, string, error) {
-	if s.access.users != nil || record.ModelSourceSpaceID == "" || record.Reset != nil {
+	if s.access.users != nil || record.ModelSourceSpaceID == "" {
 		return ModelParameters{}, "", nil
 	}
 	s.mu.Lock()
@@ -225,20 +225,47 @@ func (s *spaceServer) initialSpaceModel(record SpaceRecord) (ModelParameters, st
 	return parameters, credential.Value, nil
 }
 
-func (f *firstModelSetup) followGatewayCredential(ctx context.Context, users *hostedUsers, owner string) {
+// Only the source differs: hosted Spaces use their owner's Gateway key;
+// personal Spaces use their selected, same-owner source Space. A nil signal
+// means the source is read once rather than followed for later key arrival.
+func (a *serverAccess) defaultModelSource() (ModelParameters, string, <-chan struct{}) {
+	authority := a.authority()
+	if authority.users != nil {
+		key, changed, err := authority.users.gatewayKey(a.space.OwnerUserID)
+		if err != nil {
+			key = ""
+		}
+		return hostedDefaultModelParameters(), key, changed
+	}
+	if authority.spaces != nil {
+		parameters, key, err := authority.spaces.initialSpaceModel(a.identity.Space)
+		if err != nil {
+			key = ""
+		}
+		return parameters, key, nil
+	}
+	return ModelParameters{}, "", nil
+}
+
+func (f *firstModelSetup) initializeModelDefaults(ctx context.Context, access *serverAccess) {
+	// Publish the initial candidate before serving setup reads so the browser
+	// immediately sees validation progress instead of an empty model form.
+	parameters, key, changed := access.defaultModelSource()
+	f.submitDefaultModel(parameters, key)
+	if changed == nil {
+		return
+	}
 	f.workers.Add(1)
 	go func() {
 		defer f.workers.Done()
 		for {
-			key, changed, err := users.gatewayKey(owner)
-			if err == nil && key != "" {
-				f.submitGatewayModel(key)
-			}
 			select {
 			case <-ctx.Done():
 				return
 			case <-changed:
 			}
+			parameters, key, changed = access.defaultModelSource()
+			f.submitDefaultModel(parameters, key)
 		}
 	}()
 }

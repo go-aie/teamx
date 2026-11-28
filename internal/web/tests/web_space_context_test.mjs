@@ -55,7 +55,7 @@ test("Space document routes and storage stay fixed across other tabs and locatio
   } finally { globalThis.fetch = previousFetch; if (previous === undefined) delete globalThis.location; else globalThis.location = previous; }
 });
 
-test("Hosted or undeclared Space management stays absent while scoped capabilities initialize", async () => {
+test("Disabled or undeclared Space management stays absent while scoped capabilities initialize", async () => {
   const source = await readFile(new URL("../assets/space-context.mjs", import.meta.url), "utf8");
   const a = "a".repeat(32), b = "b".repeat(32);
   for (const management of [false, undefined]) for (const canCreate of [true, false]) {

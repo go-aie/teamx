@@ -122,6 +122,8 @@ allowed_subjects = ["REPLACE_WITH_VERIFIED_SUBJECT_UUID"]
 
 内置默认模型使用文本和图片输入、`context_window = 1048576`、`max_tokens = 32768`、`reasoning_effort = "off"`，并以 system 兼容不支持 developer 的网关。这些参数随新用户和新空间的默认模型一同初始化；已有模型通过模型设置管理，服务启动不会自动改写。
 
+个人版与 Linux 多用户版统一开放空间切换器中的“新建空间”和“管理空间”，支持改名、归档和恢复；重置继续使用原设置入口。多用户只能查看、管理自己的空间，每用户空间数、运行空间数及 Session 容量沿用 `deployment.resources` 限额。新建空间使用本人网关默认模型并自动验证，各空间独立保存模型配置和平台连接；Linux 多用户飞书使用空间私有凭据，页面不显示个人版“仅默认空间可用”的提示。无需迁移已有用户或空间，重新构建部署后生效。
+
 多个空间同时验证时，会有界等待共享 DSH 验证槽位；仅重试尚未开始执行的 `admission/busy`，不自动重放已进入执行或清理失败的验证。
 
 个人部署使用 `mode = "personal"`，删除整个 `[deployment.authentication]` 节；可省略下面的 SRT 参数以使用默认 native。个人与多用户必须使用各自的新业务根，修改模式不会迁移旧数据。

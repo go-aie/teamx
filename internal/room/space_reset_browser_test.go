@@ -102,7 +102,7 @@ func TestSpaceResetBrowser(t *testing.T) {
  const context=await browser.newContext(),page=await context.newPage(),errors=[];
  page.on('pageerror',e=>errors.push(e.message));
  const base=process.argv[1],real=process.env.TEAMX_RESET_REAL==='1',model=JSON.parse(process.env.TEAMX_RESET_MODEL);
- const request=async(path,body)=>{const response=await context.request.fetch(base+path,{method:body?'POST':'GET',data:body});const result=await response.json();assert.ok(response.ok(),JSON.stringify(result));return result;};
+ const request=async(path,body)=>{const response=await context.request.fetch(base+path,{method:body?'POST':'GET',headers:body?{Origin:base}:undefined,data:body});const result=await response.json();assert.ok(response.ok(),JSON.stringify(result));return result;};
  await page.goto(base);await page.locator('#room-list [data-default-assistant="true"]').waitFor();
  const dir=await request('/v1/spaces'),id=dir.default_space_id,prefix='teamx.space:'+id+':';
  const reply=async marker=>{
@@ -141,7 +141,26 @@ func TestSpaceResetBrowser(t *testing.T) {
  assert.equal(await page.locator('#message-input').inputValue(),'keep through ordinary reload');
  assert.equal((await request('/v1/spaces')).spaces.find(s=>s.id===id).reset.request_id,resetID);
  if(process.env.TEAMX_RESET_OUTPUT)await page.screenshot({path:process.env.TEAMX_RESET_OUTPUT+'/after-reset.png',fullPage:true});
- assert.deepEqual(errors,[]);console.log(JSON.stringify({browser:'passed',real_model:real,tabs:2,reset_id:resetID,cache_isolation:'passed',page_errors:errors}));
+ // A personal Space with a selected source uses automatic first use both on
+ // creation and after reset; no model form submission is needed.
+ const child=crypto.randomUUID().replaceAll('-','');
+ await request('/v1/spaces',{request_id:child,name:'Automatic reset',model_source_space_id:id});
+ await page.goto(base+'/s/'+child+'/');
+ await page.locator('#room-list [data-default-assistant="true"]').waitFor({timeout:120000});
+ const previous=(await request('/v1/spaces')).spaces.find(s=>s.id===child);
+ await request('/v1/spaces/'+child+'/reset',{request_id:crypto.randomUUID().replaceAll('-',''),expected_version:previous.version});
+ let childReset;const deadline=Date.now()+45000;
+ while(Date.now()<deadline){
+   childReset=(await request('/v1/spaces')).spaces.find(s=>s.id===child)?.reset;
+   if(childReset?.phase==='completed')break;
+   await new Promise(resolve=>setTimeout(resolve,100));
+ }
+ assert.equal(childReset?.phase,'completed');
+ await page.goto(base+'/s/'+child+'/access');
+ await page.locator('#room-list [data-default-assistant="true"]').waitFor({timeout:120000});
+ assert.ok(page.url().includes('/s/'+child+'/'));assert.equal(await page.locator('#message-input').inputValue(),'');
+ if(process.env.TEAMX_RESET_OUTPUT)await page.screenshot({path:process.env.TEAMX_RESET_OUTPUT+'/automatic-after-reset.png',fullPage:true});
+ assert.deepEqual(errors,[]);console.log(JSON.stringify({browser:'passed',real_model:real,tabs:2,reset_id:resetID,automatic_source_reset:'passed',cache_isolation:'passed',page_errors:errors}));
  }finally{await browser.close()}})().catch(e=>{console.error(e);process.exit(1)});`
 	modules, err := filepath.Abs("../../packaging/verifier/node_modules")
 	if err != nil {

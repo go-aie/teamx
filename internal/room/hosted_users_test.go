@@ -268,8 +268,8 @@ func TestHostedUsersTwoOwnersTwoSpacesAndRevocation(t *testing.T) {
 		}
 		owner := []userSubject{alice, bob}[i]
 		for _, record := range view.Spaces {
-			if record.Capabilities["space_management"] {
-				t.Fatal("hosted Space management must stay hidden")
+			if !record.Capabilities["space_management"] || record.Capabilities["space_model_source"] || record.Capabilities["lark_default_space_only"] {
+				t.Fatal("hosted Space management capabilities are inconsistent", record.Capabilities)
 			}
 			if record.OwnerUserID != owner.UserID {
 				t.Fatal("directory leaked another owner")

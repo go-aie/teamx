@@ -56,7 +56,13 @@ func TestSpacesBrowserSwitchAndTabs(t *testing.T) {
  assert.equal(await page.locator('.space-trigger-name').textContent(),'TeamX');
  // Space navigation shares the brand's single header row and supports keyboard
  // navigation, dismissal, narrow screens and the collapsed desktop rail.
+ const viewport=async width=>{
+  await page.setViewportSize({width,height:800});
+  // Let responsive rail visibility and popover geometry observe the resize.
+  await page.evaluate(()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve))));
+ };
  const checkHeader=async()=>{
+  await page.locator('#space-trigger').waitFor({state:'visible'});
   const header=await page.locator('.room-rail-header').boundingBox(),trigger=await page.locator('#space-trigger').boundingBox();
   assert.ok(trigger.y>=header.y&&trigger.y+trigger.height<=header.y+header.height);
   assert.equal(await page.locator('.room-rail-header').evaluate(el=>el.scrollWidth<=el.clientWidth),true);
@@ -81,13 +87,13 @@ func TestSpacesBrowserSwitchAndTabs(t *testing.T) {
  await page.locator('#toggle-rooms').click();await page.locator('#space-trigger').waitFor({state:'hidden'});
  await page.locator('#toggle-rooms').click();await spaceControls(page);
  for(const width of [390,320]){
-  await page.setViewportSize({width,height:800});
+  await viewport(width);
   if(!await page.locator('#space-trigger').isVisible())await page.locator('#mobile-back-to-rooms').click();
   await checkHeader();await page.locator('#space-trigger').click();
   const menu=await page.locator('#space-menu').boundingBox();assert.ok(menu.x>=0&&menu.x+menu.width<=width);
   await screenshot('menu-'+width);await page.keyboard.press('Escape');
  }
- await page.setViewportSize({width:1280,height:800});
+ await viewport(1280);
  await page.goto(process.argv[1]+'/s/'+a+'/');await page.locator('#room-list [data-default-assistant="true"]').waitFor();await spaceControls(page);
  await page.locator('#message-input').fill('A private draft');
  // Creation shares close, Escape and guarded backdrop dismissal with settings.
@@ -108,13 +114,13 @@ func TestSpacesBrowserSwitchAndTabs(t *testing.T) {
  await page.getByRole('dialog',{name:'新建空间',exact:true}).waitFor();
  const creation=page.getByRole('dialog',{name:'新建空间',exact:true});
  assert.equal(await creation.locator('.space-hint:not(.space-note)').textContent(),'优先沿用当前空间的默认模型，平台连接需单独配置。');
- assert.equal(await creation.locator('.space-note').textContent(),'飞书和 Scion 仅默认空间可用。');
+ assert.equal(await creation.locator('.space-note').textContent(),'飞书仅默认空间可用。');
  for(const width of [1280,390,320]){
-  await page.setViewportSize({width,height:800});
+  await viewport(width);
   assert.equal(await creation.evaluate(el=>el.scrollWidth<=el.clientWidth),true);
   await screenshot('create-'+width);
  }
- await page.setViewportSize({width:1280,height:800});
+ await viewport(1280);
  assert.equal(await page.locator('#space-create-name').inputValue(),'');
  assert.equal(await page.locator('.space-dialog[open] .space-actions button:visible').count(),2);
  assert.equal(await page.locator('#space-trigger').getAttribute('data-space-id'),a);
@@ -190,11 +196,11 @@ func TestSpacesBrowserSwitchAndTabs(t *testing.T) {
  await page.keyboard.press('ArrowLeft');
  assert.equal(await row(a).locator('.space-badge').textContent(),'默认');
  for(const width of [1280,390,320]){
-  await page.setViewportSize({width,height:800});
+  await viewport(width);
   assert.equal(await management.evaluate(el=>el.scrollWidth<=el.clientWidth),true);
   await screenshot('management-'+width);
  }
- await page.setViewportSize({width:1280,height:800});
+ await viewport(1280);
  await row(a).locator('[data-action="more"]').focus();await page.keyboard.press('ArrowDown');
  assert.equal(await row(a).locator('[data-action="rename"]').evaluate(el=>el===document.activeElement),true);
  await page.keyboard.press('Escape');assert.equal(await management.isVisible(),true);
@@ -222,7 +228,7 @@ func TestSpacesBrowserSwitchAndTabs(t *testing.T) {
  const longName='这是一个很长的空间名称用于确认侧栏标题保持单行并且菜单仍能显示完整名称';
  await openRename(b);await page.locator('#space-name').fill(longName);await settings.getByRole('button',{name:'保存',exact:true}).click();await settledManager();await closeManagement();
  for(const width of [1280,320]){
-  await page.setViewportSize({width,height:800});
+  await viewport(width);
   if(!await page.locator('#space-trigger').isVisible())await page.locator('#mobile-back-to-rooms').click();
   await checkHeader();await page.locator('#space-trigger').click();
   assert.equal(await page.locator('#space-menu [aria-checked="true"] .space-menu-name').textContent(),longName);
@@ -231,7 +237,7 @@ func TestSpacesBrowserSwitchAndTabs(t *testing.T) {
   await openManagement();assert.equal(await management.evaluate(el=>el.scrollWidth<=el.clientWidth),true);
   await screenshot('management-long-'+width);await closeManagement();
  }
- await page.setViewportSize({width:1280,height:800});
+ await viewport(1280);
  await openRename(b);await page.locator('#space-name').fill('Renamed Work');await settings.getByRole('button',{name:'保存',exact:true}).click();await settledManager();await closeManagement();
  assert.ok(tab.url().includes('/s/'+a+'/'));
  let releaseOld;const held=new Promise(resolve=>releaseOld=resolve);

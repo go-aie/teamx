@@ -81,74 +81,118 @@ func TestPersonalSpaceInitialModelUsesSelectedSourceAndIndependentCredentials(t 
 			t.Fatal("key escaped the private credential store", err)
 		}
 	}
-	// Reset returns to first use instead of importing the source model again.
+	// Reset uses the source's current default, validates it again and creates
+	// independent credentials and a new Room instead of restoring old settings.
+	custom.ModelID = "updated-source-model"
+	sourceEntry, _ := selectedSource.manager.config.models.catalog().resolve(modelSelection{Mode: "default"})
+	sourceEntry.ModelID = custom.ModelID
+	// Update the catalog without exercising unrelated live Session rotation.
+	sourceService := selectedSource.manager.modelControl.service
+	if _, err := sourceService.save(t.Context(), modelSave{Entry: sourceEntry, ExpectedVersion: sourceService.snapshot().Version, MakeDefault: true}); err != nil {
+		t.Fatal(err)
+	}
+	sourceBefore, err := os.ReadFile(filepath.Join(selectedSource.roots.Home, "config.toml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	oldRoom := waitSpaceAssistant(t, clone).info.RoomIdentity
 	record := spaceRecordForTest(t, s, c)
-	if status := spaceHTTPRequest(t, endpoint, "/v1/spaces/"+c+"/reset", resetInputForTest(record), nil); status != 202 {
+	reset := resetInputForTest(record)
+	if status := spaceHTTPRequest(t, endpoint, "/v1/spaces/"+c+"/reset", reset, nil); status != 202 {
 		t.Fatal(status)
 	}
 	waitResetForTest(t, s, c)
-	waitSpaceState(t, s, c, "setup_required")
-	var state struct {
-		CredentialConfigured bool            `json:"credential_configured"`
-		Model                ModelParameters `json:"model"`
+	next := waitSpaceState(t, s, c, "ready")
+	resetModel, err := next.manager.config.models.catalog().resolve(modelSelection{Mode: "default"})
+	if err != nil || resetModel.ModelID != custom.ModelID || resetModel.CredentialRef == entry.CredentialRef || !next.manager.config.models.hasValidation(resetModel.ID) || probes.Load() != 2 {
+		t.Fatal("reset skipped source initialization or validation", err, probes.Load())
 	}
-	if status := spaceHTTPRequest(t, endpoint, spaceRoute(c)+"/v1/setup", nil, &state); status != 200 || state.CredentialConfigured || state.Model.ModelID != "" || probes.Load() != 1 {
-		t.Fatal("reset imported model settings again", status, state, probes.Load())
+	resetKey, err := next.manager.config.models.Credentials.get(resetModel.CredentialRef)
+	if err != nil || resetKey.Value != key.Value || next.RuntimeEpoch == clone.RuntimeEpoch || waitSpaceAssistant(t, next).info.RoomIdentity == oldRoom {
+		t.Fatal("reset reused old runtime state or lost the source credential", err)
+	}
+	if _, err := os.Stat(filepath.Join(next.roots.Home, "model-credentials", entry.CredentialRef)); !errors.Is(err, os.ErrNotExist) {
+		t.Fatal("reset retained the old credential", err)
+	}
+	sourceAfter, err := os.ReadFile(filepath.Join(selectedSource.roots.Home, "config.toml"))
+	if err != nil || string(sourceAfter) != string(sourceBefore) {
+		t.Fatal("reset changed the source Space", err)
+	}
+	if status := spaceHTTPRequest(t, endpoint, "/v1/spaces/"+c+"/reset", reset, nil); status != 200 || probes.Load() != 2 {
+		t.Fatal("completed reset retry repeated model validation", status, probes.Load())
 	}
 }
 
 func TestPersonalSpaceInitialModelFailureSurvivesRestartAndAllowsRetry(t *testing.T) {
-	home := t.TempDir()
-	s, endpoint, stop := startArchivableSpaceServerFixture(t, home)
-	var probes atomic.Int32
-	s.assembly.config.modelProbe = func(context.Context, dsh.Options) (dsh.ProbeResult, error) {
-		probes.Add(1)
-		return dsh.ProbeResult{}, errors.New("controlled failure")
-	}
-	id := strings.Repeat("b", 32)
-	if status := spaceHTTPRequest(t, endpoint, "/v1/spaces", spaceChangeInput{RequestID: id, Name: "Retry", ModelSourceSpaceID: s.initial.SpaceID}, nil); status != 202 {
-		t.Fatal(status)
-	}
-	waitSpaceState(t, s, id, "setup_required")
-	var state struct {
-		Version              uint64          `json:"version"`
-		Model                ModelParameters `json:"model"`
-		CredentialConfigured bool            `json:"credential_configured"`
-		Operation            *setupOperation `json:"operation"`
-	}
-	deadline := time.Now().Add(5 * time.Second)
-	for {
-		spaceHTTPRequest(t, endpoint, spaceRoute(id)+"/v1/setup", nil, &state)
-		if state.Operation != nil && state.Operation.Status == "failed" {
-			break
-		}
-		if time.Now().After(deadline) {
-			t.Fatal("automatic failure was not visible")
-		}
-		time.Sleep(10 * time.Millisecond)
-	}
-	if probes.Load() != 1 || !state.CredentialConfigured || state.Model.ModelID == "" {
-		t.Fatal(state, probes.Load())
-	}
-	stop()
-	var restartedProbes atomic.Int32
-	restarted, next, _ := startSpaceServerFixture(t, home, func(r *SpaceRuntime) {
-		r.config.modelProbe = func(ctx context.Context, o dsh.Options) (dsh.ProbeResult, error) {
-			restartedProbes.Add(1)
-			return successfulModelProbe(ctx, o)
-		}
-	})
-	waitSpaceState(t, restarted, id, "setup_required")
-	spaceHTTPRequest(t, next, spaceRoute(id)+"/v1/setup", nil, &state)
-	if restartedProbes.Load() != 0 || state.Operation == nil || state.Operation.Status != "failed" || !state.CredentialConfigured {
-		t.Fatal("restart replayed failed automatic setup", state, restartedProbes.Load())
-	}
-	if status := spaceHTTPRequest(t, next, spaceRoute(id)+"/v1/setup/model", setupModelInput{RequestID: "retry-model", ExpectedVersion: state.Version, ModelParameters: state.Model}, nil); status != 202 {
-		t.Fatal(status)
-	}
-	waitSpaceState(t, restarted, id, "ready")
-	if restartedProbes.Load() != 1 {
-		t.Fatal("explicit retry did not use ordinary model validation", restartedProbes.Load())
+	for _, mode := range []string{"creation", "reset"} {
+		t.Run(mode, func(t *testing.T) {
+			home := t.TempDir()
+			s, endpoint, stop := startArchivableSpaceServerFixture(t, home)
+			id := strings.Repeat("b", 32)
+			create := spaceChangeInput{RequestID: id, Name: "Retry", ModelSourceSpaceID: s.initial.SpaceID}
+			if mode == "reset" {
+				if status := spaceHTTPRequest(t, endpoint, "/v1/spaces", create, nil); status != 202 {
+					t.Fatal(status)
+				}
+				waitSpaceState(t, s, id, "ready")
+			}
+			var probes atomic.Int32
+			s.assembly.config.modelProbe = func(context.Context, dsh.Options) (dsh.ProbeResult, error) {
+				probes.Add(1)
+				return dsh.ProbeResult{}, errors.New("controlled failure")
+			}
+			var status int
+			if mode == "reset" {
+				status = spaceHTTPRequest(t, endpoint, "/v1/spaces/"+id+"/reset", resetInputForTest(spaceRecordForTest(t, s, id)), nil)
+				waitResetForTest(t, s, id)
+			} else {
+				status = spaceHTTPRequest(t, endpoint, "/v1/spaces", create, nil)
+			}
+			if status != 202 {
+				t.Fatal(status)
+			}
+			waitSpaceState(t, s, id, "setup_required")
+			var state struct {
+				Version              uint64          `json:"version"`
+				Model                ModelParameters `json:"model"`
+				CredentialConfigured bool            `json:"credential_configured"`
+				Operation            *setupOperation `json:"operation"`
+			}
+			deadline := time.Now().Add(5 * time.Second)
+			for {
+				spaceHTTPRequest(t, endpoint, spaceRoute(id)+"/v1/setup", nil, &state)
+				if state.Operation != nil && state.Operation.Status == "failed" {
+					break
+				}
+				if time.Now().After(deadline) {
+					t.Fatal("automatic failure was not visible")
+				}
+				time.Sleep(10 * time.Millisecond)
+			}
+			if probes.Load() != 1 || !state.CredentialConfigured || state.Model.ModelID == "" {
+				t.Fatal(state, probes.Load())
+			}
+			stop()
+			var restartedProbes atomic.Int32
+			restarted, next, _ := startSpaceServerFixture(t, home, func(r *SpaceRuntime) {
+				r.config.modelProbe = func(ctx context.Context, o dsh.Options) (dsh.ProbeResult, error) {
+					restartedProbes.Add(1)
+					return successfulModelProbe(ctx, o)
+				}
+			})
+			waitSpaceState(t, restarted, id, "setup_required")
+			spaceHTTPRequest(t, next, spaceRoute(id)+"/v1/setup", nil, &state)
+			if restartedProbes.Load() != 0 || state.Operation == nil || state.Operation.Status != "failed" || !state.CredentialConfigured {
+				t.Fatal("restart replayed failed automatic setup", state, restartedProbes.Load())
+			}
+			if status := spaceHTTPRequest(t, next, spaceRoute(id)+"/v1/setup/model", setupModelInput{RequestID: "retry-model", ExpectedVersion: state.Version, ModelParameters: state.Model}, nil); status != 202 {
+				t.Fatal(status)
+			}
+			waitSpaceState(t, restarted, id, "ready")
+			if restartedProbes.Load() != 1 {
+				t.Fatal("explicit retry did not use ordinary model validation", restartedProbes.Load())
+			}
+		})
 	}
 }
 
@@ -198,5 +242,14 @@ func TestPersonalSpaceInitialModelMissingCredentialShowsPrefilledSetup(t *testin
 	spaceHTTPRequest(t, endpoint, spaceRoute(id)+"/v1/setup", nil, &state)
 	if state.CredentialConfigured || state.Operation != nil || !reflect.DeepEqual(state.Model, entry.ModelParameters) {
 		t.Fatal("missing key did not preserve editable model parameters", state)
+	}
+	if status := spaceHTTPRequest(t, endpoint, "/v1/spaces/"+id+"/reset", resetInputForTest(spaceRecordForTest(t, s, id)), nil); status != 202 {
+		t.Fatal(status)
+	}
+	waitResetForTest(t, s, id)
+	waitSpaceState(t, s, id, "setup_required")
+	spaceHTTPRequest(t, endpoint, spaceRoute(id)+"/v1/setup", nil, &state)
+	if state.CredentialConfigured || state.Operation != nil || !reflect.DeepEqual(state.Model, entry.ModelParameters) {
+		t.Fatal("reset with a missing source key did not preserve editable parameters", state)
 	}
 }

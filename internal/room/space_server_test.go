@@ -285,8 +285,8 @@ func TestSpacesIndependentSetupRoutingAndRestart(t *testing.T) {
 		t.Fatal(status, directory)
 	}
 	for _, space := range directory.Spaces {
-		if !space.Capabilities["space_management"] {
-			t.Fatal("personal Space management is hidden", space.ID)
+		if !space.Capabilities["space_management"] || !space.Capabilities["space_model_source"] {
+			t.Fatal("personal Space management capabilities are inconsistent", space.ID)
 		}
 	}
 	if err := s2.claims.reserveComputer(id, "synthetic-instance"); !errors.Is(err, ErrConflict) {
