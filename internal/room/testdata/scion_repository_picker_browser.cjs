@@ -7,7 +7,21 @@ const {chromium}=require('playwright'),assert=require('node:assert/strict'),fs=r
   page.on('pageerror',e=>errors.push(e.message));page.setDefaultTimeout(12000);
   await context.addInitScript(room=>sessionStorage.setItem('teamx.selected-room',JSON.stringify(room)),{room_id:input.room_id,room_instance:input.room_instance});
   await page.goto(endpoint);const card=page.locator(`[data-interaction-id="${input.operation_id}"]`);
-  await card.getByText('选择 Scion 仓库',{exact:true}).waitFor();await card.locator('.platform-selection-candidates input[value="Owner/repo"]').check();
+  const account=page.locator(`[data-interaction-id="${input.account_operation_id}"]`);
+  const separateRows=async()=>{
+   await account.getByText('选择已保存',{exact:true}).waitFor();
+   assert.equal(await page.locator(`#message-${input.source_seq} .platform-selection`).count(),0);
+   assert.equal(await account.evaluate((el,feedback)=>{
+    const row=el.closest('article.message'),text=document.getElementById(`message-${feedback}`);
+    return !row.classList.contains('own') && !!(row.compareDocumentPosition(text)&Node.DOCUMENT_POSITION_FOLLOWING);
+   },input.feedback_seq),true);
+   assert.equal(await card.evaluate((el,feedback)=>{
+    const row=el.closest('article.message'),text=document.getElementById(`message-${feedback}`);
+    return !row.classList.contains('own') && !!(text.compareDocumentPosition(row)&Node.DOCUMENT_POSITION_FOLLOWING);
+   },input.feedback_seq),true);
+  };
+  await card.getByText('选择 Scion 仓库',{exact:true}).waitFor();await separateRows();
+  await card.locator('.platform-selection-candidates input[value="Owner/repo"]').check();
   await card.getByRole('button',{name:'加载更多',exact:true}).click();await page.waitForFunction(()=>document.querySelectorAll('.platform-selection-candidates input').length===101);assert.equal(await card.locator('.platform-selection-candidates input').count(),101);
   assert.equal(await card.locator('select').count(),0);
   await card.locator('input[type="text"]').fill('missing');await card.getByRole('button',{name:'搜索',exact:true}).click();await card.getByText(/没有匹配的仓库/).waitFor();
@@ -16,7 +30,7 @@ const {chromium}=require('playwright'),assert=require('node:assert/strict'),fs=r
   await page.setViewportSize({width:390,height:844});assert.equal(await card.evaluate(e=>e.scrollWidth>e.clientWidth+1),false);
   await card.getByRole('button',{name:'提交选择',exact:true}).click();await card.getByText('选择已保存',{exact:true}).waitFor();
   if(out)await page.screenshot({path:path.join(out,'card-mobile.png')});
-  await page.reload();await card.getByText('选择已保存',{exact:true}).waitFor();assert.match(await card.textContent(),/已选仓库：Owner\/repo/);
+  await page.reload();await card.getByText('选择已保存',{exact:true}).waitFor();await separateRows();assert.match(await card.textContent(),/已选仓库：Owner\/repo/);
   await page.setViewportSize({width:1440,height:1050});
   await page.locator('.member-summary').first().click();await page.locator('#agent-tab-platforms').click();await page.locator('#member-notification-add-toggle').click();
   const option=page.locator(`#member-notification-add-options [data-platform-id="${input.platform_id}"]`);await option.hover();await option.locator('[data-action="settings"]').click();

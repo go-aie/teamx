@@ -298,7 +298,7 @@ export function createConversation({ env, runtime, roomsUI, membersUI, settingsU
     return collectPages((page) => rpc("/v1/read", page, info, signal), params, signal);
   }
 
-  const messageNodes = new Map(), dayNodes = new Map(), references = new Map();
+  const messageNodes = new Map(), dayNodes = new Map(), references = new Map(), interactionNodes = new Map();
   let renderedKey = null, messageOrder = [];
   const renderingKey = () => JSON.stringify([state.members.map(m => [m.agent_id,m.membership_id,agentName(m)]),
     operatorNames(), userMenuUI.displayName(), roomsUI.isDefaultAssistant(), settingsUI.systemTime.zone, settingsUI.systemTime.error]);
@@ -354,7 +354,7 @@ export function createConversation({ env, runtime, roomsUI, membersUI, settingsU
     scheduleMessageViewing();
   }
 
-  function messageElement(message, animate = true) {
+  function messageElement(message, animate = true, interactionID = "") {
     if (message.type === "event") {
       const event = document.createElement("div");
       event.id = `message-${message.seq}`;
@@ -364,7 +364,7 @@ export function createConversation({ env, runtime, roomsUI, membersUI, settingsU
       return event;
     }
     const el = $("message-template").content.firstElementChild.cloneNode(true);
-    el.id = `message-${message.seq}`;
+    el.id = interactionID ? `platform-interaction-${interactionID}` : `message-${message.seq}`;
     el.classList.toggle("message-history", !animate);
     el.classList.toggle("own", ownMessage(message));
     const agent = message.author.kind === "agent", integration = message.author.kind === "integration";
@@ -401,7 +401,8 @@ export function createConversation({ env, runtime, roomsUI, membersUI, settingsU
     time.textContent = settingsUI.formatDate(message.created_at, {hour:"2-digit",minute:"2-digit"});
     time.dateTime = message.created_at;
     time.title = settingsUI.formatDate(message.created_at);
-    el.querySelector(".reply-button").addEventListener("click", () => beginReply(message));
+    if (interactionID) el.querySelector(".reply-button").remove();
+    else el.querySelector(".reply-button").addEventListener("click", () => beginReply(message));
     if (message.reply_to) {
       const ref = el.querySelector(".message-reference");
       ref.hidden = false;
@@ -839,7 +840,68 @@ export function createConversation({ env, runtime, roomsUI, membersUI, settingsU
 
   function resetRestartNotice() { restartNoticeID = ""; restartNoticeExpires = 0; }
 
-  function resetMessageNodes() { cancelHistory(); renderedKey = null; messageOrder = []; messageNodes.clear(); dayNodes.clear(); references.clear(); unreadCandidates.clear(); mentionMessages = []; }
+  function resetMessageNodes() {
+    cancelHistory(); renderedKey = null; messageOrder = []; messageNodes.clear(); dayNodes.clear(); references.clear(); unreadCandidates.clear(); mentionMessages = [];
+    for (const row of interactionNodes.values()) row.element.remove();
+    interactionNodes.clear();
+  }
+
+  // These rows project existing operations; they are not Room messages or new
+  // human authority. Keep their live controls when history/receipts refresh.
+  function renderInteractionMessages(operations) {
+    const hosts = new Map(), visible = new Set(), rows = [];
+    if (!operations.length) {
+      for (const row of interactionNodes.values()) row.element.remove();
+      interactionNodes.clear();
+      return hosts;
+    }
+    // Room timestamps retain nanoseconds; Date.parse alone would reorder steps
+    // created in the same millisecond. Normalize to comparable UTC strings.
+    const instant = value => {
+      const date = new Date(value);
+      if (!Number.isFinite(date.getTime())) return "";
+      const fraction = (value.match(/\.(\d+)/)?.[1] || "").padEnd(9,"0").slice(0,9);
+      return `${date.toISOString().slice(0,19)}.${fraction}Z`;
+    };
+    const messages = [...state.messages.values()].sort((a,b) => a.seq-b.seq);
+    const key = renderingKey();
+    for (const op of operations) {
+      const createdAt = op.created_at || op.source?.created_at || state.messages.get(op.source_seq)?.created_at;
+      const time = instant(createdAt);
+      if (!messages.length || op.source_seq <= state.clearedThrough || !time ||
+        !state.messages.has(op.source_seq) && time < instant(messages[0].created_at)) continue;
+      const message = {author:{kind:"agent",id:op.agent_id},author_membership_id:op.membership_id,text:"",created_at:createdAt};
+      let row = interactionNodes.get(op.operation_id);
+      if (!row) {
+        row = {element:messageElement(message,false,op.operation_id)};
+        interactionNodes.set(op.operation_id,row);
+      }
+      if (row.key !== key) {
+        row.element.querySelector(".author").textContent = authorName(message.author,message);
+        renderAvatar(document,row.element.querySelector(".avatar"),{kind:"agent",id:op.agent_id,name:authorName(message.author,message),roomID:state.info?.room_id,direct:roomsUI.isDirect(),defaultAssistant:roomsUI.isDefaultAssistant()});
+        const clock = row.element.querySelector("time");
+        clock.textContent = settingsUI.formatDate(createdAt,{hour:"2-digit",minute:"2-digit"});
+        clock.title = settingsUI.formatDate(createdAt);
+        row.key = key;
+      }
+      rows.push({op,time,createdAt,element:row.element}); visible.add(op.operation_id);
+      hosts.set(op.operation_id,row.element.querySelector(".message-interactions"));
+    }
+    for (const [id,row] of interactionNodes) if (!visible.has(id)) { row.element.remove(); interactionNodes.delete(id); }
+    rows.sort((a,b) => a.time.localeCompare(b.time) || a.op.operation_id.localeCompare(b.op.operation_id));
+    const parent = $("messages");
+    // Place from the end so unchanged rows never move, preserving password focus.
+    for (let i=rows.length-1;i>=0;i--) {
+      const row = rows[i], next = messages.find(message => message.seq > row.op.source_seq && instant(message.created_at) >= row.time);
+      let before = next ? messageNodes.get(next.seq)?.element : null;
+      if (next && messageDay(next) !== messageDay({created_at:row.createdAt})) before = dayNodes.get(messageDay(next)) || before;
+      const nextRow = rows[i+1];
+      if (nextRow && (!next || nextRow.time <= instant(next.created_at))) before = nextRow.element;
+      const children = [...parent.children], index = children.indexOf(row.element);
+      if (index < 0 || (children[index+1] || null) !== before) parent.insertBefore(row.element,before);
+    }
+    return hosts;
+  }
 
   function interactionHost(seq) {
     return messageNodes.get(seq)?.element.querySelector(".message-interactions");
@@ -997,6 +1059,7 @@ export function createConversation({ env, runtime, roomsUI, membersUI, settingsU
     resetRestartNotice,
     resetMessageNodes,
     interactionHost,
+    renderInteractionMessages,
     locateMessage,
     renderMessages,
     replaceMessages,

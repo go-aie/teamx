@@ -22,12 +22,45 @@ function fixture(kind='groups') {
  };
  return api;
 }
-const card=ui=>ui.document.getElementById('message-1').querySelector('.message-interactions').children[0];
+const card=ui=>(ui.el('messages').children.find(el=>el.id?.startsWith('platform-interaction-')) || ui.document.getElementById('message-1')).querySelector('.message-interactions').children[0];
 const candidates=el=>el.children[4];
 const controls=el=>{const buttons=[...el.children[7].children],login=buttons.find(b=>b.dataset.scionLogin);return [...buttons.filter(b=>b!==login),login];};
 const editor=ui=>card(ui).children[2].children[0];
 const password=ui=>editor(ui).children[2];
 const writes=api=>api.calls.filter(c=>/\/(update|submit|cancel)$/.test(c.path));
+
+test('Scion account and repository cards keep separate chronological rows across receipt refresh and reload',async()=>{
+ const api=scionLoginFixture(),account=api.op;
+ account.created_at='2026-11-11T01:00:01Z';
+ account.source={...api.messages[0]};
+ api.messages.push({seq:2,author:{kind:'agent',id:'a'},author_membership_id:'member-a',text:'请在账号卡片中登录。',created_at:'2026-11-11T01:00:02Z'});
+ const original=api.request.bind(api);let repository;
+ api.request=async(path,body,...rest)=>{
+  if(path==='/v1/platforms/interactions/list')return {interactions:[],selections:[...(repository ? [structuredClone(repository)] : []),structuredClone(account)]};
+  if(repository && path.endsWith('/selection-interactions/candidates') && body.operation_id===repository.operation_id)return {repositories:[{name:'Owner/repo',created_at_ms:100}],truncated:false};
+  return original(path,body,...rest);
+ };
+ const ui=await launch(api);await settle();const accountCard=card(ui);
+ assert.equal(ui.document.getElementById('message-1').querySelector('.message-interactions').children.length,0);
+ password(ui).value='unfinished-pat';
+ await ui.refresh();await settle();
+ assert.equal(card(ui),accountCard);assert.equal(password(ui).value,'unfinished-pat');
+ await loginFromCard(ui);
+ repository={...structuredClone(account),operation_id:'c'.repeat(32),created_at:'2026-11-11T01:00:03.000000002Z',input:{provider:'scion',kind:'repositories',platform_id:account.draft.platform_id,platform_version:account.draft.platform_version},draft:{},status:'waiting',version:1,result_version:0};
+ api.messages.push({seq:3,type:'event',author:{kind:'human',id:'tester'},text:'选择结果已更新',created_at:'2026-11-11T01:00:03Z'},
+  {seq:4,author:{kind:'agent',id:'a'},author_membership_id:'member-a',text:'账号已登录，请选择仓库。',created_at:'2026-11-11T01:00:03.000000003Z'});
+ await ui.refresh();await settle();
+ const order=()=>ui.el('messages').children.map(el=>el.id).filter(Boolean);
+ assert.deepEqual(order(),['message-1',`platform-interaction-${account.operation_id}`,'message-2','message-3',`platform-interaction-${repository.operation_id}`,'message-4']);
+ const repositoryRow=ui.document.getElementById(`platform-interaction-${repository.operation_id}`),repositoryCard=repositoryRow.querySelector('.message-interactions').children[0];
+ assert.equal(accountCard.children[1].textContent,'选择已保存');assert.equal(repositoryCard.children[0].textContent,'选择 Scion 仓库');
+ assert.equal(repositoryRow.classList.contains('own'),false);assert.equal(repositoryRow.querySelector('.author').textContent,ui.document.getElementById('message-4').querySelector('.author').textContent);
+ assert.equal(api.calls.some(call=>call.path==='/v1/post'),false);
+ await ui.refresh();await settle();assert.equal(card(ui),accountCard);assert.equal(repositoryRow.querySelector('.message-interactions').children[0],repositoryCard);
+ const reloaded=await launch(api,ui.saved);await settle();
+ assert.deepEqual(reloaded.el('messages').children.map(el=>el.id).filter(Boolean),order());
+ assert.equal(card(reloaded).children[1].textContent,'选择已保存');
+});
 
 test('Scion account choices carry exact connection versions and lead missing accounts to settings',async()=>{
  const api=fixture('account');api.op.input={provider:'scion',kind:'account'};api.op.draft={};
@@ -42,6 +75,21 @@ test('Scion account choices carry exact connection versions and lead missing acc
  await controls(el)[0].emit('click');await settle();
  assert.equal(api.op.draft.platform_id,'account2');assert.equal(api.op.draft.platform_version,9);
  assert.equal(api.calls.some(c=>/member\/(tool|notifications)|connect\/start/.test(c.path)),false);
+});
+
+test('a recent Scion card remains reachable without loading its original human message and clears with that history',async()=>{
+ const api=scionLoginFixture(),original=api.request.bind(api);
+ api.op.source={...api.messages[0]};api.op.created_at='2026-11-11T01:00:02Z';
+ api.messages=[{seq:2,author:{kind:'agent',id:'a'},text:'前面的消息',created_at:'2026-11-11T01:00:01Z'},
+  {seq:3,author:{kind:'agent',id:'a'},text:'请在账号卡片中登录',created_at:'2026-11-11T01:00:03Z'}];
+ let cleared=0;
+ api.request=async(path,body,...rest)=>path==='/v1/read' ? {messages:api.messages.filter(message=>message.seq>(body.after||0)),snapshot_seq:3,cleared_through:cleared,has_more:false} : original(path,body,...rest);
+ const ui=await launch(api);await settle();
+ assert.deepEqual(ui.el('messages').children.map(el=>el.id).filter(Boolean),['message-2',`platform-interaction-${api.op.operation_id}`,'message-3']);
+ assert.equal(card(ui).children[1].textContent,'尚未登录 Scion');
+ cleared=1;await ui.refresh();await settle();
+ assert.equal(ui.el('messages').children.some(el=>el.id?.startsWith('platform-interaction-')),false);
+ assert.equal(writes(api).length,0);
 });
 
 function scionLoginFixture({existing=false}={}) {

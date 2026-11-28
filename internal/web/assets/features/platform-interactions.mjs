@@ -206,9 +206,15 @@ export function createPlatformInteractions({ env, runtime, conversationUI, setti
 
   function renderPlatformInteractions() {
     const s=platformInteractionState, visible=new Set();
+    const standalone=op=>op.input?.provider==="scion" && ["account","repositories"].includes(op.input.kind);
+    const owned=op=>{
+      const source=state.messages.get(op.source_seq) || op.source;
+      return source?.author?.kind==="human" && source.author.id===state.operator;
+    };
+    const hosts=conversationUI.renderInteractionMessages(s.operations.filter(op=>standalone(op) && owned(op)));
     for(const op of s.operations) {
-      const message=state.messages.get(op.source_seq), host=conversationUI.interactionHost(op.source_seq);
-      if(host && message?.author.kind==="human" && message.author.id===state.operator) {
+      const host=standalone(op) ? hosts.get(op.operation_id) : conversationUI.interactionHost(op.source_seq);
+      if(host && owned(op)) {
         let card=s.views.get(op.operation_id);if(!card){card=connectionInteractionCard(op);s.views.set(op.operation_id,card);}
         updatePlatformInteraction(card,op);if(card.el.parentElement!==host)host.append(card.el);visible.add(op.operation_id);
       }

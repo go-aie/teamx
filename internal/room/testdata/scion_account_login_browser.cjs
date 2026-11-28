@@ -31,6 +31,7 @@ const {chromium}=require('playwright'),assert=require('node:assert/strict'),path
    console.error(JSON.stringify({card:await card.textContent(),same_control:await pat.evaluate(el=>el===window.originalPATControl),responses,writes,errors}));throw error;
   }
   assert.equal(await pat.inputValue(),'');assert.equal(await page.locator('#settings-dialog').evaluate(el=>el.open),false);
+  assert.equal(await pat.evaluate(el=>el===window.originalPATControl),true);
   assert.equal(writes.length,2);assert.equal(writes.every(w=>w.operation_id===input.operation_id),true);
   assert.equal(JSON.stringify(writes).includes('alice-pat'),false);
   await page.reload();await card.getByText('选择已保存',{exact:true}).waitFor();
