@@ -2,7 +2,15 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import vm from "node:vm";
-import { spaceAfterArchive } from "../assets/space-context.mjs";
+import { spaceAfterArchive, spaceCanEnter } from "../assets/space-context.mjs";
+
+test("Space switching excludes stopped, failed and resetting runtimes while allowing setup and startup", () => {
+  for (const runtime_state of ["ready", "starting", "setup_required", "migration_required"]) assert.equal(spaceCanEnter({status:"active",runtime_state}),true);
+  for (const runtime_state of ["suspended", "archiving", "failed", "stopped"]) assert.equal(spaceCanEnter({status:"active",runtime_state}),false);
+  for (const status of ["suspended", "archiving"]) assert.equal(spaceCanEnter({status,runtime_state:"ready"}),false);
+  assert.equal(spaceCanEnter({status:"active",runtime_state:"ready",reset:{phase:"initializing"}}),false);
+  assert.equal(spaceCanEnter({status:"active",runtime_state:"ready",reset:{phase:"completed"}}),true);
+});
 
 test("Archiving returns to a usable default or another active Space without reopening archived state", () => {
   const space = (id, runtime_state = "ready", status = "active") => ({id, runtime_state, status});
@@ -20,7 +28,8 @@ test("Archiving returns to a usable default or another active Space without reop
 });
 
 test("Space document routes and storage stay fixed across other tabs and location changes", async () => {
-  const source = await readFile(new URL("../assets/space-context.mjs", import.meta.url), "utf8");
+  const source = (await readFile(new URL("../assets/space-context.mjs", import.meta.url), "utf8"))
+    .replace(/from "(\.\/[^"]+)"/g, (_, path) => `from ${JSON.stringify(new URL(path, new URL("../assets/", import.meta.url)).href)}`);
   const previous = globalThis.location, previousFetch = globalThis.fetch;
   try {
     const a = "a".repeat(32), b = "b".repeat(32);
@@ -63,7 +72,7 @@ test("Hosted or undeclared Space management stays absent while scoped capabiliti
         return {ok:true,json:async()=>({can_create:canCreate,default_space_id:a,spaces:[{id:a,name:"默认空间",capabilities:{}},{id:b,name:"工作",capabilities}]})};
       },
     };
-    vm.runInNewContext(source.replace(/^export /gm, "") + "\nglobalThis.api = {mountSpacePicker,spaceCapabilities,spaceURL};", context);
+    vm.runInNewContext(source.replace(/^import .*;\n/gm, "").replace(/^export /gm, "") + "\nglobalThis.api = {mountSpacePicker,spaceCapabilities,spaceURL};", context);
     await context.api.mountSpacePicker();
     assert.deepEqual(requests,[["/v1/spaces","GET"]]);
     assert.deepEqual(context.api.spaceCapabilities(),capabilities);
@@ -94,8 +103,8 @@ test("Loading an archived Space gives deployment-specific recovery guidance and 
   await new Promise(resolve=>setImmediate(resolve));
   assert.equal(heading.textContent,"会话暂不可用");
   assert.match(status.textContent,/会话与工作文件已保留/);
-  if (management) assert.match(status.textContent,/空间设置.*恢复.*切换其他空间/);
-  else assert.doesNotMatch(status.textContent,/空间设置|切换其他空间/);
+  if (management) assert.match(status.textContent,/管理空间.*恢复.*切换其他空间/);
+  else assert.doesNotMatch(status.textContent,/管理空间|切换其他空间/);
   assert.equal(reloads,0);
   reloadButton.click(); assert.equal(reloads,1);
   }
@@ -110,7 +119,7 @@ test("reset invalidates only one Space and old tabs cannot restore or overwrite 
     const navigation=[],events=[];
     const context={location:{pathname:`/s/${a}/`,replace:path=>navigation.push(path)},localStorage:local,sessionStorage:session,
       Event:class {constructor(type){this.type=type;}},dispatchEvent:event=>events.push(event.type)};
-    vm.runInNewContext(source.replace(/^export /gm,"")+"\nglobalThis.api={spaceStorage,observeSpaceReset,spaceCacheCurrent};",context);
+    vm.runInNewContext(source.replace(/^import .*;\n/gm,"").replace(/^export /gm,"")+"\nglobalThis.api={spaceStorage,observeSpaceReset,spaceCacheCurrent};",context);
     return {...context.api,navigation,events};
   }
   const old=tab(sessionA),fresh=tab(sessionB);

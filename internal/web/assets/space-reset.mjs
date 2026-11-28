@@ -1,4 +1,5 @@
 import { pageSpaceID, spaceCapabilities, observeSpaceReset, freezeSpaceCache } from "./space-context.mjs";
+import { addDialogClose } from "./dialogs.mjs";
 
 // A control-plane surface also usable in setup or while the manager is closed.
 // Keep the exact accepted/uncertain request in tab storage across navigation.
@@ -12,12 +13,14 @@ export function mountSpaceReset() {
   section.append(button,status);host.append(section);
   const dialog=document.createElement("dialog");dialog.className="space-reset-dialog";dialog.setAttribute("aria-label","重置此空间");
   const title=document.createElement("h2");title.textContent="重置此空间";
+  const header=document.createElement("header");header.className="space-dialog-header";header.append(title);
   const detail=document.createElement("p");detail.textContent="将清空此空间的聊天记录、Agent 上下文、附件、通知与待办、定时任务、规则、模型配置、平台连接和默认工作目录。指定的已有目录文件、Computer、系统登录及其他空间保留。此操作无法撤销。归档空间将重新进入首次使用。";
   if (spaceCapabilities().native_lark_login_preserved === true) detail.textContent += "系统保存的飞书登录会保留。";
   const confirm=document.createElement("button");confirm.type="button";confirm.textContent="确认重置";confirm.className="danger";
   const cancel=document.createElement("button");cancel.type="button";cancel.textContent="取消";
-  dialog.append(title,detail,cancel,confirm);document.body.append(dialog);
+  dialog.append(header,detail,cancel,confirm);document.body.append(dialog);
   let current, pending, sending=false, active=true;
+  const dismissal=addDialogClose({document,dialog,header,canClose:()=>!sending});
   const key=()=>`teamx.space-reset-pending:${current?.id || pageSpaceID}`;
   const remember=()=>{try{sessionStorage.setItem(key(),JSON.stringify(pending));}catch{}};
   const phases={stopping:"正在停止任务",cleaning:"正在清理",initializing:"正在初始化"};
@@ -70,7 +73,7 @@ export function mountSpaceReset() {
     else if(current?.reset?.phase==="completed" && current.runtime_state==="failed") {pending={request_id:current.reset.request_id,expected_version:current.reset.expected_version};void submit();}
     else dialog.showModal();
   });
-  confirm.addEventListener("click",submit);cancel.addEventListener("click",()=>dialog.close());
+  confirm.addEventListener("click",submit);cancel.addEventListener("click",dismissal.close);
   window.addEventListener("pagehide",()=>{active=false;});
   void poll();
 }

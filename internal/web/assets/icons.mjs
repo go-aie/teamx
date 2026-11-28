@@ -61,6 +61,13 @@ export function createSettingsIcon(document) {
   svg.append(path,center); return svg;
 }
 
+export function createPlusIcon(document) {
+  const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+  svg.setAttribute("viewBox", "0 0 24 24"); svg.setAttribute("aria-hidden", "true"); svg.setAttribute("focusable", "false");
+  const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+  path.setAttribute("d", "M12 5v14M5 12h14"); svg.append(path); return svg;
+}
+
 export function createFolderIcon(document) {
   const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
   svg.setAttribute("viewBox", "0 0 24 24"); svg.setAttribute("aria-hidden", "true");

@@ -2,13 +2,14 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import vm from "node:vm";
+import { addDialogClose } from "../assets/dialogs.mjs";
 
 const source = (await readFile(new URL("../assets/space-reset.mjs", import.meta.url), "utf8"))
-  .replace(/^import .*;\n/, "").replace("export function mountSpaceReset", "function mountSpaceReset");
+  .replace(/^import .*;\n/gm, "").replace("export function mountSpaceReset", "function mountSpaceReset");
 
 function surface(capabilities, record) {
   class Element {
-    children=[]; events={}; textContent="";
+    children=[]; events={}; textContent=""; dataset={};
     append(...items) { this.children.push(...items); }
     setAttribute() {}
     addEventListener(name,fn) { this.events[name]=fn; }
@@ -19,9 +20,9 @@ function surface(capabilities, record) {
   const id="a".repeat(32),timers=[];
   let frozen=0;
   const context={
-    pageSpaceID:id,spaceCapabilities:()=>capabilities,observeSpaceReset:()=>true,
+    pageSpaceID:id,spaceCapabilities:()=>capabilities,observeSpaceReset:()=>true,addDialogClose,
     freezeSpaceCache:()=>frozen++,AbortSignal,crypto:{randomUUID:()=>"b".repeat(32)},
-    document:{body,getElementById:name=>name==="general-settings"?main:null,querySelector:()=>main,createElement:()=>new Element()},
+    document:{body,getElementById:name=>name==="general-settings"?main:null,querySelector:()=>main,createElement:()=>new Element(),createElementNS:()=>new Element()},
     window:{addEventListener(){}},location:{replace:path=>navigation.push(path)},
     sessionStorage:{getItem:key=>values.get(key),setItem:(key,value)=>values.set(key,value),removeItem:key=>values.delete(key)},
     setTimeout:fn=>timers.push(fn),

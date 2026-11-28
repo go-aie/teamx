@@ -125,7 +125,7 @@ func registerPersonalSpace(c startupConfig, installation string, writer *snapsho
 		}
 		registration = personalRegistration{Version: 1, InstallationID: installation,
 			User:  User{ID: c.Access.OperatorID, Status: "active", AuthVersion: 1},
-			Space: SpaceRecord{ID: id, OwnerUserID: c.Access.OperatorID, Name: "默认空间", Status: "active", Version: 1, Roots: roots}}
+			Space: SpaceRecord{ID: id, OwnerUserID: c.Access.OperatorID, Name: "TeamX", Status: "active", Version: 1, Roots: roots}}
 		if err := writer.save(operationPath, registration, maxPrivateFileBytes); err != nil {
 			return nil, err
 		}

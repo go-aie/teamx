@@ -257,6 +257,9 @@ func TestPersonalFirstStartRegistersWithoutAccountSteps(t *testing.T) {
 		if turn > 0 && !reflect.DeepEqual(previous, registration) {
 			t.Fatal("restart changed first-start identity")
 		}
+		if registration.Space.Name != "TeamX" {
+			t.Fatalf("default Space name = %q, want TeamX", registration.Space.Name)
+		}
 		previous = registration
 		if session["user_id"] != registration.User.ID || session["space_id"] != registration.Space.ID {
 			t.Fatal("first start identity changed")

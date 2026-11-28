@@ -2,6 +2,7 @@ import { installSessionController, authenticationMessage } from "./session.mjs";
 import { spaceURL, spaceStorage, observeSpaceReset } from "./space-context.mjs";
 import { createBrowserLifecycle } from "./features/browser-lifecycle.mjs";
 import { createBrowserNavigation } from "./features/browser-navigation.mjs";
+import { dismissOnBackdrop } from "./dialogs.mjs";
 import { request, sameService, compactViewport } from "./client.mjs";
 import { renderMessageBody } from "./markdown.mjs";
 import { createSettings } from "./features/settings.mjs";
@@ -527,25 +528,6 @@ export async function createApp(overrides = {}) {
       if (current() && results?.[0]?.status === "fulfilled" && platformRead.value) {
         confirmedGlobalVersions.platforms = globalVersions?.platforms;
       }
-    });
-  }
-
-  function dismissOnBackdrop(dialog, close) {
-    let pressedOutside = false;
-    const outside = event => {
-      const rect = dialog.getBoundingClientRect();
-      return event.target === dialog && (event.clientX < rect.left || event.clientX >= rect.right ||
-        event.clientY < rect.top || event.clientY >= rect.bottom);
-    };
-    dialog.addEventListener("pointerdown", event => {
-      pressedOutside = event.button === 0 && event.isPrimary !== false && outside(event);
-    });
-    dialog.addEventListener("pointercancel", () => { pressedOutside = false; });
-    dialog.addEventListener("close", () => { pressedOutside = false; });
-    dialog.addEventListener("click", event => {
-      const dismiss = pressedOutside && outside(event);
-      pressedOutside = false;
-      if (dialog.open && dismiss) return close();
     });
   }
 

@@ -1,3 +1,7 @@
+import { createSettingsIcon, createPlusIcon } from "./icons.mjs";
+import { createSpaceManager } from "./space-management.mjs";
+import { addDialogClose } from "./dialogs.mjs";
+
 // A document has one immutable Space. Switching navigates to a new document,
 // disposing its requests, caches and streams while server work keeps running.
 export const pageSpaceID = /^\/s\/([a-f0-9]{32})\//.exec(globalThis.location?.pathname || "")?.[1] || "";
@@ -72,6 +76,9 @@ export function spaceStorage(storage) {
 
 let picker, capabilities = {};
 export function spaceCapabilities() { return capabilities; }
+export function spaceCanEnter(space) {
+  return space.status === "active" && (!space.reset || space.reset.phase === "completed") && ["ready", "starting", "setup_required", "migration_required"].includes(space.runtime_state);
+}
 export function spaceAfterArchive(directory, archivedID) {
   const candidates = (directory.spaces || []).filter(space => space.id !== archivedID && space.status === "active" && (!space.reset || space.reset.phase === "completed"));
   for (const states of [["ready"], ["setup_required", "migration_required"], ["starting"]]) {
@@ -99,59 +106,125 @@ export async function mountSpacePicker() {
   }
   if (capabilities.space_management !== true || result.can_create !== true || picker) return;
   picker = document.createElement("div"); picker.className = "space-picker";
-  const select = document.createElement("select"); select.id = "space-select"; select.setAttribute("aria-label", "切换空间");
-  for (const space of result.spaces) select.add(new Option(space.name + ({suspended:" · 已归档", archiving:" · 归档中", failed:" · 启动失败"}[space.runtime_state] || ""), space.id));
-  select.value = id;
-  select.add(new Option("＋ 新建空间…", "create"));
+  // Existing installations may still have the original default name. Keep
+  // explicit user renames, while presenting the original default as TeamX.
+  const spaceName = space => space.id === defaultSpaceID && space.name === "默认空间" ? "TeamX" : space.name;
+  const trigger = document.createElement("button"); trigger.id = "space-trigger"; trigger.type = "button"; trigger.className = "space-trigger";
+  trigger.dataset.spaceId = id;
+  trigger.setAttribute("aria-haspopup", "menu"); trigger.setAttribute("aria-controls", "space-menu"); trigger.setAttribute("aria-expanded", "false");
+  const mark = document.createElement("img"); mark.className = "brand-mark"; mark.src = "/ui/brand-mark.svg"; mark.alt = ""; mark.width = 28; mark.height = 29;
+  const nameLabel = document.createElement("span"); nameLabel.className = "space-trigger-name";
+  const chevron = document.createElement("span"); chevron.className = "space-chevron"; chevron.setAttribute("aria-hidden", "true");
+  trigger.append(mark, nameLabel, chevron); picker.append(trigger);
+  const menu = document.createElement("div"); menu.id = "space-menu"; menu.className = "space-menu menu-surface";
+  menu.setAttribute("popover", "auto"); menu.setAttribute("role", "menu"); menu.setAttribute("aria-label", "空间");
+  trigger.setAttribute("popovertarget", menu.id);
+  const options = document.createElement("div"); options.className = "space-menu-options"; options.setAttribute("role", "group"); options.setAttribute("aria-label", "切换空间");
+  function renderOptions() {
+    options.replaceChildren();
+    for (const space of result.spaces.filter(spaceCanEnter)) {
+      const option = document.createElement("button"); option.type = "button"; option.className = "space-menu-item"; option.tabIndex = -1;
+      option.dataset.spaceId = space.id; option.setAttribute("role", "menuitemradio"); option.setAttribute("aria-checked", String(space.id === id));
+      const label = document.createElement("span"); label.className = "space-menu-name"; label.textContent = spaceName(space);
+      option.append(label);
+      if (space.id === defaultSpaceID) { const badge = document.createElement("span"); badge.className = "space-badge"; badge.textContent = "默认"; option.append(badge); }
+      const check = document.createElement("span"); check.className = "space-menu-check"; check.textContent = "✓"; check.setAttribute("aria-hidden", "true"); option.append(check);
+      option.addEventListener("click", () => { closeMenu(true); if (space.id !== id) location.assign(`/s/${space.id}/`); });
+      options.append(option);
+    }
+  }
+  renderOptions();
+  const actions = document.createElement("div"); actions.className = "space-menu-actions"; actions.setAttribute("role", "group"); actions.setAttribute("aria-label", "空间操作");
+  function menuAction(key, text, icon) {
+    const action = document.createElement("button"); action.id = key; action.type = "button"; action.className = "space-menu-item";
+    const label = document.createElement("span"); label.textContent = text;
+    action.append(icon, label); action.tabIndex = -1; action.setAttribute("role", "menuitem"); action.setAttribute("aria-haspopup", "dialog"); actions.append(action); return action;
+  }
+  const button = menuAction("space-settings", "管理空间", createSettingsIcon(document));
+  const create = menuAction("space-create", "新建空间", createPlusIcon(document));
   const feedback = document.createElement("span"); feedback.className = "space-feedback"; feedback.setAttribute("role", "status");
-  const button = document.createElement("button"); button.type = "button"; button.textContent = "空间设置";
-  button.setAttribute("aria-haspopup", "dialog");
-  picker.append(select, button, feedback);
-  const host = document.querySelector(".room-rail-header") || document.querySelector("main"); host?.append(picker);
+  feedback.setAttribute("aria-live", "polite");
+  menu.append(options, actions, feedback); document.body.append(menu);
+  const brand = document.querySelector(".room-rail-header .brand");
+  if (brand) { picker.id = brand.id; brand.replaceWith(picker); }
+  else document.querySelector("main")?.append(picker);
+  function updateName() {
+    nameLabel.textContent = spaceName(current);
+    trigger.title = spaceName(current); trigger.setAttribute("aria-label", `${spaceName(current)} · 切换空间`);
+  }
+  updateName();
+  function closeMenu(restoreFocus = false) {
+    menu.hidePopover(); trigger.setAttribute("aria-expanded", "false");
+    if (restoreFocus) trigger.focus();
+  }
+  const menuItems = () => [...menu.querySelectorAll("button:not(:disabled)")];
+  function positionMenu() {
+    const rect = trigger.getBoundingClientRect();
+    menu.style.left = `${Math.max(8, Math.min(rect.left, innerWidth - Math.min(280, innerWidth - 16) - 8))}px`;
+    menu.style.top = `${Math.min(rect.bottom + 6, innerHeight - 48)}px`;
+    menu.style.maxHeight = `${Math.max(40, innerHeight - rect.bottom - 14)}px`;
+  }
+  function openMenu(last = false) {
+    if (trigger.disabled) return;
+    positionMenu();
+    menu.showPopover(); trigger.setAttribute("aria-expanded", "true");
+    (last ? menuItems().at(-1) : options.querySelector('[aria-checked="true"]') || menuItems()[0])?.focus();
+  }
+  trigger.addEventListener("click", () => { if (!menu.matches(":popover-open")) positionMenu(); });
+  trigger.addEventListener("keydown", event => {
+    if (event.key === "ArrowDown" || event.key === "ArrowUp") { event.preventDefault(); openMenu(event.key === "ArrowUp"); }
+  });
+  menu.addEventListener("keydown", event => {
+    const items = menuItems(), index = items.indexOf(document.activeElement);
+    const next = {ArrowDown:(index + 1) % items.length, ArrowUp:(index - 1 + items.length) % items.length, Home:0, End:items.length - 1}[event.key];
+    if (next !== undefined) { event.preventDefault(); items[next]?.focus(); }
+    if (event.key === "Escape" || event.key === "Tab") { event.preventDefault(); event.stopPropagation(); closeMenu(true); }
+  });
+  menu.addEventListener("toggle", () => {
+    const open = menu.matches(":popover-open"); trigger.setAttribute("aria-expanded", String(open));
+    if (open && document.activeElement === trigger) (options.querySelector('[aria-checked="true"]') || menuItems()[0])?.focus();
+  });
+  document.addEventListener("keydown", event => {
+    if (event.key === "Escape" && menu.matches(":popover-open")) { event.preventDefault(); event.stopPropagation(); closeMenu(true); }
+  }, true);
+  window.addEventListener("resize", () => { if (menu.matches(":popover-open")) positionMenu(); });
+  document.getElementById("toggle-rooms")?.addEventListener("click", () => closeMenu());
 
   function makeDialog(heading, key, submitText, withName = true) {
     const dialog = document.createElement("dialog"); dialog.className = "space-dialog"; dialog.setAttribute("aria-labelledby", `${key}-title`);
     const form = document.createElement("form");
     const title = document.createElement("h2"); title.id = `${key}-title`; title.textContent = heading;
+    const header = document.createElement("header"); header.className = "space-dialog-header"; header.append(title);
     const label = document.createElement("label"); label.textContent = "空间名称";
-    const name = document.createElement("input"); name.id = key; name.maxLength = 64; name.required = withName; name.className = "field-control"; label.append(name);
+    const name = document.createElement("input"); name.id = key; name.maxLength = 64; name.required = withName; name.autofocus = withName; name.className = "field-control"; label.append(name);
     label.hidden = !withName;
     const hint = document.createElement("p"); hint.className = "space-hint";
     const message = document.createElement("p"); message.className = "space-error"; message.setAttribute("role", "status"); message.setAttribute("aria-live", "polite");
     const cancel = document.createElement("button"); cancel.type = "button"; cancel.className = "secondary-button"; cancel.textContent = "取消";
     const submit = document.createElement("button"); submit.type = "submit"; submit.className = "primary"; submit.textContent = submitText;
     const actions = document.createElement("div"); actions.className = "space-actions"; actions.append(cancel, submit);
-    form.append(title, label, hint, message, actions); dialog.append(form); document.body.append(dialog);
-    cancel.addEventListener("click", () => dialog.close());
-    dialog.addEventListener("cancel", event => { if (sending) event.preventDefault(); });
-    return {dialog, form, title, name, hint, message, cancel, submit, actions};
+    form.append(header, label, hint, message, actions); dialog.append(form); document.body.append(dialog);
+    const dismissal = addDialogClose({document, dialog, header, canClose:() => !sending});
+    cancel.addEventListener("click", dismissal.close);
+    return {dialog, form, title, name, hint, message, cancel, submit, actions, close:dismissal.button};
   }
-  const settings = makeDialog("空间设置", "space-name", "保存");
   const creation = makeDialog("新建空间", "space-create-name", "创建并进入");
   creation.name.placeholder = "例如：工作、个人项目";
-  creation.hint.textContent = "优先沿用当前空间默认模型并自动验证，后续可独立修改。连接需单独设置；飞书和 Scion 仅默认空间可用。";
+  creation.hint.textContent = "优先沿用当前空间的默认模型，平台连接需单独配置。";
+  const creationNote = document.createElement("p"); creationNote.className = "space-hint space-note";
+  creationNote.textContent = "飞书和 Scion 仅默认空间可用。";
+  creation.form.insertBefore(creationNote, creation.message);
   const recovery = makeDialog("继续上次创建", "space-create-recovery", "核对并继续", false);
-  const lifecycle = makeDialog("归档空间", "space-lifecycle", "确认归档", false);
-  const more = document.createElement("details"); more.className = "space-more";
-  const summary = document.createElement("summary"); summary.textContent = "更多操作";
-  const lifecycleButton = document.createElement("button"); lifecycleButton.id = "space-lifecycle-action"; lifecycleButton.type = "button"; lifecycleButton.className = "text-button danger-button";
-  more.append(summary, lifecycleButton); settings.form.append(more);
-  function updateLifecycle() {
-    lifecycleButton.textContent = current.status === "suspended" ? "恢复空间…" : current.status === "archiving" ? "重试归档…" : "归档空间…";
-    lifecycleButton.disabled = current.lifecycle_busy === true;
-  }
-  updateLifecycle();
   let sending = false;
   function busy(value) {
     sending = value;
-    for (const ui of [settings, creation, recovery, lifecycle]) ui.cancel.disabled = ui.submit.disabled = value;
-    button.disabled = select.disabled = value;
-    lifecycleButton.disabled = value || current.lifecycle_busy === true;
+    for (const ui of [creation, recovery]) ui.close.disabled = ui.cancel.disabled = ui.submit.disabled = value;
+    button.disabled = create.disabled = trigger.disabled = value;
   }
   function failure(record, fallback) {
     const code = record.code || record.error || record.message;
     return ({directory_conflict:"新空间的数据目录与已有工作目录重叠，暂时无法创建。请调整已使用的工作目录后重试。",
-      conflict:"空间信息已变化，请重新打开设置后再试。", busy:"空间正在处理其他操作，请稍后重试。",
+      conflict:"空间信息已变化，请刷新核对后重试。", busy:"空间正在处理其他操作，请稍后重试。",
       identity:"当前登录已失效，请刷新页面后重试。", request:"请输入有效的空间名称，最多 64 个字。",
       commit_unknown:"操作结果尚未确认，请刷新核对后重试。"})[code] || fallback;
   }
@@ -172,48 +245,43 @@ export async function mountSpacePicker() {
       creation.name.value = ""; creation.message.textContent = ""; creation.dialog.showModal();
     }
   }
-  select.addEventListener("change", () => {
-    if (select.value === "create") {
-      select.value = id;
-      showCreation();
-    } else if (select.value !== id) location.assign(`/s/${select.value}/`);
-  });
-  button.addEventListener("click", async () => {
+  create.addEventListener("click", () => { closeMenu(true); showCreation(); });
+  async function readDirectory() {
+    const response = await fetch("/v1/spaces", {cache:"no-store", signal:globalThis.AbortSignal?.timeout?.(5000)});
+    if (!response.ok) throw Error();
+    return response.json();
+  }
+  function applyDirectory(directory) {
+    const latest = directory.spaces?.find(space => space.id === id);
+    if (!latest || !observeSpaceReset(latest)) return false;
+    Object.assign(current, latest); result = directory; updateName(); renderOptions(); return true;
+  }
+  const management = createSpaceManager({document, currentSpaceID:id, spaceName, isDefault:space => space.id === defaultSpaceID,
+    canEnter:spaceCanEnter, readDirectory, applyDirectory, failure,
+    afterCurrentArchive:directory => location.replace(`/s/${directory && spaceAfterArchive(directory, id) || id}/`)});
+  button.addEventListener("click", () => {
     if (sending) return;
-    button.disabled = true; feedback.textContent = "";
-    try {
-      const response = await fetch("/v1/spaces", {cache:"no-store", signal:globalThis.AbortSignal?.timeout?.(5000)});
-      if (!response.ok) throw Error();
-      const directory = await response.json(), latest = directory.spaces?.find(space => space.id === id);
-      if (!latest) throw Error();
-      if (!observeSpaceReset(latest)) return;
-      Object.assign(current, latest); updateLifecycle();
-      settings.name.value = current.name; settings.hint.textContent = "修改当前空间的名称。";
-      settings.message.textContent = current.lifecycle_error ? "上次归档未完成，可在更多操作中重试。" : "";
-      more.open = false; settings.dialog.showModal();
-    } catch { feedback.textContent = "暂时无法读取空间信息，请重试。"; }
-    finally { button.disabled = false; }
+    closeMenu(true); management.open(result);
   });
-  async function save(ui, creating) {
+  async function save(ui) {
     if (sending) return;
-    const value = creating && pending ? pending.name : ui.name.value.trim();
+    const value = pending ? pending.name : ui.name.value.trim();
     if (!value) { ui.message.textContent = "请输入空间名称。"; ui.name.focus(); return; }
-    const input = creating ? (pending ||= {request_id:crypto.randomUUID().replaceAll("-", ""), name:value, model_source_space_id:id}) : {name:value, expected_version:current.version};
-    if (creating) { ui.name.value = input.name; try { sessionStorage.setItem(pendingKey, JSON.stringify(input)); } catch {} }
+    const input = pending ||= {request_id:crypto.randomUUID().replaceAll("-", ""), name:value, model_source_space_id:id};
+    ui.name.value = input.name; try { sessionStorage.setItem(pendingKey, JSON.stringify(input)); } catch {}
     busy(true); ui.message.textContent = "";
     let failureMessage;
     try {
-      const response = await fetch(creating ? "/v1/spaces" : `/v1/spaces/${id}`, {method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify(input)});
+      const response = await fetch("/v1/spaces", {method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify(input)});
       const record = await response.json();
       if (!response.ok) {
-        if (creating && response.status >= 400 && response.status < 500 && record.code !== "conflict") forgetPending();
+        if (response.status >= 400 && response.status < 500 && record.code !== "conflict") forgetPending();
         failureMessage = failure(record, "空间未保存，请刷新核对后重试。");
         throw Error(failureMessage);
       }
-      if (creating) { forgetPending(); location.assign(`/s/${record.id}/`); }
-      else { Object.assign(current, record); select.selectedOptions[0].textContent = record.name; ui.dialog.close(); }
+      forgetPending(); location.assign(`/s/${record.id}/`);
     } catch {
-      if (creating && pending) {
+      if (pending) {
         if (ui !== recovery) { ui.dialog.close(); showCreation(); }
         recovery.message.textContent = failureMessage || "暂时无法确认创建结果，请稍后重试。";
       } else if (ui === recovery) {
@@ -223,35 +291,6 @@ export async function mountSpacePicker() {
     }
     finally { busy(false); }
   }
-  settings.form.addEventListener("submit", event => { event.preventDefault(); void save(settings, false); });
-  creation.form.addEventListener("submit", event => { event.preventDefault(); void save(creation, true); });
-  recovery.form.addEventListener("submit", event => { event.preventDefault(); void save(recovery, true); });
-  lifecycleButton.addEventListener("click", () => {
-    settings.dialog.close();
-    const restoring = current.status === "suspended";
-    lifecycle.title.textContent = restoring ? "恢复空间" : "归档空间";
-    lifecycle.submit.textContent = restoring ? "恢复并进入" : "确认归档";
-    lifecycle.submit.className = restoring ? "primary" : "primary danger-button";
-    lifecycle.hint.textContent = restoring ? `恢复「${current.name}」后，可继续使用原有会话与工作文件。` : `归档「${current.name}」将停止 Agent、通知采集和定时任务。会话与工作文件会保留，可稍后恢复。`;
-    lifecycle.message.textContent = ""; lifecycle.dialog.showModal();
-  });
-  lifecycle.form.addEventListener("submit", async event => {
-    event.preventDefault(); if (sending) return;
-    busy(true); lifecycle.message.textContent = "";
-    const action = current.status === "suspended" ? "restore" : "archive";
-    try {
-      const response = await fetch(`/v1/spaces/${id}/${action}`, {method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({expected_version:current.version})});
-      const record = await response.json();
-      if (!response.ok) throw Error(failure(record, "操作未完成，请刷新核对空间状态后重试。"));
-      if (action === "archive") {
-        let next = "";
-        try {
-          const response = await fetch("/v1/spaces", {cache:"no-store", signal:globalThis.AbortSignal?.timeout?.(5000)});
-          if (response.ok) next = spaceAfterArchive(await response.json(), id);
-        } catch { /* The archived Space retains its picker and explicit recovery. */ }
-        location.replace(`/s/${next || id}/`);
-      } else location.assign(`/s/${id}/`);
-    } catch (error) { lifecycle.message.textContent = error.message; }
-    finally { busy(false); }
-  });
+  creation.form.addEventListener("submit", event => { event.preventDefault(); void save(creation); });
+  recovery.form.addEventListener("submit", event => { event.preventDefault(); void save(recovery); });
 }
