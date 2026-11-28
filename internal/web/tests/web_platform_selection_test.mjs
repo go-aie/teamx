@@ -26,6 +26,21 @@ const candidates=el=>el.children[4];
 const controls=el=>el.children[7].children;
 const writes=api=>api.calls.filter(c=>/\/(update|submit|cancel)$/.test(c.path));
 
+test('Scion account choices carry exact connection versions and lead missing accounts to settings',async()=>{
+ const api=fixture('account');api.op.input={provider:'scion',kind:'account'};api.op.draft={};
+ api.hook=path=>path.endsWith('/candidates') ? [{id:'account1',name:'工作',version:7,account:{id:{value:'alice'},instance:'https://one.example'}},{id:'account2',name:'工作',version:9,account:{id:{value:'alice'},instance:'https://two.example'}}] : undefined;
+ const ui=await launch(api);await settle();const el=card(ui);
+ assert.equal(el.children[0].textContent,'选择 Scion 账号');
+ assert.equal(el.children[2].children.length,0);
+ assert.equal(candidates(el).children.length,2);
+ assert.match(el.children[6].textContent,/完整设置登录/);
+ assert.match(candidates(el).children[1].children[1].textContent,/https:\/\/two.example/);
+ const input=candidates(el).children[1].children[0];input.checked=true;await input.emit('change');
+ await controls(el)[0].emit('click');await settle();
+ assert.equal(api.op.draft.platform_id,'account2');assert.equal(api.op.draft.platform_version,9);
+ assert.equal(api.calls.some(c=>/member\/(tool|notifications)|connect\/start/.test(c.path)),false);
+});
+
 test('a page-only selection result does not promise automatic continuation',async()=>{
  const api=fixture();api.op.status='expired';api.op.result_version=1;api.op.continuation={mode:'inbox',state:'page_only'};
  const ui=await launch(api);await settle();

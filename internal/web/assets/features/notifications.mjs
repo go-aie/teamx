@@ -1,3 +1,4 @@
+import { createScionNotifications } from "./scion-notifications.mjs";
 import { agentName } from "../agent-names.mjs";
 import { compactViewport } from "../client.mjs";
 import { sameService } from "../client.mjs";
@@ -11,6 +12,7 @@ export function createNotifications({ env, membersUI, workspaceUI, runtime, room
   const { document, window, Option, setTimeout, clearTimeout, request } = env;
   const { state, $, notice, setSelectOptions } = runtime;
 
+  const scionUI=createScionNotifications({env,runtime,workspaceUI,settingsUI,roomsUI,render:renderGitLabEvents,scopeKey:notificationScopeKey,sameTarget:sameNotificationTarget,beginWrite:beginNotificationWrite});
   let notificationNavigation = 0;
   let notificationOrigin = null;
 
@@ -125,7 +127,7 @@ export function createNotifications({ env, membersUI, workspaceUI, runtime, room
 
   async function loadNotificationSubscriptions(catalog, ws, { current: valid = () => true, onFailure = () => {} } = {}) {
     if (ws !== workspaceUI.workspaceView) return;
-    const revisions = {messages:ws.messagesRevision,gitlab:ws.gitlabRevision};
+    const revisions = {messages:ws.messagesRevision,gitlab:ws.gitlabRevision,scion:ws.scionRevision};
     const read = ws.notificationsRead = (ws.notificationsRead || 0) + 1;
     const scope = ws.notificationScope, context = ws.notificationEpoch;
     const current = () => valid() && ws === workspaceUI.workspaceView && state.catalog?.service_epoch === catalog.service_epoch && read === ws.notificationsRead && context === ws.notificationEpoch;
@@ -139,6 +141,7 @@ export function createNotifications({ env, membersUI, workspaceUI, runtime, room
       ws.allSubscriptions = data.subscriptions || [];
       ws.retiredSources = data.retired_subscriptions || [];
       ws.larkDefaults = data.lark_defaults;
+      if(revisions.scion===ws.scionRevision){ws.scionSources=ws.allSubscriptions.filter(v=>v.provider==="scion");scionUI.accept(ws);}
       ws.larkSources = ws.allSubscriptions.filter(v=>v.provider === "lark" && v.channel === "messages");
       ws.gitlabPlatforms = data.gitlab_platforms || [];
       if (scope !== ws.notificationScope) return;
@@ -531,10 +534,11 @@ export function createNotifications({ env, membersUI, workspaceUI, runtime, room
     }
   }
 
-  function notificationPlatforms(ws = workspaceUI.workspaceView) { return [...(ws?.platforms || []), ...(ws?.larkPlatforms || [])]; }
+  function notificationPlatforms(ws = workspaceUI.workspaceView) { return [...(ws?.platforms || []), ...(ws?.larkPlatforms || []),...(ws?.allPlatforms || []).filter(p=>p.provider==="scion")]; }
 
   function notificationView(ws, item, target = activeNotificationTarget(ws)) {
     return item.provider === "gitlab" ? ws?.gitlabPlatforms?.find(v => v.platform_id === item.id && sameNotificationTarget(v.config.target,target))
+      : item.provider==="scion" ? ws?.scionSources?.find(v=>v.platform_id===item.id && sameNotificationTarget(v.config.target,target))
       : ws?.larkSources?.find(v => v.config.platform_id === item.id && sameNotificationTarget(v.config.target,target));
   }
 
@@ -549,6 +553,7 @@ export function createNotifications({ env, membersUI, workspaceUI, runtime, room
 
   function notificationDescription(config) {
     if (!config) return "设置接收";
+    if(config.repository)return `${config.enabled ? "" : "已暂停 · "}${config.repository} · Issue 新建`;
     const content = config.todos || config.events ? [config.todos?.enabled ? "我的待办" : "", config.events?.enabled ? "项目互动" : ""].filter(Boolean).join("、")
       : [config.private?.enabled ? config.private.scope === "all" ? "全部人员私聊" : "指定私聊" : "", config.groups?.enabled ? `${config.groups.scope === "all" ? "全部群聊" : "指定群聊"} · ${config.groups.message_mode === "all" ? "全部消息" : [config.groups.at_me ? "@我" : "",config.groups.at_all ? "@所有人" : ""].filter(Boolean).join("、")}` : ""].filter(Boolean).join("、");
     return `${config.enabled ? "" : "已暂停 · "}${content || "未选择内容"}`;
@@ -569,7 +574,7 @@ export function createNotifications({ env, membersUI, workspaceUI, runtime, room
     toggle.checked=ws.notificationToggle===item.id && sameNotificationTarget(ws.notificationToggleTarget,target) ? ws.notificationToggleEnabled : !!view.config.enabled;
     toggle.setAttribute("role","switch");toggle.setAttribute("aria-label",`${item.name} 接收通知`);
     toggle.disabled=notificationWritePending(ws,notificationScopeKey(target,item.id)) || !state.catalogConnected || !ws.notificationsConnected || !!ws.notificationToggle || !!ws.gitlabSending || !!ws.messagesSending || roomsUI.managementBusy();
-    toggle.addEventListener("change",()=>notificationConfigured(item,notificationView(ws,item,target)) ? togglePlatformNotification(ws,item,toggle.checked,target) : onboardingUI.initializeMemberNotifications(item,target,toggle.checked));
+    toggle.addEventListener("change",()=>notificationConfigured(item,notificationView(ws,item,target)) ? togglePlatformNotification(ws,item,toggle.checked,target) : item.provider==="scion" ? openNotificationSource(toggle,"workitems",item.id,target) : onboardingUI.initializeMemberNotifications(item,target,toggle.checked));
     const issue=document.createElement("p");issue.className="notification-source-issue";issue.setAttribute("role","status");issue.textContent=notificationIssue(ws,item,view);issue.hidden=!issue.textContent;
     row.append(detail,toggle,...(arrow ? [arrow] : []),issue);return row;
   }
@@ -578,11 +583,11 @@ export function createNotifications({ env, membersUI, workspaceUI, runtime, room
     const ws=workspaceUI.workspaceView;
     membersUI.renderMemberPlatforms();
     renderSharedInbox();
-    const orphanViews=[...(ws?.gitlabPlatforms || []),...(ws?.larkSources || [])].filter(v=>v.config.target?.mode==="inbox" && !state.members.some(m=>sameNotificationTarget(memberNotificationTarget(m),v.config.target)));
+    const orphanViews=[...(ws?.gitlabPlatforms || []),...(ws?.larkSources || []),...(ws?.scionSources || [])].filter(v=>v.config.target?.mode==="inbox" && !state.members.some(m=>sameNotificationTarget(memberNotificationTarget(m),v.config.target)));
     $("notification-orphans").hidden=!orphanViews.length;
     $("notification-orphan-items").replaceChildren(...orphanViews.map(v=>{
       const id=v.platform_id || v.config.platform_id;
-      const item=notificationPlatforms(ws).find(p=>p.id===id) || {id,name:"原平台暂不可用",provider:v.provider || "gitlab"};
+      const item=notificationPlatforms(ws).find(p=>p.id===id) || {id,name:"原平台暂不可用",provider:v.provider || "gitlab",supports_notifications:v.provider==="scion"};
       const row=notificationRow(ws,item,v.config.target);
       row.children[0].children[1].children[0].textContent=`${v.config.target.agent_id} · ${item.name}`;
       row.children[0].children[1].children[1].textContent="成员已移除 · 查看诊断";
@@ -599,7 +604,7 @@ export function createNotifications({ env, membersUI, workspaceUI, runtime, room
 
   async function togglePlatformNotification(ws, item, enabled, target=activeNotificationTarget(ws)) {
     if(ws!==workspaceUI.workspaceView || !ws.notificationsConnected || ws.notificationToggle || ws.gitlabSending || ws.messagesSending || roomsUI.managementBusy())return;
-    const view=notificationView(ws,item,target);if(!notificationConfigured(item,view) || notificationWritePending(ws,notificationScopeKey(target,item.id)))return;
+    const view=notificationView(ws,item,target);if(item.provider==="scion")return scionUI.change("configure",{view,enabled,target});if(!notificationConfigured(item,view) || notificationWritePending(ws,notificationScopeKey(target,item.id)))return;
     const epoch=state.catalog.service_epoch,scope=ws.notificationScope,gitlab=item.provider==="gitlab",key=notificationScopeKey(target,item.id);
     beginNotificationWrite(ws,key);
     const revisionKey=gitlab ? "gitlabRevision" : "messagesRevision";ws[revisionKey]=(ws[revisionKey] || 0)+1;
@@ -885,7 +890,7 @@ export function createNotifications({ env, membersUI, workspaceUI, runtime, room
   }
 
   function renderNotificationSource() {
-    const ws = workspaceUI.workspaceView, messages = ws?.notificationChannel === "messages";
+    const ws = workspaceUI.workspaceView, messages = ws?.notificationChannel === "messages", workitems=ws?.notificationChannel==="workitems";
     const id = ws?.notificationPlatformID || (messages ? ws?.messages?.config.platform_id : ws?.gitlabDraft?.platform_id);
     const item = (activeNotificationTarget(ws).mode==="shared_inbox" ? notificationPlatforms(ws) : membersUI.memberPlatformItems(ws)).find(p => p.id === id), view = item && notificationView(ws, item);
     const target=activeNotificationTarget(ws),member=state.members.find(m=>sameNotificationTarget(memberNotificationTarget(m),target));
@@ -894,15 +899,15 @@ export function createNotifications({ env, membersUI, workspaceUI, runtime, room
     let instance="";try{instance=item?.provider==="gitlab" ? new URL(item.url).host : "";}catch{instance=item?.url || "";}
     $("notification-account").textContent=item ? [item.validation?.username ? `@${item.validation.username}` : "账号待核验",instance].filter(Boolean).join(" · ") : "";
     $("notification-account").title=item?.url || "";
-    $(messages ? "lark-attention-slot" : "gitlab-attention-slot").append($("notification-attention"));
+    $(workitems ? "scion-attention-slot" : messages ? "lark-attention-slot" : "gitlab-attention-slot").append($("notification-attention"));
     if(target.mode==="shared_inbox")$("notification-attention").hidden=true; else membersUI.renderInputAttention(item,target,$("notification-attention"));
     $("notification-destination").textContent=target.agent_id ? `接收助理：${name}${member ? "" : "（原成员已移除）"}` : "";
-    const matches=!!id && (messages ? ws?.messages?.config.platform_id : ws?.gitlabDraft?.platform_id)===id && sameNotificationTarget(messages ? ws?.messages?.config.target : ws?.gitlabDraft?.target,target);
-    const connected=matches && (messages ? ws?.messagesConnected : ws?.gitlabConnected) && !ws?.notificationHistory;
+    const matches=workitems ? !!ws?.scion && ws.scion.key===ws.notificationScope : !!id && (messages ? ws?.messages?.config.platform_id : ws?.gitlabDraft?.platform_id)===id && sameNotificationTarget(messages ? ws?.messages?.config.target : ws?.gitlabDraft?.target,target);
+    const connected=matches && (workitems ? ws?.notificationsConnected : messages ? ws?.messagesConnected : ws?.gitlabConnected) && !ws?.notificationHistory;
     const reading=ws?.notificationDetailReadState;
     const unavailable=!reading?.pending && !connected;
     $("notification-detail").setAttribute("aria-busy",String(!!reading?.pending));
-    $("notification-panel-messages").hidden=!messages || !connected;$("notification-panel-gitlab").hidden=messages || !connected;
+    $("notification-panel-messages").hidden=!messages || !connected;$("notification-panel-gitlab").hidden=messages || workitems || !connected;scionUI.show();
     notice("notification-notice",ws?.notificationHistory || (reading?.pending ? reading.slow ? "正在读取通知设置…" : "" : unavailable ? "通知状态暂不可读，请刷新。" : item && item.validation?.status!=="valid" ? "账号需要核验，请在管理平台中处理。" : ""));
     $("notification-reload").hidden=!unavailable || !!ws?.notificationHistory;
     const configured=item && notificationConfigured(item,view),enabled=configured ? !!view.config.enabled : messages ? !!ws?.messages?.config.enabled : !!ws?.gitlabDraft?.enabled;
@@ -927,7 +932,7 @@ export function createNotifications({ env, membersUI, workspaceUI, runtime, room
     rememberNotificationDraft(ws);
     const key=notificationScopeKey(target,platformID),same=ws.notificationScope===key;
     notificationFocus=opener;
-    ws.notificationTarget=structuredClone(target);ws.notificationScope=key;ws.notificationChannel=channel==="messages" ? "messages" : channel==="tools" ? "tools" : "gitlab";ws.notificationPlatformID=platformID;ws.notificationHistory="";
+    ws.notificationTarget=structuredClone(target);ws.notificationScope=key;ws.notificationChannel=channel==="workitems" ? "workitems" : channel==="messages" ? "messages" : channel==="tools" ? "tools" : "gitlab";ws.notificationPlatformID=platformID;ws.notificationHistory="";
     if(!same){
       stopLarkChatSearch();ws.gitlabRevision=(ws.gitlabRevision || 0)+1;ws.messagesRevision=(ws.messagesRevision || 0)+1;
       ws.gitlabSending=false;ws.messagesSending=false;ws.notificationToggle=null;ws.notificationToggleError=null;ws.notificationObservationConflict=null;
@@ -947,9 +952,10 @@ export function createNotifications({ env, membersUI, workspaceUI, runtime, room
       // Lark entry and a reused GitLab view observe current subscriptions,
       // including switches within an already open dialog. A new GitLab view
       // obtains its authoritative detail below, preserving the loading gate.
-      if(channel==="messages" || same && ws.gitlabConnected)await runtime.observe("notifications");
+      if(channel==="messages" || channel==="workitems" || same && ws.gitlabConnected)await runtime.observe("notifications");
       if(!notificationContextCurrent(ws,key,epoch) || opening!==ws.notificationOpen || navigation!==notificationNavigation)return;
-      if(channel==="messages"){
+      if(channel==="workitems"){scionUI.select(ws,platformID,target);}
+      else if(channel==="messages"){
         if(!same){
           selectLarkPlatform(ws,platformID);
           const cached=ws.notificationDrafts?.get(key);
@@ -979,7 +985,7 @@ export function createNotifications({ env, membersUI, workspaceUI, runtime, room
       if(channel==="events" || channel==="todos")$(`gitlab-${channel}-settings`).open=true;
       renderGitLabEvents();$("notification-title").focus();
       if(compactViewport(window))$("notification-detail").scrollIntoView({block:"start"});
-    } finally { finish(channel!=="tools" && !(channel==="messages" ? ws.messagesConnected : ws.gitlabConnected)); }
+    } finally { finish(channel!=="tools" && !(channel==="workitems" ? ws.notificationsConnected : channel==="messages" ? ws.messagesConnected : ws.gitlabConnected)); }
   }
 
   async function openNotificationMessage(opener, source) {
@@ -1064,6 +1070,7 @@ export function createNotifications({ env, membersUI, workspaceUI, runtime, room
     finally{if(current()){ws.sharedInboxBusy=false;renderSharedInbox();}}
   }
   function mount() {
+    scionUI.mount();
     $("shared-inbox-settings").addEventListener("toggle",()=>{if($("shared-inbox-settings").open)void loadSharedInbox();});
     $("shared-inbox-refresh").addEventListener("click",()=>loadSharedInbox());
     $("shared-inbox-save").addEventListener("click",()=>loadSharedInbox(true));

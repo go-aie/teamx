@@ -176,6 +176,9 @@ func (m *roomManager) configureCurrentPlatformMemberNotifications(ctx context.Co
 	admission := platformMemberAdmission{Request: req, Account: v.Account, AccountSnapshot: v.account, SubscriptionID: v.SubscriptionID, Kind: kind, BindingRevision: v.BindingRevision}
 	ctx = context.WithValue(ctx, platformMemberContextKey{}, admission)
 	op = platformMemberOperation{Schema: 1, MemberIdentity: req.member(), ID: req.OperationID, Kind: kind, Source: source, Input: in, Account: v.Account, Status: "unknown", Result: onboardingStep{Status: "unknown", ErrorCode: "submission_unconfirmed"}, CreatedAt: time.Now().UTC()}
+	if v.Account.Provider == "scion" {
+		op.Schema = 4
+	}
 	op, err = m.reservePlatformMemberNotificationsLocked(v, req, op)
 	m.mu.Unlock()
 	if err != nil || op.Status == "completed" {
@@ -193,6 +196,12 @@ func (m *roomManager) reservePlatformMemberNotificationsLocked(v platformMemberV
 			return platformMemberOperation{}, err
 		}
 		op.GitLabConfig = &cfg
+	} else if v.Account.Provider == "scion" {
+		var err error
+		op, err = m.reserveScionMemberNotificationsLocked(v, req, op)
+		if err != nil {
+			return platformMemberOperation{}, err
+		}
 	} else {
 		cfg, err := memberNotificationConfig(m, v, *req.Input)
 		if err != nil {

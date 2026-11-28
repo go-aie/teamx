@@ -815,7 +815,7 @@ func (m *roomManager) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		m.serveGitLabNotifications(w, r)
 		return
 	}
-	if r.URL.Path == "/v1/platform/notifications" || r.URL.Path == "/v1/platform/notifications/configure" || r.URL.Path == "/v1/platform/notifications/sync" {
+	if r.URL.Path == "/v1/platform/notifications" || r.URL.Path == "/v1/platform/notifications/configure" || r.URL.Path == "/v1/platform/notifications/sync" || r.URL.Path == "/v1/platform/notifications/verify" {
 		m.servePlatformNotifications(w, r)
 		return
 	}

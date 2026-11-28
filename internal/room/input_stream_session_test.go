@@ -191,8 +191,8 @@ func TestUnifiedUnusedProviderDoesNotExpandBaseInformation(t *testing.T) {
 		return notification.Capabilities{Input: &notification.InputCapability{Codec: approvalFixtureCodec{}, EncodeStoredInput: func(notification.Item) (inputstream.AppendRequest, error) { return inputstream.AppendRequest{}, nil }}}
 	}
 	codecs, err := inputStorageCodecs(s.service.inputAdapters, h.store.notificationCapabilities)
-	if err != nil || len(codecs) != 3 {
-		t.Fatal("third native source was not assembled", len(codecs), err)
+	if err != nil || len(codecs) != 4 {
+		t.Fatal("additional native source was not assembled", len(codecs), err)
 	}
 	after, err := backend.componentOptions(opts, sessionReference{})
 	if err != nil {

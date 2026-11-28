@@ -151,6 +151,11 @@ func (m *roomManager) verifyPlatform(ctx context.Context, req managedPlatformReq
 			return managedPlatform{}, err
 		}
 	}
+	if c.Provider == "scion" && c.Validation.Status == "valid" {
+		if err := m.resumeScionSubscriptionsLocked(c.ID); err != nil {
+			return managedPlatform{}, err
+		}
+	}
 	return m.publicPlatformLocked(c)
 }
 

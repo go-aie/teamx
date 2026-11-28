@@ -14,6 +14,7 @@ import (
 	"github.com/go-aie/teamx/internal/platform/gitlab"
 	"github.com/go-aie/teamx/internal/platform/lark"
 	"github.com/go-aie/teamx/internal/platform/notification"
+	"github.com/go-aie/teamx/internal/platform/scion"
 )
 
 type notificationView struct {
@@ -22,6 +23,7 @@ type notificationView struct {
 	TargetErrorCode string                   `json:"target_error_code,omitempty"`
 	RuntimePaused   bool                     `json:"runtime_paused"`
 	Account         platform.AccountIdentity `json:"account,omitzero"`
+	Scion           *scion.DiscoveryProgress `json:"scion,omitempty"`
 	Lark            *larkDiagnostics         `json:"lark,omitempty"`
 	RoomIdentity
 	notification.SourceID
@@ -33,6 +35,7 @@ type notificationView struct {
 	Pending           int                      `json:"pending"`
 	LastCheck         time.Time                `json:"last_check,omitzero"`
 	LastFull          time.Time                `json:"last_full,omitzero"`
+	EffectiveAfter    time.Time                `json:"effective_after,omitzero"`
 	Baseline          time.Time                `json:"baseline,omitzero"`
 	RetryAt           time.Time                `json:"retry_at,omitzero"`
 	ErrorCode         string                   `json:"error_code,omitempty"`
@@ -112,7 +115,7 @@ func (m *roomManager) notificationViewsLocked(owner RoomIdentity) ([]notificatio
 		return nil, ErrIdentity
 	}
 	out := []notificationView{}
-	for _, source := range []notification.SourceID{gitlab.EventsSourceID, gitlab.TodosSourceID, lark.MessagesSourceID} {
+	for _, source := range []notification.SourceID{gitlab.EventsSourceID, gitlab.TodosSourceID, lark.MessagesSourceID, scion.WorkitemsSourceID} {
 		for _, state := range m.notifications.StatesLocked(owner) {
 			if state.Metadata().Key.Source != source || state.Metadata().Retired {
 				continue
@@ -124,6 +127,8 @@ func (m *roomManager) notificationViewsLocked(owner RoomIdentity) ([]notificatio
 				v, err = m.eventsNotificationViewLocked(owner, &s)
 			case gitlab.TodosState:
 				v, err = m.todosNotificationViewLocked(owner, &s)
+			case scion.State:
+				v, err = m.scionNotificationViewLocked(owner, &s)
 			case lark.State:
 				v, err = m.larkNotificationViewLocked(owner, &s)
 			default:
@@ -292,30 +297,62 @@ func (m *roomManager) servePlatformNotifications(w http.ResponseWriter, r *http.
 	}
 	// GitLab configuration and sync have one provider-level authority, including
 	// before the first save. Per-source writes cannot split the common interval.
-	if req.SourceID != lark.MessagesSourceID {
+	if req.SourceID != lark.MessagesSourceID && req.SourceID != scion.WorkitemsSourceID {
 		writeAPIError(w, ErrRequest)
 		return
 	}
 	key := notification.Key{Owner: req.RoomIdentity, Source: req.SourceID, SubscriptionID: req.SubscriptionID}
 	var err error
-	if r.URL.Path == "/v1/platform/notifications/configure" {
+	if r.URL.Path == "/v1/platform/notifications/configure" || r.URL.Path == "/v1/platform/notifications/verify" {
 		if req.Target != nil || !notificationConfigHasTarget(req.Config) {
 			writeAPIError(w, ErrRequest)
 			return
 		}
-		var cfg lark.Config
-		decoder := json.NewDecoder(bytes.NewReader(req.Config))
-		decoder.DisallowUnknownFields()
-		if bytes.Equal(bytes.TrimSpace(req.Config), []byte("null")) || decoder.Decode(&cfg) != nil || decoder.Decode(new(any)) != io.EOF {
+		if req.SourceID == scion.WorkitemsSourceID {
+			var cfg scion.Config
+			decoder := json.NewDecoder(bytes.NewReader(req.Config))
+			decoder.DisallowUnknownFields()
+			if decoder.Decode(&cfg) != nil || decoder.Decode(new(any)) != io.EOF {
+				writeAPIError(w, ErrRequest)
+				return
+			}
+			if r.URL.Path == "/v1/platform/notifications/verify" {
+				repo, e := m.verifyScionNotificationRepository(r.Context(), req.RoomIdentity, cfg)
+				if e != nil {
+					writeAPIError(w, e)
+					return
+				}
+				_ = json.NewEncoder(w).Encode(map[string]any{"repository": repo})
+				return
+			}
+			next, e := m.configureScionSubscription(r.Context(), key, *req.Version, cfg)
+			err = e
+			if e == nil {
+				key = next.Metadata().Key
+			}
+		} else {
+			if r.URL.Path != "/v1/platform/notifications/configure" {
+				writeAPIError(w, ErrRequest)
+				return
+			}
+			var cfg lark.Config
+			decoder := json.NewDecoder(bytes.NewReader(req.Config))
+			decoder.DisallowUnknownFields()
+			if bytes.Equal(bytes.TrimSpace(req.Config), []byte("null")) || decoder.Decode(&cfg) != nil || decoder.Decode(new(any)) != io.EOF {
+				writeAPIError(w, ErrRequest)
+				return
+			}
+			var next lark.State
+			next, err = m.configureLarkSubscription(r.Context(), key, *req.Version, cfg)
+			if err == nil {
+				key = next.Metadata().Key
+			}
+		}
+	} else {
+		if r.URL.Path != "/v1/platform/notifications/sync" {
 			writeAPIError(w, ErrRequest)
 			return
 		}
-		var next lark.State
-		next, err = m.configureLarkSubscription(r.Context(), key, *req.Version, cfg)
-		if err == nil {
-			key = next.Metadata().Key
-		}
-	} else {
 		if len(req.Config) != 0 || req.SubscriptionID == "" {
 			writeAPIError(w, ErrRequest)
 			return
@@ -324,7 +361,11 @@ func (m *roomManager) servePlatformNotifications(w http.ResponseWriter, r *http.
 			writeAPIError(w, ErrRequest)
 			return
 		}
-		err = m.syncLarkSubscription(r.Context(), key, *req.Version, *req.Target)
+		if req.SourceID == scion.WorkitemsSourceID {
+			err = m.syncScionSubscription(r.Context(), key, *req.Version, *req.Target)
+		} else {
+			err = m.syncLarkSubscription(r.Context(), key, *req.Version, *req.Target)
+		}
 	}
 	if err != nil {
 		writeAPIError(w, err)
@@ -335,6 +376,15 @@ func (m *roomManager) servePlatformNotifications(w http.ResponseWriter, r *http.
 	state, ok := m.notifications.StateLocked(key)
 	if !ok {
 		writeAPIError(w, ErrIdentity)
+		return
+	}
+	if s, ok := state.(scion.State); ok {
+		view, e := m.scionNotificationViewLocked(req.RoomIdentity, &s)
+		if e != nil {
+			writeAPIError(w, e)
+			return
+		}
+		_ = json.NewEncoder(w).Encode(view)
 		return
 	}
 	s, ok := state.(lark.State)

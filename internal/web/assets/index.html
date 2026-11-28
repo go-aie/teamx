@@ -355,6 +355,23 @@
             <label class="workspace-check"><input id="member-platform-add-notifications" type="checkbox" checked>接收通知</label>
             <label class="workspace-check"><input id="member-platform-add-tool" type="checkbox" checked>使用工具</label>
           </div>
+          <div id="notification-panel-workitems" hidden>
+            <section class="workspace-form notification-settings" aria-label="Scion Issue 新建通知设置">
+              <p class="quiet">仅接收查询时仍为 open 的 Issue 新建通知，不含评论、Review 和评审动态。</p>
+              <div id="scion-attention-slot"></div>
+              <label class="workspace-check"><input id="scion-enabled" type="checkbox">接收 Issue 新建通知</label>
+              <label for="scion-repository">仓库</label><input id="scion-repository" class="field-control" placeholder="OpenCSG/scion 或同实例仓库链接">
+              <button id="scion-verify" class="text-button" type="button">验证仓库</button>
+              <p class="quiet">保存后仓库、Issue 类型与接收起点固定。</p>
+              <label for="scion-backfill">开始接收</label><select id="scion-backfill" class="field-control"><option value="0">从现在开始</option><option value="86400">最近一天</option><option value="custom">自定义开始时间</option></select>
+              <div id="scion-backfill-custom" hidden><label for="scion-backfill-start">开始时间（当前设置时区）</label><span class="date-time-field"><input id="scion-backfill-start" type="text" aria-describedby="scion-backfill-help scion-backfill-error" class="field-control" autocomplete="off" spellcheck="false" placeholder="YYYY-MM-DD HH:mm:ss"><button id="scion-backfill-start-toggle" class="date-time-toggle" type="button" aria-label="选择Scion接收起始时间"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="5" width="16" height="15" rx="2"/><path d="M8 3v4m8-4v4M4 10h16"/></svg></button></span></div>
+              <p id="scion-backfill-locked" class="quiet" hidden></p>
+              <details><summary>高级设置</summary><label for="scion-interval">检查间隔（秒）</label><input id="scion-interval" class="field-control" type="number" min="30" max="3600" value="60"></details>
+              <p id="scion-status" class="quiet" role="status"></p><p id="scion-expiry" class="quiet"></p>
+              <p id="scion-unsaved" class="quiet"></p><p id="scion-error" class="form-error" role="status" hidden></p><p id="scion-feedback" class="quiet" role="status"></p>
+              <div class="workspace-actions"><button id="scion-save" type="button">保存设置</button><button id="scion-sync" class="text-button" type="button">立即同步</button><button id="scion-reload" class="text-button" type="button">重新读取</button></div>
+            </section>
+          </div>
           <div id="notification-panel-messages" aria-label="飞书通知设置" hidden>
             <section class="workspace-form notification-settings lark-settings" aria-label="飞书通知设置">
               <fieldset id="lark-fields">
@@ -757,7 +774,7 @@
       <div id="workspace-status" class="workspace-status" role="status" aria-live="polite"></div>
       <div id="workspace-error" class="form-error" role="alert" hidden></div>
       <details id="workspace-operation-detail" hidden><summary>本次目标与操作</summary><pre id="workspace-operation-target"></pre></details>
-      <footer class="form-actions"><button id="workspace-refresh" class="text-button" type="button">查看状态</button><button id="workspace-new" class="text-button" type="button" hidden>修改设置</button><button id="workspace-retry" class="text-button" type="button" hidden>重试原操作</button><button id="workspace-apply" class="primary" type="submit">应用</button></footer>
+      <footer class="form-actions"><button id="workspace-refresh" class="text-button" type="button" hidden>查看状态</button><button id="workspace-new" class="text-button" type="button" hidden>修改设置</button><button id="workspace-retry" class="text-button" type="button" hidden>重试原操作</button><button id="workspace-apply" class="primary" type="submit">应用</button></footer>
     </form>
 
   </dialog>

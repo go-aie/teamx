@@ -66,7 +66,7 @@ export function createOnboarding({ env, runtime, connectionsUI, larkUI, settings
     $("onboarding-backfill-start").max=settingsUI.systemTime.local(Date.now());
     const member=onboardingMember(), room=onboardingRoom();
     const content=provider==="gitlab" ? "我的待办（项目互动未开启）" : "全部人员私聊（群聊未开启）";
-    $("onboarding-summary").textContent=only ? "仅连接并核验账号；不创建通知或成员工具设置。" : `为「${memberName(room,member) || "所选成员"}」接入后，${provider==="scion" ? "此平台没有通知能力，" : $("onboarding-notifications").checked ? `接收${content} → ${room?.name || "所选会话"} 的成员 Inbox；` : "通知关闭；"}${$("onboarding-tool").checked ? "启用对应平台工具。" : "工具关闭。"}已有设置保留，范围可在通知详情中调整。`;
+    $("onboarding-summary").textContent=only ? "仅连接并核验账号；不创建通知或成员工具设置。" : `为「${memberName(room,member) || "所选成员"}」接入后，${provider==="scion" ? "Issue 通知请在成员平台设置中配置；" : $("onboarding-notifications").checked ? `接收${content} → ${room?.name || "所选会话"} 的成员 Inbox；` : "通知关闭；"}${$("onboarding-tool").checked ? "启用对应平台工具。" : "工具关闭。"}已有设置保留，范围可在通知详情中调整。`;
     if(active && fixed){$("connection-provider").disabled=true;$("connection-url").readOnly=true;}
     const op=onboarding.operation;
     const done=onboardingDone(op);
@@ -208,6 +208,7 @@ export function createOnboarding({ env, runtime, connectionsUI, larkUI, settings
   }
 
   async function openMemberPlatformAddition(opener,item) {
+    if(item.provider==="scion" && item.supports_notifications===true)return membersUI.openMemberPlatform(opener,item,notificationsUI.memberNotificationTarget(membersUI.memberToolsView?.member));
     const ws=workspaceUI.workspaceView,v=membersUI.memberToolsView;if(memberPlatformAdditionBusy(v,item))return;
     const a=v.addition=memberPlatformAddition(v,item),key=notificationsUI.notificationScopeKey(notificationsUI.memberNotificationTarget(v.member),item.id);
     $("member-platform-add-notifications").checked=a.notifications;$("member-platform-add-tool").checked=a.tool;

@@ -32,8 +32,8 @@ func runPlatformSelectionCLI(ctx context.Context, args []string, stdout, stderr 
 	switch action {
 	case "start":
 		f.Uint64Var(&req.SourceSeq, "source-seq", 0, "real human request seq")
-		f.StringVar(&in.Provider, "provider", "", "lark (default) or gitlab")
-		f.StringVar(&in.Origin, "origin", "", "canonical GitLab instance for account choice")
+		f.StringVar(&in.Provider, "provider", "", "lark (default), gitlab or scion (existing accounts only)")
+		f.StringVar(&in.Origin, "origin", "", "canonical GitLab instance (required) or Scion instance (optional) for account choice")
 		f.StringVar(&in.Kind, "kind", "", "account, groups or projects")
 		f.StringVar(&in.PlatformID, "platform-id", "", "verified account for group search")
 		f.Uint64Var(&in.PlatformVersion, "platform-version", 0, "account version")

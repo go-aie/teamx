@@ -180,9 +180,9 @@ export function createMembers({ env, runtime, notificationsUI, workspaceUI, onbo
 
   function memberPlatformItems(ws=workspaceUI.workspaceView,v=memberToolsView) {
     const items=new Map((ws?.allPlatforms || notificationsUI.notificationPlatforms(ws)).map(p=>[p.id,p]));
-    for(const view of [...(ws?.gitlabPlatforms || []),...(ws?.larkSources || [])]){
+    for(const view of [...(ws?.gitlabPlatforms || []),...(ws?.larkSources || []),...(ws?.scionSources || [])]){
       const id=view.platform_id || view.config.platform_id;
-      if(id && !items.has(id))items.set(id,{id,name:"原平台暂不可用",provider:view.provider || "gitlab",validation:{status:"unavailable"}});
+      if(id && !items.has(id))items.set(id,{id,name:"原平台暂不可用",provider:view.provider || "gitlab",supports_notifications:view.provider==="scion",validation:{status:"unavailable"}});
     }
     // Keep unavailable and explicitly disabled bindings inspectable.
     for(const b of [...(v?.cli?.bindings || []),...(v?.cli?.disabled || [])]) {
@@ -390,7 +390,7 @@ export function createMembers({ env, runtime, notificationsUI, workspaceUI, onbo
   }
 
   async function openMemberPlatform(opener,item,target=notificationsUI.memberNotificationTarget()) {
-    return notificationsUI.openNotificationSource(opener,item.provider==="lark" ? "messages" : item.provider==="gitlab" ? "gitlab" : "tools",item.id,target);
+    return notificationsUI.openNotificationSource(opener,item.provider==="lark" ? "messages" : item.provider==="gitlab" ? "gitlab" : item.provider==="scion" && item.supports_notifications===true ? "workitems" : "tools",item.id,target);
   }
 
   let activitySignature = "";

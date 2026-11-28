@@ -58,7 +58,7 @@ func TestOptionalInputCodecDoesNotHideSavedPartition(t *testing.T) {
 	// A source without an input codec still participates in notifications. An
 	// empty input repository has no GitLab partition and can open normally.
 	codecs, err := inputStorageCodecs(adapters, withoutGitlabCodec)
-	if err != nil || len(codecs) != 1 || codecs[0].Descriptor().Provider != "lark" {
+	if err != nil || len(codecs) != 2 || codecs[0].Descriptor().Provider != "lark" || codecs[1].Descriptor().Provider != "scion" {
 		t.Fatal(codecs, err)
 	}
 	owner := inputstream.Member{RoomID: id.RoomID, RoomInstance: id.RoomInstance, MembershipID: id.MembershipID}

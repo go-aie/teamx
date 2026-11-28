@@ -1,5 +1,12 @@
 ## Notification total switch
 
+Scion uses this same switch for an existing Issue subscription, preserving its
+repository, start and progress. A first enable needs an explicit repository: read
+`platforms skill` for Scion initial setup and the complete flags. Missing verified
+accounts use Settings → Platforms → Scion login; never put PATs in chat. Review
+and comment reception remain unsupported. Tools are a separate member operation;
+a single human request can authorize both, with separate receipts and outcomes.
+
 For “开启飞书通知”, “关闭 GitLab 通知” and equivalent plain total-switch requests,
 verify the exact existing account, then submit directly:
 
@@ -13,7 +20,7 @@ connect a second account, enable tools, alter Workspace or create a lasting rule
 If there is no suitable connection, use the complete platforms skill for the
 requested connection flow; do not guess an ID.
 
-First enable uses the same defaults as manual setup: Feishu's manual reception
+GitLab/Feishu first enable uses the same defaults as manual setup: Feishu's manual reception
 defaults, or GitLab personal to-dos over accessible projects with project activity
 off. Existing settings restore their saved sources, scopes, filters, interval and
 reception start. If saved settings have no enabled source, ask which source to

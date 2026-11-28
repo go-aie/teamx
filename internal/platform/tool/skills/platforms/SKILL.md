@@ -1,7 +1,7 @@
-# Connect Feishu or GitLab to TeamX
+# Connect platforms and configure member tools or notifications
 
 Use `"$TEAMX_CLI" platforms skill` for a real human conversation request to connect
-Feishu/GitLab, configure your own notifications/tools, or show an account, group
+Feishu/GitLab, configure your own Feishu/GitLab/Scion notifications/tools, or show an account, group
 or project selection card. It works before any
 connection or tool binding. Known total-switch tasks can read
 `platforms skill --topic notifications` directly; selection cards and their
@@ -11,7 +11,8 @@ first. This complete guide retains connection, customization and tool repair.
 Use current `platforms --help` and subcommand help for field contracts.
 Every `teamx` example stands for `"$TEAMX_CLI"`; replace uppercase placeholders with
 verified values. Connect/selection commands already return JSON; omit `--json`.
-Other providers and unsupported settings use Settings → Platforms. For interface
+Scion first login uses Settings → Platforms → Scion; existing verified Scion accounts
+use the member/selection commands below. Other unsupported settings use Settings → Platforms. For interface
 or execution questions, read `"$TEAMX_CLI" skill usage`.
 
 Connections are shared; notifications, tools and rules belong to the exact current
@@ -193,6 +194,7 @@ needs no redundant confirmation. Recover original selection steps before startin
 | Feishu account/new connection name | `--provider lark --kind account --name NAME` (name may be empty) |
 | Feishu groups | `--provider lark --kind groups --platform-id ID --platform-version V --query NAME` |
 | GitLab verified accounts on one instance | `--provider gitlab --kind account --origin URL` |
+| Scion verified existing accounts | `--provider scion --kind account [--origin URL]` |
 | GitLab projects on one account | `--provider gitlab --kind projects --platform-id ID --platform-version V --query NAME` |
 
 Every start also needs its own `--operation-id PICK_ID --source-seq SEQ --notify inbox`.
@@ -228,6 +230,62 @@ Then branch on the original human request, not your own earlier offer or promise
   before skipping it. Selection itself never applies configuration.
 When a handled connection opens a group/project form, acknowledge that connection
 before ending the turn; the form has its own independent continuation and receipt.
+
+## Scion existing connections, tools and Issue notifications
+
+Scion uses the same member configuration and account selection mechanisms. A single
+human request can enable both tools and notifications: retain the same original
+human SEQ, but use separate stable TOOL_STEP_ID and NOTIFICATION_STEP_ID receipts.
+Report each actual result, including partial success; there is no combined rollback.
+A plain request to connect/enable/use Scion means make it usable for this member:
+enable tools and notifications, respecting explicit limits. First reception requires
+an explicit repository. If it is missing, finish the authorized tool setup and ask
+for the repository; never infer it from Workspace or claim notification success.
+An existing subscription can be restored with the common total switch.
+
+Use `platforms list` to find the exact verified existing Scion connection. If several
+accounts are plausible, use `selection start --provider scion --kind account
+[--origin URL] --operation-id PICK_ID --source-seq SEQ --notify inbox`, following
+selection recovery below. Selection saves no tools or notifications. Missing or
+invalid accounts require Settings → Platforms → Scion login. An empty verified
+account list is sufficient evidence: explain the login entry and end this step; do
+not try placeholder IDs, inspect local files/environment or probe member writes.
+PATs never belong in
+chat, model arguments or member JSON. Do not use `platforms connect start` for Scion;
+it does not support Scion login. After the human logs in, re-read the actual
+connection/version and continue only the original still-current request. No background
+login continuation is installed.
+
+Read `member get --platform-id ID`: `scion_notifications`, `subscription_id`,
+`notification_version`, `baseline`, `binding_revision` and `tool_enabled` describe
+this member's actual settings. For initial tool setup use the complete member tool
+command below with its own ID and observed platform version. For an existing binding
+use the short tool switch. Scion rejects Feishu action flags. Tool enable refreshes
+available tools through the existing Session lifecycle; saved config alone is not
+proof of an actual native call. Tool and notification changes remain independent.
+
+For first Issue reception, use the complete command:
+
+```sh
+teamx platforms member notifications --platform-id ID --platform-version V --notification-version 0 --operation-id NOTIFICATION_STEP_ID --source-seq SEQ --enabled true --scion-repository OWNER/REPO --scion-object-type issue --scion-backfill-start RFC3339
+```
+
+Omit the start for now, or use `--scion-backfill-seconds 86400` for the last day;
+never supply both. Interpret “today” in the user's timezone, submit midnight with
+an explicit RFC3339 offset/UTC, not a bare local date. The server verifies the
+repository on that instance and freezes the start once. Review, comments and review
+activity are unavailable. Only open Issue creations visible at polling time are
+covered; retention/expiry can narrow historical reception. Notifications use this
+member's private Inbox and need neither tools nor Workspace. No shared Inbox.
+
+After first save repository, object types and reception start are fixed. Interval
+edits use complete observed mode with only `--scion-interval-seconds 30..3600`;
+omitted settings are retained. Pause/resume uses the common short notifications
+switch without versions or a client ID, preserving progress and start. A first
+pure enable without a repository returns “请选择仓库”; it creates no subscription.
+Keep conflicts and unknown operations under the original ID/SEQ; status never
+reapplies them. Do not start `while scn ...` or another polling shell. Formal
+input read/ack is separate from subscription configuration.
 
 ## Feishu connection and selected groups
 

@@ -224,7 +224,7 @@ func TestPlatformNativeQueryBoundariesAndSameRecord(t *testing.T) {
 }
 func TestInputStorageUsesStaticSourceAssembly(t *testing.T) {
 	codecs, err := inputStorageCodecs(storageAdapters(), notificationCapabilities)
-	if err != nil || len(codecs) != 2 {
+	if err != nil || len(codecs) != 3 {
 		t.Fatal(codecs, err)
 	}
 	before := []inputstream.Descriptor{}
@@ -235,15 +235,15 @@ func TestInputStorageUsesStaticSourceAssembly(t *testing.T) {
 	adapters := storageAdapters()
 	delete(adapters, notification.SourceID{Provider: "gitlab", Channel: "todos"})
 	after, err := inputStorageCodecs(adapters, notificationCapabilities)
-	if err != nil || len(after) != 2 {
+	if err != nil || len(after) != 3 {
 		t.Fatal(after, err)
 	}
-	if len(after[0].Descriptor().Channels) != 1 || !reflect.DeepEqual(after[1].Descriptor(), before[1]) {
+	if len(after[0].Descriptor().Channels) != 1 || !reflect.DeepEqual(after[1].Descriptor(), before[1]) || !reflect.DeepEqual(after[2].Descriptor(), before[2]) {
 		t.Fatal("independent source assembly lost")
 	}
 }
 
-// A third adapter's native evidence models approval cases and nodes. The
+// An additional adapter's native evidence models approval cases and nodes. The
 // source assembly changes here; common DTOs, schema, storage and queries do not.
 type approvalFixturePayload struct{ Receiver, Definition, Name, Instance, Node, Status string }
 type approvalFixtureCodec struct{}

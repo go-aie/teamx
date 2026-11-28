@@ -132,13 +132,7 @@ export function createWorkspace({ env, runtime, notificationsUI, membersUI, room
     }
     if (!valid()) return;
     renderWorkspace();
-    if (completed) {
-      const composer = ws.directorySubmitted?.key === "composer";
-      clearSubmittedDirectoryDraft(ws); directories.render();
-      if (composer) selector.close();
-      ws.closeOnComplete = null;
-      $("workspace-dialog").close();
-    }
+    if (completed) completeWorkspace(ws);
   }
 
   function renderWorkspacePlatforms() {
@@ -258,6 +252,7 @@ export function createWorkspace({ env, runtime, notificationsUI, membersUI, room
     $("workspace-retry").hidden = op?.status !== "failed" || !!ws.pending;
     $("workspace-retry").disabled = ws.sending || !ws.connected || !!state.catalog?.busy;
     $("workspace-new").hidden = !ws.missing;
+    $("workspace-refresh").hidden = !(ws.pending || ws.error || !ws.connected || op?.status === "running" || op?.status === "failed");
     $("workspace-refresh").disabled = ws.sending;
   }
 
@@ -320,6 +315,16 @@ export function createWorkspace({ env, runtime, notificationsUI, membersUI, room
     ws.directorySubmitted = null;
   }
 
+  function completeWorkspace(ws) {
+    const composer = ws.directorySubmitted?.key === "composer";
+    clearSubmittedDirectoryDraft(ws);
+    ws.closeOnComplete = null;
+    if (ws !== workspaceView) return;
+    directories.render();
+    if (composer) selector.close();
+    $("workspace-dialog").close();
+  }
+
   async function submitWorkspace(retry = false, directoryChange = null) {
     const ws = workspaceView;
     if (!ws || ws.sending || !ws.connected || (retry ? !!ws.pending || !!state.catalog?.busy || ws.data?.operation?.status !== "failed" : directoryChange ? workspaceFormBusy() || roomsUI.managementBusy() : $("workspace-apply").disabled)) return;
@@ -342,9 +347,9 @@ export function createWorkspace({ env, runtime, notificationsUI, membersUI, room
     renderWorkspace(); conversationUI.composerState(); membersUI.renderMembers(); roomsUI.renderRooms();
     try {
       const op = await request(retry ? "/v1/workspace/retry" : "/v1/workspace/apply", payload);
-      if (op.unchanged) { ws.closeOnComplete = null; clearSubmittedDirectoryDraft(ws); }
-      else ws.data.operation = op;
+      if (!op.unchanged) ws.data.operation = op;
       ws.pending = null; saveWorkspacePending(ws);
+      if (op.unchanged) completeWorkspace(ws);
     } catch (error) {
       if (["request", "identity", "conflict", "capacity", "busy", ...Object.keys(directoryErrors)].includes(error.code)) {
         ws.closeOnComplete = null;
@@ -352,7 +357,7 @@ export function createWorkspace({ env, runtime, notificationsUI, membersUI, room
         ws.error = directoryErrors[error.code] || (error.code === "conflict" ? "配置已变化，请查看最新状态后重新应用。" : "请求被拒绝，请核对配置、当前房间和服务状态；共享连接变化后请重新打开设置加载连接。");
       } else ws.error = "提交结果尚未确认，正在查询原操作；不会自动重发。";
     } finally {
-   ws.sending = false;
+      ws.sending = false;
       await refresh(); renderWorkspace(); conversationUI.composerState(); roomsUI.renderRooms();
     }
   }

@@ -17,6 +17,7 @@ import (
 	"github.com/go-aie/teamx/internal/platform/lark"
 	"github.com/go-aie/teamx/internal/platform/notification"
 	"github.com/go-aie/teamx/internal/platform/registry"
+	"github.com/go-aie/teamx/internal/platform/scion"
 	"github.com/go-aie/teamx/internal/platform/tool"
 )
 
@@ -50,6 +51,7 @@ type platformMemberView struct {
 	NotificationVersion uint64                   `json:"notification_version"`
 	Config              *lark.Config             `json:"notification_config,omitempty"`
 	GitLab              *gitlabNotificationView  `json:"gitlab_notifications,omitempty"`
+	Scion               *scion.Config            `json:"scion_notifications,omitempty"`
 	Baseline            time.Time                `json:"baseline,omitzero"`
 	BindingRevision     uint64                   `json:"binding_revision"`
 	ToolEnabled         bool                     `json:"tool_enabled"`
@@ -73,7 +75,15 @@ func (m *roomManager) platformMemberViewLocked(ctx context.Context, req platform
 		if v.Baseline.IsZero() {
 			v.Baseline = m.gitlabMemberBaselineLocked(req)
 		}
-	} else {
+	} else if a.Identity.Provider == "scion" {
+		s, err := m.currentScionForMemberLocked(req)
+		if err != nil {
+			return v, err
+		}
+		if s != nil {
+			v.NotificationVersion, v.Scion, v.Baseline, v.SubscriptionID = s.SubscriptionVersion, &s.Config, s.Baseline, s.SubscriptionID
+		}
+	} else if a.Identity.Provider == "lark" {
 		s, err := m.currentLarkForTargetLocked(req.RoomIdentity, a.PlatformID, platformMemberTarget(v.MemberIdentity))
 		if err != nil {
 			return v, err
@@ -257,6 +267,9 @@ func (m *roomManager) configurePlatformMember(ctx context.Context, kind string, 
 	}
 	if kind == "notifications" && req.Input.pureNotificationToggle() {
 		op = platformMemberOperation{Schema: 1, MemberIdentity: req.member(), ID: req.OperationID, Kind: kind, Source: source, Input: *req.Input, Account: v.Account, Status: "unknown", Result: onboardingStep{Status: "unknown", ErrorCode: "submission_unconfirmed"}, CreatedAt: time.Now().UTC()}
+		if v.Account.Provider == "scion" {
+			op.Schema = 4
+		}
 		op, err = m.reservePlatformMemberNotificationsLocked(v, req, op)
 		m.mu.Unlock()
 		if err != nil || op.Status == "completed" {
@@ -333,6 +346,9 @@ func (m *roomManager) configurePlatformMember(ctx context.Context, kind string, 
 		if savedBinding != nil {
 			op.Authorization = savedBinding.ActionAuthorization
 		}
+	}
+	if v.Account.Provider == "scion" {
+		op.Schema = 4
 	}
 	if preparedChange != nil {
 		p := preparedChange.prepared
@@ -422,6 +438,12 @@ func (m *roomManager) applyPlatformMemberNotifications(ctx context.Context, req 
 			op.Result.ErrorCode = "source_apply_pending"
 			err = ErrConflict
 		}
+	} else if op.ScionConfig != nil {
+		admission := ctx.Value(platformMemberContextKey{}).(platformMemberAdmission)
+		key := notification.Key{Owner: req.RoomIdentity, Source: scion.WorkitemsSourceID, SubscriptionID: admission.SubscriptionID}
+		var next scion.State
+		next, err = m.configureScionSubscription(ctx, key, req.Input.NotificationVersion, *op.ScionConfig)
+		op.Result = onboardingStep{Status: "applied", Version: next.SubscriptionVersion}
 	} else {
 		key := notification.Key{Owner: req.RoomIdentity, Source: lark.MessagesSourceID}
 		admission := ctx.Value(platformMemberContextKey{}).(platformMemberAdmission)

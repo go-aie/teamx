@@ -3,10 +3,12 @@ package room
 import (
 	gitlabplatform "github.com/go-aie/teamx/internal/app/builtinplatforms/gitlab"
 	larkplatform "github.com/go-aie/teamx/internal/app/builtinplatforms/lark"
+	scionplatform "github.com/go-aie/teamx/internal/app/builtinplatforms/scion"
 	"github.com/go-aie/teamx/internal/app/platforms"
 	"github.com/go-aie/teamx/internal/platform/gitlab"
 	"github.com/go-aie/teamx/internal/platform/lark"
 	"github.com/go-aie/teamx/internal/platform/notification"
+	"github.com/go-aie/teamx/internal/platform/scion"
 )
 
 // Only execution dependencies still owned by Room are supplied here. The
@@ -26,6 +28,13 @@ func notificationRuntimeBindings(m *roomManager) map[notification.SourceID]func(
 		}
 	}
 	return map[notification.SourceID]func(platforms.Source) notification.Bind{
+		scion.WorkitemsSourceID: func(selected platforms.Source) notification.Bind {
+			return func(source notification.Source, host notification.RuntimeHost) (notification.Runtime, error) {
+				bound := *source.(*scion.Source)
+				bound.Execute = m.executeScionNotification
+				return scionplatform.BindRuntime(&bound, host)
+			}
+		},
 		gitlab.EventsSourceID: gitlabBinding,
 		gitlab.TodosSourceID:  gitlabBinding,
 		lark.MessagesSourceID: func(selected platforms.Source) notification.Bind {

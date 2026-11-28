@@ -86,6 +86,9 @@ func (m *roomManager) selectionPath(id string) string {
 	return filepath.Join(m.store.dir, "platform-selections", id+".json")
 }
 func validSelectionDraft(in platformSelectionInput, d platformSelectionDraft) bool {
+	if selectionProvider(in) == "scion" {
+		return len(d.ChatIDs) == 0 && len(d.Name) <= 128 && d.GroupMessageMode == "" && d.ProjectID == 0 && d.ProjectPath == "" && d.EventsFilter == nil && (d.Name == "" || validText(d.Name)) && (d.PlatformID == "" && d.PlatformVersion == 0 || tool.OpaqueID(d.PlatformID) && d.PlatformVersion > 0)
+	}
 	if selectionProvider(in) == "gitlab" {
 		return validGitLabSelectionDraft(in, d)
 	}
@@ -144,10 +147,13 @@ func (m *roomManager) readPlatformSelectionLocked(id string) (platformSelection,
 	} else if s.Status != "completed" && s.Status != "cancelled" && s.Status != "expired" || s.ResultVersion != 1 || s.ResultAt.IsZero() || s.SubmittedVersion == 0 {
 		return s, ErrInvalid
 	}
-	if s.Input.Kind != "projects" && s.Project != nil || selectionProvider(s.Input) == "gitlab" && len(s.Chats) != 0 {
+	if s.Input.Kind != "projects" && s.Project != nil || (selectionProvider(s.Input) == "gitlab" || selectionProvider(s.Input) == "scion") && len(s.Chats) != 0 {
 		return s, ErrInvalid
 	}
 	if s.Status == "completed" {
+		if selectionProvider(s.Input) == "scion" && (s.Draft.PlatformID == "" || !s.Account.Valid() || s.Input.Origin != "" && s.Account.Instance != s.Input.Origin) {
+			return s, ErrInvalid
+		}
 		if selectionProvider(s.Input) == "gitlab" && s.Input.Kind == "account" && (s.Draft.PlatformID == "" || !s.Account.Valid() || s.Account.Instance != s.Input.Origin) {
 			return s, ErrInvalid
 		}
@@ -172,6 +178,16 @@ func (m *roomManager) readPlatformSelectionLocked(id string) (platformSelection,
 	return s, nil
 }
 func validSelectionInput(in platformSelectionInput) bool {
+	if selectionProvider(in) == "scion" {
+		origin := in.Origin
+		if origin != "" {
+			_, normalized, err := registry.Normalize("Scion", origin)
+			if err != nil || normalized != origin {
+				return false
+			}
+		}
+		return in.Kind == "account" && in.PlatformID == "" && in.PlatformVersion == 0 && in.Query == ""
+	}
 	if selectionProvider(in) == "gitlab" {
 		return validGitLabSelectionInput(in)
 	}
@@ -403,7 +419,7 @@ func (m *roomManager) submitPlatformSelection(ctx context.Context, req platformS
 			if !found {
 				err = ErrConflict
 			}
-		} else if selectionProvider(s.Input) == "gitlab" || !validText(s.Draft.Name) {
+		} else if selectionProvider(s.Input) == "gitlab" || selectionProvider(s.Input) == "scion" || !validText(s.Draft.Name) {
 			err = ErrRequest
 		}
 		if err != nil {

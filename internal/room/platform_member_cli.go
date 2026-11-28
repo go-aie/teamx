@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/go-aie/teamx/internal/platform/gitlab"
 )
@@ -23,7 +24,7 @@ const platformMemberHelp = `Usage:
 
 Pure switches need no preliminary get/status, versions or client operation ID.
 Tools restore exact saved grants only; initial setup/expanded grants use tool --help.
-Notification first enable uses manual defaults; existing settings restore sources.
+GitLab/Feishu first enable uses manual defaults; Scion requires a repository first.
 For source/range/filter edits, see notifications --help. Selection cards use
 platforms skill --topic selection. Notification switches use platforms skill
 --topic notifications; tool switches, setup and complex edits use platforms skill.
@@ -38,7 +39,14 @@ func platformMemberActionHelp(action string) string {
 
 Pure switches observe current state and recover the original receipt in one call.
 Use the original human seq; do not generate an operation ID or first get/status.
-First enable uses manual defaults; existing settings retain sources, filters and
+GitLab/Feishu first enable uses manual defaults; Scion needs explicit first setup.
+Scion complete mode uses --scion-repository NAME [--scion-object-type issue]
+[--scion-backfill-start RFC3339 | --scion-backfill-seconds 0..86400]
+[--scion-interval-seconds 30..3600]. Default start is now; Issue only.
+Existing Scion switches/interval edits retain repository, types and reception start;
+range replacement/reset and Review are unavailable. Missing verified connections
+use Settings → Platforms → Scion login, never PAT in chat.
+Existing settings retain sources, filters and
 reception start. No source in saved settings requires an explicit source choice.
 Historical receipts describe that operation, not necessarily current settings.
 Customization requires all three observed fields (notification-version 0 means
@@ -145,6 +153,42 @@ func runPlatformMemberCLI(ctx context.Context, args []string, stdout, stderr io.
 		})
 	}
 	if action == "notifications" {
+		scionPatch := func() *platformMemberScionPatch {
+			if in.Scion == nil {
+				in.Scion = &platformMemberScionPatch{}
+			}
+			return in.Scion
+		}
+		f.Func("scion-repository", "Scion: exact repository name or same-instance URL; first setup requires a repository", func(s string) error { scionPatch().Repository = &s; return nil })
+		f.Func("scion-object-type", "Scion: issue only; initial range is fixed after saving", func(s string) error {
+			p := scionPatch()
+			if p.ObjectTypes == nil {
+				p.ObjectTypes = new([]string)
+			}
+			*p.ObjectTypes = append(*p.ObjectTypes, s)
+			return nil
+		})
+		f.Func("scion-interval-seconds", "Scion: discovery interval, 30–3600 seconds", func(s string) error {
+			n, e := strconv.Atoi(s)
+			if e == nil {
+				scionPatch().IntervalSeconds = &n
+			}
+			return e
+		})
+		f.Func("scion-backfill-seconds", "Scion: initial lookback, 0–86400 seconds; frozen once", func(s string) error {
+			n, e := strconv.Atoi(s)
+			if e == nil {
+				scionPatch().BackfillSeconds = &n
+			}
+			return e
+		})
+		f.Func("scion-backfill-start", "Scion: initial RFC3339 start with explicit timezone; cannot be reset", func(s string) error {
+			v, e := time.Parse(time.RFC3339, s)
+			if e == nil {
+				scionPatch().BackfillStart = &v
+			}
+			return e
+		})
 		f.Func("todos-enabled", "GitLab personal todos: true or false; preserves other sources", func(s string) error {
 			if s != "true" && s != "false" {
 				return ErrRequest

@@ -16,7 +16,13 @@ import (
 func notificationOnly() platforms.Definition {
 	return platforms.Definition{Type: platform.TypeDefinition{Provider: "gitlab", NotificationChannels: []string{"events"}}, Sources: []platforms.Source{{ID: gitlab.EventsSourceID, New: func() notification.Source { return &gitlab.EventsSource{} }}}}
 }
-func toolOnly() platforms.Definition { return scionplatform.Definition() }
+func toolOnly() platforms.Definition {
+	d := scionplatform.Definition()
+	d.Type.NotificationChannels = nil
+	d.Sources = nil
+	d.Notifications = notification.Capabilities{}
+	return d
+}
 
 func TestOptionalCapabilitiesRemainIndependent(t *testing.T) {
 	catalog, err := platforms.NewCatalog(notificationOnly, toolOnly)
@@ -171,5 +177,20 @@ func TestBuiltinToolRuntimeIsSelectedAndStatic(t *testing.T) {
 	})
 	if err == nil {
 		t.Fatal("executable with built-in runtime accepted")
+	}
+}
+
+func TestScionNotificationStaticSelection(t *testing.T) {
+	c, e := platforms.NewCatalog(scionplatform.Definition)
+	if e != nil {
+		t.Fatal(e)
+	}
+	sources := c.Definitions()[0].Sources
+	if len(sources) != 1 || sources[0].ID.Provider != "scion" || sources[0].ID.Channel != "workitems" || sources[0].New().Schema() != 1 || sources[0].Bind == nil || c.NotificationCapabilities("scion").Input == nil {
+		t.Fatal("Scion notification capabilities not assembled")
+	}
+	empty, e := platforms.NewCatalog()
+	if e != nil || len(empty.Definitions()) != 0 || empty.NotificationCapabilities("scion").Input != nil {
+		t.Fatal("empty catalog acquired Scion")
 	}
 }

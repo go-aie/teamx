@@ -17,7 +17,7 @@ export function createSettings({ env, runtime, connectionsUI, conversationUI, ro
   const availableSettingsTabs = () => (state.managed ? settingsTabs : ["general", "computer", "security"]).filter(tab=>!state.deploymentManaged || tab!=="security" && tab!=="computer");
   const systemTime = createSystemTime();
 
-  const timeInputs = new Map(["lark-backfill-start", "gitlab-backfill-start", "onboarding-backfill-start", "policy-expires"].map(id => [id, createTimeInput(systemTime)]));
+  const timeInputs = new Map(["scion-backfill-start", "lark-backfill-start", "gitlab-backfill-start", "onboarding-backfill-start", "policy-expires"].map(id => [id, createTimeInput(systemTime)]));
 
   const timezoneForm = {dirty:false, saving:false, message:""};
 
@@ -159,7 +159,7 @@ export function createSettings({ env, runtime, connectionsUI, conversationUI, ro
       if ($(id).validity?.badInput) { input.edit("", true); input.rebase(); }
       else $(id).value = input.rebase().replace("T", " ");
     }
-    for (const prefix of ["lark", "gitlab"]) $(`${prefix}-backfill-start`).max = systemTime.local(Date.now());
+    for (const prefix of ["lark", "gitlab", "scion"]) $(`${prefix}-backfill-start`).max = systemTime.local(Date.now());
     renderTimeZone();
     const top = $("timeline").scrollTop;
     conversationUI.renderMessages(); $("timeline").scrollTop = top;

@@ -22,8 +22,13 @@ For reads without a work copy, name the verified repository explicitly:
 
 Verify the repository and Review, read discussions and check current revisions
 before summarizing, drafting a response or recommending a next step. Native tool
-access is not authority to publish. Scion has no TeamX notification collector;
-do not promise automatic Review reception or treat reading this Skill as a watcher.
+access is not authority to publish. TeamX can collect open Issue creation notices through the member platform notification settings.
+The first delivery supports one verified connection/repository and a private member Inbox;
+Review, comments and review activity are not collected. For conversational tool/notification setup use `platforms skill`: existing verified
+connections, first repository/start configuration and pause/resume share the normal
+member settings service. First login still uses the existing Scion settings UI;
+never accept a PAT in chat.
+Do not start polling shells or promise automatic Review reception. Reading this Skill does not enable notifications.
 Use the common guide for user questions, durable progress and local send replies.
 
 truncated=true means incomplete coverage, never absence. review show exposes

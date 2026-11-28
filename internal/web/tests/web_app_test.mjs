@@ -2053,6 +2053,7 @@ test("Workspace waits for asynchronous completion before closing and can be reop
   await editWorkspace(ui);
   await ui.el("workspace-form").emit("submit");
   assert.equal(ui.el("workspace-dialog").open, true);
+  assert.equal(ui.el("workspace-refresh").hidden, false);
   await ui.refresh(); assert.equal(ui.el("workspace-dialog").open, true);
   ws.operation.status = "completed"; ws.operation.phase = "completed";
   ws.workspace = ws.operation.target; ws.workspace_version++;
@@ -2064,10 +2065,51 @@ test("Workspace waits for asynchronous completion before closing and can be reop
   await openWorkspaceSettings(ui); await ui.refresh();
   assert.equal(ui.el("workspace-dialog").open, true);
   assert.equal(ui.el("workspace-status").textContent, "设置已生效");
+  assert.equal(ui.el("workspace-refresh").hidden, true);
   assert.equal(ui.el("workspace-summary").hidden, true);
   const reload = await launch(api, ui.saved);
   assert.equal(reload.el("workspace-summary").hidden, true);
   assert.equal(reload.el("workspace-summary").textContent, "");
+});
+
+test("applying unchanged repository settings closes without another operation and remains inspectable", async () => {
+  for (const kind of ["git", "scion"]) {
+    const api = workspaceServer(), ui = await launch(api);
+    if (kind === "scion") api.platforms.push({ id:"c".repeat(32), provider:"scion", name:"Scion", url:"https://scion.invalid", version:1, validation:{status:"valid"} });
+    await editWorkspace(ui, kind === "git");
+    if (kind === "scion") {
+      ui.el("workspace-kind").value = kind; await ui.el("workspace-kind").emit("change");
+      ui.el("workspace-repo-url").value = "https://scion.invalid/OpenCSG/scion";
+      ui.el("workspace-connection").value = "c".repeat(32); await ui.el("workspace-connection").emit("change");
+    }
+    await ui.el("workspace-form").emit("submit");
+    await openWorkspaceSettings(ui);
+    assert.equal(ui.el("workspace-refresh").hidden, true);
+    const before = structuredClone(api.workspaces.get("A"));
+    api.workspaceHook = (path, data) => path === "/v1/workspace/apply" ? {operation_id:data.operation_id, target:data.target, unchanged:true} : undefined;
+    await ui.el("workspace-form").emit("submit");
+    assert.equal(ui.el("workspace-dialog").open, false);
+    assert.deepEqual(api.workspaces.get("A"), before);
+    assert.equal(api.calls.filter(c => c.path === "/v1/workspace/apply").length, 2);
+    assert.equal(ui.saved.has(JSON.stringify(["teamx.workspace", "instance-A", "tester"])), false);
+    await openWorkspaceSettings(ui); await ui.refresh();
+    assert.equal(ui.el("workspace-dialog").open, true);
+    assert.equal(ui.el("workspace-status").textContent, "设置已生效");
+    assert.equal(ui.el("workspace-refresh").hidden, true);
+  }
+});
+
+test("a late unchanged response cannot close another Room's workspace dialog", async () => {
+  const api = workspaceServer(), ui = await launch(api);
+  await editWorkspace(ui);
+  let release;
+  api.workspaceHook = (path, data) => path === "/v1/workspace/apply" ? new Promise(resolve => { release = () => resolve({operation_id:data.operation_id,unchanged:true}); }) : undefined;
+  const task = ui.el("workspace-form").emit("submit"); await settle();
+  await ui.select("B"); await openWorkspaceSettings(ui);
+  assert.equal(ui.el("workspace-dialog").open, true);
+  release(); await task;
+  assert.equal(ui.el("workspace-dialog").open, true);
+  assert.equal(ui.el("workspace-repository").checked, false);
 });
 
 test("GitLab binding derives its origin and nested project only from the final repository URL", async () => {
@@ -2173,6 +2215,7 @@ test("Workspace lost response observes original ID across reload, blocks duplica
   ws.observation = identity(api.catalog.rooms[0]); api.catalog.rooms[0].busy = true; delete api.catalog.rooms[0]?.service;
   reject(new Error("response lost")); await task;
   assert.equal(ui.el("workspace-dialog").open, true);
+  assert.equal(ui.el("workspace-refresh").hidden, false);
   assert.equal(ui.el("message-input").readOnly, true); assert.match(ui.el("workspace-summary").textContent, /正在初始化/);
   assert.match(ui.el("management-notice").textContent, /工作目录/);
   const reload = await launch(api, ui.saved); await openWorkspaceSettings(reload);
@@ -2180,6 +2223,7 @@ test("Workspace lost response observes original ID across reload, blocks duplica
   assert.equal(api.calls.filter(c => c.path === "/v1/workspace/apply").length, 1);
   ws.operation.status = "failed"; ws.operation.error_code = "preparation_failed"; api.catalog.rooms[0].busy = false;
   await reload.refresh(); assert.equal(reload.el("workspace-retry").hidden, false);
+  assert.equal(reload.el("workspace-refresh").hidden, false);
   assert.equal(reload.el("workspace-dialog").open, true);
   assert.equal(reload.el("workspace-apply").disabled, true);
   await reload.el("workspace-retry").emit("click");

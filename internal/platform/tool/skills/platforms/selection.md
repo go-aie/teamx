@@ -24,12 +24,14 @@ For account cards, use the following fields instead of group/project fields:
 | Choice | Fields after `platforms selection start` |
 | --- | --- |
 | Feishu account/new connection name | `--provider lark --kind account --name NAME` (name may be empty) |
+| Verified existing Scion accounts | `--provider scion --kind account [--origin URL]` |
 | Verified GitLab account on one instance | `--provider gitlab --kind account --origin URL` (canonical instance URL) |
 
 Every start also needs `--operation-id PICK_ID --source-seq SEQ --notify inbox`.
 An account card selects verified existing accounts; it does not create an account,
-application or connection. Empty candidates require the connection flow from the
-complete platforms skill. An unambiguous explicit ID needs no redundant card,
+application or connection. Empty Scion candidates require Settings → Platforms → Scion login (PAT stays in
+protected settings); after login re-read connection/version and continue the original
+request. Other empty candidates use the complete platforms connection guide. An unambiguous explicit ID needs no redundant card,
 unless the human requested the card itself.
 
 Let the component search, paginate and retain choices; `--query NAME` can seed a

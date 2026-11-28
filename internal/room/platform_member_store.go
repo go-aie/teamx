@@ -11,6 +11,7 @@ import (
 	"github.com/go-aie/teamx/internal/platform"
 	"github.com/go-aie/teamx/internal/platform/gitlab"
 	"github.com/go-aie/teamx/internal/platform/lark"
+	"github.com/go-aie/teamx/internal/platform/scion"
 	"github.com/go-aie/teamx/internal/platform/tool"
 )
 
@@ -35,10 +36,11 @@ type platformMemberInput struct {
 	GroupMessageMode        string                      `json:"group_message_mode,omitempty"`
 	Groups                  *platformMemberGroupPatch   `json:"groups,omitempty"`
 	Private                 *platformMemberPrivatePatch `json:"private,omitempty"`
+	Scion                   *platformMemberScionPatch   `json:"scion,omitempty"`
 }
 
 func (in platformMemberInput) pureNotificationToggle() bool {
-	return in.Enabled != nil && !in.hasLarkNotificationFields() && in.TodosEnabled == nil && in.EventsEnabled == nil && in.ProjectID == 0 && in.ProjectPath == "" && in.EventsFilter == nil && in.TodosFilter == nil && len(in.Actions) == 0 && in.ExpectedBindingRevision == nil && in.ToolRevision == 0
+	return in.Enabled != nil && in.Scion == nil && !in.hasLarkNotificationFields() && in.TodosEnabled == nil && in.EventsEnabled == nil && in.ProjectID == 0 && in.ProjectPath == "" && in.EventsFilter == nil && in.TodosFilter == nil && len(in.Actions) == 0 && in.ExpectedBindingRevision == nil && in.ToolRevision == 0
 }
 
 type platformMemberRequest struct {
@@ -66,6 +68,7 @@ type platformMemberOperation struct {
 	Result           onboardingStep              `json:"result"`
 	Config           *lark.Config                `json:"notification_config,omitempty"`
 	GitLabConfig     *gitlab.NotificationConfig  `json:"gitlab_notification_config,omitempty"`
+	ScionConfig      *scion.Config               `json:"scion_notification_config,omitempty"`
 	Project          *gitlab.Project             `json:"project,omitempty"`
 	Chats            []lark.Chat                 `json:"chats,omitempty"`
 	RequestedActions []tool.ActionGrant          `json:"requested_actions,omitempty"`
@@ -84,13 +87,16 @@ func validPlatformMemberInput(kind string, in platformMemberInput) bool {
 	}
 	gitlabFields := in.EventsEnabled != nil || in.ProjectID != 0 || in.ProjectPath != "" || in.EventsFilter != nil || in.TodosFilter != nil
 	if kind == "tool" {
-		if gitlabFields || len(in.Actions) > 32 || len(in.Actions) > 0 && (in.Enabled == nil || !*in.Enabled) {
+		if in.Scion != nil || gitlabFields || len(in.Actions) > 32 || len(in.Actions) > 0 && (in.Enabled == nil || !*in.Enabled) {
 			return false
 		}
 		return in.Enabled != nil && in.TodosEnabled == nil && in.NotificationVersion == 0 && !in.hasLarkNotificationFields()
 	}
 	if len(in.Actions) > 0 {
 		return false
+	}
+	if in.Scion != nil {
+		return kind == "notifications" && in.ExpectedBindingRevision == nil && in.ToolRevision == 0 && !gitlabFields && in.TodosEnabled == nil && !in.hasLarkNotificationFields() && validMemberScionPatch(*in.Scion)
 	}
 	if kind == "notifications" && (in.TodosEnabled != nil || gitlabFields) {
 		if (in.ProjectID == 0) != (in.ProjectPath == "") || in.ProjectID < 0 || in.ProjectPath != "" && !workspaceProjectPath(in.ProjectPath) {
@@ -112,7 +118,13 @@ func validPlatformMemberInput(kind string, in platformMemberInput) bool {
 }
 
 func validPlatformMemberOperation(op platformMemberOperation) bool {
-	if (op.Schema != 1 && op.Schema != 2 && op.Schema != 3) || !tool.OpaqueID(op.ID) || !tool.OpaqueID(op.RoomInstance) || !validText(op.RoomID) || !validText(op.AgentID) || !safeMembershipID(op.MembershipID) || !validHumanEvidence(op.Source) || !validPlatformMemberInput(op.Kind, op.Input) || !op.Account.Valid() || op.CreatedAt.IsZero() {
+	if (op.Schema != 1 && op.Schema != 2 && op.Schema != 3 && op.Schema != 4) || !tool.OpaqueID(op.ID) || !tool.OpaqueID(op.RoomInstance) || !validText(op.RoomID) || !validText(op.AgentID) || !safeMembershipID(op.MembershipID) || !validHumanEvidence(op.Source) || !validPlatformMemberInput(op.Kind, op.Input) || !op.Account.Valid() || op.CreatedAt.IsZero() {
+		return false
+	}
+	if (op.Account.Provider == "scion") != (op.Schema == 4) {
+		return false
+	}
+	if !validMemberScionReceipt(op) {
 		return false
 	}
 	groupIDs, privateIDs := op.Input.verifiedGroupIDs(), op.Input.verifiedPrivateIDs()
@@ -179,7 +191,12 @@ func validPlatformMemberOperation(op platformMemberOperation) bool {
 
 func validPlatformMemberProviderInput(provider, kind string, in platformMemberInput) bool {
 	switch provider {
+	case "scion":
+		return len(in.Actions) == 0 && !in.hasLarkNotificationFields() && in.TodosEnabled == nil && in.EventsEnabled == nil && in.ProjectID == 0 && in.ProjectPath == "" && in.EventsFilter == nil && in.TodosFilter == nil && (kind == "tool" && in.Scion == nil || kind == "notifications" && (in.Enabled != nil || in.Scion != nil))
 	case "lark":
+		if in.Scion != nil {
+			return false
+		}
 		for _, op := range in.Actions {
 			if op != "message.reply" && op != "message.send" && op != "message.send_self" {
 				return false
@@ -187,7 +204,7 @@ func validPlatformMemberProviderInput(provider, kind string, in platformMemberIn
 		}
 		return in.TodosEnabled == nil && in.EventsEnabled == nil && in.ProjectID == 0 && in.ProjectPath == "" && in.EventsFilter == nil && in.TodosFilter == nil
 	case "gitlab":
-		return len(in.Actions) == 0 && !in.hasLarkNotificationFields() && (kind == "tool" || in.Enabled != nil || in.TodosEnabled != nil || in.EventsEnabled != nil || in.ProjectID != 0 || in.EventsFilter != nil || in.TodosFilter != nil)
+		return in.Scion == nil && len(in.Actions) == 0 && !in.hasLarkNotificationFields() && (kind == "tool" || in.Enabled != nil || in.TodosEnabled != nil || in.EventsEnabled != nil || in.ProjectID != 0 || in.EventsFilter != nil || in.TodosFilter != nil)
 	}
 	return false
 }

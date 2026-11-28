@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"sort"
+	"time"
 
 	"github.com/go-aie/teamx/internal/platform"
 )
@@ -130,7 +131,7 @@ func (m *roomManager) bindPlatformReferences(svc *service) {
 			return platform.TargetResolution{}, platform.AccessContext{}, ErrIdentity
 		}
 		if resolve == nil {
-			return platform.TargetResolution{}, platform.AccessContext{}, platform.ErrReference
+			return platform.TargetResolution{Status: platform.ResolutionUnsupported, ReasonCode: "unsupported", Reason: "reference resolution capability is unavailable", CheckedAt: time.Now().UTC()}, platform.AccessContext{}, nil
 		}
 		return resolve(ctx, id, source)
 	}
@@ -160,7 +161,7 @@ func (m *roomManager) readReferenceInbox(ctx context.Context, req apiRequest) (r
 		resolve := m.referenceResolvers[source.Provider]
 		m.mu.Unlock()
 		if resolve == nil {
-			return platform.TargetResolution{}, platform.AccessContext{}, platform.ErrReference
+			return platform.TargetResolution{Status: platform.ResolutionUnsupported, ReasonCode: "unsupported", Reason: "reference resolution capability is unavailable", CheckedAt: time.Now().UTC()}, platform.AccessContext{}, nil
 		}
 		return resolve(ctx, id, source)
 	})

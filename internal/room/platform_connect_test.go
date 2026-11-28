@@ -234,7 +234,7 @@ func TestPlatformConnectSkillIdentityAndHumanBoundary(t *testing.T) {
 	}
 	client, endpoint := toolPipeServer(t, m)
 	var out bytes.Buffer
-	if err := runPlatformConnectWithClient(context.Background(), []string{"skill"}, &out, &out, cliToolEnv(endpoint, svc, member), client); err != nil || !strings.Contains(out.String(), "Connect Feishu") {
+	if err := runPlatformConnectWithClient(context.Background(), []string{"skill"}, &out, &out, cliToolEnv(endpoint, svc, member), client); err != nil || !strings.Contains(out.String(), "Connect platforms") {
 		t.Fatal(err, out.String())
 	}
 	lookup := read
