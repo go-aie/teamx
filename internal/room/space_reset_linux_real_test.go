@@ -149,7 +149,7 @@ func TestSpaceResetLinuxCredentialMaterials(t *testing.T) {
 		}
 	}()
 	s.assembly.factories.hostedResetAccepted = true
-	s.assembly.config.resetTeamsSource = resetSeedForTest(t)
+	s.assembly.config.teamsSource = resetSeedForTest(t)
 	s.assembly.config.hostTools = hostToolPolicy{restricted: true}
 	s.assembly.config.modelProbe = nil
 	s.assembly.defaults = original.Runtime

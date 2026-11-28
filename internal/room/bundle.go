@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"github.com/go-aie/teamx/internal/app/platforms"
 	"io"
-	"io/fs"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -120,6 +119,11 @@ func runBundleWithCatalog(command string, args []string, stdout, stderr io.Write
 	if pending && command == "init" {
 		return rejectPendingSpaceReset(*home)
 	}
+	if pending {
+		if err = refreshTeamDefaults(filepath.Join(*root, "share", "teamx", "teams"), *home); err != nil {
+			return err
+		}
+	}
 	if !pending {
 		if err = initializeBundleRuntime(*root, *home, managedBinary); err != nil {
 			return err
@@ -195,42 +199,33 @@ func bundleStartupConfig(root, home, managedBinary string) map[string]any {
 }
 
 func initializeBundleRuntime(root, home, managedBinary string) error {
+	var err error
+	root, err = filepath.EvalSymlinks(root)
+	if err != nil {
+		return err
+	}
 	config := bundleStartupConfig(root, home, managedBinary)
 	data, err := toml.Marshal(config)
 	if err != nil {
 		return err
 	}
-	if err = installMissing(filepath.Join(home, "config.toml"), data); err != nil {
+	path := filepath.Join(home, "config.toml")
+	_, err = os.Lstat(path)
+	fresh := errors.Is(err, os.ErrNotExist)
+	if err != nil && !fresh {
 		return err
 	}
-	source := filepath.Join(root, "share", "teamx", "teams")
-	return filepath.WalkDir(source, func(path string, entry fs.DirEntry, walkErr error) error {
-		if walkErr != nil {
-			return walkErr
-		}
-		rel, err := filepath.Rel(source, path)
-		if err != nil {
+	if err := refreshTeamDefaults(filepath.Join(root, "share", "teamx", "teams"), home); err != nil {
+		return err
+	}
+	// Config publication completes initialization. Existing homes keep all user
+	// template changes, including deliberately removed files, across upgrades.
+	if fresh {
+		if err := initializeTeamTemplates(teamDefaultsPath(path), filepath.Join(home, "teams")); err != nil {
 			return err
 		}
-		dest := filepath.Join(home, "teams", rel)
-		if entry.Type()&os.ModeSymlink != 0 {
-			return fmt.Errorf("template symlink rejected: %s", rel)
-		}
-		if entry.IsDir() {
-			if info, err := os.Lstat(dest); err == nil && info.Mode()&os.ModeSymlink != 0 {
-				return fmt.Errorf("template destination is a symlink: %s", dest)
-			}
-			return os.MkdirAll(dest, 0700)
-		}
-		if !entry.Type().IsRegular() {
-			return fmt.Errorf("invalid template: %s", rel)
-		}
-		b, err := os.ReadFile(path)
-		if err != nil {
-			return err
-		}
-		return installMissing(dest, b)
-	})
+	}
+	return installMissing(path, data)
 }
 
 // A temporary complete file is published with link(2), which cannot replace an

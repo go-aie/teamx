@@ -32,6 +32,9 @@ func TestHostedConfiguredServerAndLocalManagementCLI(t *testing.T) {
 	if err := os.WriteFile(path, data, 0600); err != nil {
 		t.Fatal(err)
 	}
+	if err := initializeTeamTemplates(resetSeedForTest(t), teamDefaultsPath(path)); err != nil {
+		t.Fatal(err)
+	}
 	selection := personalDeployment(controlledActivationFactory(nil, nil))
 	selection.factories.authentication = func(externalAuthConfig) (authn.Provider, error) { return hostedProviderFixture{}, nil }
 	ctx, cancel := context.WithCancel(t.Context())

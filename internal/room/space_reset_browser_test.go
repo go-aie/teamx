@@ -82,7 +82,10 @@ func TestSpaceResetBrowser(t *testing.T) {
 	if _, err := models.save(ctx, modelSave{Entry: modelEntry{ID: "daily", Name: "Reset acceptance", ModelParameters: parameters}, APIKey: key, ExpectedVersion: 0, MakeDefault: true}); err != nil {
 		t.Fatal(err)
 	}
-	info, stop := startResetServerForTest(t, []string{"--home", home, "--reset-teams-source", seed}, serverOptions{deployment: &selected, platformCatalog: defaultPlatformCatalog(), probe: probe})
+	if err := initializeTeamTemplates(seed, teamDefaultsPath(filepath.Join(home, "config.toml"))); err != nil {
+		t.Fatal(err)
+	}
+	info, stop := startResetServerForTest(t, []string{"--home", home}, serverOptions{deployment: &selected, platformCatalog: defaultPlatformCatalog(), probe: probe})
 	defer stop()
 	s := selected.spaces
 	id := s.directory.DefaultSpaceID

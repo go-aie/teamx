@@ -29,6 +29,12 @@ func startSpaceServerFixture(t *testing.T, home string, configure ...func(*Space
 	}
 	endpoint := "http://" + listener.Addr().String()
 	startup := freshAccessConfig(t, home)
+	source := teamDefaultsPath(startup.path)
+	if _, err := os.Stat(source); os.IsNotExist(err) {
+		if err := initializeTeamTemplates(resetSeedForTest(t), source); err != nil {
+			t.Fatal(err)
+		}
+	}
 	if err := prepareFirstAccess(startup); err != nil {
 		t.Fatal(err)
 	}
@@ -38,7 +44,7 @@ func startSpaceServerFixture(t *testing.T, home string, configure ...func(*Space
 		t.Fatal(err)
 	}
 	factories := personalDeployment(controlledActivationFactory(nil, nil)).factories
-	r, err := newSpaceRuntime(startup, serviceConfig{platformCatalog: defaultPlatformCatalog(), access: access, settings: newSystemSettings(startup), endpoint: endpoint, maxTurns: 7, modelProbe: successfulModelProbe}, factories)
+	r, err := newSpaceRuntime(startup, serviceConfig{teamsSource: source, platformCatalog: defaultPlatformCatalog(), access: access, settings: newSystemSettings(startup), endpoint: endpoint, maxTurns: 7, modelProbe: successfulModelProbe}, factories)
 	if err != nil {
 		t.Fatal(err)
 	}

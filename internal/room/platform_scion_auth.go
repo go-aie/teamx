@@ -17,6 +17,10 @@ import (
 
 type scionPAT string
 
+func (m *roomManager) scionEnabled() bool {
+	return m.config.hostTools.scionAvailable(m.platformCatalog)
+}
+
 func (scionPAT) MarshalJSON() ([]byte, error) { return json.Marshal("[REDACTED]") }
 func (scionPAT) Format(s fmt.State, _ rune)   { _, _ = io.WriteString(s, "[REDACTED]") }
 

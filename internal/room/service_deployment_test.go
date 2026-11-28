@@ -7,6 +7,7 @@ import (
 	"bytes"
 	"compress/gzip"
 	"context"
+	"encoding/json"
 	"errors"
 	"io"
 	"net/http"
@@ -109,7 +110,13 @@ func serviceTestRelease(t *testing.T, version string) string {
 	serviceTestFile(t, filepath.Join(root, "runtime/example/child.js"), "child", 0644)
 	serviceTestFile(t, filepath.Join(root, "runtime/example.js"), "sibling", 0644)
 	serviceTestFile(t, filepath.Join(root, "THIRD_PARTY_NOTICES/notice"), "notice", 0644)
-	serviceTestFile(t, filepath.Join(root, "share/teamx/teams/takeout-dinner/team.json"), `{}`, 0644)
+	team := testTeamDefinition(t)
+	team.Runtime = nil
+	raw, err := json.Marshal(team)
+	if err != nil {
+		t.Fatal(err)
+	}
+	serviceTestFile(t, filepath.Join(root, "share/teamx/teams/takeout-dinner/team.json"), string(raw), 0644)
 	if err := os.Symlink("node", filepath.Join(root, "runtime/node/bin/node-link")); err != nil {
 		t.Fatal(err)
 	}

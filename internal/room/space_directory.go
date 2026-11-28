@@ -86,16 +86,15 @@ func (s *spaceServer) serveDirectory(w http.ResponseWriter, r *http.Request) {
 				lifecycleBusy = entry.lifecycleBusy
 			}
 			legacy := record.ID == s.access.space.SpaceID
-			gitlab, lark, scion := false, false, false
+			gitlab, lark := false, false
 			if catalog := s.assembly.config.platformCatalog; catalog != nil {
 				_, gitlab = catalog.Types().LookupType("gitlab")
 				_, lark = catalog.Types().LookupType("lark")
-				_, scion = catalog.Types().LookupType("scion")
 			}
 			if s.access.users != nil {
 				gitlab = gitlab && s.gitlabApplications != nil
 			}
-			spaces = append(spaces, view{record, lifecycleBusy, lifecycleError, state, map[string]bool{"gitlab_application_management": s.access.users == nil, "gitlab": gitlab, "lark": (legacy || s.assembly.config.hostTools.restricted) && lark, "scion": legacy && scion, "computer": !s.assembly.config.hostTools.restricted, "managed_repositories": !s.assembly.config.hostTools.restricted}})
+			spaces = append(spaces, view{record, lifecycleBusy, lifecycleError, state, map[string]bool{"gitlab_application_management": s.access.users == nil, "gitlab": gitlab, "lark": (legacy || s.assembly.config.hostTools.restricted) && lark, "scion": s.assembly.config.hostTools.scionAvailable(s.assembly.config.platformCatalog), "computer": !s.assembly.config.hostTools.restricted, "managed_repositories": !s.assembly.config.hostTools.restricted}})
 			spaces[len(spaces)-1].Capabilities["space_reset"] = s.spaceResetAvailable()
 			// Personal deployments expose the existing Space management UI.
 			// Hosted deployments retain their APIs while keeping the UI hidden.
@@ -243,6 +242,11 @@ func (s *spaceServer) create(input spaceChangeInput, subjects ...userSubject) (S
 		s.mu.Unlock()
 		return SpaceRecord{}, err
 	}
+	// Reject missing or invalid deployment templates before reserving a new identity.
+	if err := requireTeamTemplates(s.assembly.config.teamsSource); err != nil {
+		s.mu.Unlock()
+		return SpaceRecord{}, err
+	}
 	s.claims.mu.Lock()
 	if err := s.claims.checkNewSpaceLocked(record); err != nil {
 		s.claims.mu.Unlock()
@@ -290,6 +294,9 @@ func (s *spaceServer) initializeSpace(record SpaceRecord) error {
 	}
 	data, err := toml.Marshal(values)
 	if err != nil {
+		return err
+	}
+	if err := initializeTeamTemplates(s.assembly.config.teamsSource, record.Roots.Teams); err != nil {
 		return err
 	}
 	return installMissing(path, data)

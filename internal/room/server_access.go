@@ -65,6 +65,7 @@ type serverAccess struct {
 	users                 *hostedUsers
 	login                 *externalLogin
 	privateLark           bool          // immutable Space assembly capability; no default-profile fallback
+	privateScion          bool          // immutable Space assembly capability; credentials stay under this Space's Data
 	revoked               atomic.Bool   // fences an archived runtime without mutating its immutable identity
 	control               *serverAccess // shared human authentication; execution credentials remain Space private
 	spaces                *spaceServer

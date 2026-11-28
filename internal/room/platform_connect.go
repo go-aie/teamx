@@ -422,7 +422,7 @@ func (m *roomManager) servePlatformConnect(w http.ResponseWriter, r *http.Reques
 		}
 		list := []connection{}
 		for _, c := range file.Platforms {
-			if c.Provider != "lark" && c.Provider != "gitlab" {
+			if c.Provider != "lark" && c.Provider != "gitlab" && c.Provider != "scion" {
 				continue
 			}
 			v := connection{ID: c.ID, Name: c.Name, Provider: c.Provider, Version: c.Version, Origin: c.URL, Username: c.Validation.Username}
@@ -440,7 +440,8 @@ func (m *roomManager) servePlatformConnect(w http.ResponseWriter, r *http.Reques
 			Applications  []gitlabConnectApplication `json:"gitlab_applications"`
 			GitLabManaged bool                       `json:"gitlab_managed"`
 			GitLabEnabled bool                       `json:"gitlab_enabled"`
-		}{list, m.gitlabConnectApplicationsLocked(file), m.gitlabApplications().Managed(), m.gitlabEnabled()})
+			ScionEnabled  bool                       `json:"scion_enabled"`
+		}{list, m.gitlabConnectApplicationsLocked(file), m.gitlabApplications().Managed(), m.gitlabEnabled(), m.scionEnabled()})
 		return
 	}
 	if (req.Intent != "" || req.PlatformID != "") && (action != "status" || req.SourceSeq == 0 || req.OperationID != "" || req.Intent != "authorize" || !tool.OpaqueID(req.PlatformID)) {

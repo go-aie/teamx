@@ -29,10 +29,16 @@ For account cards, use the following fields instead of group/project fields:
 | Verified GitLab account on one instance | `--provider gitlab --kind account --origin URL` (canonical instance URL) |
 
 Every start also needs `--operation-id PICK_ID --source-seq SEQ --notify inbox`.
-An account card selects verified existing accounts; it does not create an account,
-application or connection. Empty Scion candidates require Settings → Platforms → Scion login (PAT stays in
-protected settings); after login re-read connection/version and continue the original
-request. Other empty candidates use the complete platforms connection guide. An unambiguous explicit ID needs no redundant card,
+An account card submits verified accounts; it does not itself create an account or
+application. Empty Scion candidates show an inline password field and a link to
+view/create a PAT; unavailable saved connections provide explicit relogin targets.
+The human enters the PAT only in that control and confirms “登录并继续” once;
+the page logs in, saves and verifies the connection, then the original card submits the
+exact saved connection/version and returns its normal selection result to Inbox.
+PATs never enter message text, the selection draft or model context; the field is
+cleared on submit/page exit. An unsubmitted field does not complete the selection.
+After a browser reload, reuse the original card to select
+the saved verified account. Other empty candidates use the complete platforms connection guide. An unambiguous explicit ID needs no redundant card,
 unless the human requested the card itself.
 
 Let the component search, paginate and retain choices; `--query NAME` can seed a

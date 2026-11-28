@@ -17,7 +17,7 @@ import (
 type serviceConfig struct {
 	platformBinDir     string // Physical control-plane release; independent of saved Session execution.
 	platformTempRoot   string // Space-owned tool/CLI temporary material in restricted deployments.
-	resetTeamsSource   string // Trusted release templates; source deployments pass --reset-teams-source.
+	teamsSource        string // Deployment-level defaults/teams, shared by new and reset Spaces.
 	gitlabApplications gitlaboauth.Source
 	hostTools          hostToolPolicy
 	execution          agent.ExecutionFactory

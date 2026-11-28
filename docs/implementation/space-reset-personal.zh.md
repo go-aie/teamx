@@ -10,14 +10,16 @@
 - 重置候选文件仅含前后配置哈希和根身份，不复制旧配置或密钥。配置通过 `configDocument` 冲突检查、原子发布和持久确认；新实例重新映射业务运行参数。启动在模型迁移、业务扫描前识别未完成操作；stopping 仍检查持久 Agent 结清证据，cleaning／initializing 各自幂等续跑。初始化、备份和升级接点拒绝尚未完成的重置。
 - 浏览器先取得 Space 与 reset ID，再恢复缓存。标识变化时清除该空间草稿、偏好及业务引用，冻结旧页写入并取消显示任务；保留其他空间和登录。普通重启保留草稿。Data 内保留的部署／管理员文件不会被首次模型设置误判为旧业务数据；未保护的业务文件仍拒绝首用写入。模型设置提交必须携带 GET `/v1/setup` 返回的 `runtime_epoch`；普通业务和上传继续使用原有 epoch／Room 校验。
 
-发行目录使用 `share/teamx/teams`。源码部署需要明确提供当前版本的可信模板，并在重启时保留同一启动参数：
+初始团队模板统一位于**服务启动配置所在目录**的 `defaults/teams/`。个人安装版、便携包和 Linux 多用户版共用这一规则；空间私有的 `config.toml` 不改变来源。安装和启动从包内 `share/teamx/teams` 准备当前版本的 defaults，升级不覆盖已有空间的团队修改。
+
+源码开发在停服后按打包公共文件清单准备模板，再照常启动：
 
 ```sh
-teamx serve --home /absolute/private-home \
-  --reset-teams-source /absolute/current-version/teams
+make prepare-defaults CONFIG=.teamx/config.toml
+./bin/teamx serve --config .teamx/config.toml
 ```
 
-模板缺失、包含链接、不能通过托管模型模板检查时，在受理前报错。不要把空间里已修改的 Teams 目录作为种子。
+新建空间从该来源初始化自己的 Teams，重置清理后从同一来源恢复。普通重启不向已有空间重新复制模板。无需 `--reset-teams-source`，不再根据 DSH 或 Node 的路径猜测模板位置。模板缺失、包含链接、不能通过托管模型模板检查时，在受理前报错；defaults 不得落在任何重置清理目标中，也不会被空间重置删除。
 
 ## 验证
 

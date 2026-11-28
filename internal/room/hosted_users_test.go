@@ -136,6 +136,12 @@ func hostedFixtureWithAdmission(t *testing.T, home string, admission externalAut
 func hostedFixtureWithProvider(t *testing.T, home string, admission externalAuthConfig, provider authn.Provider) *spaceServer {
 	t.Helper()
 	c := freshAccessConfig(t, home)
+	source := teamDefaultsPath(c.path)
+	if _, err := os.Stat(source); os.IsNotExist(err) {
+		if err := initializeTeamTemplates(resetSeedForTest(t), source); err != nil {
+			t.Fatal(err)
+		}
+	}
 	c.Deployment.Mode = "multi-user"
 	c.Deployment.Authentication = admission
 	c.Server.PublicBaseURL = "https://teamx.example"
@@ -149,7 +155,7 @@ func hostedFixtureWithProvider(t *testing.T, home string, admission externalAuth
 	}
 	factories := personalDeployment(controlledActivationFactory(nil, nil)).factories
 	factories.authentication = func(externalAuthConfig) (authn.Provider, error) { return provider, nil }
-	config := serviceConfig{access: a, settings: newSystemSettings(c), platformCatalog: defaultPlatformCatalog(), maxTurns: 7, modelProbe: successfulModelProbe, endpoint: a.internal}
+	config := serviceConfig{teamsSource: source, access: a, settings: newSystemSettings(c), platformCatalog: defaultPlatformCatalog(), maxTurns: 7, modelProbe: successfulModelProbe, endpoint: a.internal}
 	s, err := newHostedSpaceServer(t.Context(), c, config, factories, io.Discard)
 	if err != nil {
 		t.Fatal(err)

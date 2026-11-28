@@ -63,8 +63,9 @@ func resetInputForTest(record SpaceRecord) spaceChangeInput {
 
 func TestSpaceResetReturnsToFirstUseAndPreservesOtherOwners(t *testing.T) {
 	home := t.TempDir()
-	seed := resetSeedForTest(t)
-	s, endpoint, stop := startArchivableSpaceServerFixture(t, home, func(r *SpaceRuntime) { r.config.resetTeamsSource = seed })
+	s, endpoint, stop := startArchivableSpaceServerFixture(t, home)
+	seed := s.assembly.config.teamsSource
+	seedBefore := templateContents(t, filepath.Join(seed, "seed", "team.json"))
 	defer stop()
 	old := waitSpaceState(t, s, s.initial.SpaceID, "ready")
 	oldService := waitSpaceAssistant(t, old)
@@ -137,6 +138,13 @@ func TestSpaceResetReturnsToFirstUseAndPreservesOtherOwners(t *testing.T) {
 		t.Fatal(done)
 	}
 	fresh := waitSpaceState(t, s, record.ID, "setup_required")
+	if got := templateContents(t, filepath.Join(seed, "seed", "team.json")); got != seedBefore {
+		t.Fatal("deployment defaults changed")
+	}
+	if got := templateContents(t, filepath.Join(old.roots.Teams, "seed", "team.json")); got != seedBefore {
+		t.Fatal("reset did not restore deployment defaults")
+	}
+
 	if fresh == old || fresh.RuntimeEpoch == old.RuntimeEpoch {
 		t.Fatal("old runtime reused")
 	}
@@ -298,6 +306,9 @@ func TestSpaceResetConfigRestoresBusinessDefaultsAndKeepsDeployment(t *testing.T
 
 func TestSpaceResetPreflightFailureLeavesRuntimeAndData(t *testing.T) {
 	s, endpoint, _ := startArchivableSpaceServerFixture(t, t.TempDir())
+	if err := os.RemoveAll(s.assembly.config.teamsSource); err != nil {
+		t.Fatal(err)
+	}
 	old := waitSpaceState(t, s, s.initial.SpaceID, "ready")
 	record := spaceRecordForTest(t, s, old.SpaceID)
 	if status := spaceHTTPRequest(t, endpoint, "/v1/spaces/"+record.ID+"/reset", resetInputForTest(record), nil); status != 400 {
@@ -316,7 +327,7 @@ func TestSpaceResetInterruptedPhasesResumeBeforeBusinessStartup(t *testing.T) {
 		t.Run(phase, func(t *testing.T) {
 			home := t.TempDir()
 			seed := resetSeedForTest(t)
-			s, _, stop := startArchivableSpaceServerFixture(t, home, func(r *SpaceRuntime) { r.config.resetTeamsSource = seed })
+			s, _, stop := startArchivableSpaceServerFixture(t, home, func(r *SpaceRuntime) { r.config.teamsSource = seed })
 			old := waitSpaceState(t, s, s.initial.SpaceID, "ready")
 			record := archiveSpaceForTest(t, s, old.SpaceID)
 			input := resetInputForTest(record)
@@ -368,7 +379,10 @@ func TestSpaceResetInterruptedPhasesResumeBeforeBusinessStartup(t *testing.T) {
 			}
 			stop()
 			selected := personalDeployment(controlledActivationFactory(nil, nil))
-			_, stopAgain := startResetServerForTest(t, []string{"--home", home, "--reset-teams-source", seed}, serverOptions{deployment: &selected, probe: successfulModelProbe})
+			if err := initializeTeamTemplates(seed, teamDefaultsPath(filepath.Join(home, "config.toml"))); err != nil {
+				t.Fatal(err)
+			}
+			_, stopAgain := startResetServerForTest(t, []string{"--home", home}, serverOptions{deployment: &selected, probe: successfulModelProbe})
 			defer stopAgain()
 			restarted := selected.spaces
 			done := waitResetForTest(t, restarted, record.ID)
@@ -386,7 +400,7 @@ func TestSpaceResetInterruptedPhasesResumeBeforeBusinessStartup(t *testing.T) {
 func TestSpaceResetStoppingRequiresDurableExecutionSettlementAndOriginalRequest(t *testing.T) {
 	home := t.TempDir()
 	seed := resetSeedForTest(t)
-	s, endpoint, _ := startArchivableSpaceServerFixture(t, home, func(r *SpaceRuntime) { r.config.resetTeamsSource = seed })
+	s, endpoint, _ := startArchivableSpaceServerFixture(t, home, func(r *SpaceRuntime) { r.config.teamsSource = seed })
 	old := waitSpaceState(t, s, s.initial.SpaceID, "ready")
 	record := archiveSpaceForTest(t, s, old.SpaceID)
 	generation := filepath.Join(old.roots.Data, "rooms", "orphan", "agents", "member", "session.json.dsh-old")
@@ -562,7 +576,7 @@ func startResetServerForTest(t *testing.T, args []string, options serverOptions)
 func TestSpaceResetUncertainAcceptanceStaysFencedUntilRestart(t *testing.T) {
 	home := t.TempDir()
 	seed := resetSeedForTest(t)
-	s, _, stop := startArchivableSpaceServerFixture(t, home, func(r *SpaceRuntime) { r.config.resetTeamsSource = seed })
+	s, _, stop := startArchivableSpaceServerFixture(t, home, func(r *SpaceRuntime) { r.config.teamsSource = seed })
 	old := waitSpaceState(t, s, s.initial.SpaceID, "ready")
 	path := filepath.Join(old.roots.Data, "must-not-delete")
 	mustWriteResetFile(t, path, "keep")
@@ -593,7 +607,7 @@ func TestSpaceResetUncertainAcceptanceStaysFencedUntilRestart(t *testing.T) {
 		t.Fatal(err)
 	}
 	stop()
-	restarted, _, _ := startSpaceServerFixture(t, home, func(r *SpaceRuntime) { r.config.resetTeamsSource = seed })
+	restarted, _, _ := startSpaceServerFixture(t, home, func(r *SpaceRuntime) { r.config.teamsSource = seed })
 	completed := waitResetForTest(t, restarted, record.ID)
 	if completed.ResetID() != input.RequestID {
 		t.Fatal("original request lost")
@@ -613,7 +627,7 @@ func setupEpochForTest(t *testing.T, client cliClient) string {
 
 func TestSpaceResetJoinsAdmittedSetupWriterBeforeDeleting(t *testing.T) {
 	seed := resetSeedForTest(t)
-	s, endpoint, _ := startArchivableSpaceServerFixture(t, t.TempDir(), func(r *SpaceRuntime) { r.config.resetTeamsSource = seed })
+	s, endpoint, _ := startArchivableSpaceServerFixture(t, t.TempDir(), func(r *SpaceRuntime) { r.config.teamsSource = seed })
 	entered, release := make(chan struct{}, 1), make(chan struct{})
 	released := false
 	defer func() {

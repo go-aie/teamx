@@ -20,7 +20,6 @@ func hostedResetFixture(t *testing.T) *spaceServer {
 	t.Helper()
 	s := hostedGatewayFixture(t, t.TempDir(), externalAuthConfig{Provider: "fixture", AllowedSubjects: []string{"alice", "bob"}}, false)
 	s.assembly.factories.hostedResetAccepted = true // private acceptance only
-	s.assembly.config.resetTeamsSource = resetSeedForTest(t)
 	return s
 }
 
@@ -51,6 +50,10 @@ func TestSpaceResetHostedOwnerIsolationAndDefaultModel(t *testing.T) {
 				}
 			}
 			r := waitSpaceState(t, s, id, "ready")
+			if got := templateContents(t, filepath.Join(r.roots.Teams, "seed", "team.json")); got != templateContents(t, filepath.Join(s.assembly.config.teamsSource, "seed", "team.json")) {
+				t.Fatal("hosted space did not inherit deployment templates")
+			}
+
 			waitSpaceAssistant(t, r)
 			if r.manager.config.platformTempRoot != filepath.Join(r.roots.Home, "platform-tmp") {
 				t.Fatal("missing private temporary root")
@@ -289,7 +292,7 @@ func TestSpaceResetHostedModelFailureStaysInSetup(t *testing.T) {
 func TestSpaceResetHostedMissingGatewayStaysInSetup(t *testing.T) {
 	s := hostedFixture(t, t.TempDir())
 	s.assembly.factories.hostedResetAccepted = true
-	s.assembly.config.resetTeamsSource = resetSeedForTest(t)
+	s.assembly.config.teamsSource = resetSeedForTest(t)
 	cookie, subject, id := hostedLogin(t, s, "alice")
 	old := waitSpaceState(t, s, id, "setup_required")
 	input := resetInputForTest(spaceRecordForTest(t, s, id))
@@ -399,7 +402,7 @@ func TestSpaceResetHostedInterruptedPhasesResume(t *testing.T) {
 			}
 			restored := hostedFixture(t, s.assembly.roots.Home)
 			restored.assembly.factories.hostedResetAccepted = true
-			restored.assembly.config.resetTeamsSource = s.assembly.config.resetTeamsSource
+			restored.assembly.config.teamsSource = s.assembly.config.teamsSource
 			listener, err := net.Listen("tcp4", "127.0.0.1:0")
 			if err != nil {
 				t.Fatal(err)

@@ -22,6 +22,15 @@ func bundleTestRoot(t *testing.T) string {
 	if err := os.WriteFile(filepath.Join(dir, "role.md"), []byte("original role"), 0600); err != nil {
 		t.Fatal(err)
 	}
+	team := testTeamDefinition(t)
+	team.Runtime = nil
+	raw, err := json.Marshal(team)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "share/teamx/teams/example/team.json"), raw, 0600); err != nil {
+		t.Fatal(err)
+	}
 	real, err := filepath.EvalSymlinks(root)
 	if err != nil {
 		t.Fatal(err)
@@ -310,4 +319,26 @@ func unsetBundleCredential(t *testing.T, name string) {
 			_ = os.Unsetenv(name)
 		}
 	})
+}
+
+func TestBundleRefreshesDefaultsWithoutRestoringRemovedUserTemplates(t *testing.T) {
+	root := bundleTestRoot(t)
+	home := t.TempDir()
+	if err := initializeBundle(root, home); err != nil {
+		t.Fatal(err)
+	}
+	role := filepath.Join(home, "teams/example/prompts/role.md")
+	if err := os.Remove(role); err != nil {
+		t.Fatal(err)
+	}
+	mustWriteResetFile(t, filepath.Join(root, "share/teamx/teams/example/prompts/role.md"), "next version")
+	if err := initializeBundle(root, home); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(role); !os.IsNotExist(err) {
+		t.Fatal("removed user template restored", err)
+	}
+	if got := templateContents(t, filepath.Join(teamDefaultsPath(filepath.Join(home, "config.toml")), "example/prompts/role.md")); got != "next version" {
+		t.Fatal(got)
+	}
 }

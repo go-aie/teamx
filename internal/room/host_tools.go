@@ -12,6 +12,14 @@ import (
 // admitted; repository execution and Scion require separate acceptance.
 type hostToolPolicy struct{ restricted bool }
 
+func (p hostToolPolicy) scionAvailable(catalog *platforms.Catalog) bool {
+	if p.restricted || catalog == nil {
+		return false
+	}
+	_, ok := catalog.Types().LookupType("scion")
+	return ok
+}
+
 func (p hostToolPolicy) validateCatalog(catalog *platforms.Catalog) error {
 	if !p.restricted {
 		return nil
@@ -86,7 +94,7 @@ func (p hostToolPolicy) checkHTTP(path string) error {
 const sharedToolsContract = "shared-api"
 
 func (a *serverAccess) unavailableSpacePlatform(provider string) bool {
-	return a.control != nil && a.space.SpaceID != a.control.space.SpaceID && (provider == "scion" || provider == "lark" && !a.privateLark)
+	return a.control != nil && a.space.SpaceID != a.control.space.SpaceID && (provider == "scion" && !a.privateScion || provider == "lark" && !a.privateLark)
 }
 
 const sharedGitLabSkill = `# GitLab

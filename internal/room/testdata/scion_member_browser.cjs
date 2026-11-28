@@ -15,7 +15,7 @@ const {chromium}=require('playwright'),assert=require('node:assert/strict'),path
    const card=page.locator(`#messages [data-interaction-id="${input.operation_id}"]`);
    await card.getByText('选择 Scion 账号',{exact:true}).waitFor();
    await card.locator(`.platform-selection-candidates input[value="${input.platform_id}"]`).waitFor();
-   assert.equal(await card.locator('.platform-selection-fields input').count(),0);
+   assert.equal(await card.locator('.platform-selection-fields input:visible').count(),0);
    await page.screenshot({path:path.join(out,'account-before.png'),fullPage:true});
    await page.setViewportSize({width:390,height:844});await page.screenshot({path:path.join(out,'account-mobile.png'),fullPage:true});await page.setViewportSize({width:1440,height:1050});
    await card.locator(`.platform-selection-candidates input[value="${input.platform_id}"]`).check();

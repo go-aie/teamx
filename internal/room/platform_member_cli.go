@@ -45,7 +45,8 @@ Scion complete mode uses --scion-repository NAME [--scion-object-type issue]
 [--scion-interval-seconds 30..3600]. Default start is now; Issue only.
 Existing Scion switches/interval edits retain repository, types and reception start;
 range replacement/reset and Review are unavailable. Missing verified connections
-use Settings → Platforms → Scion login, never PAT in chat.
+use the Scion account card's protected PAT field and login button; never send PAT
+in chat messages. Check scion_enabled from platforms list before offering login.
 Existing settings retain sources, filters and
 reception start. No source in saved settings requires an explicit source choice.
 Historical receipts describe that operation, not necessarily current settings.

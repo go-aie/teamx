@@ -32,10 +32,13 @@ func TestSpaceResetProcessRestart(t *testing.T) {
 	if err := os.MkdirAll(filepath.Join(home, "teams"), 0700); err != nil {
 		t.Fatal(err)
 	}
+	if err := initializeTeamTemplates(seed, teamDefaultsPath(filepath.Join(home, "config.toml"))); err != nil {
+		t.Fatal(err)
+	}
 	ctx, cancel := context.WithTimeout(t.Context(), time.Minute)
 	defer cancel()
 	start := func() (*exec.Cmd, <-chan error, cliClient) {
-		cmd := exec.CommandContext(ctx, binary, "serve", "--home", home, "--reset-teams-source", seed, "--listen", "127.0.0.1:0")
+		cmd := exec.CommandContext(ctx, binary, "serve", "--home", home, "--listen", "127.0.0.1:0")
 		stdout, err := cmd.StdoutPipe()
 		if err != nil {
 			t.Fatal(err)

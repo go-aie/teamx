@@ -3,7 +3,8 @@
 Scion uses this same switch for an existing Issue subscription, preserving its
 repository, start and progress. A first enable needs an explicit repository: read
 `platforms skill` for Scion initial setup and the complete flags. Missing verified
-accounts use Settings → Platforms → Scion login; never put PATs in chat. Review
+accounts use the Scion account card's login/relogin entry through the complete
+platforms skill; never put PATs in chat. Review
 and comment reception remain unsupported. Tools are a separate member operation;
 a single human request can authorize both, with separate receipts and outcomes.
 

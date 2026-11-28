@@ -1,10 +1,8 @@
 package room
 
 import (
-	"bytes"
 	"errors"
 	"fmt"
-	"io"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -45,9 +43,9 @@ func (s *spaceServer) resetStorage(record SpaceRecord) (*spaceResetStorage, erro
 	if record.ID == s.access.space.SpaceID {
 		path = s.assembly.config.settings.path
 	}
-	seed := s.assembly.config.resetTeamsSource
+	seed := s.assembly.config.teamsSource
 	if seed == "" {
-		return nil, &requestDiagnostic{cause: ErrRequest, Message: "缺少当前版本的初始模板。源码部署请指定 --reset-teams-source；发行版请核对 share/teamx/teams。"}
+		return nil, &requestDiagnostic{cause: ErrRequest, Message: "缺少初始团队模板，请准备部署配置目录下的 defaults/teams。"}
 	}
 	canonical, err := resolveFutureDirectory(seed)
 	if err != nil || canonical != filepath.Clean(seed) {
@@ -87,8 +85,8 @@ func (s *spaceServer) resetStorage(record SpaceRecord) (*spaceResetStorage, erro
 	if err := storage.validate(); err != nil {
 		return nil, err
 	}
-	if err := validateResetSeed(seed); err != nil {
-		return nil, resetConfigDiagnostic(err)
+	if err := requireTeamTemplates(seed); err != nil {
+		return nil, err
 	}
 	return storage, nil
 }
@@ -101,7 +99,7 @@ func (s *spaceServer) resetProtection(record SpaceRecord, path string) ([]string
 	var protected []string
 	// Both possible installation-id locations are protected. Some foreground
 	// configurations keep admin_token_file inside a business directory.
-	protected = []string{path, adminTokenPath(deployment)}
+	protected = []string{path, adminTokenPath(deployment), teamDefaultsPath(deployment.path)}
 	for _, root := range s.assembly.config.workspaceProtected {
 		if root != "" && !pathWithin(root, record.Roots.Home) {
 			protected = append(protected, root)
@@ -149,7 +147,7 @@ func (x *spaceResetStorage) validate() error {
 		if err != nil || real != root || !filepath.IsAbs(root) || root == string(filepath.Separator) {
 			return resetPathError()
 		}
-		if absoluteDirectoriesOverlap(root, x.seed) {
+		if absoluteDirectoriesOverlap(root, x.seed) && !(root == r.Home && x.seed == teamDefaultsPath(x.configPath)) {
 			return resetPathError()
 		}
 		info, err := os.Lstat(root)
@@ -180,6 +178,9 @@ func (x *spaceResetStorage) validate() error {
 		}
 	}
 	for _, target := range x.targets() {
+		if absoluteDirectoriesOverlap(target, x.seed) {
+			return resetPathError()
+		}
 		if err := x.inspect(target); err != nil {
 			return err
 		}
@@ -424,155 +425,6 @@ func (x *spaceResetStorage) removeEntry(parent *os.Root, name, path string, devi
 	return syncResetRoot(parent)
 }
 
-func validateResetSeed(source string) error {
-	count := 0
-	err := filepath.WalkDir(source, func(path string, d fs.DirEntry, err error) error {
-		if err != nil {
-			return err
-		}
-		if d.Type()&os.ModeSymlink != 0 || (!d.IsDir() && !d.Type().IsRegular()) {
-			return ErrInvalid
-		}
-		if d.Name() == "team.json" {
-			count++
-		}
-		return nil
-	})
-	if err != nil {
-		return err
-	}
-	if count == 0 {
-		return ErrInvalid
-	}
-	defaults := &teamRuntime{ManagedModels: true}
-	defaults.DSH.BinaryPath = "/reset-template-check"
-	teams, err := loadTeams(source, defaults)
-	if err != nil {
-		return err
-	}
-	if len(teams) == 0 {
-		return ErrInvalid
-	}
-	return nil
-}
-func copyResetTemplates(source, destination string, expected resetFileIdentity) error {
-	root, err := os.OpenRoot(destination)
-	if err != nil {
-		return err
-	}
-	defer root.Close()
-	info, err := root.Stat(".")
-	if err != nil {
-		return err
-	}
-	id, err := resetIdentity(info)
-	if err != nil || id != expected {
-		return resetPathError()
-	}
-	// Only this initializer creates these top-level temporary template files.
-	f, err := root.Open(".")
-	if err != nil {
-		return err
-	}
-	entries, err := f.ReadDir(-1)
-	err = errors.Join(err, f.Close())
-	if err != nil {
-		return err
-	}
-	for _, entry := range entries {
-		if strings.HasPrefix(entry.Name(), ".init-") {
-			if entry.IsDir() {
-				return ErrInvalid
-			}
-			if err := root.Remove(entry.Name()); err != nil {
-				return err
-			}
-		}
-	}
-	return filepath.WalkDir(source, func(path string, d fs.DirEntry, err error) error {
-		if err != nil {
-			return err
-		}
-		rel, err := filepath.Rel(source, path)
-		if err != nil {
-			return err
-		}
-		if d.Type()&os.ModeSymlink != 0 {
-			return ErrInvalid
-		}
-		if d.IsDir() {
-			return root.MkdirAll(rel, 0700)
-		}
-		if !d.Type().IsRegular() {
-			return ErrInvalid
-		}
-		data, err := os.ReadFile(path)
-		if err != nil {
-			return err
-		}
-		if info, err := root.Lstat(rel); err == nil {
-			if !info.Mode().IsRegular() {
-				return ErrInvalid
-			}
-			f, err := root.Open(rel)
-			if err != nil {
-				return err
-			}
-			opened, err := f.Stat()
-			if err != nil || !os.SameFile(info, opened) {
-				f.Close()
-				return ErrConflict
-			}
-			actual, err := io.ReadAll(io.LimitReader(f, int64(len(data))+1))
-			if err == nil {
-				err = f.Sync()
-			}
-			err = errors.Join(err, f.Close())
-			if err != nil {
-				return err
-			}
-			if !bytes.Equal(actual, data) {
-				return fmt.Errorf("reset template differs: %w", ErrConflict)
-			}
-		} else if errors.Is(err, os.ErrNotExist) {
-			id, err := newOpaqueID()
-			if err != nil {
-				return err
-			}
-			tmp := ".init-" + id
-			f, err := root.OpenFile(tmp, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0600)
-			if err != nil {
-				return err
-			}
-			defer root.Remove(tmp)
-			_, writeErr := f.Write(data)
-			if writeErr == nil {
-				writeErr = f.Sync()
-			}
-			writeErr = errors.Join(writeErr, f.Close())
-			if writeErr != nil {
-				return writeErr
-			}
-			if err := root.Link(tmp, rel); err != nil {
-				return err
-			}
-			if err := root.Remove(tmp); err != nil {
-				return err
-			}
-		} else {
-			return err
-		}
-		parent, err := root.Open(filepath.Dir(rel))
-		if err != nil {
-			return err
-		}
-		if err := errors.Join(parent.Sync(), parent.Close()); err != nil {
-			return err
-		}
-		return syncResetRoot(root)
-	})
-}
-
 func (x *spaceResetStorage) saveCandidate(doc *configDocument) error {
 	doc.mu.Lock()
 	defer doc.mu.Unlock()
@@ -651,7 +503,7 @@ func (x *spaceResetStorage) initialize(candidate spaceResetCandidate) error {
 	if err != nil {
 		return err
 	}
-	if err := copyResetTemplates(x.seed, x.record.Roots.Teams, x.roots[x.record.Roots.Teams]); err != nil {
+	if err := copyTeamTemplates(x.seed, x.record.Roots.Teams, x.roots[x.record.Roots.Teams], false); err != nil {
 		return err
 	}
 	// Initialization never cleans again. Only verify that business stores remain

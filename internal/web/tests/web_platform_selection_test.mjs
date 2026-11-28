@@ -2,6 +2,7 @@ import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {launch,settle} from './web_app_harness.mjs';
 import {fixture as baseFixture} from './web_member_platform_fixture.mjs';
+import {scionPATURL} from '../assets/features/scion-account-login.mjs';
 function fixture(kind='groups') {
  const api=baseFixture(),original=api.request.bind(api);
  api.op={operation_id:'b'.repeat(32),room_id:'R',room_instance:'instance-R',agent_id:'a',membership_id:'member-a',source_seq:1,source:{seq:1},input:kind==='account' ? {kind} : {kind,platform_id:'lark',platform_version:1,query:'产品'},draft:kind==='account' ? {name:'工作飞书'} : {},version:1,result_version:0,status:'waiting',target_available:true,interaction:{id:'b'.repeat(32),kind:'platform_'+kind},continuation:{mode:'inbox',state:'waiting_result'}};
@@ -23,7 +24,9 @@ function fixture(kind='groups') {
 }
 const card=ui=>ui.document.getElementById('message-1').querySelector('.message-interactions').children[0];
 const candidates=el=>el.children[4];
-const controls=el=>el.children[7].children;
+const controls=el=>{const buttons=[...el.children[7].children],login=buttons.find(b=>b.dataset.scionLogin);return [...buttons.filter(b=>b!==login),login];};
+const editor=ui=>card(ui).children[2].children[0];
+const password=ui=>editor(ui).children[2];
 const writes=api=>api.calls.filter(c=>/\/(update|submit|cancel)$/.test(c.path));
 
 test('Scion account choices carry exact connection versions and lead missing accounts to settings',async()=>{
@@ -31,7 +34,7 @@ test('Scion account choices carry exact connection versions and lead missing acc
  api.hook=path=>path.endsWith('/candidates') ? [{id:'account1',name:'工作',version:7,account:{id:{value:'alice'},instance:'https://one.example'}},{id:'account2',name:'工作',version:9,account:{id:{value:'alice'},instance:'https://two.example'}}] : undefined;
  const ui=await launch(api);await settle();const el=card(ui);
  assert.equal(el.children[0].textContent,'选择 Scion 账号');
- assert.equal(el.children[2].children.length,0);
+ assert.equal(el.children[2].hidden,true);
  assert.equal(candidates(el).children.length,2);
  assert.match(el.children[6].textContent,/完整设置登录/);
  assert.match(candidates(el).children[1].children[1].textContent,/https:\/\/two.example/);
@@ -39,6 +42,182 @@ test('Scion account choices carry exact connection versions and lead missing acc
  await controls(el)[0].emit('click');await settle();
  assert.equal(api.op.draft.platform_id,'account2');assert.equal(api.op.draft.platform_version,9);
  assert.equal(api.calls.some(c=>/member\/(tool|notifications)|connect\/start/.test(c.path)),false);
+});
+
+function scionLoginFixture({existing=false}={}) {
+ const api=fixture('account');api.op.input={provider:'scion',kind:'account',origin:'https://scion.example'};api.op.draft={};
+ api.platforms.splice(0);
+ const profile={version:1,brand:'scion',profile:'c'.repeat(32),executable:'/service/scn',cli_version:'0.1.13'};
+ if(existing)api.platforms.push({id:'old-account',version:7,name:'我的 Scion',provider:'scion',url:api.op.input.origin,cli_profile:{...profile,profile:'d'.repeat(32)},validation:{status:'failed',error_code:'credential_unavailable'},references:[]});
+ api.loginResult={status:'succeeded',username:'alice',cli_profile:profile};api.verifyFailed=false;
+ api.hook=(path,body)=>{
+  if(path.endsWith('/selection-interactions/candidates'))return api.platforms.filter(c=>c.provider==='scion' && c.validation.status==='valid' && c.url===api.op.input.origin).map(c=>({id:c.id,version:c.version,name:c.name,account:{id:{value:'alice'},instance:c.url}}));
+  if(path.endsWith('/scion/discover'))return {executable:profile.executable,profiles:[],unavailable:0};
+  if(path.endsWith('/scion/login'))return {session_id:body.session_id,status:'starting'};
+  if(path.endsWith('/scion/status'))return structuredClone(api.loginResult);
+  if(path.endsWith('/scion/cancel'))return {status:'cancelled'};
+  if(path==='/v1/platforms/save'){
+   const old=api.platforms.find(c=>c.id===body.id),saved={...old,...structuredClone(body),version:(old?.version || 0)+1,validation:{status:'unverified'},references:[]};
+   const index=api.platforms.findIndex(c=>c.id===saved.id);if(index<0)api.platforms.push(saved);else api.platforms[index]=saved;return structuredClone(saved);
+  }
+  if(path==='/v1/platforms/verify'){
+   const saved=api.platforms.find(c=>c.id===body.id);saved.version++;saved.validation=api.verifyFailed ? {status:'failed',error_code:'credential_rejected'} : {status:'valid',username:'alice'};return structuredClone(saved);
+  }
+ };
+ return api;
+}
+async function loginFromCard(ui) {
+ if(editor(ui).hidden)await controls(card(ui))[4].emit('click');
+ assert.equal(editor(ui).hidden,false);assert.equal(password(ui).type,'password');
+ assert.equal(editor(ui).children[1].children[1].href,'https://scion.example/profile?tab=tokens');
+ password(ui).value='private-test-pat';await controls(card(ui))[4].emit('click');await settle();
+ assert.equal(password(ui).value,'');assert.equal(ui.el('settings-dialog').open,false);
+}
+
+test('an empty Scion card offers login and cannot submit an empty selection',async()=>{
+ const api=scionLoginFixture(),ui=await launch(api);await settle();const el=card(ui);
+ assert.equal(candidates(el).children.length,0);assert.equal(el.children[1].textContent,'尚未登录 Scion');
+ assert.equal(controls(el)[0].disabled,true);assert.equal(controls(el)[4].textContent,'登录并继续');assert.equal(controls(el)[4].className,'primary');
+ assert.equal(el.children[3].hidden,true);assert.equal(controls(el)[0].hidden,true);assert.equal(controls(el)[1].hidden,true);
+ assert.deepEqual(el.children[7].children.filter(button=>!button.hidden).map(button=>button.textContent),['登录并继续','完整设置']);
+ await controls(el)[0].emit('click');await settle();assert.equal(writes(api).length,0);
+ await controls(el)[4].emit('click');await settle();
+ assert.equal(api.op.status,'waiting');assert.equal(writes(api).length,0);assert.equal(controls(el)[0].disabled,true);
+ const original=api.hook;api.hook=(path,body)=>{if(path.endsWith('/candidates'))throw Error('offline');return original(path,body);};
+ await controls(el)[3].emit('click');await settle();await ui.el('close-settings').emit('click');await settle();
+ assert.equal(el.children[3].hidden,false);assert.equal(el.children[3].textContent,'重试读取账号');assert.equal(controls(el)[0].hidden,true);
+ api.hook=original;await el.children[3].emit('click');await settle();assert.equal(el.children[3].hidden,true);
+});
+test('Scion login saves and verifies once, then submits the original card with the confirmed connection version',async()=>{
+ const api=scionLoginFixture(),ui=await launch(api);await settle();
+ await loginFromCard(ui);
+ assert.equal(api.op.status,'completed');assert.equal(api.op.draft.platform_id,api.platforms[0].id);assert.equal(api.op.draft.platform_version,api.platforms[0].version);
+ assert.equal(api.calls.filter(c=>c.path.endsWith('/scion/login')).length,1);
+ assert.equal(api.calls.filter(c=>c.path==='/v1/platforms/save').length,1);
+ assert.equal(writes(api).filter(c=>c.path.endsWith('/submit')).length,1);
+ assert.equal(ui.el('settings-dialog').open,false);assert.match(card(ui).children[8].textContent,/等待 Agent 接续/);
+ for(const call of writes(api))assert.equal(JSON.stringify(call).includes('private-test-pat'),false);
+ assert.equal(JSON.stringify([...ui.saved]).includes('private-test-pat'),false);assert.equal(JSON.stringify(api.messages).includes('private-test-pat'),false);
+ assert.equal(api.calls.some(c=>/member\/(tool|notifications)|connect\/start|onboarding\/prepare/.test(c.path)),false);
+});
+test('Scion relogin repairs the exact saved connection instead of creating a duplicate',async()=>{
+ const api=scionLoginFixture({existing:true}),ui=await launch(api);await settle();const el=card(ui);
+ assert.match(el.children[1].textContent,/登录已失效/);assert.equal(controls(el)[4].textContent,'登录并继续');
+ await loginFromCard(ui);
+ assert.equal(api.platforms.length,1);assert.equal(api.op.draft.platform_id,'old-account');assert.equal(api.op.draft.platform_version,9);
+ assert.equal(api.platforms[0].cli_profile.profile,'c'.repeat(32));
+});
+test('failed Scion login or verification never submits the selection',async()=>{
+ const api=scionLoginFixture(),ui=await launch(api);await settle();
+ api.loginResult={status:'failed',error_code:'login_failed'};await loginFromCard(ui);
+ assert.equal(api.platforms.length,0);assert.equal(writes(api).length,0);
+ api.loginResult={status:'succeeded',username:'alice',cli_profile:{version:1,brand:'scion',profile:'c'.repeat(32),executable:'/service/scn',cli_version:'0.1.13'}};
+ api.verifyFailed=true;await loginFromCard(ui);
+ assert.equal(api.op.status,'waiting');assert.equal(writes(api).length,0);assert.match(card(ui).children[9].textContent,/核验失败/);
+});
+test('a changed original selection after Scion login preserves the saved account without submitting over it',async()=>{
+ const api=scionLoginFixture(),original=api.hook;api.hook=(path,body)=>{if(path==='/v1/platforms/verify'){api.op.version++;api.op.draft={name:'其他位置的草稿'};}return original(path,body);};
+ const ui=await launch(api);await settle();await loginFromCard(ui);
+ assert.equal(api.platforms[0].validation.status,'valid');assert.equal(api.op.status,'waiting');assert.equal(writes(api).length,0);
+ assert.deepEqual(api.op.draft,{name:'其他位置的草稿'});assert.match(card(ui).children[9].textContent,/原选择或账号已变化/);
+});
+test('a lost Scion selection submission response recovers the original receipt without another login or submit',async()=>{
+ const api=scionLoginFixture(),original=api.hook;api.hook=(path,body)=>{
+  if(path.endsWith('/selection-interactions/submit')){api.op.status='completed';api.op.version++;api.op.result_version=1;throw Error('lost response');}
+  return original(path,body);
+ };
+ const ui=await launch(api);await settle();await loginFromCard(ui);
+ assert.equal(api.op.status,'completed');assert.equal(writes(api).filter(c=>c.path.endsWith('/submit')).length,1);assert.match(card(ui).children[1].textContent,/已保存/);
+ assert.equal(card(ui).children[9].textContent,'');
+ assert.equal(api.calls.filter(c=>c.path.endsWith('/scion/login')).length,1);
+});
+test('closing full settings refreshes Scion choices and stale selected versions require a new choice',async()=>{
+ const api=scionLoginFixture(),ui=await launch(api);await settle();const el=card(ui);
+ await controls(el)[3].emit('click');await settle();
+ api.platforms.push({id:'new-account',version:2,name:'Scion',provider:'scion',url:api.op.input.origin,validation:{status:'valid'}});
+ await ui.el('close-settings').emit('click');await settle();
+ assert.equal(candidates(el).children.length,1);
+ const choice=candidates(el).children[0].children[0];choice.checked=true;await choice.emit('change');assert.equal(controls(el)[0].disabled,false);
+ assert.equal(controls(el)[0].hidden,false);assert.equal(controls(el)[1].hidden,false);assert.equal(el.children[3].hidden,false);
+ api.platforms[0].version++;await el.children[3].emit('click');await settle();
+ assert.equal(controls(el)[0].disabled,true);assert.equal(api.op.status,'waiting');assert.equal(writes(api).length,0);
+});
+test('multiple unavailable Scion connections offer explicit relogin choices filtered by instance',async()=>{
+ const api=scionLoginFixture({existing:true});
+ api.platforms.push({...structuredClone(api.platforms[0]),id:'second-account',name:'另一个账号'});
+ api.platforms.push({...structuredClone(api.platforms[0]),id:'foreign-account',url:'https://other.example'});
+ const ui=await launch(api);await settle();const el=card(ui),choices=el.children[10];
+ assert.equal(choices.hidden,false);assert.equal(choices.children.length,2);assert.equal(controls(el)[4].textContent,'登录 Scion');
+ await choices.children[1].emit('click');await settle();
+ await loginFromCard(ui);
+ assert.equal(api.op.draft.platform_id,'second-account');assert.equal(api.platforms.length,3);
+ assert.equal(api.platforms.find(c=>c.id==='old-account').validation.status,'failed');
+});
+test('removing the original Scion member before login completion saves the account without submitting',async()=>{
+ const api=scionLoginFixture(),original=api.hook;api.hook=(path,body)=>{if(path==='/v1/platforms/verify')api.op.target_available=false;return original(path,body);};
+ const ui=await launch(api);await settle();await loginFromCard(ui);
+ assert.equal(api.platforms[0].validation.status,'valid');assert.equal(writes(api).length,0);assert.equal(api.op.status,'waiting');
+});
+test('pagehide clears an unsubmitted Scion PAT without writing or opening settings',async()=>{
+ const api=scionLoginFixture(),ui=await launch(api);await settle();password(ui).value='private-test-pat';
+ const input=password(ui);await ui.refresh();await settle();assert.equal(password(ui),input);assert.equal(input.value,'private-test-pat');
+ await ui.window.emit('pagehide');assert.equal(password(ui).value,'');assert.equal(writes(api).length,0);assert.equal(ui.el('settings-dialog').open,false);
+});
+
+test('Scion PAT links accept only HTTPS instance roots',()=>{
+ assert.equal(scionPATURL('https://scion.example/'),'https://scion.example/profile?tab=tokens');
+ for(const url of ['http://scion.example','https://user:secret@scion.example','https://scion.example/path','https://scion.example?x=1','https://scion.example#fragment','javascript:alert(1)','https://scion.example\\other'])assert.equal(scionPATURL(url),'');
+});
+test('Scion card login recovers a lost start response without resending the PAT',async()=>{
+ const api=scionLoginFixture(),original=api.hook;api.hook=(path,body)=>{if(path.endsWith('/scion/login'))throw Error('lost start');return original(path,body);};
+ const ui=await launch(api);await settle();await loginFromCard(ui);
+ assert.equal(api.op.status,'completed');assert.equal(api.calls.filter(c=>c.path.endsWith('/scion/login')).length,1);
+ assert.equal(api.calls.some(c=>c.path.endsWith('/scion/discover')),false);
+});
+for(const action of ['save','verify'])test(`Scion card recovers a lost ${action} receipt through reads without repeating the write`,async()=>{
+ const api=scionLoginFixture(),original=api.hook;let lost=false;
+ api.hook=(path,body)=>{const result=original(path,body);if(path===`/v1/platforms/${action}` && !lost){lost=true;throw Error('lost response');}return result;};
+ const ui=await launch(api);await settle();await loginFromCard(ui);
+ assert.equal(controls(card(ui))[4].textContent,'核对连接结果');
+ await controls(card(ui))[4].emit('click');await settle();
+ assert.equal(api.op.status,'completed');assert.equal(api.platforms.length,1);
+ for(const name of ['login','save','verify'])assert.equal(api.calls.filter(c=>c.path===(name==='login' ? '/v1/platforms/scion/login' : `/v1/platforms/${name}`)).length,1);
+ assert.equal(card(ui).children[9].textContent,'');
+});
+test('an unconfirmed Scion save is not replayed when the original connection is still absent',async()=>{
+ const api=scionLoginFixture(),original=api.hook;api.hook=(path,body)=>{if(path==='/v1/platforms/save')throw Error('offline');return original(path,body);};
+ const ui=await launch(api);await settle();await loginFromCard(ui);
+ await controls(card(ui))[4].emit('click');await settle();await controls(card(ui))[4].emit('click');await settle();
+ assert.equal(api.platforms.length,0);assert.equal(api.op.status,'waiting');assert.equal(api.calls.filter(c=>c.path==='/v1/platforms/save').length,1);
+ assert.equal(api.calls.filter(c=>c.path.endsWith('/scion/login')).length,1);assert.equal(writes(api).length,0);
+});
+test('Scion card login observes later authorization and blocks repeated clicks while login is pending',async()=>{
+ const api=scionLoginFixture(),ui=await launch(api);await settle();const success=api.loginResult;api.loginResult={status:'starting'};
+ password(ui).value='private-test-pat';await Promise.all([controls(card(ui))[4].emit('click'),controls(card(ui))[4].emit('click')]);await settle();
+ assert.equal(api.calls.filter(c=>c.path.endsWith('/scion/login')).length,1);assert.equal(api.platforms.length,0);
+ api.loginResult=success;ui.invalidate('authorization');await ui.clock.advance(1000);
+ assert.equal(api.op.status,'completed');assert.equal(api.platforms.length,1);
+});
+test('cancelling the original selection during Scion login stops subsequent automatic saves',async()=>{
+ const api=scionLoginFixture(),ui=await launch(api);await settle();const success=api.loginResult;api.loginResult={status:'starting'};
+ await loginFromCard(ui);api.op.status='cancelled';api.op.version++;api.op.result_version=1;
+ await ui.refresh();await settle();api.loginResult=success;ui.invalidate('authorization');await ui.clock.advance(1000);
+ assert.equal(api.platforms.length,0);assert.equal(api.calls.some(c=>c.path==='/v1/platforms/save'),false);assert.equal(writes(api).length,0);
+});
+test('Scion relogin acknowledges the displayed shared references and keeps the original connection name',async()=>{
+ const api=scionLoginFixture({existing:true});api.platforms[0].references=[{room_id:'R',room_instance:'instance-R',name:'本会话'},{room_id:'other',room_instance:'instance-other',name:'另一会话'}];
+ const ui=await launch(api);await settle();assert.match(editor(ui).children[3].textContent,/2 个会话/);
+ await loginFromCard(ui);const save=api.calls.find(c=>c.path==='/v1/platforms/save').body;
+ assert.deepEqual(save.referenced_rooms,[{room_id:'R',room_instance:'instance-R'},{room_id:'other',room_instance:'instance-other'}]);
+ assert.equal(save.id,'old-account');assert.equal(save.name,'我的 Scion');assert.equal(save.version,7);
+});
+test('a Scion card without a known instance asks only for its address and PAT',async()=>{
+ const api=scionLoginFixture();api.op.input.origin='';const ui=await launch(api);await settle();
+ const origin=editor(ui).children[0].children[1],link=editor(ui).children[1].children[1];
+ assert.equal(editor(ui).children[0].hidden,false);assert.equal(link.hidden,true);
+ origin.value='https://scion.example';await origin.emit('input');assert.equal(link.hidden,false);
+ password(ui).value='private-test-pat';await controls(card(ui))[4].emit('click');await settle();
+ assert.equal(api.platforms.length,1);assert.equal(api.platforms[0].url,'https://scion.example');assert.equal(ui.el('settings-dialog').open,false);
 });
 
 test('a page-only selection result does not promise automatic continuation',async()=>{

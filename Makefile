@@ -2,7 +2,7 @@ TEST_PACKAGES ?= ./...
 TEST_RUN ?= .
 TEST_FLAGS ?=
 
-.PHONY: test test-integration test-race test-e2e-check package-offline
+.PHONY: test test-integration test-race test-e2e-check package-offline prepare-defaults
 
 # Local feedback: use TEST_PACKAGES / TEST_RUN to select the affected scope.
 # Stage regression: test-integration already includes core; do not run both in sequence.
@@ -28,3 +28,8 @@ package-offline: export TEAMX_OFFLINE_ARCHIVE = $(ARCHIVE)
 package-offline: export TEAMX_OFFLINE_OUTPUT = $(OUTPUT)
 package-offline:
 	node scripts/package-offline.mjs
+
+# Stop the development service before refreshing its versioned initial templates.
+prepare-defaults: export TEAMX_DEFAULTS_CONFIG = $(CONFIG)
+prepare-defaults:
+	node scripts/prepare-team-defaults.mjs "$${TEAMX_DEFAULTS_CONFIG:-.teamx/config.toml}"

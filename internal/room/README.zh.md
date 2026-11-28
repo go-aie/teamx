@@ -11,6 +11,7 @@
 ```sh
 go build -o bin/teamx ./cmd/teamx
 cp .teamx/config.example.toml .teamx/config.toml
+make prepare-defaults CONFIG=.teamx/config.toml
 ```
 
 已有配置时跳过复制，避免覆盖。将 `.teamx/config.toml` 的 `runtime.dsh.binary_path` 填为本机 DSH 的绝对路径（可用 `command -v dsh` 查找），然后运行：
@@ -36,6 +37,8 @@ macOS 手工解压后通过 `start` 调试时，脚本会检查下载隔离标�
 ## 服务配置
 
 首次运行直接使用 `teamx serve --home .teamx`，会准备固定操作者；全新安装默认仅本机访问，无需登录。`--home` 缺少模型或模型无效时，可在浏览器设置并启动；`--config` 保留已配置开发环境的直接启动方式。不指定 `--config` 时只读取 `~/.teamx/config.toml`，不自动查找当前目录或项目祖先目录。显式指定的文件缺失或 TOML 结构错误时会阻止启动；两份配置不会合并。
+
+新建和重置空间统一读取服务启动配置目录下的 `defaults/teams/`。安装版和便携包自动准备；源码开发在首次启动或更新公共模板后，停服执行 `make prepare-defaults CONFIG=.teamx/config.toml`（使用其他配置时替换路径）。该命令按打包公共清单生成初始模板，不覆盖现有空间的 `teams/`，也不复制运行凭据。
 
 数据目录与团队目录通过 `server.data_dir`、`server.teams_dir` 设置，默认是配置文件旁的 `data/`、`teams/`。项目配置对应 `.teamx/data/` 和 `.teamx/teams/`，用户配置对应 `~/.teamx/data/` 和 `~/.teamx/teams/`。已有实例缺少管理凭据时拒绝启动，需在部署机用 `access init` 显式修复。
 
@@ -66,6 +69,7 @@ macOS 手工解压后通过 `start` 调试时，脚本会检查下载隔离标�
 mkdir -p "$HOME/.teamx"
 cp .teamx/config.example.toml "$HOME/.teamx/config.toml"
 cp -R .teamx/teams "$HOME/.teamx/"
+make prepare-defaults CONFIG="$HOME/.teamx/config.toml"
 ```
 
 填写 `~/.teamx/config.toml` 中的 DSH 路径，再运行 `teamx serve --home "$HOME/.teamx"`，在网页配置模型。

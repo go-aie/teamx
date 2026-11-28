@@ -11,7 +11,7 @@ first. This complete guide retains connection, customization and tool repair.
 Use current `platforms --help` and subcommand help for field contracts.
 Every `teamx` example stands for `"$TEAMX_CLI"`; replace uppercase placeholders with
 verified values. Connect/selection commands already return JSON; omit `--json`.
-Scion first login uses Settings → Platforms → Scion; existing verified Scion accounts
+Scion first login uses the account card's protected PAT field or Settings → Platforms → Scion; existing verified Scion accounts
 use the member/selection commands below. Other unsupported settings use Settings → Platforms. For interface
 or execution questions, read `"$TEAMX_CLI" skill usage`.
 
@@ -244,18 +244,33 @@ an explicit repository. If it is missing, finish the authorized tool setup and
 show its repository selection card; never infer it from Workspace or claim notification success.
 An existing subscription can be restored with the common total switch.
 
-Use `platforms list` to find the exact verified existing Scion connection. If several
-accounts are plausible, use `selection start --provider scion --kind account
+Use `platforms list` to find the exact verified existing Scion connection.
+The result's `scion_enabled` is the current Space/deployment capability. When false,
+report that Scion is unavailable here; do not offer PAT login, open a card or promise
+that retrying/waiting will restore it. `space_capability_unavailable` means the same
+admission restriction, not an expired account. Personal Spaces keep separate Scion
+connections and credentials; never reuse another Space's connection ID or profile.
+
+Use the listed verified Scion accounts. If several
+accounts are plausible or no verified account is available, use `selection start --provider scion --kind account
 [--origin URL] --operation-id PICK_ID --source-seq SEQ --notify inbox`, following
 selection recovery below. Selection saves no tools or notifications. Missing or
-invalid accounts require Settings → Platforms → Scion login. An empty verified
-account list is sufficient evidence: explain the login entry and end this step; do
+invalid accounts use the account card's protected PAT field and “登录并继续” button.
+The card links to the instance's PAT management page and asks for the instance only
+when it is unknown. An empty verified account list is sufficient evidence to show this
+card: point to its PAT login field and end this step; do
 not try placeholder IDs, inspect local files/environment or probe member writes.
 PATs never belong in
-chat, model arguments or member JSON. Do not use `platforms connect start` for Scion;
-it does not support Scion login. After the human logs in, re-read the actual
-connection/version and continue only the original still-current request. No background
-login continuation is installed.
+chat messages, model arguments or member JSON; the password control submits directly
+to the existing human-only login API. Do not use `platforms connect start` for Scion;
+it does not support Scion login. The human confirms “登录并继续” once; the page
+logs in, saves and verifies the connection, then the original card submits that exact
+connection/version and delivers its normal selection result via Inbox. Recover and
+verify that original result before continuing only the still-current request.
+Unsubmitted PAT text is cleared on page exit and never saved in the conversation.
+If the browser reloads
+before submission, reuse the original card to select the saved account; do not
+create a replacement or repeat a login whose result is unknown.
 
 Read `member get --platform-id ID`: `scion_notifications`, `subscription_id`,
 `notification_version`, `baseline`, `binding_revision` and `tool_enabled` describe

@@ -89,6 +89,7 @@ func newSpaceRuntime(startup startupConfig, config serviceConfig, factories spac
 		return nil, ErrIdentity
 	}
 	access.privateLark = config.hostTools.restricted
+	access.privateScion = config.hostTools.scionAvailable(config.platformCatalog)
 	// Preserve the original config document for atomic edits without passing
 	// deployment policy as mutable Space settings. Existing files stay in place.
 	if access.control != nil && access.space.SpaceID != access.control.space.SpaceID {

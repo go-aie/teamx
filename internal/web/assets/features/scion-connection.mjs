@@ -1,4 +1,5 @@
 import { randomUUID } from "../random-id.mjs";
+import { scionPATURL } from "./scion-account-login.mjs";
 // Scion account discovery, PAT login and logout lifecycle.
 export function createScionConnection({ env, runtime, connectionsUI, settingsUI, onboardingUI }) {
   const { Option, request } = env;
@@ -6,14 +7,7 @@ export function createScionConnection({ env, runtime, connectionsUI, settingsUI,
 
   function renderScionPATLink() {
     const link = $("connection-scion-pat-link"), origin = $("connection-url").value.trim();
-    let href = "";
-    try {
-      const url = new URL(origin);
-      if (connectionsUI.connectionIsScion() && url.protocol === "https:" && !url.username && !url.password &&
-          url.pathname === "/" && !origin.includes("?") && !origin.includes("#") && !/[\s\\]/.test(origin)) {
-        href = new URL("/profile?tab=tokens", url.origin).href;
-      }
-    } catch { /* Wait for a valid instance address. */ }
+    const href=connectionsUI.connectionIsScion() ? scionPATURL(origin) : "";
     link.href = href;
     link.hidden = !href;
   }

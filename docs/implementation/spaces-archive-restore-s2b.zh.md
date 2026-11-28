@@ -1,6 +1,6 @@
 # 空间归档、结清与恢复（S2b）
 
-日期：2026-11-24。状态：S2b 已实施，完成下列范围验收；结合 [S2a](spaces-create-switch-s2a.zh.md)，个人多空间 S2 完成。范围依据[主方案第 11.4 节](../WORKSPACE-AND-MULTI-USER-ANALYSIS-PLAN.zh.md#114-第二批实施单独立可用的双空间)。平台支持矩阵沿用 S2a，新空间的飞书／Scion 限制继续生效；不开放多账号、强执行隔离、永久删除、跨空间移动或 Gordis P3。
+日期：2026-11-24。状态：S2b 已实施，完成下列范围验收；结合 [S2a](spaces-create-switch-s2a.zh.md)，个人多空间 S2 完成。范围依据[主方案第 11.4 节](../WORKSPACE-AND-MULTI-USER-ANALYSIS-PLAN.zh.md#114-第二批实施单独立可用的双空间)。当时的平台支持矩阵沿用 S2a，新空间的飞书／Scion 尚未开放；2026-11-28 已补齐个人版新空间 Scion 接入，当前范围见 [Scion 对话配置](scion-conversation-configuration.zh.md#个人版新空间接入)。不开放多账号、强执行隔离、永久删除、跨空间移动或 Gordis P3。
 
 ## 使用
 

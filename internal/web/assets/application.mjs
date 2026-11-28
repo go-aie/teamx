@@ -734,13 +734,17 @@ export async function createApp(overrides = {}) {
     platformRead.invalidate();
     await Promise.all([workspaceUI.loadWorkspacePlatforms({ background: true, ...options }),
       $("settings-dialog").open && settingsUI.settingsTab === "platforms" ? connectionsUI.loadPlatforms(options) : undefined]);
-    if (options.current()) notificationsUI.renderNotificationPlatforms();
+    if (options.current()) {
+      notificationsUI.renderNotificationPlatforms();
+      await interactionsUI.refreshScionAccountSelections();
+    }
   }, () => active() && !!state.catalog, globalScope);
   register("models", settingsUI.readModels, () => active() && settingsUI.modelsNeedRead(), globalScope);
   for (const [provider, feature, field] of [["gitlab", gitlabUI, "gitlabAuth"], ["lark", larkUI, "auth"], ["scion", scionUI, "scionAuth"]]) {
     register(`authorization:${provider}`, feature.readAuthorization, () => active() && !!connectionsUI.platforms[field],
       () => [...globalScope(), connectionsUI.platforms[field]?.session_id, connectionsUI.platforms.formVersion]);
   }
+  register("authorization:scion-card",interactionsUI.readScionCardLogins,()=>active() && chatReadable() && interactionsUI.scionCardLoginPending(),roomScope);
   function refreshDetails() {
     for (const topic of ["activity", "inbox", "policy"])
       if (resources[topic]) void resources[topic].refresh().catch(() => {});
@@ -749,7 +753,7 @@ export async function createApp(overrides = {}) {
   function refreshConfiguration({ reusePlatforms = false, reuseNotifications = false } = {}) {
     return Promise.allSettled([reusePlatforms ? workspaceUI.loadWorkspacePlatforms({ background: true, cached: true }) : resources.platforms.refresh(),
       reuseNotifications ? undefined : resources.notifications.refresh(), resources.tools.refresh(),
-      resources.models.refresh(), ...["gitlab", "lark", "scion"].map(provider => resources[`authorization:${provider}`].refresh())]);
+      resources.models.refresh(), ...["gitlab", "lark", "scion","scion-card"].map(provider => resources[`authorization:${provider}`].refresh())]);
   }
   const streamIdentity = () => ({ installation_id: state.installationID,
     service_epoch: state.managed ? state.catalog?.service_epoch : serverIdentity?.[1],
@@ -775,7 +779,7 @@ export async function createApp(overrides = {}) {
     }
     delete confirmedGlobalVersions[data.topic];
     if (data.topic === "notifications" && data.kind !== "diagnostics") notificationSummaryPending = true;
-    if (data.topic === "authorization") for (const provider of ["gitlab", "lark", "scion"]) resources[`authorization:${provider}`].invalidate();
+    if (data.topic === "authorization") for (const provider of ["gitlab", "lark", "scion","scion-card"]) resources[`authorization:${provider}`].invalidate();
     else resources[data.topic]?.invalidate();
   }
   function wakeDetails() { for (const resource of Object.values(resources)) resource.wake(); }

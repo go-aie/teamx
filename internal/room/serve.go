@@ -86,7 +86,6 @@ func runServerOnce(ctx context.Context, args []string, stdout, stderr io.Writer,
 	inboxDays := flags.Int("inbox-expire-after-days", 3, "Inbox expiration in days (positive; original event time)")
 	inboxSkip := flags.Bool("inbox-skip-expired", true, "skip expired unconsumed Inbox input")
 	dshConfig := flags.String("dsh-config", "", "JSON file of named DSH member profiles")
-	resetTeamsSource := flags.String("reset-teams-source", "", "trusted current-version teams seed for source deployments")
 	if err := flags.Parse(args); err != nil {
 		return err
 	}
@@ -132,6 +131,11 @@ func runServerOnce(ctx context.Context, args []string, stdout, stderr io.Writer,
 			pending, err := homeHasPendingReset(layout.Home)
 			if err != nil {
 				return err
+			}
+			if pending {
+				if err := refreshTeamDefaults(filepath.Join(layout.Release, "share", "teamx", "teams"), layout.Home); err != nil {
+					return err
+				}
 			}
 			if !pending {
 				if err := initializeBundleRuntime(layout.Release, layout.Home, filepath.Join(layout.Root, "current", "bin", "dsh")); err != nil {
@@ -345,16 +349,7 @@ func runServerOnce(ctx context.Context, args []string, stdout, stderr io.Writer,
 	if layout.Release != "" {
 		config.platformBinDir = filepath.Join(layout.Release, "bin")
 	}
-	if *resetTeamsSource != "" {
-		config.resetTeamsSource, err = resolveFutureDirectory(*resetTeamsSource)
-		if err != nil {
-			return err
-		}
-	} else if layout.Release != "" {
-		config.resetTeamsSource = filepath.Join(layout.Release, "share", "teamx", "teams")
-	} else if startup.Runtime != nil && startup.Runtime.DSH.BinaryPath != "" {
-		config.resetTeamsSource = filepath.Join(filepath.Dir(filepath.Dir(startup.Runtime.DSH.BinaryPath)), "share", "teamx", "teams")
-	}
+	config.teamsSource = teamDefaultsPath(startup.path)
 	if access.users != nil {
 		if err := config.hostTools.validateCatalog(config.platformCatalog); err != nil {
 			return err

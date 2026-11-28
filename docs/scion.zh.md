@@ -10,6 +10,8 @@
 
 TeamX 支持原生 `scn` 或配套 `teamx-scion`，无需重新编译 TeamX。已安装个人服务由服务选择程序：默认使用本 release 的封装及同目录 `scn`，管理员可在服务启动环境中设置 `TEAMX_SCION_BIN`、`TEAMX_SCN_BIN` 的规范化绝对路径，修改后重启。完整安装缺失依赖不会回退到 PATH。独立个人／源码运行继续保留每个 profile 的外部程序选择。Linux 多用户仍不开放 Scion。薄封装构建及服务环境配置见[工具手册](../tools/scion/README.zh.md)；从源码启动见[开发运行参考](../internal/room/README.zh.md#从源码运行)。
 
+个人版的默认空间和新建空间均可接入 Scion。连接、登录凭据和操作回执由当前空间独立保存；新空间不会继承默认空间的账号，退出一个空间的登录不会退出其他空间。同一服务中的空间复用服务选择的 CLI 程序，各自使用私有凭据文件。
+
 ### 2. 在页面配置 Scion 连接
 
 从「成员详情 → 平台 → 添加平台 → 连接新平台」选择 **Scion**，也可先在全局「设置 → 平台」连接账号：
@@ -58,7 +60,11 @@ TeamX 支持原生 `scn` 或配套 `teamx-scion`，无需重新编译 TeamX。�
 
 也可以直接在对话中说：“给你开启 Scion 工具，并关注 OpenCSG/scion 从今天开始的新 Issue”。Agent 复用已有已验证连接；有多个候选时显示账号选择卡片。首次通知必须明确仓库，不会自动取 Workspace；以后可一句话暂停／恢复工具和通知，或单独修改其中一项。工具和通知各自保存并反馈结果。
 
-首次登录仍在「设置 → 平台 → Scion」完成，PAT 不进入聊天。仓库、类型和开始时间首次保存后固定，只支持修改通知开关和轮询间隔；Review 和评论动态尚未开放。实现与验收记录见 [Issue 通知首批交付](implementation/scion-issue-notifications.zh.md) 和 [Scion 对话配置](implementation/scion-conversation-configuration.zh.md)。
+没有可用账号时，可直接在消息卡片的密码框填写 PAT，也可点击「查看／创建 PAT」打开当前实例的令牌管理页。点击一次「登录并继续」后，页面自动登录、保存并核验连接，再把账号选择返回原会话，由 Agent 继续原请求；无需打开平台设置或另点保存。重新登录会更新所选的原连接；只有实例不明确时才需补填地址，多个旧连接需要明确选择。
+
+PAT 仅由密码框直接提交登录接口，不写入聊天记录、选择草稿或模型上下文，提交及离开页面时清空。登录／核验失败不会提交选择，登录或保存应答丢失时只核对原结果，不重复发起。也可通过「完整设置」管理连接；浏览器中途刷新时，可在原卡片刷新账号并提交已经保存的连接。
+
+仓库、类型和开始时间首次保存后固定，只支持修改通知开关和轮询间隔；Review 和评论动态尚未开放。实现与验收记录见 [Issue 通知首批交付](implementation/scion-issue-notifications.zh.md) 和 [Scion 对话配置](implementation/scion-conversation-configuration.zh.md)。
 
 ## 日常使用
 

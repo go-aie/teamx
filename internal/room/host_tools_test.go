@@ -69,6 +69,29 @@ func TestSharedHostToolsKeepPlatformImplementationsAndDenyRepositories(t *testin
 	}
 }
 
+func TestScionSpaceAdmissionFollowsDeploymentAndCatalog(t *testing.T) {
+	root := &serverAccess{space: SpaceContext{SpaceID: strings.Repeat("a", 32)}}
+	for _, tc := range []struct {
+		name                       string
+		restricted, declared, want bool
+	}{{"personal", false, true, true}, {"undeclared", false, false, false}, {"shared", true, true, false}} {
+		t.Run(tc.name, func(t *testing.T) {
+			var catalog = defaultPlatformCatalog()
+			if !tc.declared {
+				catalog = nil
+			}
+			policy := hostToolPolicy{restricted: tc.restricted}
+			child := &serverAccess{control: root, space: SpaceContext{SpaceID: strings.Repeat("b", 32)}, privateScion: policy.scionAvailable(catalog)}
+			if got := !child.unavailableSpacePlatform("scion"); got != tc.want {
+				t.Fatal("incorrect Space admission", got)
+			}
+			if !child.unavailableSpacePlatform("lark") {
+				t.Fatal("Scion admission opened unrelated platform")
+			}
+		})
+	}
+}
+
 func TestSharedWorkspaceKeepsManagedFilesWithoutHomeFallback(t *testing.T) {
 	m := activationTestManager(t)
 	room := managerCreate(t, m, "shared-files")

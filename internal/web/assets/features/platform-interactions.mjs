@@ -1,5 +1,6 @@
 import { pageSpaceID } from "../space-context.mjs";
 import {imageUploadStatus} from "./lark-capabilities.mjs";
+import {createScionAccountLogin} from "./scion-account-login.mjs";
 // Durable connection and selection cards rendered inside conversations.
 export function createPlatformInteractions({ env, runtime, conversationUI, settingsUI, connectionsUI, gitlabUI, roomsUI }) {
   const { document, window, request } = env;
@@ -8,6 +9,9 @@ export function createPlatformInteractions({ env, runtime, conversationUI, setti
   // Connection interactions are projections of durable operations, never generated
   // HTML or temporary OAuth URLs saved in chat history. Each view owns stable nodes.
   const platformInteractionState = {views:new Map(), operations:[], busy:new Set(), errors:new Map(), loading:false, generation:0};
+  const scionLogin=createScionAccountLogin({env,runtime,connectionsUI,
+    current:generation=>generation===undefined ? platformInteractionState.generation : generation===platformInteractionState.generation,
+    onSaved:continueScionAccountSelection,renderCard:card=>updateSelectionInteraction(card,card.op)});
 
   const returnKey="teamx.platform-return";
   const identityFields=["room_id","room_instance","agent_id","membership_id","operation_id","source_seq"];
@@ -58,6 +62,7 @@ export function createPlatformInteractions({ env, runtime, conversationUI, setti
   }
 
   function resetPlatformInteractions() {
+    scionLogin.reset();
     const s=platformInteractionState;s.generation++;s.loading=false;s.operations=[];s.views.clear();s.busy.clear();s.errors.clear();
     notice("platform-interaction-error", "");conversationUI.resetMessageNodes();
   }
@@ -208,7 +213,7 @@ export function createPlatformInteractions({ env, runtime, conversationUI, setti
         updatePlatformInteraction(card,op);if(card.el.parentElement!==host)host.append(card.el);visible.add(op.operation_id);
       }
     }
-    for(const [id,card] of s.views) if(!visible.has(id)){card.el.remove();s.views.delete(id);}
+    for(const [id,card] of s.views) if(!visible.has(id)){scionLogin.detach(card);card.el.remove();s.views.delete(id);}
   }
 
   async function refreshPlatformInteractions({ current = () => true, onFailure = () => {} } = {}) {
@@ -246,6 +251,31 @@ export function createPlatformInteractions({ env, runtime, conversationUI, setti
 
   // Fixed account/group forms share the durable selection draft. Local dirty
   // input retains its base version until submission or an explicit conflict reload.
+  function scionAccountSelection(op) { return op.input?.provider==="scion" && op.input.kind==="account"; }
+
+  async function continueScionAccountSelection(card,saved,flow) {
+    const s=platformInteractionState,generation=s.generation,op=card.op,id=op.operation_id;
+    const version=flow.selectionVersion,draft=flow.selectionDraft;
+    const identity={...state.info,caller:{kind:"human",id:state.operator}};
+    try {
+      const result=await request("/v1/platforms/interactions/list",identity,undefined,5000);
+      const current=result.selections?.find(selection=>selection.operation_id===id);
+      if(generation!==s.generation)return;
+      if(!current || current.status!=="waiting" || !current.target_available || current.version!==version || card.editVersion!==version || JSON.stringify(card.draft)!==draft)throw Object.assign(Error("changed selection"),{code:"conflict"});
+      await card.candidateRead;await loadSelectionCandidates(card,false);
+      if(generation!==s.generation)return;
+      if(card.editVersion!==version || JSON.stringify(card.draft)!==draft || card.op.status!=="waiting" || !card.op.target_available || card.rows.get(saved.id)?.version!==saved.version)throw Object.assign(Error("changed selection"),{code:"conflict"});
+      card.draft={platform_id:saved.id,platform_version:saved.version,name:saved.name};card.dirty=true;
+      await submitSelectionInteraction(card);
+    } catch(error) {
+      if(generation===s.generation)s.errors.set(id,error.code==="conflict" ? "连接已保存，但原选择或账号已变化；请刷新账号并核对后提交。" : "连接已保存，原选择暂未确认；请核对卡片后继续。");
+    }
+  }
+
+  async function refreshScionAccountSelections() {
+    await Promise.all([...platformInteractionState.views.values()].filter(card=>scionAccountSelection(card.op) && card.op.status==="waiting" && card.op.target_available).map(card=>loadSelectionCandidates(card,false)));
+  }
+
   function selectionInteractionCard(op) {
     const el=document.createElement("section");el.className="platform-connect-interaction platform-selection";el.dataset.interactionId=op.operation_id;
     const heading=document.createElement("strong"),status=document.createElement("p"),fields=document.createElement("div"),candidates=document.createElement("div"),feedback=document.createElement("p"),actions=document.createElement("div"),hint=document.createElement("p");
@@ -263,7 +293,12 @@ export function createPlatformInteractions({ env, runtime, conversationUI, setti
     const reload=document.createElement("button");reload.type="button";reload.className="text-button";reload.textContent="载入最新草稿";reload.hidden=true;
     const settings=document.createElement("button");settings.type="button";settings.className="text-button";settings.textContent="完整设置";settings.addEventListener("click",()=>settingsUI.openSettings("platforms"));
     actions.append(submit,cancel,reload,settings);el.append(heading,status,fields,search,candidates,more,selected,actions,hint,feedback);
-    const card={el,op,heading,status,fields,candidates,feedback,actions,hint,name,query,search,more,mode,selected,submit,cancel,reload,dirty:false,editVersion:0,draft:null,rows:new Map(),chatNames:new Map(),searchGeneration:0,searchBusy:false,queryValue:"",pageToken:"",loaded:false};
+    const login=document.createElement("button");login.type="button";login.dataset.scionLogin="true";login.textContent="登录 Scion";login.className="text-button";login.hidden=true;
+    if(scionAccountSelection(op))actions.insertBefore(login,submit);else actions.append(login);
+    const loginChoices=document.createElement("div");loginChoices.className="platform-connect-actions";loginChoices.hidden=true;el.append(loginChoices);
+    const card={el,op,heading,status,fields,candidates,feedback,actions,hint,name,query,search,more,mode,selected,submit,cancel,reload,login,loginChoices,dirty:false,editVersion:0,draft:null,rows:new Map(),chatNames:new Map(),searchGeneration:0,searchBusy:false,candidatesReady:false,queryValue:"",pageToken:"",loaded:false};
+    if(scionAccountSelection(op))scionLogin.attach(card);
+    login.addEventListener("click",()=>card.scionLogin?.open ? scionLogin.start(card) : scionLogin.open(card,card.loginConnections?.length===1 && !card.rows.size ? card.loginConnections[0] : null));
     const dirty=()=>{card.dirty=true;};
     name?.addEventListener("input",()=>{card.draft.name=name.value;card.draft.platform_id="";card.draft.platform_version=0;dirty();updateSelectionInteraction(card,card.op);});
     mode.addEventListener("change",()=>{if(project){if(mode.value)card.draft.events_filter={types:mode.value==="all" ? [] : [mode.value]};else delete card.draft.events_filter;}else card.draft.group_message_mode=mode.value;dirty();});
@@ -275,7 +310,8 @@ export function createPlatformInteractions({ env, runtime, conversationUI, setti
   }
 
   function updateSelectionInteraction(card,op) {
-    card.op=op;const waiting=op.status==="waiting",account=op.input.kind==="account",busy=platformInteractionState.busy.has(op.operation_id);
+    card.op=op;const waiting=op.status==="waiting",account=op.input.kind==="account",busy=platformInteractionState.busy.has(op.operation_id) || scionLogin.busy(card);
+    if(op.status==="completed" && op.result_version>0)platformInteractionState.errors.delete(op.operation_id);
     if(!card.editVersion || (!card.dirty && card.editVersion!==op.version)) {
       card.draft=structuredClone(op.draft);card.editVersion=op.version;
       if(card.name && card.name.value!==(op.draft.name || ""))card.name.value=op.draft.name || "";
@@ -286,7 +322,7 @@ export function createPlatformInteractions({ env, runtime, conversationUI, setti
         card.mode.value=filter ? (types.length===0 ? "all" : types.length===1 ? types[0] : "") : "";
       } else card.mode.value=op.draft.group_message_mode || "";
     }
-    const repository=op.input.kind==="repositories",project=op.input.kind==="projects",gitlab=op.input.provider==="gitlab";
+    const repository=op.input.kind==="repositories",project=op.input.kind==="projects",gitlab=op.input.provider==="gitlab",scionAccount=scionAccountSelection(op);
     card.heading.textContent=account ? (op.input.provider==="scion" ? "选择 Scion 账号" : gitlab ? "选择 GitLab 账号" : "选择飞书账号") : repository ? "选择 Scion 仓库" : project ? "选择关注的项目" : "选择关注的群聊";
     card.status.textContent=({waiting:"请选择后提交",completed:"选择已保存",cancelled:"选择已取消",expired:"表单已过期"})[op.status] || "结果待核实";
     card.el.dataset.status=op.status;
@@ -296,26 +332,62 @@ export function createPlatformInteractions({ env, runtime, conversationUI, setti
     const active=waiting && op.target_available;
     for(const field of [card.name,card.query,card.mode,card.search,card.more,card.submit,card.cancel])if(field)field.disabled=!active || busy || card.searchBusy && (field===card.search || field===card.more);
     for(const [id,row] of card.rows){row.control.disabled=!active || busy;row.control.checked=account ? card.draft.platform_id===id : repository ? card.draft.repository?.name===id : project ? card.draft.project_id===id : (card.draft.chat_ids || []).includes(id);}
-    card.fields.hidden=!waiting;card.candidates.hidden=!waiting;card.search.hidden=account || !waiting;card.more.hidden=!waiting || !card.pageToken;
+    card.fields.hidden=!waiting || !card.fields.children.length;card.candidates.hidden=!waiting || !card.rows.size;card.search.hidden=account && !scionAccount || !waiting;card.search.textContent=scionAccount ? "刷新账号" : "搜索";card.more.hidden=!waiting || !card.pageToken;
+    card.login.hidden=!scionAccount || !active;
+    card.login.disabled=busy || card.searchBusy;
+    card.login.textContent=card.loginConnections?.length===1 && !card.rows.size ? "重新登录 Scion" : "登录 Scion";
+    card.login.className=scionAccount && !card.rows.size ? "primary" : "text-button";
+    card.submit.className=scionAccount && !card.rows.size ? "text-button" : "primary";
+    card.loginChoices.hidden=!scionAccount || !active || !card.loginConnections?.length || card.loginConnections.length===1 && !card.rows.size;
+    for(const button of card.loginChoices.children)button.disabled=!active || busy || card.searchBusy;
+    if(scionAccount) {
+      card.submit.disabled ||= card.searchBusy || !card.candidatesReady || !card.draft.platform_id || card.rows.get(card.draft.platform_id)?.version!==card.draft.platform_version;
+      if(waiting && card.candidatesReady && !card.rows.size) {
+        card.status.textContent=card.loginConnections?.length ? "Scion 登录已失效，请重新登录" : "尚未登录 Scion";
+        card.selected.textContent="登录并保存连接后，将继续本次接入。";
+      } else if(waiting && !card.candidatesReady) {
+        card.status.textContent=card.searchBusy ? "正在读取 Scion 账号…" : "Scion 账号状态暂未确认";
+      }
+    }
     card.submit.hidden=!waiting;card.cancel.hidden=!waiting;card.reload.hidden=!active || !(card.dirty && card.editVersion!==op.version);
+    if(scionAccount) {
+      const hasChoices=card.candidatesReady && card.rows.size>0;
+      card.search.hidden=!active || !card.loaded || card.searchBusy || card.candidatesReady && !hasChoices;
+      card.search.textContent=card.candidatesReady ? "刷新账号" : "重试读取账号";
+      card.submit.hidden=!waiting || !hasChoices;
+      card.cancel.hidden=!waiting || !hasChoices;
+      card.reload.hidden ||= !hasChoices;
+    }
     const continuation=op.continuation,reasons={member_paused:"Agent 已暂停",member_failed:"上次回合失败，需恢复处理",inbox_admission_blocked:"前方通知来源核验受阻",budget_exhausted:"执行预算已用完",backend_blocked:"Session 需要恢复",checkpoint_failed:"检查点需要恢复",session_rotating:"助理正在切换会话",session_recovering:"助理正在恢复",target_unavailable:"Agent 暂不可用",target_changed:"原 Agent 已替换",inbox_capacity:"Inbox 容量不足",inbox_busy:"Inbox 正忙",inbox_delivery_unconfirmed:"交付结果待核实"};
     card.hint.textContent=!op.target_available ? "原 Agent 已移除或替换，选择不会转交新成员。" : waiting ? "提交后由 Agent 核验并继续处理。可打开完整设置；关闭设置不会取消此选择。" : continuation?.state==="handled" ? "Agent 已核对选择；实际连接和关注结果以对话反馈为准。" : `选择结果已保存，${continuation?.mode==="inbox" ? "等待 Agent 接续" : "可发消息请 Agent 继续"}。${continuation?.blocked_reason ? `${reasons[continuation.blocked_reason] || "接续暂受阻"}。${continuation.blocked_reason === "session_recovering" ? "恢复后将自动接续。" : "可发消息主动继续。"}` : ""}`;
     if(op.target_available && continuation?.state==="page_only") card.hint.textContent="选择结果已保存，仅在页面提示，不会自动接续。";
-    card.feedback.textContent=platformInteractionState.errors.get(op.operation_id) || (card.dirty && card.editVersion!==op.version ? "草稿已在其他位置更新。你的输入仍保留，请核对后载入最新草稿。" : waiting ? card.candidateFeedback || "" : "");
+    if(scionAccount && active)card.hint.textContent="可直接填写 PAT 登录并继续接入，也可打开完整设置。";
+    card.feedback.textContent=platformInteractionState.errors.get(op.operation_id) || card.scionLogin?.error || (card.dirty && card.editVersion!==op.version ? "草稿已在其他位置更新。你的输入仍保留，请核对后载入最新草稿。" : waiting ? card.candidateFeedback || "" : "");
+    scionLogin.render(card);
     if(!card.loaded && active && !busy){card.loaded=true;void loadSelectionCandidates(card,false);}
   }
 
-  async function loadSelectionCandidates(card,append) {
-    if(card.searchBusy)return;
+  function loadSelectionCandidates(card,append) {
+    if(card.candidateRead)return card.candidateRead;
+    const pending=readSelectionCandidates(card,append).finally(()=>{if(card.candidateRead===pending)card.candidateRead=null;});
+    card.candidateRead=pending;return pending;
+  }
+
+  async function readSelectionCandidates(card,append) {
     const s=platformInteractionState,generation=s.generation,requestVersion=++card.searchGeneration,query=append ? card.queryValue : (card.query?.value || "");
     const pageToken=append ? card.pageToken : card.op.input.kind==="repositories" ? card.repositoryToken || "" : "";
     card.searchBusy=true;card.search.disabled=true;card.more.disabled=true;
+    if(scionAccountSelection(card.op))card.submit.disabled=true;
     try {
-      const result=await request("/v1/platforms/selection-interactions/candidates",{...state.info,caller:{kind:"human",id:state.operator},operation_id:card.op.operation_id,query,page_token:pageToken},undefined,35000);
+      const [result,platforms]=await Promise.all([
+        request("/v1/platforms/selection-interactions/candidates",{...state.info,caller:{kind:"human",id:state.operator},operation_id:card.op.operation_id,query,page_token:pageToken},undefined,35000),
+        scionAccountSelection(card.op) ? runtime.platformRead.read() : null
+      ]);
       if(generation!==s.generation || requestVersion!==card.searchGeneration)return;
       card.queryValue=query;card.pageToken=result.next_page_token || (result.next_page ? String(result.next_page) : result.has_more ? result.page_token : "");
       if(!append){card.rows.clear();card.candidates.replaceChildren();card.chatNames=new Map([...card.chatNames].filter(([id])=>(card.draft.chat_ids || []).includes(id)));}
       const repository=card.op.input.kind==="repositories",account=card.op.input.kind==="account",project=card.op.input.kind==="projects",gitlab=card.op.input.provider==="gitlab",rows=account ? ((gitlab || card.op.input.provider==="scion") ? result : [...result,{id:"",name:"连接另一个飞书账号",version:0}]) : repository ? result.repositories : project ? result.projects : result.chats;
+      if(account && !Array.isArray(rows))throw Error("invalid accounts");
       if(repository)card.repositoryToken=pageToken;
       if(project && (!Array.isArray(rows) || rows.some(p=>!Number.isSafeInteger(p.id) || p.id<=0 || typeof p.path_with_namespace!=="string")))throw Error("invalid projects");
       if(repository && (!Array.isArray(rows) || rows.some(r=>typeof r.name!=="string" || !Number.isSafeInteger(r.created_at_ms) || r.created_at_ms<=0 || typeof r.description!=="string")))throw Error("invalid repositories");
@@ -323,7 +395,7 @@ export function createPlatformInteractions({ env, runtime, conversationUI, setti
         const row=document.createElement("label"),control=document.createElement("input"),text=document.createElement("span");control.type=account || project || repository ? "radio" : "checkbox";control.name=`selection-${card.op.operation_id}`;control.value=String(id);
         text.textContent=account ? `${item.name}${item.username ? ` · ${item.username}` : ""}${item.id ? ` · ${item.account?.id?.value || item.id}` : ""}${card.op.input.provider==="scion" && item.account?.instance ? ` · ${item.account.instance}` : ""}` : repository ? `${item.name}${item.description ? ` · ${item.description}` : ""}` : project ? `${item.name} · ${item.path_with_namespace} · #${item.id}` : `${item.name || `群聊 · ${id}`}${item.chat_mode==="topic" ? " · 话题群" : ""}`;
         if(!account && !project && !repository){row.title=id;if(item.name)card.chatNames.set(id,item.name);}
-        row.append(control,text);card.candidates.append(row);card.rows.set(id,{control});
+        row.append(control,text);card.candidates.append(row);card.rows.set(id,{control,version:item.version});
         control.addEventListener("change",()=>{
           card.dirty=true;
           if(account){card.draft.platform_id=id;card.draft.platform_version=item.version;card.draft.name=id ? item.name : (card.name?.value || "");if(id && card.name)card.name.value=item.name;}
@@ -333,13 +405,26 @@ export function createPlatformInteractions({ env, runtime, conversationUI, setti
           updateSelectionInteraction(card,card.op);
         });
       }
+      card.candidatesReady=true;
+      if(scionAccountSelection(card.op)) {
+        card.scionManaged=platforms.scion_managed_program===true;
+        card.loginConnections=(platforms.platforms || []).filter(c=>c.provider==="scion" && c.validation?.status!=="valid" && (!card.op.input.origin || c.url===card.op.input.origin));
+        card.loginChoices.replaceChildren(...card.loginConnections.map(connection=>{
+          const button=document.createElement("button");button.type="button";button.className="text-button";
+          button.textContent=`重新登录 · ${connection.name}${connection.validation?.username ? ` · ${connection.validation.username}` : ""} · ${connection.url}`;
+          button.addEventListener("click",()=>scionLogin.open(card,connection));return button;
+        }));
+        if(!card.rows.size && !card.scionLogin.open && !card.scionLogin.flow && card.loginConnections.length<=1)scionLogin.open(card,card.loginConnections[0] || null,{focus:false});
+      }
       card.candidateFeedback=repository ? `${rows.length ? "" : "没有匹配的仓库。"}${result.truncated ? `列表尚未读全，${result.next_page_token ? "可加载更多或" : "请"}输入组织/仓库前缀缩小范围。` : ""}` : (result.search_warnings || []).map(w=>w.code==="permission_denied" ? "部分搜索权限不足，可补充授权或清空关键词浏览" : w.code==="refine_query" ? "结果较多，请输入更完整的群名" : "部分搜索暂不可用，请重试").join("；") || (!rows.length ? (project ? "暂无候选；可调整搜索，结果只代表当前账号可见项目。" : account ? "没有已核验账号，请先连接指定账号。" : "暂无候选；可调整搜索，结果不代表所有群。") : "");
-    }catch(error){if(generation===s.generation){card.candidateFeedback=error.code==="conflict" ? "账号或表单已变化，请 Agent 查询原选择，或在完整设置中核对。" : error.code==="permission_denied" || error.code==="forbidden" ? "当前账号权限不足，请核对账号授权或进入完整设置；未替换选择。" : "候选读取失败，请重试搜索或进入完整设置。";}}
+      if(scionAccountSelection(card.op))card.candidateFeedback="";
+    }catch(error){if(generation===s.generation){card.candidatesReady=false;card.candidateFeedback=error.code==="conflict" ? "账号或表单已变化，请 Agent 查询原选择，或在完整设置中核对。" : error.code==="permission_denied" || error.code==="forbidden" ? "当前账号权限不足，请核对账号授权或进入完整设置；未替换选择。" : "候选读取失败，请刷新账号、重试搜索或进入完整设置。";}}
     finally{if(generation===s.generation){card.searchBusy=false;updateSelectionInteraction(card,card.op);}}
   }
 
   async function submitSelectionInteraction(card,cancel=false) {
     const s=platformInteractionState,id=card.op.operation_id;if(s.busy.has(id))return;
+    if(!cancel && scionAccountSelection(card.op) && (card.searchBusy || !card.candidatesReady || !card.draft.platform_id || card.rows.get(card.draft.platform_id)?.version!==card.draft.platform_version))return;
     const generation=s.generation,identity={...state.info,caller:{kind:"human",id:state.operator},operation_id:id};
     let version=card.editVersion;
     s.busy.add(id);s.errors.delete(id);renderPlatformInteractions();
@@ -352,12 +437,13 @@ export function createPlatformInteractions({ env, runtime, conversationUI, setti
         runtime.changed("messages");
         void runtime.observe("messages");
       }
-    }catch(error){if(generation===s.generation)s.errors.set(id,error.code==="conflict" ? "草稿、账号或成员已变化；请核对最新草稿或请 Agent 查询原选择。" : "提交结果未确认，正在查询原选择。请核对结果后继续。");}
+    }catch(error){if(generation===s.generation)s.errors.set(id,error.code==="conflict" ? "草稿、账号或成员已变化；请核对最新草稿或请 Agent 查询原选择。" : error.code==="request" ? "选择无效，请核对账号和所选内容后提交。" : "提交结果未确认，正在查询原选择。请核对结果后继续。");}
     finally{if(generation===s.generation){s.busy.delete(id);renderPlatformInteractions();void refreshPlatformInteractions();}}
   }
 
   function mount() {
-
+    $("settings-dialog").addEventListener("close",()=>void refreshScionAccountSelections());
+    window.addEventListener("pagehide",scionLogin.clearPasswords);
   }
 
   return {
@@ -366,6 +452,9 @@ export function createPlatformInteractions({ env, runtime, conversationUI, setti
     renderPlatformInteractions,
     resetPlatformInteractions,
     refreshPlatformInteractions,
+    refreshScionAccountSelections,
+    scionCardLoginPending:scionLogin.pending,
+    readScionCardLogins:scionLogin.read,
     platformInteractionState,
     authorizeGitLabInteraction
   };

@@ -17,7 +17,7 @@ import (
 
 func TestPersonalSpaceInitialModelUsesSelectedSourceAndIndependentCredentials(t *testing.T) {
 	seed := resetSeedForTest(t)
-	s, endpoint, _ := startArchivableSpaceServerFixture(t, t.TempDir(), func(r *SpaceRuntime) { r.config.resetTeamsSource = seed })
+	s, endpoint, _ := startArchivableSpaceServerFixture(t, t.TempDir(), func(r *SpaceRuntime) { r.config.teamsSource = seed })
 	a := s.initial.SpaceID
 	b := strings.Repeat("b", 32)
 	input := spaceChangeInput{RequestID: b, Name: "Work", ModelSourceSpaceID: a}
