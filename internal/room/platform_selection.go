@@ -18,6 +18,7 @@ import (
 	"github.com/go-aie/teamx/internal/platform/gitlab"
 	"github.com/go-aie/teamx/internal/platform/lark"
 	"github.com/go-aie/teamx/internal/platform/registry"
+	"github.com/go-aie/teamx/internal/platform/scion"
 	"github.com/go-aie/teamx/internal/platform/tool"
 )
 
@@ -32,14 +33,15 @@ type platformSelectionInput struct {
 	Query           string `json:"query,omitempty"`
 }
 type platformSelectionDraft struct {
-	PlatformID       string               `json:"platform_id,omitempty"`
-	PlatformVersion  uint64               `json:"platform_version,omitempty"`
-	Name             string               `json:"name,omitempty"`
-	ChatIDs          []string             `json:"chat_ids,omitempty"`
-	GroupMessageMode string               `json:"group_message_mode,omitempty"`
-	ProjectID        int64                `json:"project_id,omitempty"`
-	ProjectPath      string               `json:"project_path,omitempty"`
-	EventsFilter     *gitlab.EventsFilter `json:"events_filter,omitempty"`
+	Repository       *scion.RepositoryEvidence `json:"repository,omitempty"`
+	PlatformID       string                    `json:"platform_id,omitempty"`
+	PlatformVersion  uint64                    `json:"platform_version,omitempty"`
+	Name             string                    `json:"name,omitempty"`
+	ChatIDs          []string                  `json:"chat_ids,omitempty"`
+	GroupMessageMode string                    `json:"group_message_mode,omitempty"`
+	ProjectID        int64                     `json:"project_id,omitempty"`
+	ProjectPath      string                    `json:"project_path,omitempty"`
+	EventsFilter     *gitlab.EventsFilter      `json:"events_filter,omitempty"`
 }
 type platformSelection struct {
 	ResultActor Author `json:"result_actor,omitzero"`
@@ -87,7 +89,10 @@ func (m *roomManager) selectionPath(id string) string {
 }
 func validSelectionDraft(in platformSelectionInput, d platformSelectionDraft) bool {
 	if selectionProvider(in) == "scion" {
-		return len(d.ChatIDs) == 0 && len(d.Name) <= 128 && d.GroupMessageMode == "" && d.ProjectID == 0 && d.ProjectPath == "" && d.EventsFilter == nil && (d.Name == "" || validText(d.Name)) && (d.PlatformID == "" && d.PlatformVersion == 0 || tool.OpaqueID(d.PlatformID) && d.PlatformVersion > 0)
+		return validScionSelectionDraft(in, d)
+	}
+	if d.Repository != nil {
+		return false
 	}
 	if selectionProvider(in) == "gitlab" {
 		return validGitLabSelectionDraft(in, d)
@@ -151,7 +156,7 @@ func (m *roomManager) readPlatformSelectionLocked(id string) (platformSelection,
 		return s, ErrInvalid
 	}
 	if s.Status == "completed" {
-		if selectionProvider(s.Input) == "scion" && (s.Draft.PlatformID == "" || !s.Account.Valid() || s.Input.Origin != "" && s.Account.Instance != s.Input.Origin) {
+		if selectionProvider(s.Input) == "scion" && (!s.Account.Valid() || s.Input.Kind == "account" && (s.Draft.PlatformID == "" || s.Input.Origin != "" && s.Account.Instance != s.Input.Origin) || s.Input.Kind == "repositories" && s.Draft.Repository == nil) {
 			return s, ErrInvalid
 		}
 		if selectionProvider(s.Input) == "gitlab" && s.Input.Kind == "account" && (s.Draft.PlatformID == "" || !s.Account.Valid() || s.Account.Instance != s.Input.Origin) {
@@ -179,14 +184,7 @@ func (m *roomManager) readPlatformSelectionLocked(id string) (platformSelection,
 }
 func validSelectionInput(in platformSelectionInput) bool {
 	if selectionProvider(in) == "scion" {
-		origin := in.Origin
-		if origin != "" {
-			_, normalized, err := registry.Normalize("Scion", origin)
-			if err != nil || normalized != origin {
-				return false
-			}
-		}
-		return in.Kind == "account" && in.PlatformID == "" && in.PlatformVersion == 0 && in.Query == ""
+		return validScionSelectionInput(in)
 	}
 	if selectionProvider(in) == "gitlab" {
 		return validGitLabSelectionInput(in)
@@ -340,12 +338,12 @@ func (m *roomManager) startPlatformSelectionLocked(ctx context.Context, req plat
 	}
 	now := time.Now().UTC()
 	s = platformSelection{Schema: 1, MemberIdentity: MemberIdentity{RoomIdentity: req.RoomIdentity, AgentID: req.Caller.ID, MembershipID: req.Caller.MembershipID}, ID: req.OperationID, Source: source, Input: *req.Input, InitialDraft: d, Draft: d, Version: 1, Status: "waiting", CreatedAt: now, ExpiresAt: now.Add(24 * time.Hour)}
-	if s.Input.Kind == "projects" {
+	if s.Input.Kind == "projects" || s.Input.Kind == "repositories" {
 		a, err := m.platformMemberAccountLocked(ctx, s.memberRequest(req.ServiceInfo))
 		if err != nil {
 			return s, err
 		}
-		if a.Identity.Provider != "gitlab" {
+		if a.Identity.Provider != selectionProvider(s.Input) {
 			return s, ErrRequest
 		}
 		s.Account = a.Identity
@@ -426,6 +424,9 @@ func (m *roomManager) submitPlatformSelection(ctx context.Context, req platformS
 			m.mu.Unlock()
 			return s, err
 		}
+	} else if s.Input.Kind == "repositories" {
+		m.mu.Unlock()
+		return m.submitScionRepositorySelection(ctx, req, s, member)
 	} else if s.Input.Kind == "projects" {
 		m.mu.Unlock()
 		return m.submitGitLabProjectSelection(ctx, req, s, member)
@@ -628,6 +629,17 @@ func (m *roomManager) servePlatformSelection(w http.ResponseWriter, r *http.Requ
 				}
 				if s.Input.Kind == "account" {
 					result, err = m.selectionAccountsForInputLocked(s.Input)
+				} else if s.Input.Kind == "repositories" {
+					q := member.repositoriesRequest()
+					q.Query, q.PageToken = req.Query, req.PageToken
+					m.mu.Unlock()
+					var page scion.RepositoryPage
+					page, err = m.listScionRepositories(r.Context(), q)
+					m.mu.Lock()
+					if err == nil {
+						err = m.checkProjectSelectionCurrentLocked(r.Context(), req, s, member)
+					}
+					result = page
 				} else if s.Input.Kind == "projects" {
 					q := member.projectsRequest()
 					q.Search = req.Query

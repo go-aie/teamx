@@ -3,6 +3,8 @@ package room
 import (
 	"testing"
 	"time"
+
+	"github.com/go-aie/teamx/internal/platform/scion"
 )
 
 func TestScionMemberInputBoundaries(t *testing.T) {
@@ -38,6 +40,24 @@ func TestScionSelectionOnlyExistingAccounts(t *testing.T) {
 	for _, in := range []platformSelectionInput{{Provider: "scion", Kind: "groups"}, {Provider: "scion", Kind: "projects"}, {Provider: "scion", Kind: "account", Origin: "https://scion.example/path"}, {Provider: "scion", Kind: "account", Query: "guess"}} {
 		if validSelectionInput(in) {
 			t.Fatal(in)
+		}
+	}
+}
+
+func TestScionRepositorySelectionDraftBoundaries(t *testing.T) {
+	in := platformSelectionInput{Provider: "scion", Kind: "repositories", PlatformID: "dddddddddddddddddddddddddddddddd", PlatformVersion: 1, Query: "Owner/"}
+	draft := platformSelectionDraft{Repository: &scion.RepositoryEvidence{Name: "Owner/repo", Created: 100}}
+	if !validSelectionInput(in) || !validSelectionDraft(in, draft) || !validSelectionDraft(in, platformSelectionDraft{}) {
+		t.Fatal("repository selection rejected")
+	}
+	for _, other := range []platformSelectionInput{{Provider: "scion", Kind: "account"}, {Provider: "gitlab", Kind: "projects"}, {Kind: "groups"}} {
+		if validSelectionDraft(other, draft) {
+			t.Fatal("cross-provider repository accepted", other)
+		}
+	}
+	for _, bad := range []platformSelectionDraft{{Repository: &scion.RepositoryEvidence{Name: "Owner/repo"}}, {Repository: draft.Repository, ProjectID: 1}, {Repository: draft.Repository, ChatIDs: []string{"oc_group"}}, {Repository: draft.Repository, Name: "unexpected"}} {
+		if validSelectionDraft(in, bad) {
+			t.Fatal("foreign or incomplete repository fields", bad)
 		}
 	}
 }

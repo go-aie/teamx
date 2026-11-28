@@ -165,7 +165,7 @@ choices for both; the pure total switch intentionally restores all saved sources
 
 ## Selection cards and editable drafts
 
-For “飞书选择群的卡片” or “GitLab 项目选择卡片”, recover selection status by the
+For “飞书选择群的卡片”, “GitLab 项目选择卡片” or “Scion 仓库选择卡片”, recover selection status by the
 original human seq, verify the exact account, then create the existing component:
 
 ```sh
@@ -195,6 +195,7 @@ needs no redundant confirmation. Recover original selection steps before startin
 | Feishu groups | `--provider lark --kind groups --platform-id ID --platform-version V --query NAME` |
 | GitLab verified accounts on one instance | `--provider gitlab --kind account --origin URL` |
 | Scion verified existing accounts | `--provider scion --kind account [--origin URL]` |
+| Scion repositories on one account | `--provider scion --kind repositories --platform-id ID --platform-version V --query NAME` |
 | GitLab projects on one account | `--provider gitlab --kind projects --platform-id ID --platform-version V --query NAME` |
 
 Every start also needs its own `--operation-id PICK_ID --source-seq SEQ --notify inbox`.
@@ -239,8 +240,8 @@ human SEQ, but use separate stable TOOL_STEP_ID and NOTIFICATION_STEP_ID receipt
 Report each actual result, including partial success; there is no combined rollback.
 A plain request to connect/enable/use Scion means make it usable for this member:
 enable tools and notifications, respecting explicit limits. First reception requires
-an explicit repository. If it is missing, finish the authorized tool setup and ask
-for the repository; never infer it from Workspace or claim notification success.
+an explicit repository. If it is missing, finish the authorized tool setup and
+show its repository selection card; never infer it from Workspace or claim notification success.
 An existing subscription can be restored with the common total switch.
 
 Use `platforms list` to find the exact verified existing Scion connection. If several
@@ -263,6 +264,18 @@ command below with its own ID and observed platform version. For an existing bin
 use the short tool switch. Scion rejects Feishu action flags. Tool enable refreshes
 available tools through the existing Session lifecycle; saved config alone is not
 proof of an actual native call. Tool and notification changes remain independent.
+
+When the repository is unspecified, or the human requests a repository picker,
+use `platforms selection start --provider scion --kind repositories` with the exact
+connection ID/version, original source SEQ and its own stable PICK_ID. Reuse the
+selection workflow above; never enumerate repositories or ask for pasted paths
+in place of the requested card. The component filters names/descriptions within
+a bounded list, supports native organization/repository prefixes and marks
+truncation. On completion verify `draft.repository.name` and `created_at_ms`,
+then use that name as `--scion-repository` only if the original request authorized
+notification configuration. A card-only request ends after acknowledging the
+selection; it creates no subscription. Repository draft edits require both
+`--repository OWNER/REPO --repository-created-at-ms N`.
 
 For first Issue reception, use the complete command:
 
@@ -449,7 +462,7 @@ editing those conditions. Do not silently turn @me back on after the human asked
 for both to be off. All-message mode retains mention preferences without filtering.
 The simple mentions-mode command still defaults to @me if neither was selected.
 
-Use existing account/group/project cards only for choices they already represent;
+Use existing account/group/project/repository cards only for choices they already represent;
 unchecking an existing group-selection card does not remove a saved subscription.
 Complete replacements may require query/clarification; do not reinterpret the old
 card's unchecked items as removals. Browser changes are local until submission;

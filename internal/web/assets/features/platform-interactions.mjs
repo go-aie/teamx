@@ -251,12 +251,12 @@ export function createPlatformInteractions({ env, runtime, conversationUI, setti
     const heading=document.createElement("strong"),status=document.createElement("p"),fields=document.createElement("div"),candidates=document.createElement("div"),feedback=document.createElement("p"),actions=document.createElement("div"),hint=document.createElement("p");
     fields.className="platform-selection-fields";candidates.className="platform-selection-candidates";actions.className="platform-connect-actions";status.setAttribute("role","status");feedback.setAttribute("role","status");hint.className="quiet";
     const input=(label,type="text")=>{const host=document.createElement("label"),title=document.createElement("span"),field=document.createElement("input");title.textContent=label;field.type=type;field.className="field-control";host.append(title,field);fields.append(host);return field;};
-    const account=op.input.kind==="account",gitlab=op.input.provider==="gitlab",project=op.input.kind==="projects",name=account && !gitlab && op.input.provider!=="scion" ? input("新连接名称") : null,query=account ? null : input(project ? "搜索项目" : "搜索群聊");
+    const account=op.input.kind==="account",gitlab=op.input.provider==="gitlab",project=op.input.kind==="projects",repository=op.input.kind==="repositories",name=account && !gitlab && op.input.provider!=="scion" ? input("新连接名称") : null,query=account ? null : input(repository ? "筛选仓库名称、简介或组织/仓库前缀" : project ? "搜索项目" : "搜索群聊");
     const search=document.createElement("button");search.type="button";search.textContent="搜索";search.className="text-button";search.hidden=account;
     const more=document.createElement("button");more.type="button";more.textContent="加载更多";more.className="text-button";more.hidden=true;
     const mode=document.createElement("select");mode.className="field-control";mode.setAttribute("aria-label",project ? "项目活动筛选" : "群消息范围");
     for(const [value,label] of (project ? [["","保留现有筛选"],["all","全部活动"],["note","评论"],["merge_request.opened","合并请求创建"],["merge_request.merged","合并请求合并"],["merge_request.closed","合并请求关闭"],["push","推送"]] : [["","保留现有消息范围"],["all","全部群消息"],["mentions","仅提及我的消息"]])){const item=document.createElement("option");item.value=value;item.textContent=label;mode.append(item);}
-    if(!account){const label=document.createElement("label"),text=document.createElement("span");text.textContent=project ? "项目活动筛选" : "群消息范围";label.append(text,mode);fields.append(label);}
+    if(!account && !repository){const label=document.createElement("label"),text=document.createElement("span");text.textContent=project ? "项目活动筛选" : "群消息范围";label.append(text,mode);fields.append(label);}
     const selected=document.createElement("p");selected.className="quiet";
     const submit=document.createElement("button");submit.type="button";submit.textContent="提交选择";submit.className="primary";
     const cancel=document.createElement("button");cancel.type="button";cancel.className="text-button";cancel.textContent="取消选择";
@@ -286,50 +286,54 @@ export function createPlatformInteractions({ env, runtime, conversationUI, setti
         card.mode.value=filter ? (types.length===0 ? "all" : types.length===1 ? types[0] : "") : "";
       } else card.mode.value=op.draft.group_message_mode || "";
     }
-    const project=op.input.kind==="projects",gitlab=op.input.provider==="gitlab";
-    card.heading.textContent=account ? (op.input.provider==="scion" ? "选择 Scion 账号" : gitlab ? "选择 GitLab 账号" : "选择飞书账号") : project ? "选择关注的项目" : "选择关注的群聊";
+    const repository=op.input.kind==="repositories",project=op.input.kind==="projects",gitlab=op.input.provider==="gitlab";
+    card.heading.textContent=account ? (op.input.provider==="scion" ? "选择 Scion 账号" : gitlab ? "选择 GitLab 账号" : "选择飞书账号") : repository ? "选择 Scion 仓库" : project ? "选择关注的项目" : "选择关注的群聊";
     card.status.textContent=({waiting:"请选择后提交",completed:"选择已保存",cancelled:"选择已取消",expired:"表单已过期"})[op.status] || "结果待核实";
     card.el.dataset.status=op.status;
     for(const chat of op.chats || [])if(chat.name)card.chatNames.set(chat.chat_id,chat.name);
-    card.selected.title=account || project ? "" : (card.draft.chat_ids || []).join("、");
-    card.selected.textContent=account ? (card.draft.platform_id ? `已选连接：${card.draft.name || card.draft.platform_id}` : op.input.provider==="scion" ? `请选择${op.input.origin ? ` ${op.input.origin} 的` : ""}已核验 Scion 账号；没有账号请打开完整设置登录` : gitlab ? `请选择 ${op.input.origin} 的已核验账号` : "使用新连接，请填写名称") : project ? (card.draft.project_id ? `已选项目：${card.draft.project_path} · #${card.draft.project_id}${card.draft.events_filter ? `；筛选：${card.draft.events_filter.types?.join("、") || "全部活动"}` : ""}` : "请选择一个项目") : `已选 ${card.draft.chat_ids?.length || 0} 个群：${(card.draft.chat_ids || []).map(id=>card.chatNames.get(id) || `群聊 · ${id}`).join("、")}`;
+    card.selected.title=account || project || repository ? "" : (card.draft.chat_ids || []).join("、");
+    card.selected.textContent=account ? (card.draft.platform_id ? `已选连接：${card.draft.name || card.draft.platform_id}` : op.input.provider==="scion" ? `请选择${op.input.origin ? ` ${op.input.origin} 的` : ""}已核验 Scion 账号；没有账号请打开完整设置登录` : gitlab ? `请选择 ${op.input.origin} 的已核验账号` : "使用新连接，请填写名称") : repository ? (card.draft.repository ? `已选仓库：${card.draft.repository.name}` : "请选择一个仓库") : project ? (card.draft.project_id ? `已选项目：${card.draft.project_path} · #${card.draft.project_id}${card.draft.events_filter ? `；筛选：${card.draft.events_filter.types?.join("、") || "全部活动"}` : ""}` : "请选择一个项目") : `已选 ${card.draft.chat_ids?.length || 0} 个群：${(card.draft.chat_ids || []).map(id=>card.chatNames.get(id) || `群聊 · ${id}`).join("、")}`;
     const active=waiting && op.target_available;
     for(const field of [card.name,card.query,card.mode,card.search,card.more,card.submit,card.cancel])if(field)field.disabled=!active || busy || card.searchBusy && (field===card.search || field===card.more);
-    for(const [id,row] of card.rows){row.control.disabled=!active || busy;row.control.checked=account ? card.draft.platform_id===id : project ? card.draft.project_id===id : (card.draft.chat_ids || []).includes(id);}
+    for(const [id,row] of card.rows){row.control.disabled=!active || busy;row.control.checked=account ? card.draft.platform_id===id : repository ? card.draft.repository?.name===id : project ? card.draft.project_id===id : (card.draft.chat_ids || []).includes(id);}
     card.fields.hidden=!waiting;card.candidates.hidden=!waiting;card.search.hidden=account || !waiting;card.more.hidden=!waiting || !card.pageToken;
     card.submit.hidden=!waiting;card.cancel.hidden=!waiting;card.reload.hidden=!active || !(card.dirty && card.editVersion!==op.version);
     const continuation=op.continuation,reasons={member_paused:"Agent 已暂停",member_failed:"上次回合失败，需恢复处理",inbox_admission_blocked:"前方通知来源核验受阻",budget_exhausted:"执行预算已用完",backend_blocked:"Session 需要恢复",checkpoint_failed:"检查点需要恢复",session_rotating:"助理正在切换会话",session_recovering:"助理正在恢复",target_unavailable:"Agent 暂不可用",target_changed:"原 Agent 已替换",inbox_capacity:"Inbox 容量不足",inbox_busy:"Inbox 正忙",inbox_delivery_unconfirmed:"交付结果待核实"};
     card.hint.textContent=!op.target_available ? "原 Agent 已移除或替换，选择不会转交新成员。" : waiting ? "提交后由 Agent 核验并继续处理。可打开完整设置；关闭设置不会取消此选择。" : continuation?.state==="handled" ? "Agent 已核对选择；实际连接和关注结果以对话反馈为准。" : `选择结果已保存，${continuation?.mode==="inbox" ? "等待 Agent 接续" : "可发消息请 Agent 继续"}。${continuation?.blocked_reason ? `${reasons[continuation.blocked_reason] || "接续暂受阻"}。${continuation.blocked_reason === "session_recovering" ? "恢复后将自动接续。" : "可发消息主动继续。"}` : ""}`;
     if(op.target_available && continuation?.state==="page_only") card.hint.textContent="选择结果已保存，仅在页面提示，不会自动接续。";
-    card.feedback.textContent=platformInteractionState.errors.get(op.operation_id) || (card.dirty && card.editVersion!==op.version ? "草稿已在其他位置更新。你的输入仍保留，请核对后载入最新草稿。" : card.candidateFeedback || "");
+    card.feedback.textContent=platformInteractionState.errors.get(op.operation_id) || (card.dirty && card.editVersion!==op.version ? "草稿已在其他位置更新。你的输入仍保留，请核对后载入最新草稿。" : waiting ? card.candidateFeedback || "" : "");
     if(!card.loaded && active && !busy){card.loaded=true;void loadSelectionCandidates(card,false);}
   }
 
   async function loadSelectionCandidates(card,append) {
     if(card.searchBusy)return;
     const s=platformInteractionState,generation=s.generation,requestVersion=++card.searchGeneration,query=append ? card.queryValue : (card.query?.value || "");
+    const pageToken=append ? card.pageToken : card.op.input.kind==="repositories" ? card.repositoryToken || "" : "";
     card.searchBusy=true;card.search.disabled=true;card.more.disabled=true;
     try {
-      const result=await request("/v1/platforms/selection-interactions/candidates",{...state.info,caller:{kind:"human",id:state.operator},operation_id:card.op.operation_id,query,page_token:append ? card.pageToken : ""},undefined,35000);
+      const result=await request("/v1/platforms/selection-interactions/candidates",{...state.info,caller:{kind:"human",id:state.operator},operation_id:card.op.operation_id,query,page_token:pageToken},undefined,35000);
       if(generation!==s.generation || requestVersion!==card.searchGeneration)return;
-      card.queryValue=query;card.pageToken=result.next_page ? String(result.next_page) : result.has_more ? result.page_token : "";
+      card.queryValue=query;card.pageToken=result.next_page_token || (result.next_page ? String(result.next_page) : result.has_more ? result.page_token : "");
       if(!append){card.rows.clear();card.candidates.replaceChildren();card.chatNames=new Map([...card.chatNames].filter(([id])=>(card.draft.chat_ids || []).includes(id)));}
-      const account=card.op.input.kind==="account",project=card.op.input.kind==="projects",gitlab=card.op.input.provider==="gitlab",rows=account ? ((gitlab || card.op.input.provider==="scion") ? result : [...result,{id:"",name:"连接另一个飞书账号",version:0}]) : project ? result.projects : result.chats;
+      const repository=card.op.input.kind==="repositories",account=card.op.input.kind==="account",project=card.op.input.kind==="projects",gitlab=card.op.input.provider==="gitlab",rows=account ? ((gitlab || card.op.input.provider==="scion") ? result : [...result,{id:"",name:"连接另一个飞书账号",version:0}]) : repository ? result.repositories : project ? result.projects : result.chats;
+      if(repository)card.repositoryToken=pageToken;
       if(project && (!Array.isArray(rows) || rows.some(p=>!Number.isSafeInteger(p.id) || p.id<=0 || typeof p.path_with_namespace!=="string")))throw Error("invalid projects");
-      for(const item of rows){const id=account || project ? item.id : item.chat_id;if(card.rows.has(id))continue;
-        const row=document.createElement("label"),control=document.createElement("input"),text=document.createElement("span");control.type=account || project ? "radio" : "checkbox";control.name=`selection-${card.op.operation_id}`;control.value=String(id);
-        text.textContent=account ? `${item.name}${item.username ? ` · ${item.username}` : ""}${item.id ? ` · ${item.account?.id?.value || item.id}` : ""}${card.op.input.provider==="scion" && item.account?.instance ? ` · ${item.account.instance}` : ""}` : project ? `${item.name} · ${item.path_with_namespace} · #${item.id}` : `${item.name || `群聊 · ${id}`}${item.chat_mode==="topic" ? " · 话题群" : ""}`;
-        if(!account && !project){row.title=id;if(item.name)card.chatNames.set(id,item.name);}
+      if(repository && (!Array.isArray(rows) || rows.some(r=>typeof r.name!=="string" || !Number.isSafeInteger(r.created_at_ms) || r.created_at_ms<=0 || typeof r.description!=="string")))throw Error("invalid repositories");
+      for(const item of rows){const id=repository ? item.name : account || project ? item.id : item.chat_id;if(card.rows.has(id))continue;
+        const row=document.createElement("label"),control=document.createElement("input"),text=document.createElement("span");control.type=account || project || repository ? "radio" : "checkbox";control.name=`selection-${card.op.operation_id}`;control.value=String(id);
+        text.textContent=account ? `${item.name}${item.username ? ` · ${item.username}` : ""}${item.id ? ` · ${item.account?.id?.value || item.id}` : ""}${card.op.input.provider==="scion" && item.account?.instance ? ` · ${item.account.instance}` : ""}` : repository ? `${item.name}${item.description ? ` · ${item.description}` : ""}` : project ? `${item.name} · ${item.path_with_namespace} · #${item.id}` : `${item.name || `群聊 · ${id}`}${item.chat_mode==="topic" ? " · 话题群" : ""}`;
+        if(!account && !project && !repository){row.title=id;if(item.name)card.chatNames.set(id,item.name);}
         row.append(control,text);card.candidates.append(row);card.rows.set(id,{control});
         control.addEventListener("change",()=>{
           card.dirty=true;
           if(account){card.draft.platform_id=id;card.draft.platform_version=item.version;card.draft.name=id ? item.name : (card.name?.value || "");if(id && card.name)card.name.value=item.name;}
+          else if(repository){card.draft.repository={name:item.name,created_at_ms:item.created_at_ms};}
           else if(project){card.draft.project_id=id;card.draft.project_path=item.path_with_namespace;}
           else {const selected=new Set(card.draft.chat_ids || []);if(control.checked)selected.add(id);else selected.delete(id);card.draft.chat_ids=[...selected];}
           updateSelectionInteraction(card,card.op);
         });
       }
-      card.candidateFeedback=(result.search_warnings || []).map(w=>w.code==="permission_denied" ? "部分搜索权限不足，可补充授权或清空关键词浏览" : w.code==="refine_query" ? "结果较多，请输入更完整的群名" : "部分搜索暂不可用，请重试").join("；") || (!rows.length ? (project ? "暂无候选；可调整搜索，结果只代表当前账号可见项目。" : account ? "没有已核验账号，请先连接指定账号。" : "暂无候选；可调整搜索，结果不代表所有群。") : "");
+      card.candidateFeedback=repository ? `${rows.length ? "" : "没有匹配的仓库。"}${result.truncated ? `列表尚未读全，${result.next_page_token ? "可加载更多或" : "请"}输入组织/仓库前缀缩小范围。` : ""}` : (result.search_warnings || []).map(w=>w.code==="permission_denied" ? "部分搜索权限不足，可补充授权或清空关键词浏览" : w.code==="refine_query" ? "结果较多，请输入更完整的群名" : "部分搜索暂不可用，请重试").join("；") || (!rows.length ? (project ? "暂无候选；可调整搜索，结果只代表当前账号可见项目。" : account ? "没有已核验账号，请先连接指定账号。" : "暂无候选；可调整搜索，结果不代表所有群。") : "");
     }catch(error){if(generation===s.generation){card.candidateFeedback=error.code==="conflict" ? "账号或表单已变化，请 Agent 查询原选择，或在完整设置中核对。" : error.code==="permission_denied" || error.code==="forbidden" ? "当前账号权限不足，请核对账号授权或进入完整设置；未替换选择。" : "候选读取失败，请重试搜索或进入完整设置。";}}
     finally{if(generation===s.generation){card.searchBusy=false;updateSelectionInteraction(card,card.op);}}
   }

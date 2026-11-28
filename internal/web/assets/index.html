@@ -357,19 +357,39 @@
           </div>
           <div id="notification-panel-workitems" hidden>
             <section class="workspace-form notification-settings" aria-label="Scion Issue 新建通知设置">
-              <p class="quiet">仅接收查询时仍为 open 的 Issue 新建通知，不含评论、Review 和评审动态。</p>
+              <details id="scion-issue-settings" class="notification-channel" open>
+                <summary class="notification-settings-heading"><label class="workspace-check"><input id="scion-enabled" type="checkbox" aria-label="启用 Issue 新建通知"></label><span class="notification-channel-disclosure"><span id="scion-issue-title" class="notification-channel-title">Issue 新建通知</span></span></summary>
+                <section class="notification-channel-body" aria-labelledby="scion-issue-title">
+                  <p class="quiet">仅接收查询时仍为 open 的 Issue 新建通知，不含评论、Review 和评审动态。</p>
+                  <label id="scion-repository-label" for="scion-repository-search">仓库</label><input id="scion-repository" class="field-control" aria-label="已选仓库" readonly hidden>
+                  <details id="scion-repository-picker" class="gitlab-project-picker choice-picker">
+                    <summary id="scion-repository-summary" aria-describedby="scion-repository-status">选择仓库</summary>
+                    <input id="scion-repository-search" type="search" placeholder="筛选仓库名称或简介；也可输入组织/仓库前缀" aria-label="筛选 Scion 仓库" autocomplete="off" class="field-control">
+                    <p id="scion-repository-status" class="quiet" role="status" aria-live="polite"></p>
+                    <div id="scion-repository-options" class="gitlab-project-options" aria-label="可选仓库"></div>
+                    <div class="gitlab-project-actions"><button id="scion-repository-more" class="text-button" type="button" hidden>加载更多</button><button id="scion-repository-refresh" class="text-button" type="button">刷新列表</button></div>
+                  </details>
+                  <button id="scion-verify" class="text-button" type="button">验证仓库</button>
+                  <p class="quiet">保存后仓库固定。</p>
+                </section>
+              </details>
               <div id="scion-attention-slot"></div>
-              <label class="workspace-check"><input id="scion-enabled" type="checkbox">接收 Issue 新建通知</label>
-              <label for="scion-repository">仓库</label><input id="scion-repository" class="field-control" placeholder="OpenCSG/scion 或同实例仓库链接">
-              <button id="scion-verify" class="text-button" type="button">验证仓库</button>
-              <p class="quiet">保存后仓库、Issue 类型与接收起点固定。</p>
-              <label for="scion-backfill">开始接收</label><select id="scion-backfill" class="field-control"><option value="0">从现在开始</option><option value="86400">最近一天</option><option value="custom">自定义开始时间</option></select>
-              <div id="scion-backfill-custom" hidden><label for="scion-backfill-start">开始时间（当前设置时区）</label><span class="date-time-field"><input id="scion-backfill-start" type="text" aria-describedby="scion-backfill-help scion-backfill-error" class="field-control" autocomplete="off" spellcheck="false" placeholder="YYYY-MM-DD HH:mm:ss"><button id="scion-backfill-start-toggle" class="date-time-toggle" type="button" aria-label="选择Scion接收起始时间"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="5" width="16" height="15" rx="2"/><path d="M8 3v4m8-4v4M4 10h16"/></svg></button></span></div>
-              <p id="scion-backfill-locked" class="quiet" hidden></p>
-              <details><summary>高级设置</summary><label for="scion-interval">检查间隔（秒）</label><input id="scion-interval" class="field-control" type="number" min="30" max="3600" value="60"></details>
-              <p id="scion-status" class="quiet" role="status"></p><p id="scion-expiry" class="quiet"></p>
-              <p id="scion-unsaved" class="quiet"></p><p id="scion-error" class="form-error" role="status" hidden></p><p id="scion-feedback" class="quiet" role="status"></p>
-              <div class="workspace-actions"><button id="scion-save" type="button">保存设置</button><button id="scion-sync" class="text-button" type="button">立即同步</button><button id="scion-reload" class="text-button" type="button">重新读取</button></div>
+              <details id="scion-advanced-settings" class="notification-advanced"><summary>高级设置</summary>
+                <div class="notification-settings-row">
+                  <div><label for="scion-backfill">开始接收时间</label><select id="scion-backfill" aria-describedby="scion-backfill-help" class="field-control"><option value="0">从开启时刻</option><option value="86400">最近 24 小时</option><option value="custom">指定时间</option></select><div id="scion-backfill-locked" class="notification-backfill-locked" aria-describedby="scion-backfill-help" hidden><span id="scion-backfill-value"></span><small>已锁定</small></div></div>
+                  <div><label for="scion-interval">检查间隔（秒）</label><input id="scion-interval" class="field-control" type="number" min="30" max="3600" value="60"></div>
+                </div>
+                <div id="scion-backfill-custom" hidden><label for="scion-backfill-start">起始时间</label><span class="date-time-field"><input id="scion-backfill-start" type="text" aria-describedby="scion-backfill-help scion-backfill-error" class="field-control" autocomplete="off" spellcheck="false" placeholder="YYYY-MM-DD HH:mm:ss"><button id="scion-backfill-start-toggle" class="date-time-toggle" type="button" aria-label="选择 Scion 接收起始时间"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="5" width="16" height="15" rx="2"/><path d="M8 3v4m8-4v4M4 10h16"/></svg></button></span></div>
+                <p id="scion-backfill-help" class="quiet">首次开启后固定接收起点。</p>
+                <p id="scion-backfill-error" class="form-error" role="alert" hidden></p>
+              </details>
+              <p id="scion-unsaved" class="quiet"></p>
+              <div class="gitlab-events-actions notification-settings-actions form-actions"><button id="scion-save" class="primary" type="button">保存设置</button><p id="scion-feedback" class="quiet" role="status" aria-live="polite"></p></div>
+              <p id="scion-error" class="form-error" role="alert" hidden></p>
+              <details id="scion-sync-status" class="gitlab-events-records"><summary>同步与诊断</summary><button id="scion-sync" class="text-button" type="button">立即同步</button>
+                <p id="scion-status" class="quiet" role="status"></p><p id="scion-expiry" class="quiet"></p>
+                <button id="scion-reload" class="text-button" type="button">重新读取</button>
+              </details>
             </section>
           </div>
           <div id="notification-panel-messages" aria-label="飞书通知设置" hidden>

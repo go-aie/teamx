@@ -181,3 +181,23 @@ test('selection refresh keeps search and pagination disabled until candidate rea
  } finally {release({chats:[{chat_id:'oc_one',name:'产品讨论群',chat_mode:'group'}],has_more:true,page_token:'page2'});await loading;await settle();}
  assert.equal(el.children[3].disabled,false);assert.equal(el.children[5].disabled,false);
 });
+
+test('Scion repository cards share selection receipts and preserve exact repository identity across bounded reads',async()=>{
+ const api=fixture('repositories');api.op.input={kind:'repositories',provider:'scion',platform_id:'scion',platform_version:3};api.op.draft={};
+ const one={name:'Owner/repo',created_at_ms:100,description:'Issue tracker'},two={name:'Owner/other',created_at_ms:200,description:''};
+ api.hook=(path,body)=>path.endsWith('/candidates') ? {repositories:body.page_token ? [one,two] : [one],truncated:!body.page_token,next_page_token:body.page_token ? '' : '200'} : undefined;
+ const ui=await launch(api);await settle();const el=card(ui);
+ assert.equal(el.children[0].textContent,'选择 Scion 仓库');assert.equal(el.children[2].children.length,1);assert.match(el.children[9].textContent,/尚未读全/);
+ const choice=candidates(el).children[0].children[0];assert.equal(choice.type,'radio');choice.checked=true;await choice.emit('change');
+ await el.children[5].emit('click');await settle();assert.equal(candidates(el).children.length,2);assert.equal(choice.checked,true);
+ assert.equal(api.calls.filter(c=>c.path.endsWith('/candidates')).at(-1).body.page_token,'200');
+ api.hook=path=>path.endsWith('/candidates') ? {repositories:[],truncated:false} : undefined;
+ const query=el.children[2].children[0].children[1];query.value='missing';await el.children[3].emit('click');await settle();
+ assert.equal(candidates(el).children.length,0);assert.equal(el.children[6].textContent,'已选仓库：Owner/repo');
+ assert.equal(api.calls.filter(c=>c.path.endsWith('/candidates')).at(-1).body.page_token,'200');
+ await controls(el)[0].emit('click');await settle();
+ assert.deepEqual(api.op.draft,{repository:{name:'Owner/repo',created_at_ms:100}});assert.equal(api.op.status,'completed');
+ assert.equal(el.children[9].textContent,'');
+ assert.equal(api.calls.some(c=>/member\/(tool|notifications)|connect\/start/.test(c.path)),false);
+ const restored=await launch(api);await settle();assert.equal(card(restored).children[6].textContent,'已选仓库：Owner/repo');
+});

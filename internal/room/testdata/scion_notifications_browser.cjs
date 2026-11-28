@@ -10,11 +10,13 @@ const {chromium}=require('playwright'),assert=require('node:assert/strict'),path
    await page.locator('#member-notification-add-toggle').click();
    await page.locator(`#member-notification-add-options [data-platform-id="${input.platform_id}"]`).hover();
    await page.locator(`#member-notification-add-options [data-platform-id="${input.platform_id}"] [data-action="settings"]`).click();
-   await page.locator('#scion-repository').fill('OpenCSG/scion');await page.locator('#scion-backfill').selectOption('86400');
+   await page.locator('#scion-repository-summary').click();await page.locator('#scion-repository-search').fill('OpenCSG/scion');await page.locator('#scion-repository-options input[value="OpenCSG/scion"]').check();await page.locator('#scion-advanced-settings > summary').click();await page.locator('#scion-backfill').selectOption('86400');
    const verify=page.waitForResponse(r=>r.url().endsWith('/v1/platform/notifications/verify'));await page.locator('#scion-verify').click();assert.equal((await verify).status(),200);
    const save=page.waitForResponse(r=>r.url().endsWith('/v1/platform/notifications/configure'));await page.locator('#scion-save').click();const result=await save;assert.equal(result.status(),200,await result.text());
   }else await page.getByRole('button',{name:'编辑 Scion 的通知设置',exact:true}).click();
+  await page.locator('#scion-advanced-settings').evaluate(e=>{e.open=true;});
   await page.locator('#scion-backfill-locked').waitFor({state:'visible'});
+  assert.equal(await page.locator('#scion-backfill').isVisible(),false);
   assert.equal(await page.locator('#scion-repository').isDisabled(),true);assert.equal(await page.locator('#scion-repository').inputValue(),'OpenCSG/scion');
   assert.match(await page.locator('#notification-panel-workitems').textContent(),/不含评论、Review/);
   assert.equal(await page.locator('#notification-panel-gitlab').isVisible(),false);

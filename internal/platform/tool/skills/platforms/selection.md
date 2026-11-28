@@ -1,6 +1,6 @@
-## Show an account, group or project selection card
+## Show an account, group, project or repository selection card
 
-For a real request such as “飞书选择群的卡片” or “GitLab 项目选择卡片”, use the
+For a real request such as “飞书选择群的卡片”, “GitLab 项目选择卡片” or “Scion 仓库选择卡片”, use the
 fixed component directly. Retain the original human `SEQ`. If the original
 selection is not already known, recover it before starting:
 
@@ -11,12 +11,13 @@ teamx platforms selection status --source-seq SEQ
 Reuse any matching receipt; only `operation_not_found` establishes absence.
 Failed or partial reads do not. Each new selection step uses its own stable
 32-character hexadecimal `PICK_ID`. Same ID/input recovers its receipt; changed
-input conflicts. Groups/projects require an exact verified account ID and
+input conflicts. Groups/projects/repositories require an exact verified account ID and
 nonzero connection version from retained context or `platforms list`.
 
 ```sh
 teamx platforms selection start --provider lark --kind groups --platform-id ID --platform-version V --operation-id PICK_ID --source-seq SEQ --notify inbox
 teamx platforms selection start --provider gitlab --kind projects --platform-id ID --platform-version V --operation-id PICK_ID --source-seq SEQ --notify inbox
+teamx platforms selection start --provider scion --kind repositories --platform-id ID --platform-version V --operation-id PICK_ID --source-seq SEQ --notify inbox
 ```
 
 For account cards, use the following fields instead of group/project fields:
@@ -35,7 +36,9 @@ request. Other empty candidates use the complete platforms connection guide. An 
 unless the human requested the card itself.
 
 Let the component search, paginate and retain choices; `--query NAME` can seed a
-group/project search. Do not first enumerate chats/projects, check business sending
+group/project/repository search. Scion filters a bounded visible list by name or
+description; an organization/repository prefix narrows the native query. A
+truncated list is incomplete; let the card load more or refine the prefix. Do not first enumerate chats/projects/repositories, check business sending
 grants, present text/paste instructions instead of the card, or read credentials.
 Only the original human submits, through the original message component or full
 settings. Confirm the creation receipt and `continuation.mode=inbox`, briefly
@@ -56,10 +59,11 @@ teamx platforms selection status --operation-id PICK_ID
 
 Recover the retained original human request, latest intent and any existing
 follow-on receipts. Use `status --source-seq ORIGINAL_SEQ` when the ID is lost.
-Check the exact submitted account/group/project: account `draft.platform_id`,
+Check the exact submitted account/group/project/repository: account `draft.platform_id`,
 `draft.platform_version`, name and account identity; group `draft.chat_ids` with
 verified chats; project `draft.project_id`, `draft.project_path` with the verified
-project and optional events filter. Display names are not substitute IDs.
+project and optional events filter; Scion repository `draft.repository.name` and
+`draft.repository.created_at_ms`, reverified on submission against the pinned account. Display names are not substitute IDs.
 
 For a card-only request, `status=completed` plus verified submitted values finishes
 the choice. Do not read member configuration, connect the account or change

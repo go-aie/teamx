@@ -22,11 +22,13 @@ test("Scion reuses the member platform row, saves only Issue notifications and l
  const api=scionFixture(),ui=await launch(api);await open(ui);
  assert.equal(ui.el("notification-panel-workitems").hidden,false);assert.equal(ui.el("notification-panel-gitlab").hidden,true);assert.equal(ui.el("notification-panel-messages").hidden,true);
  assert.match(ui.el("notification-account").textContent,/alice/);
+ assert.equal(ui.el("scion-backfill").hidden,false);assert.equal(ui.el("scion-backfill-locked").hidden,true);
  ui.el("scion-repository").value="Owner/repo";await ui.el("scion-repository").emit("input");ui.el("scion-backfill").value="86400";await ui.el("scion-backfill").emit("change");
  assert.equal(ui.el("scion-save").disabled,false);
  await ui.el("scion-save").emit("click");await settle();
  const call=api.calls.find(c=>c.path==="/v1/platform/notifications/configure");assert.equal(call.body.provider,"scion");assert.equal(call.body.subscription_version,0);assert.equal(call.body.config.platform_id,"scion");assert.deepEqual(call.body.config.target,target());assert.deepEqual(call.body.config.object_types,["issue"]);
  assert.equal(ui.el("scion-repository").disabled,true);assert.equal(ui.el("scion-backfill").disabled,true);assert.equal(ui.el("scion-sync").disabled,false);
+ assert.equal(ui.el("scion-backfill").hidden,true);assert.equal(ui.el("scion-backfill-locked").hidden,false);assert.match(ui.el("scion-backfill-value").textContent,/2026/);
  assert.equal(api.calls.some(c=>c.path==="/v1/tools/bind" || c.path.includes("scion/login") || c.path.includes("onboarding/prepare")),false);
  const bindings=structuredClone(api.tools.bindings);await ui.el("close-notification").emit("click");await settle();const toggle=row(ui).children[1].children[1];toggle.checked=false;await toggle.emit("change");await settle();assert.equal(api.scion[0].config.enabled,false);assert.deepEqual(api.tools.bindings,bindings);
 });
@@ -35,4 +37,38 @@ test("Scion dirty drafts survive refresh and late saves cannot fill another memb
  const hook=api.hook;let finish;api.hook=(path,body)=>path.endsWith("notifications/configure") ? new Promise(resolve=>{finish=()=>resolve(hook(path,body));}) : hook(path,body);
  const pending=ui.el("scion-save").emit("click");await settle();await ui.el("close-notification").emit("click");await settle();await open(ui,"member-b");assert.equal(ui.el("scion-repository").value,"");finish();await pending;await settle();
  assert.equal(ui.el("notification-detail").open,true);assert.equal(ui.el("scion-repository").value,"");assert.match(ui.el("notification-destination").textContent,/b/);assert.equal(api.calls.filter(c=>c.path.endsWith("notifications/configure")).length,1);
+});
+
+test("Scion repository picker retains selection across filtering, larger reads and directory failures",async()=>{
+ const api=scionFixture(),hook=api.hook,repositories=[{name:"Owner/repo",created_at_ms:100,description:"Issue tracker"},{name:"Owner/other",created_at_ms:200,description:"Other"}];
+ api.hook=(path,body)=>path==="/v1/platform/scion/repositories" ? {repositories:body.query ? repositories.filter(r=>r.name.includes(body.query)) : body.page_token ? repositories : repositories.slice(0,1),truncated:!body.page_token,next_page_token:body.page_token ? "" : "200"} : hook(path,body);
+ const ui=await launch(api);await open(ui);
+ ui.el("scion-repository-picker").open=true;await ui.el("scion-repository-picker").emit("toggle");await settle();
+ assert.equal(ui.el("scion-repository").hidden,true);assert.equal(ui.el("scion-repository-options").children.length,1);assert.match(ui.el("scion-repository-status").textContent,/尚未读全/);
+ const call=api.calls.find(c=>c.path==="/v1/platform/scion/repositories");assert.equal(call.body.platform_version,1);assert.deepEqual(call.body.target,target());
+ await ui.el("scion-repository-more").emit("click");await settle();assert.equal(ui.el("scion-repository-options").children.length,2);
+ const pick=ui.el("scion-repository-options").children[1].children[0];pick.checked=true;await pick.emit("change");assert.equal(ui.el("scion-repository-summary").textContent,"Owner/other");
+ ui.el("scion-repository-picker").open=true;ui.el("scion-repository-search").value="missing";await ui.el("scion-repository-search").emit("input");await ui.clock.advance(250);
+ assert.equal(ui.el("scion-repository-options").children.length,0);assert.equal(ui.el("scion-repository").value,"Owner/other");
+ assert.equal(api.calls.filter(c=>c.path==="/v1/platform/scion/repositories").at(-1).body.page_token,"200");
+ api.hook=(path,body)=>{if(path==="/v1/platform/scion/repositories")throw Error("unavailable");return hook(path,body);};
+ await ui.el("scion-repository-refresh").emit("click");await settle();assert.match(ui.el("scion-repository-status").textContent,/读取失败/);assert.equal(ui.el("scion-repository").value,"Owner/other");
+ await ui.el("scion-save").emit("click");await settle();assert.equal(ui.el("scion-repository-picker").hidden,true);assert.equal(ui.el("scion-repository").hidden,false);
+});
+
+test("Scion repository candidates cannot cross searches, members or connection versions",async()=>{
+ const api=scionFixture(),hook=api.hook,pending=[];
+ api.hook=(path,body)=>path==="/v1/platform/scion/repositories" ? new Promise(resolve=>pending.push({body,resolve})) : hook(path,body);
+ api.tools.bindings.push({agent_id:"b",membership_id:"member-b",tool:"scion",platform_id:"scion"});
+ const ui=await launch(api);await open(ui);ui.el("scion-repository-picker").open=true;void ui.el("scion-repository-picker").emit("toggle");await settle();
+ ui.el("scion-repository-search").value="new";await ui.el("scion-repository-search").emit("input");await ui.clock.advance(250);
+ const page=name=>({repositories:[{name,created_at_ms:100,description:""}],truncated:false});
+ pending[1].resolve(page("Owner/new"));await settle();pending[0].resolve(page("Owner/old"));await settle();
+ assert.equal(ui.el("scion-repository-options").children[0].children[0].value,"Owner/new");
+ const waiting=ui.el("scion-repository-refresh").emit("click");await settle();
+ await ui.el("close-notification").emit("click");await open(ui,"member-b");pending[2].resolve(page("Owner/stale"));await waiting;await settle();
+ assert.equal(ui.el("scion-repository-options").children.length,0);assert.equal(ui.el("scion-repository").value,"");
+ ui.el("scion-repository-picker").open=true;void ui.el("scion-repository-picker").emit("toggle");await settle();
+ api.platforms.find(p=>p.id==="scion").version++;await ui.refresh();pending[3].resolve(page("Owner/old-version"));await settle();
+ assert.equal(ui.el("scion-repository-options").children.length,0);
 });

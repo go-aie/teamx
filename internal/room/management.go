@@ -807,6 +807,10 @@ func (m *roomManager) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		m.serveGitLabProjects(w, r)
 		return
 	}
+	if r.URL.Path == "/v1/platform/scion/repositories" {
+		m.serveScionRepositories(w, r)
+		return
+	}
 	if r.URL.Path == "/v1/platform/attachments" {
 		m.servePlatformAttachment(w, r)
 		return

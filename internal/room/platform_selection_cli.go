@@ -5,8 +5,10 @@ import (
 	"flag"
 	"fmt"
 	"github.com/go-aie/teamx/internal/platform/gitlab"
+	"github.com/go-aie/teamx/internal/platform/scion"
 	"io"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -32,12 +34,12 @@ func runPlatformSelectionCLI(ctx context.Context, args []string, stdout, stderr 
 	switch action {
 	case "start":
 		f.Uint64Var(&req.SourceSeq, "source-seq", 0, "real human request seq")
-		f.StringVar(&in.Provider, "provider", "", "lark (default), gitlab or scion (existing accounts only)")
+		f.StringVar(&in.Provider, "provider", "", "lark (default), gitlab or scion")
 		f.StringVar(&in.Origin, "origin", "", "canonical GitLab instance (required) or Scion instance (optional) for account choice")
-		f.StringVar(&in.Kind, "kind", "", "account, groups or projects")
+		f.StringVar(&in.Kind, "kind", "", "account, groups, projects or repositories")
 		f.StringVar(&in.PlatformID, "platform-id", "", "verified account for group search")
 		f.Uint64Var(&in.PlatformVersion, "platform-version", 0, "account version")
-		f.StringVar(&in.Query, "query", "", "initial group search")
+		f.StringVar(&in.Query, "query", "", "initial candidate search")
 		f.StringVar(&draft.Name, "name", "", "initial connection name")
 		f.StringVar(&mode, "notify", "", "inbox or none")
 		req.Input = &in
@@ -52,6 +54,14 @@ func runPlatformSelectionCLI(ctx context.Context, args []string, stdout, stderr 
 		f.Func("chat-id", "selected group ID; repeat for multiple", func(v string) error { draft.ChatIDs = append(draft.ChatIDs, v); return nil })
 		f.Int64Var(&draft.ProjectID, "project-id", 0, "native project ID")
 		f.StringVar(&draft.ProjectPath, "project-path", "", "exact project path")
+		var repository scion.RepositoryEvidence
+		f.Func("repository", "exact Scion repository name", func(v string) error { repository.Name = v; draft.Repository = &repository; return nil })
+		f.Func("repository-created-at-ms", "observed Scion repository creation identity", func(v string) error {
+			var err error
+			repository.Created, err = strconv.ParseInt(v, 10, 64)
+			draft.Repository = &repository
+			return err
+		})
 		f.Func("event-type", "activity type; repeat; empty clears", func(s string) error {
 			if draft.EventsFilter == nil {
 				draft.EventsFilter = &gitlab.EventsFilter{Types: []string{}}

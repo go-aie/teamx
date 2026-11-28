@@ -1,0 +1,41 @@
+const {chromium}=require('playwright'),assert=require('node:assert/strict'),fs=require('node:fs'),path=require('node:path');
+(async()=>{
+ const [endpoint,encoded,out]=process.argv.slice(2),input=JSON.parse(encoded),browser=await chromium.launch({headless:true});
+ try{
+  if(out)fs.mkdirSync(out,{recursive:true});
+  const context=await browser.newContext({viewport:{width:1440,height:1050}}),page=await context.newPage(),errors=[];
+  page.on('pageerror',e=>errors.push(e.message));page.setDefaultTimeout(12000);
+  await context.addInitScript(room=>sessionStorage.setItem('teamx.selected-room',JSON.stringify(room)),{room_id:input.room_id,room_instance:input.room_instance});
+  await page.goto(endpoint);const card=page.locator(`[data-interaction-id="${input.operation_id}"]`);
+  await card.getByText('选择 Scion 仓库',{exact:true}).waitFor();await card.locator('.platform-selection-candidates input[value="Owner/repo"]').check();
+  await card.getByRole('button',{name:'加载更多',exact:true}).click();await page.waitForFunction(()=>document.querySelectorAll('.platform-selection-candidates input').length===101);assert.equal(await card.locator('.platform-selection-candidates input').count(),101);
+  assert.equal(await card.locator('select').count(),0);
+  await card.locator('input[type="text"]').fill('missing');await card.getByRole('button',{name:'搜索',exact:true}).click();await card.getByText(/没有匹配的仓库/).waitFor();
+  assert.match(await card.textContent(),/已选仓库：Owner\/repo/);
+  if(out)await page.screenshot({path:path.join(out,'card-desktop.png')});
+  await page.setViewportSize({width:390,height:844});assert.equal(await card.evaluate(e=>e.scrollWidth>e.clientWidth+1),false);
+  await card.getByRole('button',{name:'提交选择',exact:true}).click();await card.getByText('选择已保存',{exact:true}).waitFor();
+  if(out)await page.screenshot({path:path.join(out,'card-mobile.png')});
+  await page.reload();await card.getByText('选择已保存',{exact:true}).waitFor();assert.match(await card.textContent(),/已选仓库：Owner\/repo/);
+  await page.setViewportSize({width:1440,height:1050});
+  await page.locator('.member-summary').first().click();await page.locator('#agent-tab-platforms').click();await page.locator('#member-notification-add-toggle').click();
+  const option=page.locator(`#member-notification-add-options [data-platform-id="${input.platform_id}"]`);await option.hover();await option.locator('[data-action="settings"]').click();
+  await page.locator('#scion-repository-summary').click();await page.locator('#scion-repository-options input').first().waitFor().catch(async e=>{throw Error(e.message+'; picker='+await page.locator('#scion-repository-status').textContent()+'; errors='+JSON.stringify(errors));});
+  await page.locator('#scion-repository-more').click();await page.waitForFunction(()=>document.querySelectorAll('#scion-repository-options input').length===101);assert.equal(await page.locator('#scion-repository-options input').count(),101);
+  await page.locator('#scion-repository-search').fill('Issue');await page.waitForFunction(()=>document.querySelectorAll('#scion-repository-options input').length===1);
+  if(out)await page.screenshot({path:path.join(out,'settings-desktop.png')});
+  await page.locator('#scion-repository-options input[value="Owner/repo"]').check();
+  await page.locator('#scion-repository-summary').click();await page.locator('#scion-repository-search').fill('missing');await page.waitForFunction(()=>document.querySelector('#scion-repository-status').textContent.includes('没有匹配'));
+  assert.equal(await page.locator('#scion-repository-summary').textContent(),'Owner/repo');
+  await page.locator('#scion-repository-summary').click();await page.locator('#scion-save').click();await page.locator('#scion-repository').waitFor();
+  assert.equal(await page.locator('#scion-repository').isDisabled(),true);assert.equal(await page.locator('#scion-repository-picker').isVisible(),false);
+  await page.setViewportSize({width:390,height:844});
+  if(await page.locator('#workspace').evaluate(e=>!e.classList.contains('rooms-collapsed') && e.classList.contains('members-collapsed')))await page.locator('#room-list .room-choice[aria-current="true"]').click();
+  await page.locator('#room-menu-label').click();await page.locator('#conversation-open-details').click();
+  await page.locator('.member-summary').first().click();await page.locator('#agent-tab-platforms').click();
+  await page.getByRole('button',{name:'编辑 Scion 的通知设置',exact:true}).click();await page.locator('#scion-repository').waitFor();
+  assert.equal(await page.locator('#notification-detail').evaluate(e=>e.scrollWidth>e.clientWidth+1),false);
+  if(out)await page.screenshot({path:path.join(out,'settings-mobile.png')});
+  assert.deepEqual(errors,[]);console.log(JSON.stringify({browser:'Chromium',real_teamx:true,native_fixture:true,card:true,settings:true,desktop:true,mobile:true,reload:true,bounded_more:true,filter_selection_preserved:true,page_errors:errors}));
+ }finally{await browser.close()}
+})().catch(e=>{console.error(e);process.exitCode=1});
