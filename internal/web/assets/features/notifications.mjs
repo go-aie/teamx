@@ -131,7 +131,7 @@ export function createNotifications({ env, membersUI, workspaceUI, runtime, room
     const read = ws.notificationsRead = (ws.notificationsRead || 0) + 1;
     const scope = ws.notificationScope, context = ws.notificationEpoch;
     const current = () => valid() && ws === workspaceUI.workspaceView && state.catalog?.service_epoch === catalog.service_epoch && read === ws.notificationsRead && context === ws.notificationEpoch;
-    const finish = beginRead(env, ws, "notificationsReadState", () => { if (current()) renderNotificationPlatforms(); });
+    const finish = beginRead(env, ws, "notificationsReadState", () => { if (current()) renderGitLabEvents(); });
     let failed = false;
     try {
       const params = new URLSearchParams({service_epoch:catalog.service_epoch,caller_id:ws.operator,...ws.room});

@@ -1,10 +1,13 @@
 import { spaceCapabilities } from "../space-context.mjs";
 import { randomUUID } from "../random-id.mjs";
 import { createNavigationIcon } from "../icons.mjs";
+import { DEFAULT_SCION_ORIGIN, createScionInstanceOptions } from "./scion-instance.mjs";
 // Shared platform connection forms, validation and account selection.
 export function createConnections({ env, settingsUI, runtime, scionUI, gitlabUI, larkUI, onboardingUI, workspaceUI, notificationsUI, membersUI }) {
   const { document, window, Option, setTimeout, clearTimeout, request } = env;
   const { state, $, setSelectOptions, confirmAction } = runtime;
+  const scionOrigins = createScionInstanceOptions(document, "connection-scion-origins");
+  $("connection-url-row").append(scionOrigins);
 
   // Application secrets live only in memory and are never retried automatically.
   const platforms = { items: [], selected: null, sending: false, generation: 0, formVersion: 0, discovery: null, detecting: false, auth: null, larkPending:null, larkStarting:null, gitlabAuth: null, gitlabPending: null, gitlabSetup:null, gitlabSetupVersion:0, gitlabEditingImportID:null, scionDiscovery:null, scionAuth:null, scionPending:null, scionLogout:null };
@@ -59,7 +62,9 @@ export function createConnections({ env, settingsUI, runtime, scionUI, gitlabUI,
     $("gitlab-account-row").hidden = isLark || isScion;
     $("gitlab-app-config-row").hidden = isLark || isScion;
     $("connection-name").placeholder = isScion ? "公司 Scion" : isLark ? "我的飞书" : "公司 GitLab";
-    $("connection-url").placeholder = isScion ? "https://scion.example.com" : "https://gitlab.example.com";
+    $("connection-url").placeholder = isScion ? DEFAULT_SCION_ORIGIN : "https://gitlab.example.com";
+    if (isScion) $("connection-url").setAttribute("list", scionOrigins.id);
+    else $("connection-url").removeAttribute("list");
     scionUI.renderScionPATLink();
     if (!isScion) $("connection-scion-pat").value = "";
     if (isLark || isScion) $("gitlab-client-secret").value = "";
@@ -241,7 +246,7 @@ export function createConnections({ env, settingsUI, runtime, scionUI, gitlabUI,
       return;
     }
     $("connection-provider").disabled = !!item;
-    $("connection-url").value = item?.url || ""; $("connection-url").readOnly = !!item;
+    $("connection-url").value = item?.url || (connectionIsScion() ? DEFAULT_SCION_ORIGIN : ""); $("connection-url").readOnly = !!item;
     setSelectOptions("connection-profile",[new Option("", item?.cli_profile?.profile || "")],item?.cli_profile?.profile || "");
     $("connection-executable").value = item?.cli_profile?.executable || "";
     $("connection-scion-executable").value = item?.provider === "scion" ? item.cli_profile.executable : "";
@@ -430,7 +435,7 @@ export function createConnections({ env, settingsUI, runtime, scionUI, gitlabUI,
       $("connection-setup-new").checked = true;
       $("connection-setup-existing").checked = false;
       if (!platforms.selected) {
-        $("connection-url").value = connectionIsLark() ? larkUI.connectionOrigin() : "";
+        $("connection-url").value = connectionIsLark() ? larkUI.connectionOrigin() : connectionIsScion() ? DEFAULT_SCION_ORIGIN : "";
         if (!$("connection-name").value.trim() || ["飞书", "Lark"].includes($("connection-name").value)) $("connection-name").value = connectionIsLark() ? larkUI.connectionBrand() === "lark" ? "Lark" : "飞书" : "";
       }
       connectionAuthFields();

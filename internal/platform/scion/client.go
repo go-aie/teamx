@@ -27,16 +27,21 @@ func validInstance(s string) bool {
 }
 func validRepository(s string) bool {
 	parts := strings.Split(s, "/")
-	if len(parts) != 2 {
+	if len(parts) < 2 {
 		return false
 	}
 	for _, p := range parts {
-		if p == "" || p == "." || p == ".." || len(p) > 128 || strings.Trim(p, "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_.") != "" {
+		if !validRepositoryPart(p) {
 			return false
 		}
 	}
 	return true
 }
+
+func validRepositoryPart(p string) bool {
+	return p != "" && p != "." && p != ".." && len(p) <= 128 && strings.Trim(p, "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_.") == ""
+}
+
 func NormalizeRepository(origin, value string) (string, error) {
 	value = strings.TrimSpace(value)
 	if strings.Contains(value, "://") {

@@ -43,8 +43,10 @@ func ListRepositories(ctx context.Context, run NativeExecute, q QueryScope, quer
 	query = strings.TrimSpace(query)
 	prefix := ""
 	if strings.Contains(query, "/") {
-		if strings.Trim(query, "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_./") != "" || strings.Count(query, "/") != 1 {
-			return page, notification.ErrRequest
+		for _, part := range strings.Split(strings.TrimSuffix(query, "/"), "/") {
+			if !validRepositoryPart(part) {
+				return page, notification.ErrRequest
+			}
 		}
 		prefix = query
 	}

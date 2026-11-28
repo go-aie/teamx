@@ -1,4 +1,5 @@
 import { randomUUID } from "../random-id.mjs";
+import { DEFAULT_SCION_ORIGIN, createScionInstanceOptions } from "./scion-instance.mjs";
 
 export function scionPATURL(value) {
   try {
@@ -17,7 +18,8 @@ export function createScionAccountLogin({env,runtime,connectionsUI,current,onSav
   function attach(card) {
     const panel=document.createElement("div");panel.className="scion-card-login";panel.hidden=true;
     const originLabel=document.createElement("label"),originText=document.createElement("span"),origin=document.createElement("input");
-    originText.textContent="Scion 实例地址";origin.type="url";origin.className="field-control";origin.placeholder="https://scion.example.com";origin.setAttribute("aria-label","Scion 实例地址");originLabel.append(originText,origin);
+    const origins=createScionInstanceOptions(document,`scion-origins-${card.op.operation_id}`);
+    originText.textContent="Scion 实例地址";origin.type="url";origin.className="field-control";origin.placeholder=DEFAULT_SCION_ORIGIN;origin.setAttribute("aria-label","Scion 实例地址");origin.setAttribute("list",origins.id);originLabel.append(originText,origin,origins);
     const heading=document.createElement("div"),label=document.createElement("label"),pat=document.createElement("input"),link=document.createElement("a"),impact=document.createElement("p");
     heading.className="connection-pat-heading";label.textContent="访问令牌（PAT）";pat.id=`scion-pat-${card.op.operation_id}`;label.htmlFor=pat.id;
     pat.type="password";pat.autocomplete="new-password";pat.spellcheck=false;pat.className="field-control";pat.placeholder="填写 Scion PAT";pat.setAttribute("aria-label","Scion 访问令牌（PAT）");
@@ -29,7 +31,7 @@ export function createScionAccountLogin({env,runtime,connectionsUI,current,onSav
   }
   function open(card,connection=null,{focus=true}={}) {
     const e=card.scionLogin;if(!e || e.flow)return;
-    e.pat.value="";e.error="";e.connection=connection;e.open=true;e.origin.value=connection?.url || card.op.input.origin || "";
+    e.pat.value="";e.error="";e.connection=connection;e.open=true;e.origin.value=connection?.url || card.op.input.origin || DEFAULT_SCION_ORIGIN;
     renderCard(card);
     if(focus)(e.origin.value ? e.pat : e.origin).focus();
   }

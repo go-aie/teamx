@@ -211,10 +211,10 @@ test('Scion relogin acknowledges the displayed shared references and keeps the o
  assert.deepEqual(save.referenced_rooms,[{room_id:'R',room_instance:'instance-R'},{room_id:'other',room_instance:'instance-other'}]);
  assert.equal(save.id,'old-account');assert.equal(save.name,'我的 Scion');assert.equal(save.version,7);
 });
-test('a Scion card without a known instance asks only for its address and PAT',async()=>{
+test('a Scion card without a known instance defaults its address and accepts another instance',async()=>{
  const api=scionLoginFixture();api.op.input.origin='';const ui=await launch(api);await settle();
  const origin=editor(ui).children[0].children[1],link=editor(ui).children[1].children[1];
- assert.equal(editor(ui).children[0].hidden,false);assert.equal(link.hidden,true);
+ assert.equal(editor(ui).children[0].hidden,false);assert.equal(origin.value,'https://scion.opencsg.com');assert.equal(link.href,'https://scion.opencsg.com/profile?tab=tokens');assert.equal(link.hidden,false);
  origin.value='https://scion.example';await origin.emit('input');assert.equal(link.hidden,false);
  password(ui).value='private-test-pat';await controls(card(ui))[4].emit('click');await settle();
  assert.equal(api.platforms.length,1);assert.equal(api.platforms[0].url,'https://scion.example');assert.equal(ui.el('settings-dialog').open,false);

@@ -10,6 +10,9 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/go-aie/teamx/internal/platform/notification"
+	"github.com/go-aie/teamx/internal/platform/scion"
 )
 
 func TestUIUpdateSourcesGitLabAuthorizationStagesAndExpiry(t *testing.T) {
@@ -113,5 +116,61 @@ func TestUIUpdateSourcesScionNativeAuthorizationTerminal(t *testing.T) {
 	sourceTopics(t, sub, "authorization")
 	if view := awaitScionAuth(t, m, id); view.Status != "cancelled" {
 		t.Fatal(view.Status)
+	}
+}
+
+func TestUIUpdateSourcesScionConversationalNotifications(t *testing.T) {
+	m, _, svc, c, id, _ := scionNotificationHarness(t)
+	req := scionMemberRequest(t, m, svc, id, c.ID, c.Version)
+	sub := updateSub(t, m.updates, 1, humanCaller.ID, svc.info)
+	global := updateSub(t, m.updates, 2, humanCaller.ID, ServiceInfo{})
+	assertUpdate := func(kind string) {
+		t.Helper()
+		for _, u := range sourceTopics(t, sub, "notifications") {
+			if u.Topic == "notifications" && (u.Kind != kind || u.AgentID != id.AgentID || u.MembershipID != id.MembershipID) {
+				t.Fatal(u)
+			}
+		}
+		updates, resync := global.take()
+		if resync {
+			t.Fatal("global stream overflowed")
+		}
+		for _, u := range updates {
+			if u.Topic == "notifications" {
+				t.Fatal("Room notification leaked to global stream", u)
+			}
+		}
+	}
+	req.Input.Scion = &platformMemberScionPatch{Repository: ptrScion("Owner/repo")}
+	gitlabMemberApply(t, m, "notifications", req)
+	assertUpdate("summary")
+	v := gitlabMemberGet(t, m, req)
+	key := notification.Key{Owner: id.RoomIdentity, Source: scion.WorkitemsSourceID, SubscriptionID: v.SubscriptionID}
+	checkpoint := func(fail bool) {
+		t.Helper()
+		m.mu.Lock()
+		saved, _ := m.notifications.StateLocked(key)
+		s := saved.(scion.State)
+		s.LastCheck = s.LastCheck.Add(time.Second)
+		s.Metrics.Calls++
+		if fail {
+			s.ErrorCode = "query_failed"
+		}
+		err := m.notifications.SaveLocked(s)
+		m.mu.Unlock()
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	checkpoint(false)
+	assertUpdate("diagnostics")
+	checkpoint(true)
+	assertUpdate("summary")
+	for _, enabled := range []bool{false, true} {
+		next := scionMemberRequest(t, m, svc, id, c.ID, c.Version)
+		next.Input.NotificationVersion = gitlabMemberGet(t, m, req).NotificationVersion
+		next.Input.Enabled = &enabled
+		gitlabMemberApply(t, m, "notifications", next)
+		assertUpdate("summary")
 	}
 }

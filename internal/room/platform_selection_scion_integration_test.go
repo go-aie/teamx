@@ -138,6 +138,38 @@ func TestScionRepositorySelectionSharedDirectoryAndImmutableRecovery(t *testing.
 	}
 }
 
+func TestScionRepositorySelectionNestedNamespace(t *testing.T) {
+	m, _, selection, _, dir := scionRepositorySelectionFixture(t)
+	const name = "OpenCSG/csghub/csghub-portal"
+	path := filepath.Join(dir, "scn")
+	native, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = os.WriteFile(path, bytes.ReplaceAll(native, []byte("Owner/repo"), []byte(name)), 0700); err != nil {
+		t.Fatal(err)
+	}
+	start := selectionCall(t, m, "start", selection, false)
+	q := selectionQuery(selection, true)
+	for _, query := range []string{"OpenCSG", "OpenCSG/csghub/"} {
+		q.Query = query
+		w := managerHTTP(m, "/v1/platforms/selection-interactions/candidates", q)
+		var page scion.RepositoryPage
+		if w.Code != 200 || json.Unmarshal(w.Body.Bytes(), &page) != nil || len(page.Repositories) != 1 || page.Repositories[0].Name != name {
+			t.Fatal(w.Code, w.Body.String())
+		}
+	}
+	q.Query = ""
+	q.Version = start.Version
+	q.Draft = &platformSelectionDraft{Repository: &scion.RepositoryEvidence{Name: name, Created: 100}}
+	edit := selectionCall(t, m, "update", q, true)
+	q.Version, q.Draft = edit.Version, nil
+	done := selectionCall(t, m, "submit", q, true)
+	if done.Status != "completed" || done.Draft.Repository == nil || done.Draft.Repository.Name != name {
+		t.Fatal(done)
+	}
+}
+
 func TestScionRepositorySelectionRejectsRecreatedAndChangedDrafts(t *testing.T) {
 	for _, fault := range []string{"recreated", "draft", "account"} {
 		t.Run(fault, func(t *testing.T) {
@@ -192,7 +224,9 @@ func TestScionRepositoryCandidatesRecheckDraftAfterNativeRead(t *testing.T) {
 	}
 	q := selectionQuery(selection, true)
 	done := make(chan int, 1)
-	go func(read platformSelectionRequest) { done <- managerHTTP(m, "/v1/platforms/selection-interactions/candidates", read).Code }(q)
+	go func(read platformSelectionRequest) {
+		done <- managerHTTP(m, "/v1/platforms/selection-interactions/candidates", read).Code
+	}(q)
 	deadline := time.Now().Add(5 * time.Second)
 	for {
 		if _, err := os.Stat(filepath.Join(dir, "repository-started")); err == nil {

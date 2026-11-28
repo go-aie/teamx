@@ -39,6 +39,34 @@ test("Scion dirty drafts survive refresh and late saves cannot fill another memb
  assert.equal(ui.el("notification-detail").open,true);assert.equal(ui.el("scion-repository").value,"");assert.match(ui.el("notification-destination").textContent,/b/);assert.equal(api.calls.filter(c=>c.path.endsWith("notifications/configure")).length,1);
 });
 
+test("Scion conversation changes refresh the platform switch and visible diagnostics through SSE",async()=>{
+ const api=scionFixture(),ui=await launch(api);
+ await openMemberInbox(ui,"member-a");await ui.el("agent-tab-platforms").emit("click");await settle();
+ const toggle=()=>row(ui).children[1].children[1];
+ assert.equal(toggle().checked,false);
+ api.scion=[{provider:"scion",channel:"workitems",platform_id:"scion",subscription_id:"sub-issue-a",subscription_version:1,
+  config:{enabled:true,platform_id:"scion",target:target(),repository:"Owner/repo",object_types:["issue"],interval_seconds:60,backfill_seconds:0},
+  baseline:"2026-11-27T00:00:00Z",scion:{},status:"running"}];
+ const notify=kind=>ui.sources.at(-1).emit("invalidate",{topic:"notifications",kind,room_id:"R",room_instance:"instance-R",room_service_epoch:"runtime",agent_id:"a",membership_id:"member-a"});
+ notify("summary");await ui.clock.advance(2000);await settle();
+ assert.equal(toggle().checked,true);
+ await row(ui).children[0].emit("click");await settle();
+ assert.equal(ui.el("scion-repository").value,"Owner/repo");
+ assert.match(ui.el("scion-status").textContent,/初始化中/);
+ await ui.clock.advance(2500);api.calls.length=0;
+ api.scion=structuredClone(api.scion);api.scion[0].scion.last_full="2026-11-27T01:00:00Z";
+ notify("diagnostics");await ui.clock.advance(2000);await settle();
+ assert.equal(api.calls.filter(c=>c.path.startsWith("/v1/platform/notifications?")).length,1);
+ assert.match(ui.el("scion-status").textContent,/同步正常/);
+ ui.el("scion-interval").value="180";await ui.el("scion-interval").emit("input");
+ notify("diagnostics");await ui.clock.advance(2000);await settle();
+ assert.equal(ui.el("scion-interval").value,"180");
+ assert.equal(api.calls.some(c=>c.path==="/v1/platform/notifications/configure" || c.path==="/v1/tools/bind"),false);
+ await ui.el("close-notification").emit("click");await settle();await ui.clock.advance(2500);api.calls.length=0;
+ notify("diagnostics");await ui.clock.advance(2000);await settle();
+ assert.equal(api.calls.filter(c=>c.path.startsWith("/v1/platform/notifications?")).length,0);
+});
+
 test("Scion repository picker retains selection across filtering, larger reads and directory failures",async()=>{
  const api=scionFixture(),hook=api.hook,repositories=[{name:"Owner/repo",created_at_ms:100,description:"Issue tracker"},{name:"Owner/other",created_at_ms:200,description:"Other"}];
  api.hook=(path,body)=>path==="/v1/platform/scion/repositories" ? {repositories:body.query ? repositories.filter(r=>r.name.includes(body.query)) : body.page_token ? repositories : repositories.slice(0,1),truncated:!body.page_token,next_page_token:body.page_token ? "" : "200"} : hook(path,body);

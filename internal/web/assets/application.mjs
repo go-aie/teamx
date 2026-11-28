@@ -628,7 +628,7 @@ export async function createApp(overrides = {}) {
   // read the full subscription merely because the summary sidebar is open.
   let notificationSummaryPending = true;
   const notificationDiagnosticsVisible = () => active() && $("notification-detail").open &&
-    !!workspaceUI.workspaceView && ["gitlab", "messages"].includes(workspaceUI.workspaceView.notificationChannel) &&
+    !!workspaceUI.workspaceView && ["gitlab", "messages", "workitems"].includes(workspaceUI.workspaceView.notificationChannel) &&
     !workspaceUI.workspaceView.notificationHistory;
   function readError(topic, error) {
     if (topic === "messages") state.messagesReady = false;

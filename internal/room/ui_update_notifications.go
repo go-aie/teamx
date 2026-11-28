@@ -6,6 +6,7 @@ import (
 	"github.com/go-aie/teamx/internal/platform/gitlab"
 	"github.com/go-aie/teamx/internal/platform/lark"
 	"github.com/go-aie/teamx/internal/platform/notification"
+	"github.com/go-aie/teamx/internal/platform/scion"
 )
 
 // Only the Room adapter interprets provider states. The common store forwards
@@ -35,6 +36,8 @@ func summarizeNotification(state notification.State, now time.Time) notification
 			v.Gap = *s.Gap
 		}
 	case gitlab.TodosState:
+		runtime = s.RuntimeState
+	case scion.State:
 		runtime = s.RuntimeState
 	case lark.State:
 		runtime = s.RuntimeState
@@ -85,6 +88,8 @@ func (m *roomManager) observeNotificationChange(before, after notification.State
 	case gitlab.TodosState:
 		owner = s.RoomIdentity
 	case lark.State:
+		owner = s.RoomIdentity
+	case scion.State:
 		owner = s.RoomIdentity
 	default:
 		return
