@@ -21,22 +21,24 @@
 - `spaceServer` 管理空间目录和运行时引用，直接复用每个 `SpaceRuntime` 拥有的原 `roomManager`。Room、通知状态、操作回执、日历、Session 和结清仍由原对象负责，没有第二份业务 manager 或 Gordis 容器。
 - 创建只接受客户端随机请求 ID 和显示名；ID 固定为 32 位小写十六进制，服务端决定 `<home>/spaces/<id>/{config.toml,data,teams}`。先用原持久 writer 原子发布可恢复登记，再初始化资源。重复请求返回同一身份，commit-unknown 围住后续写入；重启继续原登记，不盲目再创建。
 - 原默认空间继续原地使用已有 Home／Data／Teams。`personal-space-registration.json` 保留首次登记证据，`spaces.json` 承载后续空间及版本化改名；新增空间不能改变原身份／根，拒绝路径别名、目录碰撞和任意客户端绝对路径。
-- 新空间仅取得部署选择的 DSH launcher，不继承模型、Key、环境、连接或个人模板。分别构造模型／Computer 控制器、飞书请求队列、通知 Manager、SSE hub 和后台任务。setup 成功后先结清旧对象，再创建新运行对象和 epoch。
+- 新空间取得部署选择的 DSH launcher，并以空模型目录初始化。个人版网页创建时指定当前空间作为模型来源，后端核对同一 owner 后，用来源默认模型的参数和密钥进入普通首次模型验证；验证成功后在新空间独立保存配置与凭据，不复制验证回执或共享凭据引用。没有可用模型／密钥时回到普通设置表单。环境、连接、Computer 和个人模板不继承。分别构造模型／Computer 控制器、飞书请求队列、通知 Manager、SSE hub 和后台任务。setup 成功后先结清旧对象，再创建新运行对象和 epoch。
 - HTTP 仍由单个实际 Server 提供。运行时的路由 listener 只发布原 HTTP handler，生命周期继续经过原 `Serve`／`Shutdown`；不创建第二个端口、HTTP 代理或另一套后台执行协议。删除原 setup 完成后重启整个入口的循环和可变默认 access 缓存；只替换已结清的目标空间。包装器保留 ResponseController、Flush 和 WebSocket Hijack；路由 listener 关闭新准入并等待已受理 handler，外层 Close 超时仍保留工厂 owner，避免 setup 在旧请求仍能启动 worker 时释放数据锁。
 - 人类认证及持久会话只有入口一份；执行令牌、MCP 和 Room 身份保持每空间私有。SSE 和 Computer 长连接的周期复核使用共享认证权威，并保留本空间／成员／运行代际检查；退出登录撤销相关流。
 - 关闭通过原 manager 冻结、取消和结清；控制面并行等待各空间。超时保留原对象、句柄及目录锁，重试作用于同一 owner；全部业务和持久写入结清后才释放部署／控制面锁。
 
-目录占用在 `workspace-claims.json` 中持久登记，并在任何 manager 恢复前接入已有 Room 配置及 pending 目标；并发准入由同一个短锁协调。跨空间不允许相同、父子重叠的可写目录；空间内原串行共享规则仍由原 manager 决定。旧目录在原操作持久结清后释放占用；未知结果保守保留。Computer 实例分配沿同一控制面 writer 登记，不因页面切换或临时禁用自动转移给另一空间。
+目录占用在 `workspace-claims.json` 中持久登记，并在任何 manager 恢复前接入已有 Room 配置及 pending 目标；并发准入由同一个短锁协调。多用户版跨空间不允许相同、父子重叠的可写目录。2026-11-28 起，个人版允许跨空间共享公共目录及选择包含部署 Home 的祖先项目，空间私有目录仍受保护；当前规则见[工作目录参考](../reference/workspace.zh.md)。空间内原串行共享规则仍由原 manager 决定。旧目录在原操作持久结清后释放占用；未知结果保守保留。Computer 实例分配沿同一控制面 writer 登记，不因页面切换或临时禁用自动转移给另一空间。
 
 ## 请求与页面作用域
 
 - `GET /v1/spaces`：已授权用户的空间、运行状态、创建能力及平台支持视图。
-- `POST /v1/spaces`：`{request_id, name}`，受控创建；不接受业务根、owner 或凭据复制参数。
+- `POST /v1/spaces`：`{request_id, name, model_source_space_id?}`，受控创建；个人版网页自动传入当前空间 ID。来源必须属于同一用户，不能指定目标自身；多用户版继续从用户级 Gateway 凭据初始化。省略来源保留空模型设置流程。来源 ID 随创建登记持久化，未知结果重试仍使用原请求；不接受业务根、owner 或浏览器提供的模型密钥。
 - `POST /v1/spaces/<id>`：`{name, expected_version}`，版本冲突拒绝覆盖。
 - `/s/<id>/`：页面与执行 endpoint；例如 CLI 使用 `--endpoint http://127.0.0.1:8088/s/<id>`，模型及工具获得绑定空间的 endpoint 与执行凭据。
 - `/v1/spaces/<id>/<业务路径>`：显式业务 API。旧无空间路径继续只指向已登记默认空间。
 
 每份页面固定一个 Space，切换使用完整页面导航。HTTP、SSE、图片、附件、下载、Computer viewer 及 WebSocket 均固定作用域；模块状态、Room 缓存、草稿、setup 草稿和浏览器存储不会随其他标签的选择变化。默认空间独自接入旧 UI 存储；新空间不能读取旧默认草稿。创建请求在浏览器保留原 ID／正文，未知结果不生成新的自动重试。单 Room 兼容模式不展示多空间创建入口。
+
+自动模型初始化复用 `firstModelSetup.submit`、普通 Probe 和模型发布。失败／中断保留既有设置页的原因、预填值与重试入口；服务重启不反复自动验证已有失败操作。验证完成后各空间独立修改模型，重置也不重新导入来源模型。已有空间不会因为升级自动指定来源；无需迁移旧登记。
 
 ## 验证与证据
 

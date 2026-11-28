@@ -257,7 +257,8 @@ func openSpaceServer(ctx context.Context, initial *SpaceRuntime, assembly spaceR
 		s.cancel()
 		return nil, err
 	}
-	s.claims = &spaceDirectoryClaims{home: assembly.roots.Home, directory: s.directory, writer: &s.writer}
+	s.claims = &spaceDirectoryClaims{home: assembly.roots.Home, directory: s.directory, writer: &s.writer,
+		sharedExternal: access.users == nil && !assembly.config.hostTools.restricted}
 	if err := s.claims.restore(); err != nil {
 		s.cancel()
 		return nil, err

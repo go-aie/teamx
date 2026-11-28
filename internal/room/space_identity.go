@@ -30,6 +30,8 @@ type SpaceRecord struct {
 	Version     uint64               `json:"version"`
 	Roots       spaceRoots           `json:"roots"`
 	Reset       *spaceResetOperation `json:"reset,omitempty"`
+	// A creation-only source hint; successful model setup owns a separate copy.
+	ModelSourceSpaceID string `json:"model_source_space_id,omitempty"`
 }
 
 // Existing resources are registered in place, including Computer's home-based

@@ -17,7 +17,9 @@ async function poll() {
         document.getElementById("space-status").textContent = space.reset.message || "正在重置此空间，请稍候。";
       } else if (space?.status === "suspended") {
         document.querySelector("h1").textContent = "会话暂不可用";
-        document.getElementById("space-status").textContent = "后台任务已停止，会话与工作文件已保留。请联系部署管理员恢复后重试。";
+        document.getElementById("space-status").textContent = space.capabilities?.space_management === true
+          ? "后台任务已停止，会话与工作文件已保留。可在空间设置中恢复，或切换其他空间。"
+          : "后台任务已停止，会话与工作文件已保留。请联系部署管理员恢复后重试。";
         return;
       }
       if ((!space?.reset || space.reset.phase === "completed") && space?.status === "archiving") {

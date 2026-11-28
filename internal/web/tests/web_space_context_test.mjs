@@ -2,6 +2,22 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import vm from "node:vm";
+import { spaceAfterArchive } from "../assets/space-context.mjs";
+
+test("Archiving returns to a usable default or another active Space without reopening archived state", () => {
+  const space = (id, runtime_state = "ready", status = "active") => ({id, runtime_state, status});
+  const a = space("a"), b = space("b"), c = space("c");
+  const next = (default_space_id, spaces, archivedID = "b") => spaceAfterArchive({default_space_id, spaces}, archivedID);
+  assert.equal(next("a", [c, b, a]), "a", "default is preferred among ready Spaces");
+  assert.equal(next("b", [c, b, a]), "c", "archiving default selects another ready Space");
+  assert.equal(next("a", [space("a", "failed"), b, c]), "c");
+  assert.equal(next("a", [space("a", "starting"), b, c]), "c", "ready Space beats a starting default");
+  assert.equal(next("a", [space("a", "suspended", "suspended"), b, space("c", "setup_required")]), "c");
+  assert.equal(next("a", [space("a", "ready", "archiving"), b, space("c", "starting")]), "c");
+  assert.equal(next("a", [{...a, reset:{phase:"initializing"}}, b, c]), "c");
+  assert.equal(next("a", [{...a, reset:{phase:"completed"}}, b, c]), "a");
+  assert.equal(next("b", [b, space("a", "failed"), space("c", "suspended", "suspended")]), "", "last archived Space retains recovery controls");
+});
 
 test("Space document routes and storage stay fixed across other tabs and location changes", async () => {
   const source = await readFile(new URL("../assets/space-context.mjs", import.meta.url), "utf8");
@@ -30,12 +46,12 @@ test("Space document routes and storage stay fixed across other tabs and locatio
   } finally { globalThis.fetch = previousFetch; if (previous === undefined) delete globalThis.location; else globalThis.location = previous; }
 });
 
-test("Space management stays absent while scoped capabilities and brand navigation initialize", async () => {
+test("Hosted or undeclared Space management stays absent while scoped capabilities initialize", async () => {
   const source = await readFile(new URL("../assets/space-context.mjs", import.meta.url), "utf8");
   const a = "a".repeat(32), b = "b".repeat(32);
-  for (const canCreate of [true, false]) {
+  for (const management of [false, undefined]) for (const canCreate of [true, false]) {
     const brand = {href:"/"}, computer = {disabled:false}, requests = [];
-    const capabilities = {computer:false,lark:false,gitlab:true,gitlab_application_management:false};
+    const capabilities = {computer:false,lark:false,gitlab:true,gitlab_application_management:false,space_management:management};
     const context = {
       location:{pathname:`/s/${b}/`},
       document:{
@@ -58,8 +74,9 @@ test("Space management stays absent while scoped capabilities and brand navigati
   }
 });
 
-test("Loading an archived Space needs no management controls and never reloads itself", async () => {
+test("Loading an archived Space gives deployment-specific recovery guidance and never reloads itself", async () => {
   const source = await readFile(new URL("../assets/space-loading.mjs", import.meta.url), "utf8");
+  for (const management of [true, false]) {
   const heading = {}, status = {}, reloadButton = {};
   let reloads = 0;
   const context = {
@@ -69,7 +86,7 @@ test("Loading an archived Space needs no management controls and never reloads i
       querySelector:()=>heading,
       getElementById:id=>({"space-status":status,"space-reload":reloadButton})[id],
     },
-    fetch:async()=>({ok:true,json:async()=>({spaces:[{id:"a".repeat(32),status:"suspended"}]})}),
+    fetch:async()=>({ok:true,json:async()=>({spaces:[{id:"a".repeat(32),status:"suspended",capabilities:{space_management:management}}]})}),
     setTimeout(){ assert.fail("An archived Space should wait for explicit retry"); },
   };
   reloadButton.addEventListener = (event,callback) => { reloadButton[event] = callback; };
@@ -77,9 +94,11 @@ test("Loading an archived Space needs no management controls and never reloads i
   await new Promise(resolve=>setImmediate(resolve));
   assert.equal(heading.textContent,"会话暂不可用");
   assert.match(status.textContent,/会话与工作文件已保留/);
-  assert.doesNotMatch(status.textContent,/空间设置|切换其他空间/);
+  if (management) assert.match(status.textContent,/空间设置.*恢复.*切换其他空间/);
+  else assert.doesNotMatch(status.textContent,/空间设置|切换其他空间/);
   assert.equal(reloads,0);
   reloadButton.click(); assert.equal(reloads,1);
+  }
 });
 
 test("reset invalidates only one Space and old tabs cannot restore or overwrite fresh caches", async () => {

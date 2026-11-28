@@ -269,31 +269,53 @@ func TestSpacesIndependentSetupRoutingAndRestart(t *testing.T) {
 	if b2.SpaceID != id || b2.RuntimeEpoch == b.RuntimeEpoch || b2.manager == b.manager {
 		t.Fatal("restart replaced identity or reused stopped runtime")
 	}
-	var directory spaceDirectory
+	var directory struct {
+		Spaces []struct {
+			SpaceRecord
+			Capabilities map[string]bool `json:"capabilities"`
+		} `json:"spaces"`
+	}
 	if status := spaceHTTPRequest(t, endpoint2, "/v1/spaces", nil, &directory); status != 200 || len(directory.Spaces) != 2 || directory.Spaces[0].Name != "个人" {
 		t.Fatal(status, directory)
+	}
+	for _, space := range directory.Spaces {
+		if !space.Capabilities["space_management"] {
+			t.Fatal("personal Space management is hidden", space.ID)
+		}
 	}
 	if err := s2.claims.reserveComputer(id, "synthetic-instance"); !errors.Is(err, ErrConflict) {
 		t.Fatal("Computer claim lost after restart", err)
 	}
 }
 
-func TestSpacesDirectoryConflictIsDurableAndAtomic(t *testing.T) {
-	s, _, _ := startSpaceServerFixture(t, t.TempDir())
-	root := t.TempDir()
-	a := s.initial.SpaceID
-	b := strings.Repeat("c", 32)
-	if _, err := s.create(spaceChangeInput{RequestID: b, Name: "B"}); err != nil {
+func TestPersonalSpacesSharePublicDirectoriesAndProtectPrivateRoots(t *testing.T) {
+	project, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
 		t.Fatal(err)
 	}
+	s, _, stop := startSpaceServerFixture(t, filepath.Join(project, ".teamx"))
+	root := project
+	if !s.claims.sharedExternal {
+		t.Fatal("personal deployment did not enable public directories")
+	}
+	a := s.initial.SpaceID
+	b := strings.Repeat("c", 32)
 	if err := s.claims.reserve(a, RoomIdentity{RoomID: "a", RoomInstance: "instance-a"}, map[string]string{"member": root}); err != nil {
 		t.Fatal(err)
 	}
-	if err := s.claims.reserve(b, RoomIdentity{RoomID: "b", RoomInstance: "instance-b"}, map[string]string{"member": filepath.Join(root, "child")}); err == nil {
-		t.Fatal("overlapping cross-space path accepted")
+	if _, err := s.create(spaceChangeInput{RequestID: b, Name: "B"}); err != nil {
+		t.Fatal("public project containing deployment Home blocked Space creation", err)
+	}
+	if err := s.claims.reserve(b, RoomIdentity{RoomID: "b", RoomInstance: "instance-b"}, map[string]string{"member": root}); err != nil {
+		t.Fatal("public project could not be shared across personal Spaces", err)
 	}
 	if err := s.claims.reserve(a, RoomIdentity{RoomID: "same-space", RoomInstance: "instance-c"}, map[string]string{"member": root}); err != nil {
 		t.Fatal("space registry changed same-space sharing rules", err)
+	}
+	for _, private := range []string{s.initial.roots.Home, s.initial.roots.Data, filepath.Join(s.initial.roots.Home, "spaces", b)} {
+		if err := s.claims.check(b, map[string]string{"member": private}); err == nil {
+			t.Fatal("private directory accepted as public", private)
+		}
 	}
 	if _, err := newSpaceServer(t.Context(), s.initial, io.Discard); !errors.Is(err, ErrLocked) {
 		t.Fatal("second control owner accepted", err)
@@ -303,6 +325,14 @@ func TestSpacesDirectoryConflictIsDurableAndAtomic(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(s.initial.roots.Home, "spaces", "unsafe-id")); !errors.Is(err, os.ErrNotExist) {
 		t.Fatal("invalid creation touched disk", err)
+	}
+	stop()
+	restarted, _, _ := startSpaceServerFixture(t, filepath.Join(project, ".teamx"))
+	if err := restarted.claims.check(b, map[string]string{"member": root}); err != nil {
+		t.Fatal("restart lost public sharing policy", err)
+	}
+	if len(restarted.claims.saved.Claims) < 2 {
+		t.Fatal("restart lost public directory claims")
 	}
 }
 

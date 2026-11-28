@@ -70,10 +70,17 @@ export function spaceStorage(storage) {
   };
 }
 
-// Keep Space context active while its management UI is not yet exposed.
-const SPACE_MANAGEMENT_UI_ENABLED = false;
 let picker, capabilities = {};
 export function spaceCapabilities() { return capabilities; }
+export function spaceAfterArchive(directory, archivedID) {
+  const candidates = (directory.spaces || []).filter(space => space.id !== archivedID && space.status === "active" && (!space.reset || space.reset.phase === "completed"));
+  for (const states of [["ready"], ["setup_required", "migration_required"], ["starting"]]) {
+    const available = candidates.filter(space => states.includes(space.runtime_state));
+    const next = available.find(space => space.id === directory.default_space_id) || available[0];
+    if (next) return next.id;
+  }
+  return "";
+}
 export async function mountSpacePicker() {
   if (picker) return;
   let result;
@@ -90,75 +97,161 @@ export async function mountSpacePicker() {
   if (capabilities.computer === false) {
     const tab = document.getElementById("settings-tab-computer"); if (tab) { tab.disabled = true; tab.title = "当前会话不支持电脑"; }
   }
-  if (!SPACE_MANAGEMENT_UI_ENABLED || result.can_create !== true || picker) return;
+  if (capabilities.space_management !== true || result.can_create !== true || picker) return;
   picker = document.createElement("div"); picker.className = "space-picker";
   const select = document.createElement("select"); select.id = "space-select"; select.setAttribute("aria-label", "切换空间");
   for (const space of result.spaces) select.add(new Option(space.name + ({suspended:" · 已归档", archiving:" · 归档中", failed:" · 启动失败"}[space.runtime_state] || ""), space.id));
   select.value = id;
+  select.add(new Option("＋ 新建空间…", "create"));
   const feedback = document.createElement("span"); feedback.className = "space-feedback"; feedback.setAttribute("role", "status");
   const button = document.createElement("button"); button.type = "button"; button.textContent = "空间设置";
-  const dialog = document.createElement("dialog"); dialog.className = "space-dialog"; dialog.setAttribute("aria-label", "空间设置");
-  const title = document.createElement("h2"); title.textContent = "空间设置";
-  const label = document.createElement("label"); label.textContent = "空间名称";
-  const name = document.createElement("input"); name.id = "space-name"; name.maxLength = 64; name.value = current.name; label.append(name);
-  const rename = document.createElement("button"); rename.type = "button"; rename.textContent = "保存名称";
-  const create = document.createElement("button"); create.type = "button"; create.textContent = "创建空间";
-  const lifecycle = document.createElement("button"); lifecycle.id = "space-lifecycle-action"; lifecycle.type = "button";
-  lifecycle.dataset.action = current.status === "suspended" ? "restore" : "archive";
-  lifecycle.textContent = current.status === "suspended" ? "恢复空间" : current.status === "archiving" ? "重试归档" : "归档空间";
-  lifecycle.disabled = current.lifecycle_busy === true;
-  const close = document.createElement("button"); close.type = "button"; close.textContent = "关闭";
-  const message = document.createElement("p"); message.setAttribute("role", "status");
-  const hint = document.createElement("p"); hint.className = "space-hint"; hint.textContent = "新空间单独设置模型与连接。飞书和 Scion 目前仅在默认空间可用。";
-  const actions = document.createElement("div"); actions.className = "space-actions"; actions.append(rename, create, lifecycle, close);
-  dialog.append(title, label, hint, message, actions); document.body.append(dialog);
+  button.setAttribute("aria-haspopup", "dialog");
   picker.append(select, button, feedback);
   const host = document.querySelector(".room-rail-header") || document.querySelector("main"); host?.append(picker);
-  select.addEventListener("change", () => { if (select.value !== id) location.assign(`/s/${select.value}/`); });
-  button.addEventListener("click", () => { name.value = current.name; message.textContent = current.lifecycle_error || ""; dialog.showModal(); });
-  close.addEventListener("click", () => dialog.close());
-  // Keep an uncertain creation's ID and body. A retry cannot create a duplicate.
+
+  function makeDialog(heading, key, submitText, withName = true) {
+    const dialog = document.createElement("dialog"); dialog.className = "space-dialog"; dialog.setAttribute("aria-labelledby", `${key}-title`);
+    const form = document.createElement("form");
+    const title = document.createElement("h2"); title.id = `${key}-title`; title.textContent = heading;
+    const label = document.createElement("label"); label.textContent = "空间名称";
+    const name = document.createElement("input"); name.id = key; name.maxLength = 64; name.required = withName; name.className = "field-control"; label.append(name);
+    label.hidden = !withName;
+    const hint = document.createElement("p"); hint.className = "space-hint";
+    const message = document.createElement("p"); message.className = "space-error"; message.setAttribute("role", "status"); message.setAttribute("aria-live", "polite");
+    const cancel = document.createElement("button"); cancel.type = "button"; cancel.className = "secondary-button"; cancel.textContent = "取消";
+    const submit = document.createElement("button"); submit.type = "submit"; submit.className = "primary"; submit.textContent = submitText;
+    const actions = document.createElement("div"); actions.className = "space-actions"; actions.append(cancel, submit);
+    form.append(title, label, hint, message, actions); dialog.append(form); document.body.append(dialog);
+    cancel.addEventListener("click", () => dialog.close());
+    dialog.addEventListener("cancel", event => { if (sending) event.preventDefault(); });
+    return {dialog, form, title, name, hint, message, cancel, submit, actions};
+  }
+  const settings = makeDialog("空间设置", "space-name", "保存");
+  const creation = makeDialog("新建空间", "space-create-name", "创建并进入");
+  creation.name.placeholder = "例如：工作、个人项目";
+  creation.hint.textContent = "优先沿用当前空间默认模型并自动验证，后续可独立修改。连接需单独设置；飞书和 Scion 仅默认空间可用。";
+  const recovery = makeDialog("继续上次创建", "space-create-recovery", "核对并继续", false);
+  const lifecycle = makeDialog("归档空间", "space-lifecycle", "确认归档", false);
+  const more = document.createElement("details"); more.className = "space-more";
+  const summary = document.createElement("summary"); summary.textContent = "更多操作";
+  const lifecycleButton = document.createElement("button"); lifecycleButton.id = "space-lifecycle-action"; lifecycleButton.type = "button"; lifecycleButton.className = "text-button danger-button";
+  more.append(summary, lifecycleButton); settings.form.append(more);
+  function updateLifecycle() {
+    lifecycleButton.textContent = current.status === "suspended" ? "恢复空间…" : current.status === "archiving" ? "重试归档…" : "归档空间…";
+    lifecycleButton.disabled = current.lifecycle_busy === true;
+  }
+  updateLifecycle();
+  let sending = false;
+  function busy(value) {
+    sending = value;
+    for (const ui of [settings, creation, recovery, lifecycle]) ui.cancel.disabled = ui.submit.disabled = value;
+    button.disabled = select.disabled = value;
+    lifecycleButton.disabled = value || current.lifecycle_busy === true;
+  }
+  function failure(record, fallback) {
+    const code = record.code || record.error || record.message;
+    return ({directory_conflict:"新空间的数据目录与已有工作目录重叠，暂时无法创建。请调整已使用的工作目录后重试。",
+      conflict:"空间信息已变化，请重新打开设置后再试。", busy:"空间正在处理其他操作，请稍后重试。",
+      identity:"当前登录已失效，请刷新页面后重试。", request:"请输入有效的空间名称，最多 64 个字。",
+      commit_unknown:"操作结果尚未确认，请刷新核对后重试。"})[code] || fallback;
+  }
+  // Preserve an uncertain creation's exact ID and body so retrying cannot duplicate it.
   let pending;
   const pendingKey = `teamx.space-create:${location.origin}:${id}`;
+  const forgetPending = () => { pending = undefined; try { sessionStorage.removeItem(pendingKey); } catch {} };
   try {
     const saved = JSON.parse(sessionStorage.getItem(pendingKey));
-    if (/^[a-f0-9]{32}$/.test(saved?.request_id) && typeof saved.name === "string" && saved.name.trim() && saved.name.length <= 256) pending = saved;
-    if (result.spaces.some(space => space.id === pending?.request_id)) { pending = undefined; sessionStorage.removeItem(pendingKey); }
+    if (/^[a-f0-9]{32}$/.test(saved?.request_id) && typeof saved.name === "string" && saved.name.trim() && saved.name.length <= 256 && (!saved.model_source_space_id || /^[a-f0-9]{32}$/.test(saved.model_source_space_id))) pending = saved;
+    if (result.spaces.some(space => space.id === pending?.request_id)) forgetPending();
   } catch { /* Creation remains usable when browser storage is unavailable. */ }
-  async function save(creating) {
-    if (create.disabled) return;
-    const value = name.value.trim(); if (!value) { message.textContent = "请输入空间名称。"; name.focus(); return; }
-    const input = creating ? (pending ||= {request_id:crypto.randomUUID().replaceAll("-", ""), name:value}) : {name:value, expected_version:current.version};
-    if (creating) { name.value = input.name; try { sessionStorage.setItem(pendingKey, JSON.stringify(input)); } catch {} }
-    rename.disabled = create.disabled = lifecycle.disabled = true;
+  function showCreation() {
+    if (pending) {
+      recovery.hint.textContent = `上次请求创建「${pending.name}」。继续后会核对结果并进入该空间。`;
+      recovery.message.textContent = ""; recovery.dialog.showModal();
+    } else {
+      creation.name.value = ""; creation.message.textContent = ""; creation.dialog.showModal();
+    }
+  }
+  select.addEventListener("change", () => {
+    if (select.value === "create") {
+      select.value = id;
+      showCreation();
+    } else if (select.value !== id) location.assign(`/s/${select.value}/`);
+  });
+  button.addEventListener("click", async () => {
+    if (sending) return;
+    button.disabled = true; feedback.textContent = "";
+    try {
+      const response = await fetch("/v1/spaces", {cache:"no-store", signal:globalThis.AbortSignal?.timeout?.(5000)});
+      if (!response.ok) throw Error();
+      const directory = await response.json(), latest = directory.spaces?.find(space => space.id === id);
+      if (!latest) throw Error();
+      if (!observeSpaceReset(latest)) return;
+      Object.assign(current, latest); updateLifecycle();
+      settings.name.value = current.name; settings.hint.textContent = "修改当前空间的名称。";
+      settings.message.textContent = current.lifecycle_error ? "上次归档未完成，可在更多操作中重试。" : "";
+      more.open = false; settings.dialog.showModal();
+    } catch { feedback.textContent = "暂时无法读取空间信息，请重试。"; }
+    finally { button.disabled = false; }
+  });
+  async function save(ui, creating) {
+    if (sending) return;
+    const value = creating && pending ? pending.name : ui.name.value.trim();
+    if (!value) { ui.message.textContent = "请输入空间名称。"; ui.name.focus(); return; }
+    const input = creating ? (pending ||= {request_id:crypto.randomUUID().replaceAll("-", ""), name:value, model_source_space_id:id}) : {name:value, expected_version:current.version};
+    if (creating) { ui.name.value = input.name; try { sessionStorage.setItem(pendingKey, JSON.stringify(input)); } catch {} }
+    busy(true); ui.message.textContent = "";
+    let failureMessage;
     try {
       const response = await fetch(creating ? "/v1/spaces" : `/v1/spaces/${id}`, {method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify(input)});
       const record = await response.json();
-      if (!response.ok) throw new Error(record.message || "空间未保存，请刷新核对后重试。");
-      if (creating) { try { sessionStorage.removeItem(pendingKey); } catch {} location.assign(`/s/${record.id}/`); }
-      else { Object.assign(current, record); select.selectedOptions[0].textContent = record.name; dialog.close(); }
-    } catch (error) { message.textContent = error.message; }
-    finally { rename.disabled = create.disabled = false; lifecycle.disabled = current.lifecycle_busy === true; }
-  }
-  rename.addEventListener("click", () => save(false)); create.addEventListener("click", () => save(true));
-  let confirmingArchive = false;
-  lifecycle.addEventListener("click", async () => {
-    if (lifecycle.disabled || create.disabled) return;
-    const action = lifecycle.dataset.action;
-    if (action === "archive" && current.status === "active" && !confirmingArchive) {
-      confirmingArchive = true; lifecycle.textContent = "确认归档";
-      message.textContent = "归档将停止此空间的 Agent、通知采集和定时任务。会话与工作文件会保留，可稍后恢复。";
-      return;
+      if (!response.ok) {
+        if (creating && response.status >= 400 && response.status < 500 && record.code !== "conflict") forgetPending();
+        failureMessage = failure(record, "空间未保存，请刷新核对后重试。");
+        throw Error(failureMessage);
+      }
+      if (creating) { forgetPending(); location.assign(`/s/${record.id}/`); }
+      else { Object.assign(current, record); select.selectedOptions[0].textContent = record.name; ui.dialog.close(); }
+    } catch {
+      if (creating && pending) {
+        if (ui !== recovery) { ui.dialog.close(); showCreation(); }
+        recovery.message.textContent = failureMessage || "暂时无法确认创建结果，请稍后重试。";
+      } else if (ui === recovery) {
+        ui.dialog.close(); showCreation(); creation.name.value = value;
+        creation.message.textContent = failureMessage || "未能创建空间，请稍后重试。";
+      } else ui.message.textContent = failureMessage || "暂时无法保存，请刷新核对后重试。";
     }
-    rename.disabled = create.disabled = lifecycle.disabled = true;
+    finally { busy(false); }
+  }
+  settings.form.addEventListener("submit", event => { event.preventDefault(); void save(settings, false); });
+  creation.form.addEventListener("submit", event => { event.preventDefault(); void save(creation, true); });
+  recovery.form.addEventListener("submit", event => { event.preventDefault(); void save(recovery, true); });
+  lifecycleButton.addEventListener("click", () => {
+    settings.dialog.close();
+    const restoring = current.status === "suspended";
+    lifecycle.title.textContent = restoring ? "恢复空间" : "归档空间";
+    lifecycle.submit.textContent = restoring ? "恢复并进入" : "确认归档";
+    lifecycle.submit.className = restoring ? "primary" : "primary danger-button";
+    lifecycle.hint.textContent = restoring ? `恢复「${current.name}」后，可继续使用原有会话与工作文件。` : `归档「${current.name}」将停止 Agent、通知采集和定时任务。会话与工作文件会保留，可稍后恢复。`;
+    lifecycle.message.textContent = ""; lifecycle.dialog.showModal();
+  });
+  lifecycle.form.addEventListener("submit", async event => {
+    event.preventDefault(); if (sending) return;
+    busy(true); lifecycle.message.textContent = "";
+    const action = current.status === "suspended" ? "restore" : "archive";
     try {
       const response = await fetch(`/v1/spaces/${id}/${action}`, {method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({expected_version:current.version})});
       const record = await response.json();
-      if (!response.ok) throw new Error(record.message || "操作未完成，请刷新核对空间状态后重试。");
-      location.assign(`/s/${id}/`);
-    } catch (error) {
-      message.textContent = `${error.message} 请刷新核对空间状态后重试。`;
-      rename.disabled = create.disabled = lifecycle.disabled = false;
-    }
+      if (!response.ok) throw Error(failure(record, "操作未完成，请刷新核对空间状态后重试。"));
+      if (action === "archive") {
+        let next = "";
+        try {
+          const response = await fetch("/v1/spaces", {cache:"no-store", signal:globalThis.AbortSignal?.timeout?.(5000)});
+          if (response.ok) next = spaceAfterArchive(await response.json(), id);
+        } catch { /* The archived Space retains its picker and explicit recovery. */ }
+        location.replace(`/s/${next || id}/`);
+      } else location.assign(`/s/${id}/`);
+    } catch (error) { lifecycle.message.textContent = error.message; }
+    finally { busy(false); }
   });
 }

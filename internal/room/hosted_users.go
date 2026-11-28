@@ -324,6 +324,21 @@ const externalSessionLifetime = 15 * time.Minute
 func tokenDigest(token string) [32]byte { return sha256.Sum256([]byte(token)) }
 
 func (s *spaceServer) validateDirectory(directory spaceDirectory) error {
+	for _, record := range directory.Spaces {
+		if record.ModelSourceSpaceID == "" {
+			continue
+		}
+		if s.access.users != nil || !validSpaceID(record.ModelSourceSpaceID) || record.ModelSourceSpaceID == record.ID {
+			return ErrIdentity
+		}
+		owned := false
+		for _, source := range directory.Spaces {
+			owned = owned || source.ID == record.ModelSourceSpaceID && source.OwnerUserID == record.OwnerUserID
+		}
+		if !owned {
+			return ErrIdentity
+		}
+	}
 	if s.access.users == nil {
 		return validateSpaceDirectory(directory, s.access.identity.Space, s.access.subject())
 	}

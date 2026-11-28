@@ -27,6 +27,8 @@ type spaceDirectoryClaims struct {
 	directory spaceDirectory
 	writer    *snapshotWriter
 	saved     spaceClaimSnapshot
+	// Bound by deployment composition; never loaded from a Space or request.
+	sharedExternal bool
 }
 
 func (c *spaceDirectoryClaims) restore() error {
@@ -105,14 +107,22 @@ func (c *spaceDirectoryClaims) restore() error {
 func (c *spaceDirectoryClaims) checkLocked(space string, paths map[string]string) error {
 	for _, path := range paths {
 		for _, record := range c.directory.Spaces {
-			if record.ID == space {
+			if record.ID == space && !c.sharedExternal {
 				continue
 			}
 			for _, root := range []string{record.Roots.Home, record.Roots.Data, record.Roots.Teams} {
-				if absoluteDirectoriesOverlap(path, root) {
+				if root == "" {
+					continue
+				}
+				// Personal Spaces may share public ancestors, but no Space's
+				// private roots may become an external workspace.
+				if pathWithin(root, path) || !c.sharedExternal && pathWithin(path, root) {
 					return directoryError("directory_conflict")
 				}
 			}
+		}
+		if c.sharedExternal {
+			continue
 		}
 		for _, claim := range c.saved.Claims {
 			if claim.SpaceID == space {
@@ -126,6 +136,19 @@ func (c *spaceDirectoryClaims) checkLocked(space string, paths map[string]string
 		}
 	}
 	return nil
+}
+
+// File readers need all registered private roots, including Spaces created
+// after the reader's owning manager started. The exact managed workspace is
+// still handled by the existing member-specific exception.
+func (c *spaceDirectoryClaims) protectedRoots() []string {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	roots := []string{c.home}
+	for _, record := range c.directory.Spaces {
+		roots = append(roots, record.Roots.Home, record.Roots.Data, record.Roots.Teams)
+	}
+	return roots
 }
 func (c *spaceDirectoryClaims) check(space string, paths map[string]string) error {
 	c.mu.Lock()
@@ -250,7 +273,12 @@ func (c *spaceDirectoryClaims) checkNewSpaceLocked(record SpaceRecord) error {
 	for _, claim := range c.saved.Claims {
 		for _, path := range claim.Paths {
 			for _, root := range []string{record.Roots.Home, record.Roots.Data, record.Roots.Teams} {
-				if absoluteDirectoriesOverlap(path, root) {
+				if root == "" {
+					continue
+				}
+				// A public project may contain the deployment Home. Do not let
+				// a new Space absorb an existing workspace inside its own roots.
+				if pathWithin(root, path) || !c.sharedExternal && pathWithin(path, root) {
 					return directoryError("directory_conflict")
 				}
 			}

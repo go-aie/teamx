@@ -156,8 +156,19 @@ func TestSpaceArchiveRestoreRebuildsOwnersAndRevokesOldGeneration(t *testing.T) 
 	case <-time.After(3 * time.Second):
 		t.Fatal("archived SSE stayed open")
 	}
-	if err := s.claims.reserve(bID, RoomIdentity{RoomID: "b", RoomInstance: "b-instance"}, map[string]string{"member": external}); err == nil {
-		t.Fatal("archive released external directory claim", err)
+	s.claims.mu.Lock()
+	retained := false
+	for _, claim := range s.claims.saved.Claims {
+		if claim.SpaceID == a.SpaceID && len(claim.Paths) != 0 {
+			retained = true
+		}
+	}
+	s.claims.mu.Unlock()
+	if !retained {
+		t.Fatal("archive released external directory claim")
+	}
+	if err := s.claims.reserve(bID, RoomIdentity{RoomID: "b", RoomInstance: "b-instance"}, map[string]string{"member": external}); err != nil {
+		t.Fatal("personal public directory could not be shared after archive", err)
 	}
 	if data, err := os.ReadFile(retainedFile); err != nil || string(data) != "keep" {
 		t.Fatal("archive changed external work file", err)

@@ -21,9 +21,10 @@ func validSpaceName(name string) bool {
 }
 
 type spaceChangeInput struct {
-	RequestID       string `json:"request_id"`
-	Name            string `json:"name"`
-	ExpectedVersion uint64 `json:"expected_version"`
+	RequestID          string `json:"request_id"`
+	Name               string `json:"name"`
+	ExpectedVersion    uint64 `json:"expected_version"`
+	ModelSourceSpaceID string `json:"model_source_space_id,omitempty"`
 }
 
 func (s *spaceServer) serveDirectory(w http.ResponseWriter, r *http.Request) {
@@ -96,6 +97,9 @@ func (s *spaceServer) serveDirectory(w http.ResponseWriter, r *http.Request) {
 			}
 			spaces = append(spaces, view{record, lifecycleBusy, lifecycleError, state, map[string]bool{"gitlab_application_management": s.access.users == nil, "gitlab": gitlab, "lark": (legacy || s.assembly.config.hostTools.restricted) && lark, "scion": legacy && scion, "computer": !s.assembly.config.hostTools.restricted, "managed_repositories": !s.assembly.config.hostTools.restricted}})
 			spaces[len(spaces)-1].Capabilities["space_reset"] = s.spaceResetAvailable()
+			// Personal deployments expose the existing Space management UI.
+			// Hosted deployments retain their APIs while keeping the UI hidden.
+			spaces[len(spaces)-1].Capabilities["space_management"] = s.access.users == nil
 			spaces[len(spaces)-1].Capabilities["native_lark_login_preserved"] = runtime.GOOS == "darwin" && s.access.users == nil && !s.assembly.config.hostTools.restricted
 			spaces[len(spaces)-1].Capabilities["reset_default_model"] = s.access.users != nil
 			if record.resetting() || s.resetBusy[record.ID] && record.Reset != nil {
@@ -126,6 +130,10 @@ func (s *spaceServer) serveDirectory(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if spaceLifecyclePath(path) {
+		if input.ModelSourceSpaceID != "" {
+			writeAPIError(w, ErrRequest)
+			return
+		}
 		if strings.HasSuffix(path, "/reset") {
 			s.serveSpaceReset(w, r, input)
 			return
@@ -145,6 +153,10 @@ func (s *spaceServer) serveDirectory(w http.ResponseWriter, r *http.Request) {
 		}
 		w.WriteHeader(http.StatusAccepted)
 		_ = writeJSON(w, record)
+		return
+	}
+	if input.ModelSourceSpaceID != "" {
+		writeAPIError(w, ErrRequest)
 		return
 	}
 	id := strings.TrimPrefix(path, "/v1/spaces/")
@@ -208,7 +220,7 @@ func (s *spaceServer) create(input spaceChangeInput, subjects ...userSubject) (S
 			if record.OwnerUserID != subject.UserID {
 				return SpaceRecord{}, ErrIdentity
 			}
-			if record.Name != input.Name {
+			if record.Name != input.Name || record.ModelSourceSpaceID != input.ModelSourceSpaceID {
 				return SpaceRecord{}, ErrConflict
 			}
 			return record, nil
@@ -220,6 +232,7 @@ func (s *spaceServer) create(input spaceChangeInput, subjects ...userSubject) (S
 	}
 	home := filepath.Join(s.assembly.roots.Home, "spaces", input.RequestID)
 	record := SpaceRecord{ID: input.RequestID, OwnerUserID: subject.UserID, Name: input.Name, Status: "active", Version: 1, Roots: spaceRoots{home, filepath.Join(home, "data"), filepath.Join(home, "teams")}}
+	record.ModelSourceSpaceID = input.ModelSourceSpaceID
 	next := s.directory
 	next.Spaces = append(append([]SpaceRecord{}, next.Spaces...), record)
 	if err := s.assembly.config.executionResources.checkSpaces(next.Spaces); err != nil {
@@ -266,8 +279,9 @@ func (s *spaceServer) initializeSpace(record SpaceRecord) error {
 	if err := makeDurableDir(record.Roots.Home); err != nil {
 		return err
 	}
-	// Only the deployment-owned launcher is shared. No models, keys, env,
-	// platform profiles, Computer connection or personal template is copied.
+	// Start with an empty catalog. An explicitly nominated owned model source
+	// enters ordinary first-use validation; no model is published by copying.
+	// Environment, platform profiles, Computer and personal templates stay separate.
 	values := map[string]any{"server": map[string]any{"data_dir": "./data", "teams_dir": "./teams"}, "models": modelCatalog{SchemaVersion: 1, Version: 1}}
 	if s.assembly.defaults != nil {
 		runtime := *s.assembly.defaults

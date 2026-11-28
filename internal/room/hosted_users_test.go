@@ -233,6 +233,9 @@ func hostedLogin(t *testing.T, s *spaceServer, account string) (*http.Cookie, us
 
 func TestHostedUsersTwoOwnersTwoSpacesAndRevocation(t *testing.T) {
 	s := hostedFixture(t, t.TempDir())
+	if s.claims.sharedExternal {
+		t.Fatal("hosted deployment enabled public directory sharing")
+	}
 	a, alice, aDefault := hostedLogin(t, s, "alice")
 	b, bob, bDefault := hostedLogin(t, s, "bob")
 	if alice.UserID == bob.UserID || aDefault == bDefault {
@@ -248,14 +251,20 @@ func TestHostedUsersTwoOwnersTwoSpacesAndRevocation(t *testing.T) {
 		}
 		w = hostedRequest(s, "/v1/spaces", nil, cookie, "")
 		var view struct {
-			Spaces  []SpaceRecord `json:"spaces"`
-			Default string        `json:"default_space_id"`
+			Spaces []struct {
+				SpaceRecord
+				Capabilities map[string]bool `json:"capabilities"`
+			} `json:"spaces"`
+			Default string `json:"default_space_id"`
 		}
 		if json.Unmarshal(w.Body.Bytes(), &view) != nil || len(view.Spaces) != 2 {
 			t.Fatalf("directory: %s", w.Body.String())
 		}
 		owner := []userSubject{alice, bob}[i]
 		for _, record := range view.Spaces {
+			if record.Capabilities["space_management"] {
+				t.Fatal("hosted Space management must stay hidden")
+			}
 			if record.OwnerUserID != owner.UserID {
 				t.Fatal("directory leaked another owner")
 			}

@@ -146,7 +146,11 @@ func (s workspaceFileSnapshot) source(member managedMember) (workspaceFileSource
 		return unavailable()
 	}
 	protected := []string{}
-	for _, p := range append([]string{s.policy.store.dir, s.policy.teamsDir}, s.policy.workspaceProtected...) {
+	privateRoots := append([]string{s.policy.store.dir, s.policy.teamsDir}, s.policy.workspaceProtected...)
+	if claims := s.policy.config.directoryClaims; claims != nil {
+		privateRoots = append(privateRoots, claims.protectedRoots()...)
+	}
+	for _, p := range privateRoots {
 		if p == "" {
 			continue
 		}

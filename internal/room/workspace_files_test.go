@@ -260,6 +260,76 @@ func TestWorkspaceFilesHTTPCurrentSourceAndIsolation(t *testing.T) {
 	m.epoch = oldEpoch
 }
 
+func TestPublicWorkspaceFilesExcludeNewSpaceRootsAndAliases(t *testing.T) {
+	t.Setenv("USER", humanCaller.ID)
+	m, project := directoryTestManager(t)
+	room := managerCreate(t, m, "public-files")
+	saved, _ := readManagedRoom(t, m, room)
+	member := saved.Members[0]
+	saved.Workspace.MemberDirectories = map[string]string{member.MembershipID: project}
+	if err := m.store.save(filepath.Join(m.roomDir(room.RoomID), "room-config.json"), saved, maxPrivateFileBytes); err != nil {
+		t.Fatal(err)
+	}
+	claims := &spaceDirectoryClaims{sharedExternal: true, directory: spaceDirectory{Spaces: []SpaceRecord{{ID: "component-fixture", Roots: spaceRoots{Data: m.store.dir, Teams: m.teamsDir}}}}}
+	m.config.directoryClaims = claims
+	m.config.access = &serverAccess{
+		space:    SpaceContext{SpaceID: "component-fixture", OwnerUserID: humanCaller.ID, RuntimeEpoch: "component-fixture"},
+		identity: &personalRegistration{User: User{ID: humanCaller.ID, Status: "active", AuthVersion: 1}, Space: SpaceRecord{ID: "component-fixture", OwnerUserID: humanCaller.ID, Status: "active"}},
+	}
+	if err := os.MkdirAll(filepath.Join(m.roomDir(room.RoomID), saved.Members[1].Workspace), 0700); err != nil {
+		t.Fatal(err)
+	}
+	writeFileFixture(t, filepath.Join(project, "read.md"), []byte("public"))
+	// A non-dot directory demonstrates that protection comes from the registry,
+	// rather than the generic .teamx/hidden-file exclusions.
+	private := filepath.Join(project, "other-state")
+	writeFileFixture(t, filepath.Join(private, "secret.txt"), []byte("private bytes"))
+	if err := os.Symlink(private, filepath.Join(project, "alias")); err != nil {
+		t.Fatal(err)
+	}
+	q := url.Values{"room_id": {room.RoomID}, "room_instance": {room.RoomInstance}, "service_epoch": {m.epoch}, "caller_id": {humanCaller.ID}}
+	request := func(endpoint string) *httptest.ResponseRecorder { return managerHTTP(m, endpoint+"?"+q.Encode(), nil) }
+	var sources struct {
+		Sources []workspaceFileSource `json:"sources"`
+	}
+	r := request("/v1/workspace/files/sources")
+	if r.Code != 200 || json.Unmarshal(r.Body.Bytes(), &sources) != nil || len(sources.Sources) < 2 || !sources.Sources[0].Available || !sources.Sources[1].Available {
+		t.Fatal(r.Code, r.Body.String())
+	}
+	q.Set("membership_id", member.MembershipID)
+	q.Set("root_id", sources.Sources[0].RootID)
+	// The manager and source identity predate this Space registration.
+	claims.mu.Lock()
+	claims.directory.Spaces = append(claims.directory.Spaces, SpaceRecord{ID: "other", Roots: spaceRoots{Home: private}})
+	claims.mu.Unlock()
+	q.Set("path", "")
+	q.Set("show_hidden", "true")
+	r = request("/v1/workspace/files")
+	var listing workspaceFileListing
+	if r.Code != 200 || json.Unmarshal(r.Body.Bytes(), &listing) != nil || len(listing.Entries) != 1 || listing.Entries[0].Name != "read.md" {
+		t.Fatal(r.Code, r.Body.String())
+	}
+	q.Del("show_hidden")
+	for _, path := range []string{"other-state/secret.txt", "alias/secret.txt"} {
+		q.Set("path", path)
+		for _, endpoint := range []string{"/v1/workspace/files/preview", "/v1/workspace/files/content"} {
+			r := request(endpoint)
+			if r.Code == 200 || strings.Contains(r.Body.String(), "private bytes") {
+				t.Fatal("private bytes delivered", endpoint, path, r.Code)
+			}
+		}
+		q.Set("download", "true")
+		if r := request("/v1/workspace/files/content"); r.Code == 200 {
+			t.Fatal("private download admitted", path)
+		}
+		q.Del("download")
+	}
+	q.Set("path", "read.md")
+	if r := request("/v1/workspace/files/preview"); r.Code != 200 || !strings.Contains(r.Body.String(), "public") {
+		t.Fatal(r.Code, r.Body.String())
+	}
+}
+
 func TestWorkspaceFilesHumanAccessAndCancellation(t *testing.T) {
 	a, token, h := accessFixture(t)
 	execution, revoke, err := a.issueExecution(executionBinding{ServiceInfo: ServiceInfo{RoomIdentity: RoomIdentity{RoomID: "room", RoomInstance: "instance"}, ServiceEpoch: "epoch"}, Caller: Caller{Author: Author{Kind: "agent", ID: "agent"}, MembershipID: "member"}})

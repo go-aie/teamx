@@ -83,6 +83,9 @@ func TestSpaceResetReturnsToFirstUseAndPreservesOtherOwners(t *testing.T) {
 	if err := s.claims.reserve(old.SpaceID, oldInfo.RoomIdentity, map[string]string{"member": external}); err != nil {
 		t.Fatal(err)
 	}
+	if err := s.claims.reserve(otherID, RoomIdentity{RoomID: "shared-public", RoomInstance: "other"}, map[string]string{"member": external}); err != nil {
+		t.Fatal("public directory could not be shared before reset", err)
+	}
 	if err := s.claims.reserveComputer(old.SpaceID, "keep-instance"); err != nil {
 		t.Fatal(err)
 	}
@@ -164,10 +167,17 @@ func TestSpaceResetReturnsToFirstUseAndPreservesOtherOwners(t *testing.T) {
 		t.Fatal("other Space interrupted")
 	}
 	s.claims.mu.Lock()
+	otherClaimRetained := false
 	for _, claim := range s.claims.saved.Claims {
 		if claim.SpaceID == old.SpaceID {
 			t.Error("external binding retained")
 		}
+		if claim.SpaceID == otherID && len(claim.Paths) == 1 && claim.Paths[0] == external {
+			otherClaimRetained = true
+		}
+	}
+	if !otherClaimRetained {
+		t.Error("reset released another Space's public directory claim")
 	}
 	if s.claims.saved.Computers["keep-instance"] != old.SpaceID {
 		t.Error("Computer claim lost")

@@ -166,19 +166,63 @@ func (u *hostedUsers) saveGatewayKey(user, key string) error {
 // Reuse first-use validation and publication. Only an empty catalog is eligible;
 // existing model choices and active Sessions keep their immutable credentials.
 func (f *firstModelSetup) submitGatewayModel(key string) {
+	f.submitDefaultModel(hostedDefaultModelParameters(), key)
+}
+
+func (f *firstModelSetup) submitDefaultModel(parameters ModelParameters, key string) {
 	f.mu.Lock()
 	if f.blocked != nil || f.service == nil || len(f.service.snapshot().Entries) != 0 || f.operation != nil && (f.operation.Operation.Status == "validating" || f.operation.Operation.Status == "saved") {
 		f.mu.Unlock()
 		return
 	}
-	parameters := hostedDefaultModelParameters()
-	f.prefill, f.prefillKey = parameters, key
+	f.prefill, f.prefillKey = parameters.clone(), key
 	id, err := newOpaqueID()
 	input := setupModelInput{RequestID: id, ExpectedVersion: f.service.snapshot().Version, ModelParameters: parameters, APIKey: key}
 	f.mu.Unlock()
 	if err == nil {
 		_, _ = f.submit(input) // Submission/validation failures remain in the setup UI.
 	}
+}
+
+// Only creation may nominate an owned source. Reset does not inherit settings,
+// and a configured target never depends on its source's later model changes.
+func (s *spaceServer) initialSpaceModel(record SpaceRecord) (ModelParameters, string, error) {
+	if s.access.users != nil || record.ModelSourceSpaceID == "" || record.Reset != nil {
+		return ModelParameters{}, "", nil
+	}
+	s.mu.Lock()
+	var source SpaceRecord
+	for _, candidate := range s.directory.Spaces {
+		if candidate.ID == record.ModelSourceSpaceID && candidate.OwnerUserID == record.OwnerUserID {
+			source = candidate
+			break
+		}
+	}
+	s.mu.Unlock()
+	if source.ID == "" || source.ID == record.ID {
+		return ModelParameters{}, "", ErrIdentity
+	}
+	path := filepath.Join(source.Roots.Home, "config.toml")
+	if source.ID == s.access.space.SpaceID {
+		path = s.assembly.config.settings.path
+	}
+	config, err := readStartupConfig(path, true, false)
+	if err != nil {
+		return ModelParameters{}, "", err
+	}
+	if config.Models == nil || len(config.Models.Entries) == 0 {
+		return ModelParameters{}, "", nil
+	}
+	entry, err := config.Models.resolve(modelSelection{Mode: "default"})
+	if err != nil {
+		return ModelParameters{}, "", err
+	}
+	parameters := entry.ModelParameters.clone()
+	credential, err := (&modelCredentials{dir: filepath.Join(source.Roots.Home, "model-credentials")}).get(entry.CredentialRef)
+	if err != nil {
+		return parameters, "", err
+	}
+	return parameters, credential.Value, nil
 }
 
 func (f *firstModelSetup) followGatewayCredential(ctx context.Context, users *hostedUsers, owner string) {
